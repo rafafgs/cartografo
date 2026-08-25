@@ -1,7 +1,7 @@
 /**
  * The graph half of t196: a version write and a pointer move leave a fact in the log.
  *
- * `especificacoes/eventos/schemas/` declared `graph_version.registered`,
+ * `specs/events/schemas/` declared `graph_version.registered`,
  * `.applied` and `.reverted` since t98, and until this ticket nobody called
  * `recordEvent` for any of the three — so the log, which is D15's join surface
  * between telemetry and the evolution of the graph, knew about jobs, sessions
@@ -9,7 +9,7 @@
  *
  * What the four flows below pin is the PAIRING, which is the part a literal
  * reading of the taxonomy gets wrong. "Registering does not move the pointer"
- * (`especificacoes/eventos/taxonomy.md`) is a statement about the two facts
+ * (`specs/events/taxonomy.md`) is a statement about the two facts
  * being different, not about them never happening together: `registerBaseGraph`,
  * `forkVariant` and `applyProposal` each write a version AND move the pointer in
  * one transaction, so each of them owes the log both events. Reverting owes it
@@ -33,7 +33,7 @@ import {
 } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 
 /** A lineage, as `/v1` publishes it — only the fields these tests read. */
 interface Graph {

@@ -105,7 +105,7 @@ half way:
 | `heartbeat_lost` | `heartbeat_at > granted_at` | It was renewed at least once and then went quiet. The runner died in the middle of the work. |
 
 The two names are exactly those of `data.reason` in
-[`lease.expired.schema.json`](../../especificacoes/eventos/schemas/lease.expired.schema.json):
+[`lease.expired.schema.json`](../../specs/events/schemas/lease.expired.schema.json):
 since `t196` every lease that dies records the event with the same reason the
 column keeps, with no translation — one event per lease, even when the sweep
 kills several at once.
@@ -223,7 +223,7 @@ the server gives the runner up for dead. Whoever passes an explicit
 lets the lease itself expire underneath the dispatch.
 
 `despachar` is an **injected callback** and is the only seam with the
-[`EngineAdapter`](../formatos/engine-adapter.md) (`t104`): this layer opens no
+[`EngineAdapter`](../formats/engine-adapter.md) (`t104`): this layer opens no
 session at all. Whoever closes the cycle with a real session (`t106`/`t109`)
 passes the adapter through here without touching the controller.
 
@@ -798,14 +798,14 @@ The division of responsibility that produces is, in fact, the correct one:
 Every item here is another ticket's declared scope, not an oversight:
 
 - **No event for the release.** The emission of
-  [`lease.granted`](../../especificacoes/eventos/schemas/lease.granted.schema.json)
-  and [`lease.expired`](../../especificacoes/eventos/schemas/lease.expired.schema.json)
+  [`lease.granted`](../../specs/events/schemas/lease.granted.schema.json)
+  and [`lease.expired`](../../specs/events/schemas/lease.expired.schema.json)
   has been switched on since `t196` — the columns already carried everything the
   two events ask for (`runner_id`, `job_id`, `expires_at`,
   `expiration_reason`), and it was a direct mapping. **What is left over is the
   bigger gap:** `t98`'s taxonomy does not declare `lease.released`, and the
   reference reducer
-  ([`reconstruct-state.mjs`](../../especificacoes/eventos/reducers/reconstruct-state.mjs))
+  ([`reconstruct-state.mjs`](../../specs/events/reducers/reconstruct-state.mjs))
   projects `leases` with `active`/`expired` alone. The table has three states, so
   either the taxonomy gains a `lease.released`, or the event projection stays
   blind to the ordinary close — which is the most common case of all. Growing the

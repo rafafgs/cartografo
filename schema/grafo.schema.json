@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:cartografo:schema:grafo:1.0.0",
   "title": "Graph document (cartografo)",
-  "description": "The format of the graph document: nodes with role/skill/contract, edges with a condition, class metadata (D8) and lineage (D13). This document is the complete snapshot of a graph version — the same content graph_version.snapshot stores in the database (D15) and that comes out as the minimal exportable bundle. Structural validation here is about SHAPE; the four soundness rules (reachable, terminates, edge_with_condition, node_with_contract) are semantic and live in scripts/validar-grafo.mjs.",
+  "description": "The format of the graph document: nodes with role/skill/contract, edges with a condition, class metadata (D8) and lineage (D13). This document is the complete snapshot of a graph version — the same content graph_version.snapshot stores in the database (D15) and that comes out as the minimal exportable bundle. Structural validation here is about SHAPE; the four soundness rules (reachable, terminates, edge_with_condition, node_with_contract) are semantic and live in scripts/validate-graph.mjs.",
   "type": "object",
   "required": [
     "problem_class",
@@ -317,7 +317,7 @@
     },
     "hook": {
       "type": "object",
-      "description": "A reaction declared by the graph. A hook does NOT take part in the traversal: it is not an edge, it does not change the current node and it has no way of making the job stop — a hook failure is an incident, never an outcome. The referential validation (node_id exists, id unique in the document) is structural and lives in scripts/validar-grafo.mjs and packages/core/src/domain/graph.ts, not in the four soundness rules: a dangling hook is a defect of shape, not a property of the workflow net.",
+      "description": "A reaction declared by the graph. A hook does NOT take part in the traversal: it is not an edge, it does not change the current node and it has no way of making the job stop — a hook failure is an incident, never an outcome. The referential validation (node_id exists, id unique in the document) is structural and lives in scripts/validate-graph.mjs and packages/core/src/domain/graph.ts, not in the four soundness rules: a dangling hook is a defect of shape, not a property of the workflow net.",
       "required": ["id", "trigger", "node_id", "destination"],
       "additionalProperties": false,
       "properties": {
@@ -359,7 +359,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9_-]*$",
-          "description": "The NAME of the HMAC key, never the key. The value lives in segredo_gancho, in the deployment's database, registered by PUT /v1/hook-secrets/:name and resolved by the control plane at enqueue time — the same instant the url is copied. The document is content-addressed, served whole by the API, written to disk by the export and published in the atlas: a key written here is everybody's key who reads the map. That is why this shape is not merely declared here: since t256 it is ENFORCED on write by scripts/validar-grafo.mjs and packages/core/src/domain/graph.ts, which refuse the document with hook_raw_secret when the destination carries a raw secret and with invalid_hook_destination when it carries no secret_ref at all — the same place the hook's referential validation already lived. The same character class as a node id, because the name also crosses a URL path."
+          "description": "The NAME of the HMAC key, never the key. The value lives in segredo_gancho, in the deployment's database, registered by PUT /v1/hook-secrets/:name and resolved by the control plane at enqueue time — the same instant the url is copied. The document is content-addressed, served whole by the API, written to disk by the export and published in the atlas: a key written here is everybody's key who reads the map. That is why this shape is not merely declared here: since t256 it is ENFORCED on write by scripts/validate-graph.mjs and packages/core/src/domain/graph.ts, which refuse the document with hook_raw_secret when the destination carries a raw secret and with invalid_hook_destination when it carries no secret_ref at all — the same place the hook's referential validation already lived. The same character class as a node id, because the name also crosses a URL path."
         }
       }
     },

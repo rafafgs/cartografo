@@ -1,7 +1,7 @@
 /**
  * Validation of the event envelope and of each type's payload (t102, FR3).
  *
- * Mirrors, in TypeScript, the schemas of `especificacoes/eventos/schemas/`. The
+ * Mirrors, in TypeScript, the schemas of `specs/events/schemas/`. The
  * duplication is deliberate and recorded in the ticket: loading those `.json` at
  * runtime would couple `packages/core` to a path outside the package and pull a
  * generic validator into the control plane's dependency surface, in order to

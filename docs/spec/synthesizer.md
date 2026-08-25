@@ -119,7 +119,7 @@ score.
 The heuristic is the Jaccard of
 [t113](../../packages/core/src/domain/similarity.ts), **ported** into the runner
 rather than imported. It is the same trade the core already made when
-`domain/graph.ts` ported `scripts/validar-grafo.mjs`: the runner is an ordinary
+`domain/graph.ts` ported `scripts/validate-graph.mjs`: the runner is an ordinary
 client of the API ([D1](../../DECISIONS.md)/[D11](../../DECISIONS.md)), speaks
 HTTP and nothing else, and a compile-time dependency on the control plane's
 `domain/` would be the first crack in the wall
@@ -145,7 +145,7 @@ precedent would be letting the accessory break the essential.
 ## 5. The session: one turn, one block, no privilege
 
 The `SessionSpec` follows the normative rule of the
-[EngineAdapter](../formatos/engine-adapter.md): `instructions` and `prompt` never
+[EngineAdapter](../formats/engine-adapter.md): `instructions` and `prompt` never
 arrive concatenated by the caller.
 
 - **`instructions`** — the role and the hard rules: the `classe` is the user's
@@ -195,7 +195,7 @@ nothing about it. Two consequences became text:
   list. It holds just the same for a gate, which is a node like any other.
 - **A check from the catalogue is not a `verificacao`.** The two formats diverge
   on `evidencia_obrigatoria`: a list of artifacts in the
-  [skill manifest](../../especificacoes/formatos/skill-manifest.md), the literal
+  [skill manifest](../../specs/formats/skill-manifest.md), the literal
   `true` in the graph document. Since the catalogue prints each skill's `checks`
   just above, the prompt shows both verification formats in full and says to
   rewrite, not to copy. `prompt.test.ts` validates those examples against the
@@ -290,5 +290,5 @@ is the only file to adjust.
 | Forking a variant | It is born of a proposal with evidence (D13, t118), not of synthesis. |
 | Importing an external skill | That is D4's gate, with human review and contract derivation. Here the native registry is only read. |
 | Session telemetry (`sessao`/`evento`) | There is no `trabalho` and no execution to hang the session on. It arrives when there is a second consumer of the synthesis flow — the rule of two consumers. |
-| A multi-turn conversation with the copilot | One session only: resuming is outside `EngineAdapter` v0 ([`engine-adapter.md`](../formatos/engine-adapter.md)). Editing the draft is the next turn, and it belongs to the person. |
+| A multi-turn conversation with the copilot | One session only: resuming is outside `EngineAdapter` v0 ([`engine-adapter.md`](../formats/engine-adapter.md)). Editing the draft is the next turn, and it belongs to the person. |
 | A screen | CLI only, like the runner's other commands. |

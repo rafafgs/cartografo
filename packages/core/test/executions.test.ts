@@ -481,7 +481,7 @@ const MINIMAL_GRAPH = path.join(
   '..',
   '..',
   'schema',
-  'exemplos',
+  'examples',
   'graph-valid-minimal.json',
 );
 

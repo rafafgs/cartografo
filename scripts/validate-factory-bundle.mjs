@@ -5,10 +5,10 @@
  * manifests. This module checks the three things that make it a sound bundle
  * rather than a handful of JSON files in the same place:
  *
- * 1. **The graph is valid and sound** — delegated to `scripts/validar-grafo.mjs`
+ * 1. **The graph is valid and sound** — delegated to `scripts/validate-graph.mjs`
  *    (t96), which is where the four workflow-net rules live.
  * 2. **Each manifest validates against the format's schema** — t97's schema,
- *    `especificacoes/formatos/skill-manifest.schema.json`.
+ *    `specs/formats/skill-manifest.schema.json`.
  * 3. **Each pin closes** — for every graph node there is a manifest with the
  *    same `id` and the same `version`, and the recomputed hash of the content
  *    matches what the node's `skill_ref` pins (D4). It is this third check that
@@ -44,15 +44,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { validarGrafo } from './validar-grafo.mjs';
+import { validarGrafo } from './validate-graph.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The manifest format's schema (t97). It is the normative definition. */
 export const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
-  'especificacoes',
-  'formatos',
+  'specs',
+  'formats',
   'skill-manifest.schema.json',
 );
 
@@ -271,7 +271,7 @@ function canonicalize(value) {
 
 /**
  * Content hash of the manifest, by the procedure in
- * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
+ * `specs/formats/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions, budgets}`.
  *
  * What is left out (`id`, `version`, `description`, `origin`) is catalogue

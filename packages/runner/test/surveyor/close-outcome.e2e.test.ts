@@ -52,7 +52,7 @@ import { bootCore, resolvePins } from '@cartografo/test-support';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const SCRIPT_PATH = path.join(PACKAGE_ROOT, 'scripts', 'close-surveyor-outcome.mjs');
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 
 /** The round the hypothesis is closed against. */
 const EXECUTION_ID = 2850;

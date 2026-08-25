@@ -39,7 +39,7 @@
  *
  * No telemetry event is emitted ON THE SKILL. `skill` is not a member of the
  * taxonomy's `entidade.tipo` enum
- * (`especificacoes/eventos/schemas/envelope.schema.json`), and extending a
+ * (`specs/events/schemas/envelope.schema.json`), and extending a
  * versioned product format is a change of its own — that claim is unchanged.
  * What t283 added is an event about a DIFFERENT entity: registering a manifest
  * re-judges every `graph_version` that was waiting on it, and each one that

@@ -44,7 +44,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const SKILLS_DIR = path.join(
   REPO_ROOT,
-  'grafos-de-fabrica',
+  'factory-graphs',
   'desenvolvimento-de-software',
   'skills',
 );
@@ -110,7 +110,7 @@ test('AT2 — no adapter refuses alpha-test for a domain-scoped network any more
  * granting the gate write access to the checkout it judges, or changing the
  * codex policy — and the ficha's FR5 keeps that policy untouched, correctly.
  *
- * It is not a regression and not new: `grafos-de-fabrica/bets-assimetricas`
+ * It is not a regression and not new: `factory-graphs/bets-assimetricas`
  * already ships `coletar-fundamentos` with exactly this pair, and every node of
  * both factory graphs runs on the default engine, which is claude-code.
  *

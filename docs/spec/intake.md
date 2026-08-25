@@ -30,7 +30,7 @@ not when it is discarded. It is storage for work in progress, not an audit fact:
 the log only gains a row when a traveller actually comes into being. That is why
 the `intake_rascunho` projection can be updated in place without hurting the
 log's append-only rule
-([taxonomy](../../especificacoes/eventos/taxonomy.md)): nothing in it is
+([taxonomy](../../specs/events/taxonomy.md)): nothing in it is
 reconstructed from the log, because nothing of it was ever recorded there.
 
 The confirmation is a plural subresource (`/confirmations`, `/discards`) and not
@@ -69,7 +69,7 @@ comes back as `missing_required_field`, because `title` is the required one.
 The criteria intake writes are **preliminary**. What really produces them is
 factory graph 1's `refinar` node, whose contract takes `{ticket_id, pedido}` and
 returns `{especificacao, criterios_de_aceite, ...}`
-([`grafos-de-fabrica/desenvolvimento-de-software/grafo.json`](../../grafos-de-fabrica/desenvolvimento-de-software/grafo.json)).
+([`factory-graphs/desenvolvimento-de-software/grafo.json`](../../factory-graphs/desenvolvimento-de-software/grafo.json)).
 Demanding a complete acceptance criterion on the way in would be asking intake to
 do the graph's work.
 
@@ -161,7 +161,7 @@ CREATE TABLE job_dependency (
 ```
 
 Every edge also becomes a
-[`job.dependency_declared`](../../especificacoes/eventos/schemas/job.dependency_declared.schema.json)
+[`job.dependency_declared`](../../specs/events/schemas/job.dependency_declared.schema.json)
 event, the catalogue's 16th type:
 
 ```json

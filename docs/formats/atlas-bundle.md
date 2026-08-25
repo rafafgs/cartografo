@@ -61,7 +61,7 @@ Three rules, and nothing beyond them:
    exists.
 2. **Every subdirectory is a bundle**, in the shape
    [`docs/spec/graph.md`](../spec/graph.md) and
-   [`especificacoes/formatos/skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md)
+   [`specs/formats/skill-manifest.md`](../../specs/formats/skill-manifest.md)
    already define: one `grafo.json` and one `skills/` holding a manifest per
    file, whose name is the skill's `id`.
 3. **There is no index file, catalogue or atlas manifest.** The directory is the
@@ -69,12 +69,12 @@ Three rules, and nothing beyond them:
    out of date exactly when it matters — on a third party's contribution, which
    is the atlas's whole use case.
 
-That is why `grafos-de-fabrica/<class>/` in this repository and
+That is why `factory-graphs/<class>/` in this repository and
 `<atlas>/<class>/` in an atlas checkout are **the same thing**, and
 interchangeable inputs to the same command:
 
 ```sh
-cartografo import grafos-de-fabrica/desenvolvimento-de-software   # from here
+cartografo import factory-graphs/desenvolvimento-de-software   # from here
 cartografo import ../atlas/desenvolvimento-de-software            # from the atlas
 ```
 
@@ -109,7 +109,7 @@ network**:
 - `cartografo import` — redoes the three checks locally and aborts without
   sending anything to the control plane if any of them fails. The manifest check
   here covers the subset of schema rules the pin depends on, not the whole
-  schema: `especificacoes/` is outside the package's publishable tree, and full
+  schema: `specs/` is outside the package's publishable tree, and full
   conformance is still the reference validator's work;
 - the control plane's skill registry — recomputes the hash on its own account and
   refuses a tampered manifest, because whoever verifies cannot believe the
@@ -118,7 +118,7 @@ network**:
 **The round trip that closes the proof.** Publishing both factory graphs into a
 git repository, committing, cloning into a clean directory and importing the
 clone produces the **same `graph_version.id`** and the **same hash per skill** as
-importing `grafos-de-fabrica/<class>/` straight from here. That is what
+importing `factory-graphs/<class>/` straight from here. That is what
 [`packages/core/test/cli-atlas-publish.test.ts`](../../packages/core/test/cli-atlas-publish.test.ts)
 runs on every `npm test`; if the crossing moved one byte, the hash would move
 with it and the test would go red.

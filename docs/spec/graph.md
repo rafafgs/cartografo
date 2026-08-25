@@ -2,7 +2,7 @@
 
 **Format version:** 1.0.0 · **Schema:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json)
 (JSON Schema draft 2020-12, `$id: urn:cartografo:schema:grafo:1.0.0`)
-**Reference validator:** [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)
+**Reference validator:** [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs)
 
 The graph is **data, not code** (D15). This document specifies the format of that
 data: what a work graph declares, what each field means, and the four formal
@@ -248,7 +248,7 @@ inferring:
   what really ran.
 
 The complete example:
-[`graph-valid-two-engines.json`](../../schema/exemplos/graph-valid-two-engines.json).
+[`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json).
 
 ### `model`: which model of that engine executes this node
 
@@ -298,7 +298,7 @@ inferring:
   happens under the new version.
 
 The complete example:
-[`graph-valid-model.json`](../../schema/exemplos/graph-valid-model.json).
+[`graph-valid-model.json`](../../schema/examples/graph-valid-model.json).
 
 ### `escalation_policy`: when this node calls a person
 
@@ -360,7 +360,7 @@ purpose that there is no path of its own to change it — a second way of changi
 a node would have rules of its own about what is versioned.
 
 The complete example:
-[`graph-valid-escalation-never.json`](../../schema/exemplos/graph-valid-escalation-never.json).
+[`graph-valid-escalation-never.json`](../../schema/examples/graph-valid-escalation-never.json).
 The whole cycle is in [`human-escalation.md`](human-escalation.md).
 
 ### `escalation_recipient`: who ought to be called
@@ -644,7 +644,7 @@ the variants, never forced on them.
 ## 6. Soundness
 
 **Shape** validation is the JSON Schema. **Soundness** validation is semantic and
-lives in [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs), which
+lives in [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs), which
 exports two functions:
 
 ```js
@@ -664,10 +664,10 @@ formally verify the graphs the AI proposes"**.
 
 | Rule | What it demands | Reported target | Counterexample |
 |---|---|---|---|
-| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/exemplos/graph-invalid-unreachable-node.json) |
-| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/exemplos/graph-invalid-without-termination.json) |
-| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/exemplos/graph-invalid-edge-without-condition.json) |
-| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/exemplos/graph-invalid-node-without-contract.json) |
+| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/examples/graph-invalid-unreachable-node.json) |
+| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/examples/graph-invalid-without-termination.json) |
+| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/examples/graph-invalid-edge-without-condition.json) |
+| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/examples/graph-invalid-node-without-contract.json) |
 
 Reading notes:
 
@@ -685,7 +685,7 @@ Reading notes:
 Running it from the command line (it exits 1 if any document fails):
 
 ```
-node scripts/validar-grafo.mjs schema/exemplos/*.json
+node scripts/validate-graph.mjs schema/examples/*.json
 ```
 
 The tests are `node --test` (the repository still has no `package.json`, by
@@ -762,7 +762,7 @@ The three routes that write a graph version — `POST /v1/graphs`,
 `POST /v1/graphs/:id/fork` and `POST /v1/proposals/:id/apply` — each answer for
 the version they write, and the next subsection is how. The two DB-less
 reference validators
-([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs) and
+([`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs) and
 [`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs))
 do not carry this check: it needs a skill lookup, and they have none by design.
 
@@ -789,7 +789,7 @@ Registering a document and running work against it are two different promises,
 and until `t283` they were the same code path. `POST /v1/graphs` is permissive on
 purpose — a graph whose skills arrive afterwards is the ordinary case for the
 screen's editor, for a forked example and for every fixture in
-`schema/exemplos/` — so the check standing aside there is right. It stops being
+`schema/examples/` — so the check standing aside there is right. It stops being
 right the moment a job runs against that version, which is where D9's "contract
 is the common spine" has to hold. So the check's outcome is no longer only
 reported: it is **stored on the version**, and the gate moved to execution.
@@ -830,7 +830,7 @@ arriving, and a class whose skills are already registered never fires one.
 is really written — a same-hash reimport changes nothing) re-runs the whole check
 over every `unchecked` version that pins it, against the registry as it stands
 now. Each version that is re-judged records
-[`graph_version.contracts_checked`](../../especificacoes/eventos/taxonomy.md).
+[`graph_version.contracts_checked`](../../specs/events/taxonomy.md).
 It re-runs the WHOLE check and not just the one pin, because a version can be
 waiting on three manifests, and it may land on `failed`: resolving the last pin
 is what finally makes an `unproduced_input` real evidence instead of an artefact
@@ -869,7 +869,7 @@ What the format assumes of the rest of the system:
 
 Multi-graph and multi-file packaging — the atlas's layout, the publication step,
 the integrity check across the crossing — is in
-[`docs/formatos/atlas-bundle.md`](../formatos/atlas-bundle.md), which treats one
+[`docs/formats/atlas-bundle.md`](../formats/atlas-bundle.md), which treats one
 directory per class (`grafo.json` plus the manifests the nodes pin) and keeps the
 verification on the two hashes that already exist: the graph version's `id` and
 each node's `skill_ref.hash`. Here it ends at: one graph, one file,
@@ -879,19 +879,19 @@ self-contained.
 
 ## 8. Examples
 
-All of them in [`schema/exemplos/`](../../schema/exemplos/), all of them
+All of them in [`schema/examples/`](../../schema/examples/), all of them
 exercised by `tests/schema-grafo.test.mjs`.
 
 | File | What it is for |
 |---|---|
-| [`graph-valid-minimal.json`](../../schema/exemplos/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
-| [`graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json) | **The master example.** See below. |
-| [`graph-valid-two-engines.json`](../../schema/exemplos/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
+| [`graph-valid-minimal.json`](../../schema/examples/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
+| [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json) | **The master example.** See below. |
+| [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
 | `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
 
 ### The master example: flowpilot's flow
 
-[`graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json)
+[`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json)
 is flowpilot's software delivery flow expressed in this format, and it is
 **direct input to factory graph 1 (`t105`)**: the factory graph's ticket starts
 from this file instead of from a blank sheet. By D17 flowpilot is a behavioural

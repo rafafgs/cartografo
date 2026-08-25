@@ -13,7 +13,7 @@
  * It runs AFTER the worktree is acquired and the caller keeps it there, which is
  * why `workingDir` is a parameter and not something this module could find out:
  * the directory a session runs in is its entire write scope
- * (`docs/formatos/engine-adapter.md`, invariant 7), and a module that could
+ * (`docs/formats/engine-adapter.md`, invariant 7), and a module that could
  * choose one would be a second place able to choose one.
  *
  * **The conditional spreads are the content of this file.** `model`,
@@ -55,7 +55,7 @@ export interface SessionSpecConfig {
  * answered for it. That second block is what keeps a re-dispatch from asking the
  * same thing forever: engine-native resume is out of scope for the v0 adapter,
  * so "resuming" is always a fresh session that was told what happened
- * (`docs/formatos/engine-adapter.md`, "Fora de escopo (v0)").
+ * (`docs/formats/engine-adapter.md`, "Fora de escopo (v0)").
  *
  * The answered questions are fetched for every work and filtered down to this
  * one here rather than in the query: `GET /v1/input-requests` takes a `status`

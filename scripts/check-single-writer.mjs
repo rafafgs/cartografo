@@ -13,7 +13,7 @@
  *   `packages/core` declares the driver as a dependency. A package that may not
  *   import the driver has no reason to install it either.
  *
- * Same shape as `scripts/validar-grafo.mjs`: exported function plus a CLI, zero
+ * Same shape as `scripts/validate-graph.mjs`: exported function plus a CLI, zero
  * dependencies, no fatal error on a malformed file — the report comes out
  * whole, not at the first problem.
  *

@@ -5,7 +5,7 @@
  * reason: the seam is the command construction, the fake engine stands in for
  * the real binary, and what is asserted is **what the process received** —
  * never what was assembled into the `SessionSpec`, which would be testing the
- * test (`docs/formatos/engine-adapter.md`, case C2's forbidden assertion).
+ * test (`docs/formats/engine-adapter.md`, case C2's forbidden assertion).
  *
  * The two halves of the claim:
  *
@@ -207,7 +207,8 @@ test('the derrubar-tese policy — no writes, no network — reaches the engine 
   const listener = collector();
 
   try {
-    // `grafos-de-fabrica/bets-assimetricas/skills/derrubar-tese.json` declares
+    // `factory-graphs/bets-assimetricas/skills/red-team-thesis.json` — the skill
+    // this test still calls by the name t280 retired, `derrubar-tese` — declares
     // exactly this: `filesystem.write: []` and `network.allowed: false`. It is
     // the acceptance criterion of the ficha made concrete — a real factory
     // skill dispatched to a `codex` node.

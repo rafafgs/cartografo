@@ -45,7 +45,7 @@ export const GROUPS = Object.freeze([
     args: [
       '--test',
       'tests/**/*.test.mjs',
-      'especificacoes/**/*.test.mjs',
+      'specs/**/*.test.mjs',
       'scripts/**/*.test.mjs',
     ],
   }),

@@ -25,7 +25,7 @@
  * `finished_at` to reproduce and an absence to respect.
  *
  * The reducer's own state keys are English since t300, which translated
- * `especificacoes/**` under D24. They were Portuguese when t127 wrote this file
+ * `specs/**` under D24. They were Portuguese when t127 wrote this file
  * and were left alone then, as outside that ticket's rename scope (t127, FR8).
  */
 
@@ -51,7 +51,7 @@ import {
 } from './support.ts';
 
 /** The reducer lives in the specification, outside the package — it is the reference, not core code. */
-const REDUCER = '../../../especificacoes/eventos/reducers/reconstruct-state.mjs';
+const REDUCER = '../../../specs/events/reducers/reconstruct-state.mjs';
 
 /** The graph document every flow in this file starts from. */
 const MINIMAL_EXAMPLE = path.join(
@@ -59,7 +59,7 @@ const MINIMAL_EXAMPLE = path.join(
   '..',
   '..',
   'schema',
-  'exemplos',
+  'examples',
   'graph-valid-minimal.json',
 );
 

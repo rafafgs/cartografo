@@ -5,7 +5,7 @@
  * NOT a CI test, and it must not become one — same division `spike-real-session.mjs`
  * set up for the first adapter. The suite runs against the fake engine precisely
  * so it does not depend on an installed binary, credentials or network
- * (`docs/formatos/engine-adapter.md:363-366`); this proof is the manual gate on
+ * (`docs/formats/engine-adapter.md:363-366`); this proof is the manual gate on
  * the other side, the half the kit cannot prove because it has no real CLI.
  *
  * What it demonstrates, end to end:
@@ -13,7 +13,7 @@
  * 1. `verifyCli()` finds the real CLI and reports the version.
  * 2. A session runs in a disposable git repository, with `instructions` coming
  *    from the same "fazer" skill manifest the first adapter's proof used
- *    (`especificacoes/formatos/exemplos/skill-manifest.develop.json`) — the
+ *    (`specs/formats/examples/skill-manifest.develop.json`) — the
  *    closest stand-in for "skill coming from the database" available today.
  * 3. The session actually WORKED — the file the prompt asked for is in the
  *    workdir. Without that, "it exited with 0" proves nothing.
@@ -86,8 +86,8 @@ const Ajv2020 = AjvModule.default ?? AjvModule;
 const addFormats = formatsModule.default ?? formatsModule;
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
-const MANIFEST = join(REPO_ROOT, 'especificacoes/formatos/exemplos/skill-manifest.develop.json');
+const SCHEMAS_DIR = join(REPO_ROOT, 'specs/events/schemas');
+const MANIFEST = join(REPO_ROOT, 'specs/formats/examples/skill-manifest.develop.json');
 
 const REQUESTED_FILE = 'PROVA-T119.md';
 const PHRASE = 'sessao real do EngineAdapter do Codex';

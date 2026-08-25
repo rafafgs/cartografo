@@ -7,7 +7,7 @@
 **State: content, not format.** This ticket (`t116`) designs no new format: it
 applies the two already settled — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
-([`especificacoes/formatos/skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md),
+([`specs/formats/skill-manifest.md`](../../specs/formats/skill-manifest.md),
 `t97`) — to a problem class that is not software. It is the direct pair of
 [factory graph 1](../desenvolvimento-de-software/README.md) (`t105`), and the
 second consumer the rule of two consumers asked for
@@ -165,7 +165,7 @@ node ../../scripts/validate-factory-bundle.mjs .
 
 # cross-check of the manifest format, with a third-party validator
 npx --yes ajv-cli@5 validate \
-  -s ../../especificacoes/formatos/skill-manifest.schema.json \
+  -s ../../specs/formats/skill-manifest.schema.json \
   -d './skills/*.json' --spec=draft2020
 ```
 
@@ -178,18 +178,18 @@ node's `skill_ref` pins (D4).
 This bundle's acceptance tests are in
 [`tests/factory-graph-2.test.mjs`](../../tests/factory-graph-2.test.mjs)
 (`node --test`), with the crossing fixture in
-[`tests/fixtures/tese-exemplo-bets-assimetricas.json`](../../tests/fixtures/tese-exemplo-bets-assimetricas.json).
+[`tests/fixtures/bets-asymmetric-thesis-example.json`](../../tests/fixtures/bets-asymmetric-thesis-example.json).
 
 ## Directory convention
 
-`grafos-de-fabrica/<class>/` is the shape of the bundle, named from the
+`factory-graphs/<class>/` is the shape of the bundle, named from the
 document's `problem_class` string (D8) — the same note as bundle 1. It is also
 the shape of the atlas, one subdirectory per class, specified in
-[`docs/formatos/atlas-bundle.md`](../../docs/formatos/atlas-bundle.md) (v0, not
+[`docs/formats/atlas-bundle.md`](../../docs/formats/atlas-bundle.md) (v0, not
 frozen). Publishing this map into an atlas is copying it there once validated:
 
 ```sh
-node scripts/publish-atlas-bundle.mjs grafos-de-fabrica/bets-assimetricas ../atlas
+node scripts/publish-atlas-bundle.mjs factory-graphs/bets-assimetricas ../atlas
 ```
 
 The two factory maps live in the same atlas without touching each other — it is

@@ -139,7 +139,7 @@ export function documentsInScope() {
     'README.md',
     'DECISIONS.md',
     'docs/o-que-e-o-cartografo.md',
-    ...under('docs/formatos'),
+    ...under('docs/formats'),
     ...under('docs/spec'),
   ];
 }
@@ -199,7 +199,7 @@ test('AT1 — the gate reads the whole reader-facing set, and only the glossary 
   }
 
   assert.ok(
-    documents.some((entry) => entry.startsWith('docs/formatos/')),
+    documents.some((entry) => entry.startsWith('docs/formats/')),
     'no format document is swept; the directory read is not resolving',
   );
 

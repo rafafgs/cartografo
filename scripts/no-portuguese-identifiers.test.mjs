@@ -4,12 +4,12 @@
  * Port of `packages/core/test/no-portuguese-identifiers.test.ts`, with one
  * addition the core original does not need: a list of frozen EXPORT names.
  *
- * ## Why `validar-grafo.mjs` keeps four names, and nothing else
+ * ## Why `validate-graph.mjs` keeps four names, and nothing else
  *
- * `packages/core/test/domain-graph.test.ts` imports `scripts/validar-grafo.mjs`
+ * `packages/core/test/domain-graph.test.ts` imports `scripts/validate-graph.mjs`
  * BY PATH, destructures it by the names `validarEstrutura` / `validarSoundness`,
  * and `deepEqual`s its report against `packages/core/src/domain/graph.ts` on
- * every fixture in `schema/exemplos/`. Renaming one of those four exports turns
+ * every fixture in `schema/examples/`. Renaming one of those four exports turns
  * core's suite red without a line of core changing, so they are masked here —
  * moving them is `scripts/`' own D18 identifier migration, and that ticket does
  * not exist yet.
@@ -47,7 +47,7 @@ const FORBIDDEN = Object.freeze([
   { bare: ['manifesto', 'documento'], camel: ['Manifesto', 'Documento'] },
   { bare: ['versao', 'versoes'], camel: ['Versao'] },
 
-  // Report vocabulary (English since t230, `validar-grafo.mjs` included).
+  // Report vocabulary (English since t230, `validate-graph.mjs` included).
   { bare: ['valido', 'validos'], camel: ['Valido'] },
   { bare: ['violacao', 'violacoes'], camel: ['Violacao', 'Violacoes'] },
   { bare: ['regra', 'regras'], camel: ['Regra', 'Regras'] },
@@ -409,11 +409,11 @@ const RENAMED_AWAY = Object.freeze(['validar-bundle-fabrica.mjs']);
 /**
  * File names that stay in Portuguese on purpose, each pinned from outside.
  *
- * `validar-grafo.mjs` is imported by path from
+ * `validate-graph.mjs` is imported by path from
  * `packages/core/test/domain-graph.test.ts`; `check-single-writer.mjs` is
  * spawned by path from three packages' `no-privileged-access.test.ts`.
  */
-const FROZEN_FILE_NAMES = Object.freeze(['validar-grafo.mjs', 'check-single-writer.mjs']);
+const FROZEN_FILE_NAMES = Object.freeze(['validate-graph.mjs', 'check-single-writer.mjs']);
 
 test('AC1 — no Portuguese identifier survives in scripts/*.mjs', () => {
   const files = scannedFiles();
@@ -438,11 +438,11 @@ test('AC1 — no script file name is in Portuguese, bar the two pinned from outs
   }
 });
 
-test('exception 5 — validar-grafo.mjs keeps the four names core pins, and nothing more', async () => {
-  const source = readFileSync(path.join(SCRIPTS_DIR, 'validar-grafo.mjs'), 'utf8');
+test('exception 5 — validate-graph.mjs keeps the four names core pins, and nothing more', async () => {
+  const source = readFileSync(path.join(SCRIPTS_DIR, 'validate-graph.mjs'), 'utf8');
 
   // The four exports `packages/core/test/domain-graph.test.ts` imports by name.
-  const validator = await import('./validar-grafo.mjs');
+  const validator = await import('./validate-graph.mjs');
   for (const exported of ['validarEstrutura', 'validarSoundness', 'validarGrafo', 'carregarGrafo']) {
     assert.equal(typeof validator[exported], 'function', `${exported} is pinned by core's suite`);
   }
@@ -502,7 +502,7 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     'export class ValidationError extends Error { readonly errors = []; }',
     'const half = total / 1000;',
     // the pinned export names, at the call site that imports them
-    "import { validarGrafo } from './validar-grafo.mjs';",
+    "import { validarGrafo } from './validate-graph.mjs';",
     'const report = validarGrafo(carregarGrafo(filePath));',
     // a backticked frozen name inside English prose
     '/** `validarEstrutura` is pinned by core; its `valido` / `erros` report is not. */',

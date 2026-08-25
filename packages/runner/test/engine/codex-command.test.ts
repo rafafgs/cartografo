@@ -3,7 +3,7 @@
  *
  * The normative rule these tests protect is the same one `command.test.ts`
  * protects for the `claude` CLI — "the caller never concatenates the two fields"
- * (`docs/formatos/engine-adapter.md:114-149`) — and the correct reading of it
+ * (`docs/formats/engine-adapter.md:114-149`) — and the correct reading of it
  * lands on the OPPOSITE mechanism here. `codex exec` has no system-prompt flag
  * (`engine-adapter.md:122, 405`), so the injection that satisfies the rule is
  * the composition the specification itself exports for exactly this case,

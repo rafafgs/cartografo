@@ -98,7 +98,7 @@ Reading notes:
   only `manual` and `proposal` happen; the value exists because origin is a fact
   about the data, not about the phase.
 - **The column names copy the event schemas literally**, as already specified in
-  [`especificacoes/eventos/schemas/`](../../especificacoes/eventos/schemas)
+  [`specs/events/schemas/`](../../specs/events/schemas)
   (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). That is what
   made the emission `t196` switched on a direct mapping and not a translation:
   every path that writes a version records `graph_version.registered` and —
@@ -125,7 +125,7 @@ id = "sha256:" + sha256( JSON.stringify( canonicalizar( documento ) ) )
 Two deliberate consequences:
 
 1. **It covers the whole document**, unlike the skill manifest's hash
-   ([`skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md)),
+   ([`skill-manifest.md`](../../specs/formats/skill-manifest.md)),
    which covers only `{instrucoes, entrada, saida, checks, permissoes}`. There,
    catalogue metadata must not invalidate the pin; here the opposite holds — a
    version's snapshot **is** the whole document ([`graph.md` §7](graph.md)), and
@@ -284,9 +284,9 @@ proposal — goes through the same pair of checks, which is the TypeScript port 
   `termina`, `aresta_com_condicao`, `no_com_contrato` (`{valido, violacoes}`).
 
 The report returned in the `422` is exactly
-[`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)'s — the same
+[`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs)'s — the same
 codes, the same targets, the same order. The parity between the two validators is
-locked down by a test over every fixture in `schema/exemplos/`
+locked down by a test over every fixture in `schema/examples/`
 ([`test/dominio-grafo.test.ts`](../../packages/core/test/dominio-grafo.test.ts)):
 the script lives outside the package's publishable tree, so the duplication is
 deliberate — and watched.
@@ -310,7 +310,7 @@ create `graph` → create `graph_version` (`parent_version: null`,
 `source: "manual"`) → point `current_version_id` at it.
 
 Registering does **not** move the pointer
-([`taxonomy.md`](../../especificacoes/eventos/taxonomy.md)) — except here, in
+([`taxonomy.md`](../../specs/events/taxonomy.md)) — except here, in
 the bootstrap of a new lineage, because there is no earlier "current" to preserve
 and a lineage with no pointer would be a graph that exists without holding.
 
@@ -403,7 +403,7 @@ topografo, not rubbish.
 `graph_version` and stays listed in the history — append-only has no exception.
 
 `motivo` is **mandatory**, mirroring the `data.reason` of the
-[`graph_version.reverted`](../../especificacoes/eventos/schemas/graph_version.reverted.schema.json)
+[`graph_version.reverted`](../../specs/events/schemas/graph_version.reverted.schema.json)
 event — which since `t196` is really written, with `entity.id` on the abandoned
 version: it is the evidence the topografo will cross with that version's
 telemetry. Reverting without saying why loses the useful half of the fact.

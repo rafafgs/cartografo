@@ -12,7 +12,7 @@
  * The control plane is the real binary as a child process, same harness shape
  * as `test/controller/dispatch-and-lease.e2e.test.ts`. The engine is the fake
  * one, reached through the `engineFactory` seam — the same division
- * `docs/formatos/engine-adapter.md:363-366` records and that
+ * `docs/formats/engine-adapter.md:363-366` records and that
  * `scripts/spike-two-engine-traversal.mjs` draws for the real CLIs: the suite
  * must not depend on an installed, authenticated binary.
  *
@@ -81,7 +81,7 @@ import type {
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GRAPH_FIXTURE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-two-engines.json');
+const GRAPH_FIXTURE = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-two-engines.json');
 const SKILL_FIXTURE = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-travessia-fazer.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
@@ -107,7 +107,7 @@ function canonical(value: unknown): unknown {
  *
  * `packages/runner` declares no dependency on `packages/core` — it is an HTTP
  * client of the public API and nothing more (D1, D11) — so the six-field
- * procedure of `especificacoes/formatos/skill-manifest.md` is written out. It
+ * procedure of `specs/formats/skill-manifest.md` is written out. It
  * is the same reason `packages/core/test/skill-routes.test.ts` writes it out:
  * a hash the test asks the implementation for proves nothing about the pin.
  */

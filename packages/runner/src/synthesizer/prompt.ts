@@ -74,7 +74,7 @@ export type VerificationExample = Readonly<Record<string, unknown>>;
  * the skill catalogue, printing each skill's `checks` — and a manifest's check
  * is NOT a graph document's check. They disagree on
  * `required_evidence`, which is a non-empty list of the artifacts the
- * verdict has to cite in `especificacoes/formatos/skill-manifest.schema.json`
+ * verdict has to cite in `specs/formats/skill-manifest.schema.json`
  * and the literal `true` in `schema/grafo.schema.json`. Tell a session "every
  * node needs a check" with only manifest-shaped checks in front of it and it
  * copies one across, which trades the failure t138 reported for a different one
@@ -102,7 +102,7 @@ export const VERIFICATION_EXAMPLES: readonly VerificationExample[] = Object.free
  *
  * Separate from the prompt because the `EngineAdapter` contract is explicit
  * that the two are never concatenated by the caller
- * (`docs/formatos/engine-adapter.md`): what is stable across every synthesis
+ * (`docs/formats/engine-adapter.md`): what is stable across every synthesis
  * belongs here, what is specific to this declaration belongs in the prompt.
  */
 export const SYNTHESIS_INSTRUCTIONS = [

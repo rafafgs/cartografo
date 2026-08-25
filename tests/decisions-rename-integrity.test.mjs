@@ -96,7 +96,7 @@ export const SPEC_DOCUMENTS = Object.freeze([
   'webhooks-events.md',
 ]);
 
-/** The documents under `docs/formatos/`, both of which were already English. */
+/** The documents under `docs/formats/`, both of which were already English. */
 export const FORMAT_DOCUMENTS = Object.freeze(['atlas-bundle.md', 'engine-adapter.md']);
 
 /** The Portuguese names the rename retires, none of which may come back. */
@@ -197,9 +197,9 @@ test('AT4 — the specifications carry the names the rename table gave them', ()
 });
 
 test('AT4 — the format documents keep the English names they were born with', () => {
-  const present = readdirSync(path.join(ROOT, 'docs', 'formatos'))
+  const present = readdirSync(path.join(ROOT, 'docs', 'formats'))
     .filter((entry) => entry.endsWith('.md'))
     .sort();
 
-  assert.deepEqual(present, [...FORMAT_DOCUMENTS], 'docs/formatos/ is not the set FR3 declares');
+  assert.deepEqual(present, [...FORMAT_DOCUMENTS], 'docs/formats/ is not the set FR3 declares');
 });

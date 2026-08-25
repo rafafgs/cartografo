@@ -11,9 +11,9 @@
  * The four rule names are the control plane's (`RULES` in
  * `packages/core/src/domain/graph.ts`), and the last test here is what stops
  * this mapping from drifting away from them: the counterexamples in
- * `schema/exemplos/` — at least four, one per soundness rule, plus however many
+ * `schema/examples/` — at least four, one per soundness rule, plus however many
  * fail only structurally — go through the repository's reference validator
- * (`scripts/validar-grafo.mjs`, the same one `domain-graph.test.ts` holds the
+ * (`scripts/validate-graph.mjs`, the same one `domain-graph.test.ts` holds the
  * core against) and every problem they produce has to come out as a line of its
  * own: a violation naming its `target`, a structure error carrying the `message`
  * the core wrote. A fifth rule, or a renamed one, fails here; a counterexample
@@ -34,7 +34,7 @@ import test from 'node:test';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MODULE_PATH = path.join(PACKAGE_ROOT, 'src', 'public', 'graph-soundness.js');
-const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
+const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
 
 /**
  * The module's own fallback for a structure error that arrives with no
@@ -58,7 +58,7 @@ const UNDECLARED_STRUCTURE_LINE = 'problema de estrutura sem mensagem declarada'
  * is read out of the namespace by a string, which the sweep masks like any
  * other literal.
  */
-const REFERENCE_VALIDATOR = new URL('../../../scripts/validar-grafo.mjs', import.meta.url).href;
+const REFERENCE_VALIDATOR = new URL('../../../scripts/validate-graph.mjs', import.meta.url).href;
 const REFERENCE_EXPORT = 'validarGrafo';
 
 /** A violated rule, as the 422 carries it. */

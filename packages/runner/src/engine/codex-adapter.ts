@@ -6,7 +6,7 @@
  * (`notas/2026-08-14-extension-and-quality.md:58-64`): "no extension point is
  * frozen before two real consumers exist". The feasibility review of t99 chose
  * this CLI "for the structural likeness to Claude Code's `stream-json`"
- * (`docs/formatos/engine-adapter.md:378-395`) and measured it method by method
+ * (`docs/formats/engine-adapter.md:378-395`) and measured it method by method
  * against `codex-cli 0.147.0`; this file is that analysis cashed in.
  *
  * The process lifecycle is DELIBERATELY DUPLICATED from `claude-code-adapter.ts`
@@ -238,7 +238,7 @@ export class CodexAdapter implements EngineAdapter {
    * what the shared abstraction should look like. The stub is what lets
    * `#finish` drop everything else while invariant 3 of the frozen contract —
    * "getStatus só devolve status terminal depois que onFinished correu"
-   * (`docs/formatos/engine-adapter.md:778`) — keeps answering, for this adapter's
+   * (`docs/formats/engine-adapter.md:778`) — keeps answering, for this adapter's
    * run of C1, C3, C8 and C9 as much as for the other's.
    *
    * It grows by one short string per session this process ever dispatched, which

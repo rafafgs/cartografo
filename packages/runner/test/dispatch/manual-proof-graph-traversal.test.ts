@@ -3,7 +3,7 @@
  *
  * `scripts/spike-graph-traversal.mjs` is the half of this ficha the suite cannot
  * run: it needs an authenticated `claude` binary and spends real quota, which is
- * exactly why it is not a CI test (`docs/formatos/engine-adapter.md`). What a
+ * exactly why it is not a CI test (`docs/formats/engine-adapter.md`). What a
  * sweep CAN prove is the set of invariants that make it a proof rather than a
  * script — that it exists, that no call in it reaches the control plane
  * anonymously, and that the graph and the skills it registers are the ones
@@ -28,8 +28,8 @@ const SPIKE_PATH = path.join(PACKAGE_ROOT, 'scripts', 'spike-graph-traversal.mjs
 /**
  * The factory graph the proof crosses, and the directory its skills live in.
  *
- * `grafos-de-fabrica/desenvolvimento-de-software` and not
- * `schema/exemplos/graph-valid-flowpilot.json`: the two are the same flowpilot
+ * `factory-graphs/desenvolvimento-de-software` and not
+ * `schema/examples/graph-valid-flowpilot.json`: the two are the same flowpilot
  * port, but only this one can actually be registered end to end — the schema
  * example's `skill_ref.id`s are namespaced (`cartografo/refinar-ticket`) and the
  * skill registry's ids are kebab-case with no slash
@@ -38,7 +38,7 @@ const SPIKE_PATH = path.join(PACKAGE_ROOT, 'scripts', 'spike-graph-traversal.mjs
  */
 const GRAPH_PATH = path.join(
   REPO_ROOT,
-  'grafos-de-fabrica',
+  'factory-graphs',
   'desenvolvimento-de-software',
   'grafo.json',
 );
@@ -91,7 +91,7 @@ test('AT22 — the proof registers the committed factory graph and its committed
   const source = read(SPIKE_PATH);
 
   assert.ok(
-    source.includes('grafos-de-fabrica') && source.includes('desenvolvimento-de-software'),
+    source.includes('factory-graphs') && source.includes('desenvolvimento-de-software'),
     'the proof has to register the graph this repository ships, not one written inside it',
   );
   assert.ok(

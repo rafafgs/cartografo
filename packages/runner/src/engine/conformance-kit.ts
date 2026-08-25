@@ -1,10 +1,10 @@
 /**
  * EngineAdapter conformance kit — the ten C1–C10 cases of the table in
- * `docs/formatos/engine-adapter.md`, as `node:test` tests parameterized by any
+ * `docs/formats/engine-adapter.md`, as `node:test` tests parameterized by any
  * implementation of the interface.
  *
  * "This is the suite a third-party adapter has to pass to get in"
- * (`docs/formatos/engine-adapter.md:342-346`). That is why it lives in `src/`
+ * (`docs/formats/engine-adapter.md:342-346`). That is why it lives in `src/`
  * and not in `test/`: it is a published artifact of the package, consumed by
  * the Codex adapter (t119) and by whoever plugs in a new CLI, not a private
  * test of this repository.

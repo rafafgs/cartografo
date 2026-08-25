@@ -23,7 +23,7 @@
  *
  * The engine is the fake one, for the reason the conformance kit records: CI has
  * to be deterministic and must not depend on an installed, authenticated CLI
- * (`docs/formatos/engine-adapter.md:363-366`). What is under test is the
+ * (`docs/formats/engine-adapter.md:363-366`). What is under test is the
  * ADAPTER's reading of a frame, and the frame is fixture material either way.
  *
  * English per D18.

@@ -44,7 +44,7 @@ import { bootCore, resolvePins, type TestHook } from '@cartografo/test-support';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'topografo.mjs');
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 const FAKE_ENGINE = path.join(
   REPO_ROOT,
   'packages',

@@ -1,7 +1,7 @@
 /**
  * The software factory bundle, crossed LIVE (t259, AT6).
  *
- * `grafos-de-fabrica/desenvolvimento-de-software` has been contract-proven
+ * `factory-graphs/desenvolvimento-de-software` has been contract-proven
  * since t176 — the graph is sound, every manifest validates, every pin closes —
  * and it had never been dispatched. The first thing that tried found that not
  * one of its five nodes could open a session: the manifests read
@@ -66,7 +66,7 @@ import { buildCommand } from '../../src/engine/command.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');
+const BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'desenvolvimento-de-software');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 /** The execution this crossing's telemetry lands in. */
@@ -615,7 +615,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
  * `no-portuguese-wire.test.ts` and `no-portuguese-identifiers.test.ts` MASK
  * comments on purpose — prose about a name is documentation and not the name,
  * and explaining a rename means writing both sides of it down — while
- * `tests/no-portuguese-factory-bundles.test.mjs` reads `grafos-de-fabrica/**`
+ * `tests/no-portuguese-factory-bundles.test.mjs` reads `factory-graphs/**`
  * and nothing else. A doc comment in THIS file naming a key the rename retired
  * is invisible to all three, which is how one survived the translation and a
  * second one survived beside it, four lines from an assertion that reads the

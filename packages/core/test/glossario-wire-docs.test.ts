@@ -44,7 +44,7 @@
  *
  * ## The second sweep: links that go nowhere
  *
- * t227 renamed `especificacoes/eventos/schemas/` along with the taxonomy, and
+ * t227 renamed `specs/events/schemas/` along with the taxonomy, and
  * every specification that linked to `pergunta.criada.schema.json` kept the old
  * path. A citation gate would never catch it: the link TARGET is not a backtick
  * span, and a reader only finds out by clicking. So the target is resolved
@@ -86,7 +86,7 @@ const SELECTIONS: readonly Selection[] = Object.freeze([
 ]);
 
 /** Where the event schemas live, and the only link target this gate resolves. */
-const SCHEMA_DIR = path.join('especificacoes', 'eventos', 'schemas');
+const SCHEMA_DIR = path.join('specs', 'events', 'schemas');
 
 /** A Portuguese name the wire retired, with where the glossary says so. */
 interface Term {
@@ -315,9 +315,9 @@ function markdownUnder(relative: string): string[] {
 function sweptDocuments(): string[] {
   return [
     ...markdownUnder(path.join('docs', 'spec')),
-    ...markdownUnder(path.join('docs', 'formatos')),
+    ...markdownUnder(path.join('docs', 'formats')),
     path.join('docs', 'o-que-e-o-cartografo.md'),
-    ...markdownUnder('especificacoes'),
+    ...markdownUnder('specs'),
   ].filter((relative) => !NOT_SWEPT.includes(relative));
 }
 
@@ -356,7 +356,7 @@ test('FR1 — the sweep bites on a Portuguese citation planted in a fixture docu
     '```',
     '',
     'Responder é `PATCH /v1/perguntas/:id/resposta`, e o schema é',
-    '[`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json).',
+    '[`lease.concedida`](../../specs/events/schemas/lease.concedida.schema.json).',
     '',
     'A taxonomia também declara `grafo_versao.*`, que ninguém grava ainda.',
   ].join('\n');
@@ -388,7 +388,7 @@ test('FR1 — the sweep does NOT bite on the English, nor on prose that only loo
     'A migração é `0003_trabalho_sessao_evento_pergunta.sql`, e a lease é `0004_runner_lease.sql`.',
     // A whole family cited at once, in the two spellings that did not change.
     'A taxonomia declara `lease.*` e `graph_version.*`, que ninguém grava ainda.',
-    'O bundle mora em `grafos-de-fabrica/desenvolvimento-de-software`.',
+    'O bundle mora em `factory-graphs/desenvolvimento-de-software`.',
     'O corpo carrega `job_id` e `depends_on_job_id`, nunca `/trabalhos`… bem, veja abaixo.',
     // A longer flag whose stem is a retired one, and the retired one's English.
     'O comando aceita `--classes-file` e `--class`, nunca as duas juntas.',
@@ -424,7 +424,7 @@ test('FR2 — the link sweep tells a renamed schema from one that is really ther
 
   assert.deepEqual(
     deadSchemaLinks(
-      '[`pergunta.criada`](../../especificacoes/eventos/schemas/pergunta.criada.schema.json)',
+      '[`pergunta.criada`](../../specs/events/schemas/pergunta.criada.schema.json)',
       directory,
     ).length,
     1,
@@ -432,7 +432,7 @@ test('FR2 — the link sweep tells a renamed schema from one that is really ther
   );
   assert.deepEqual(
     deadSchemaLinks(
-      '[`input_request.created`](../../especificacoes/eventos/schemas/input_request.created.schema.json)',
+      '[`input_request.created`](../../specs/events/schemas/input_request.created.schema.json)',
       directory,
     ),
     [],

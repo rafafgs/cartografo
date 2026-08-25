@@ -17,7 +17,7 @@
  *   that really holds today — the same reasoning `packages/core/test/intake-routes.test.ts`
  *   records;
  * - the engine stays fake (deterministic, no installed CLI, no authentication:
- *   `docs/formatos/engine-adapter.md:363-366`), because the model's judgement is
+ *   `docs/formats/engine-adapter.md:363-366`), because the model's judgement is
  *   the one thing no test can assert about anyway.
  *
  * The claim that matters most is the last one: the draft this command lands is
@@ -59,7 +59,7 @@ const CLI_PATH = path.join(PACKAGE_ROOT, 'src', 'intake', 'cli.mjs');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 const FACTORY_GRAPH = path.join(
   REPO_ROOT,
-  'grafos-de-fabrica',
+  'factory-graphs',
   'desenvolvimento-de-software',
   'grafo.json',
 );

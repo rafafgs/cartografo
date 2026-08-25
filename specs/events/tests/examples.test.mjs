@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 const SCHEMAS_DIR = fileURLToPath(new URL('../schemas/', import.meta.url));
-const LOG = fileURLToPath(new URL('../exemplos/example-log.jsonl', import.meta.url));
+const LOG = fileURLToPath(new URL('../examples/example-log.jsonl', import.meta.url));
 
 const ENVELOPE = 'envelope.schema.json';
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;

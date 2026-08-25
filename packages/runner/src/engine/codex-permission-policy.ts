@@ -153,7 +153,7 @@ function readFilesystem(filesystem: SessionPermissions['filesystem']): Axis {
  *
  * A closed network IGNORES `dominios`, which is the manifest format's own rule
  * ("`rede.permitido: false` closes the network; `dominios` is ignored in that
- * case", `especificacoes/formatos/skill-manifest.md`). Refusing there would
+ * case", `specs/formats/skill-manifest.md`). Refusing there would
  * turn the safest declaration into an error.
  */
 function readNetwork(network: SessionPermissions['network']): Axis {

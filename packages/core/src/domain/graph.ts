@@ -1,7 +1,7 @@
 /**
  * Graph document validation inside the control plane (t101, FR2).
  *
- * A typed port of `scripts/validar-grafo.mjs` (t96). The script is the
+ * A typed port of `scripts/validate-graph.mjs` (t96). The script is the
  * repository's reference validator, but it lives outside the package's
  * publishable tree (`files` in `package.json`): the core cannot import it without
  * dragging along a dependency `npm pack` does not package. That is why the two
@@ -114,7 +114,7 @@ export interface GraphHookDestination {
    * because `POST /v1/graphs` compiles no ajv against `grafo.schema.json`.
    *
    * What is still deliberately NOT done here is RESOLVING it: that pass is pure
-   * and DB-free, in byte-for-byte parity with `scripts/validar-grafo.mjs`, and a
+   * and DB-free, in byte-for-byte parity with `scripts/validate-graph.mjs`, and a
    * check that consulted a database would break the contract for one sibling
    * and not the other. The CHARSET is the schema's job, as it always was.
    */

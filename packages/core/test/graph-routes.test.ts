@@ -15,7 +15,7 @@
  * The `structure`/`soundness` report riding inside the 422 speaks English too
  * since t230 — D20's fifth child, `docs/spec/glossario-wire.md` §5.3/5.4 — and
  * the assertions on it are the pin. It moved as one unit with
- * `scripts/validar-grafo.mjs`, because `domain-graph.test.ts` `deepEqual`s the
+ * `scripts/validate-graph.mjs`, because `domain-graph.test.ts` `deepEqual`s the
  * two reports against each other.
  */
 
@@ -36,10 +36,10 @@ import { authorizeGlobalFetch } from './authorized-fetch.ts';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
-const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
+const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
 const FACTORY_GRAPH = path.join(
   REPO_ROOT,
-  'grafos-de-fabrica',
+  'factory-graphs',
   'desenvolvimento-de-software',
   'grafo.json',
 );
@@ -245,7 +245,7 @@ test('AT9 — a graph that breaks soundness returns 422 with the validator repor
   assert.deepEqual(
     body.soundness.violations,
     [{ rule: 'reachable', target: 'revisar_lote' }],
-    'the report has to be the same one as scripts/validar-grafo.mjs',
+    'the report has to be the same one as scripts/validate-graph.mjs',
   );
 
   // Nothing was written: a graph that fails the gate does not become a lineage.

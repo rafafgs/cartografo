@@ -10,7 +10,7 @@
  * the real skill registry and the real graph version. The engine is the fake one
  * for the reason the conformance kit already records: CI must be deterministic
  * and must not depend on an installed, authenticated CLI
- * (`docs/formatos/engine-adapter.md`). The other half of the proof — real
+ * (`docs/formats/engine-adapter.md`). The other half of the proof — real
  * sessions crossing a real factory graph — is the manual spike
  * (`scripts/spike-graph-traversal.mjs`).
  *

@@ -6,7 +6,7 @@
  * spending quota — and `authenticated` is **best effort by a recorded decision**
  * of the specification, which measured this very engine opening the session
  * normally and only discovering the missing credential in the middle of the
- * stream (`docs/formatos/engine-adapter.md:452-461`).
+ * stream (`docs/formats/engine-adapter.md:452-461`).
  *
  * What the credential list is worth is not taste: it is the measurement FR8
  * demanded, run here against `codex-cli 0.147.0` and transcribed in

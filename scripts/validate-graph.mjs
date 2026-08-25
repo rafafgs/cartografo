@@ -28,7 +28,7 @@
  * `packages/core/test/domain-graph.test.ts` imports this file BY PATH,
  * destructures it by the names `validarEstrutura` / `validarSoundness`, and
  * `deepEqual`s its report against the TypeScript port in
- * `packages/core/src/domain/graph.ts` on every fixture in `schema/exemplos/`.
+ * `packages/core/src/domain/graph.ts` on every fixture in `schema/examples/`.
  * Renaming one of the four exports turns core's suite red without a line of core
  * changing, so they stay until `scripts/`' own D18 identifier migration — a
  * ticket that does not exist yet (t133, exception 5).
@@ -47,7 +47,7 @@
  * an English document described by a Portuguese report — is now one vocabulary
  * from the document all the way out to the 422.
  *
- * CLI use: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
+ * CLI use: `node scripts/validate-graph.mjs schema/examples/*.json`
  */
 
 import { readFileSync } from 'node:fs';
@@ -469,7 +469,7 @@ export function validarGrafo(doc) {
 
 function main(paths) {
   if (paths.length === 0) {
-    console.error('usage: node scripts/validar-grafo.mjs <graph.json> [...]');
+    console.error('usage: node scripts/validate-graph.mjs <graph.json> [...]');
     return 2;
   }
   let failed = false;

@@ -7,7 +7,7 @@
  * nothing else, and a compile-time reach into the control plane's `domain/`
  * would be the first crack in the wall `test/no-privileged-access.test.ts`
  * exists to keep. It is the same trade the core itself already made when
- * `domain/graph.ts` ported `scripts/validar-grafo.mjs` instead of loading it.
+ * `domain/graph.ts` ported `scripts/validate-graph.mjs` instead of loading it.
  *
  * A copy that can drift is worse than no copy, so the parity is a test, not a
  * promise: `test/synthesizer/similarity.test.ts` runs the cases of

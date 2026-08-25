@@ -36,7 +36,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 
 const SCHEMA_PATH = fileURLToPath(new URL('./skill-manifest.schema.json', import.meta.url));
 const DOC_PATH = fileURLToPath(new URL('./skill-manifest.md', import.meta.url));
-const EXAMPLES_DIR = new URL('./exemplos/', import.meta.url);
+const EXAMPLES_DIR = new URL('./examples/', import.meta.url);
 
 /** The two examples the document lists as complete manifests. */
 const EXAMPLES = ['skill-manifest.develop.json', 'skill-manifest.verify-develop.json'];
@@ -347,7 +347,7 @@ test('t184 — the citation scan bites, and spares what was never a format key',
   assert.deepEqual(retiredNamesIn('entrada_schema'), ['entrada_schema']);
   assert.deepEqual(retiredNamesIn('input_schema'), []);
   // The examples' own domain fields are not this format's keys. t300 took them
-  // to English with the rest of `especificacoes/**`, and the point of these two
+  // to English with the rest of `specs/**`, and the point of these two
   // cases is unchanged: whatever an example calls its fields, the scan reads
   // only the names this FORMAT retired.
   assert.deepEqual(retiredNamesIn('artifact.declared_gates'), []);

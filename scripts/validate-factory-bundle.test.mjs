@@ -36,7 +36,7 @@ import test from 'node:test';
 import { validateBundle } from './validate-factory-bundle.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SOURCE_BUNDLE = path.join(ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');
+const SOURCE_BUNDLE = path.join(ROOT, 'factory-graphs', 'desenvolvimento-de-software');
 
 /** A throwaway copy of the real bundle, ready to be mutated. */
 function bundleCopy() {

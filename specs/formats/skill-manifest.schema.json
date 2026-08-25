@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cartografo.dev/especificacoes/formatos/skill-manifest.schema.json",
+  "$id": "https://cartografo.dev/specs/formats/skill-manifest.schema.json",
   "title": "Skill manifest — cartografo",
-  "description": "The contract for entering the capability registry (D4, D9). See especificacoes/formatos/skill-manifest.md.",
+  "description": "The contract for entering the capability registry (D4, D9). See specs/formats/skill-manifest.md.",
   "type": "object",
   "required": [
     "id",

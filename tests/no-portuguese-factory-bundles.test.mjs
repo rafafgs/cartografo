@@ -56,7 +56,7 @@ import test from 'node:test';
 import { DIACRITIC, GLOSS, STOPWORD } from '../scripts/no-portuguese-prose.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BUNDLES_DIR = path.join(ROOT, 'grafos-de-fabrica');
+const BUNDLES_DIR = path.join(ROOT, 'factory-graphs');
 
 /**
  * The bundles this gate does not read yet, each with the ticket that lifts it.
@@ -135,7 +135,7 @@ test('AT3 — no Portuguese survives in any factory bundle this gate reads', () 
 
   assert.ok(
     scanned.length >= 7,
-    `only ${String(scanned.length)} files read under grafos-de-fabrica/; the sweep is blind`,
+    `only ${String(scanned.length)} files read under factory-graphs/; the sweep is blind`,
   );
 
   const offenders = scanned.flatMap(offendersIn);

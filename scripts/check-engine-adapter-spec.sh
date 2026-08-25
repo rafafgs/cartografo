@@ -28,7 +28,7 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-DOC="docs/formatos/engine-adapter.md"
+DOC="docs/formats/engine-adapter.md"
 
 failures=0
 

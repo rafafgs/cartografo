@@ -91,8 +91,8 @@ const ORIGIN_PROPERTIES: readonly string[] = (() => {
     '..',
     '..',
     '..',
-    'especificacoes',
-    'formatos',
+    'specs',
+    'formats',
     'skill-manifest.schema.json',
   );
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {

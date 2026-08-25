@@ -10,7 +10,7 @@
  *
  * What the module may NOT do is name a flag: the CLI vocabulary lives in
  * `command.ts`, and the boundary the specification draws
- * (`docs/formatos/engine-adapter.md`, boundary 1) is the reason this file only
+ * (`docs/formats/engine-adapter.md`, boundary 1) is the reason this file only
  * ever asserts tool names.
  *
  * The module is imported behind an `existsSync` check, the same discipline the

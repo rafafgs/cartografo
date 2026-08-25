@@ -30,7 +30,7 @@
 --
 -- O que esta migração deliberadamente NÃO faz: mexer no envelope do evento.
 -- `session.finished` continua carregando `status`/`exit_code`/`usage` e mais
--- nada (`especificacoes/eventos/schemas/session.finished.schema.json`
+-- nada (`specs/events/schemas/session.finished.schema.json`
 -- intocado). Transcrição é material de diagnóstico pendurado na projeção, não
 -- fato de que estado de grafo dependa — duplicar um blob capado dentro de
 -- `event.data` a cada sessão engorda o log append-only sem tornar nada mais

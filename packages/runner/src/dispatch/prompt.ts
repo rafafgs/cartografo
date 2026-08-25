@@ -9,14 +9,14 @@
  *
  * What it renders is the mechanism that keeps a re-dispatch from asking the same
  * thing forever. Engine-native resume is out of scope for the v0 adapter
- * (`docs/formatos/engine-adapter.md`, "Fora de escopo (v0)"), so "resuming" is
+ * (`docs/formats/engine-adapter.md`, "Fora de escopo (v0)"), so "resuming" is
  * always a fresh session that was TOLD what happened — and the block below is
  * how it is told.
  *
  * English per D18. The prompt's CONTENT stays in Portuguese: it is what reaches
  * a model, and the node instructions it is composed with are the registered
  * skill manifests, which are written in Portuguese
- * (`especificacoes/formatos/exemplos/`).
+ * (`specs/formats/examples/`).
  */
 
 import type { Job } from './options.ts';

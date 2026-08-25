@@ -22,7 +22,7 @@
 -- `timed_out`, distinguidas por esta coluna. Crescer o vocabulário de
 -- status foi rejeitado uma vez, para estados de cota, com o raciocínio que vale
 -- igual aqui — "o motivo real vive no log de eventos, que é append-only e não
--- perde nada" (`docs/formatos/engine-adapter.md`, *Rejeitado — `SessionStatus`
+-- perde nada" (`docs/formats/engine-adapter.md`, *Rejeitado — `SessionStatus`
 -- mais rico*). E `stuck`, que a taxonomia descrevia como "parada por
 -- silêncio", nunca foi isso na prática: é o slot de quem não tem slot
 -- (`pending`/`running`/`cancelled`). A prosa foi corrigida junto desta ficha.

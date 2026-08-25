@@ -27,7 +27,7 @@ From a clean checkout to the first registered graph, in three commands:
 npm install                                                            # 1
 npx cartografo                                                         # 2 (leave it running)
 CARTOGRAFO_TOKEN=<the token from step 2> \
-  npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (another terminal)
+  npx cartografo import factory-graphs/desenvolvimento-de-software  # 3 (another terminal)
 ```
 
 Step 1 is `npm install` because a working checkout is where the lockfile moves.

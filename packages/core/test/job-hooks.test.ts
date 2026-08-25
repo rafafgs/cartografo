@@ -16,7 +16,7 @@
  * waits on delivery" — brings up a bare app carrying the job routes and the
  * dispatcher, and nothing else.
  *
- * The graph documents come from `schema/exemplos/`: the fixture the JSON Schema
+ * The graph documents come from `schema/examples/`: the fixture the JSON Schema
  * validates is the same document the control plane reads back out of
  * `grafo_versao.snapshot`, and a hook that only ever existed in a test object
  * would prove nothing about the format.
@@ -60,7 +60,7 @@ const T194_ARTIFACTS = Object.freeze({
 });
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
+const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
 
 /** The two hooks the fixture declares, named here so the assertions can read. */
 const ON_ENTER = 'avisar-revisao';
@@ -115,7 +115,7 @@ interface HookSecretsModule {
   setHookSecret: (db: Database, data: { name: string; value: string }) => unknown;
 }
 
-/** Reads a graph fixture from `schema/exemplos/`. */
+/** Reads a graph fixture from `schema/examples/`. */
 function readExample(name: string): GraphDocument {
   return JSON.parse(readFileSync(path.join(EXAMPLES_DIR, name), 'utf8')) as GraphDocument;
 }

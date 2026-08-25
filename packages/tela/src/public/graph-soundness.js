@@ -25,7 +25,7 @@
  * `target`, `message`) and the rule names are the wire format of the 422, and
  * speak English since t230 (`docs/spec/glossario-wire.md` §5.3/5.4) — in
  * lockstep on both sides of the parity between `packages/core` and
- * `scripts/validar-grafo.mjs`. Every LINE this file writes out of them does
+ * `scripts/validate-graph.mjs`. Every LINE this file writes out of them does
  * not: it is product surface in Portuguese (t133, exceptions 9 and 10), which
  * D20 does not touch.
  */
@@ -41,7 +41,7 @@ const MISSING_ID = 'sem id';
  *
  * The names are the control plane's own (`RULES` in
  * `packages/core/src/domain/graph.ts`), and `test/graph-soundness.test.ts`
- * holds this table against the four counterexamples of `schema/exemplos/` run
+ * holds this table against the four counterexamples of `schema/examples/` run
  * through the reference validator — a rule renamed on that side and not here
  * stops producing a sentence, and the test says so instead of the page quietly
  * showing "unknown rule" to whoever is trying to save.

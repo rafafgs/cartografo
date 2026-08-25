@@ -18,7 +18,7 @@
  *    broken pin is worse than no map at all (D4).
  * 2. **The class names the directory.** `<atlas-dir>/<classe>/` is read from the
  *    graph document's own `problem_class` field, which is why an atlas checkout
- *    and this repository's `grafos-de-fabrica/<classe>/` are interchangeable inputs
+ *    and this repository's `factory-graphs/<classe>/` are interchangeable inputs
  *    to `cartografo import`: same shape, same file names, same hashes.
  * 3. **It never runs `git`.** Committing and pushing the populated checkout is
  *    the caller's job — CI or a person. Git stays at the edges and never

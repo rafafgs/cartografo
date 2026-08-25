@@ -156,8 +156,8 @@ The mapping lives in
 [`src/public/graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js),
 a pure function, tested in Node. And it cannot diverge in silence:
 `graph-soundness.test.ts` runs the four counterexamples of
-[`schema/exemplos/`](../../schema/exemplos) through the reference validator
-([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)) and demands that
+[`schema/examples/`](../../schema/examples) through the reference validator
+([`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs)) and demands that
 every violation coming out of it has a sentence of its own here.
 
 ---

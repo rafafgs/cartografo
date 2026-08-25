@@ -7,7 +7,7 @@
 **Status: content, not format.** This ticket (`t105`) designs no new format: it
 applies the two already closed — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
-([`especificacoes/formatos/skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md),
+([`specs/formats/skill-manifest.md`](../../specs/formats/skill-manifest.md),
 `t97`) — to produce the first real content. It is direct input to the PoC (D16)
 and the seed of the factory library.
 
@@ -37,7 +37,7 @@ There is no separate rejection edge: the only way back is the `test → develop`
 rework cycle.
 
 The `grafo.json` **starts from**
-[`schema/exemplos/graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json)
+[`schema/examples/graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json)
 — `t96`'s master example, read as a reference and **never modified**. Two places
 differ from it. Each node's `skill_ref`: in the example the hashes are
 reproducible placeholders (no real skill existed to pin) and the ids carry an
@@ -59,7 +59,7 @@ node ../../scripts/validate-factory-bundle.mjs .
 
 # cross-check of the manifest format, with a third-party validator
 npx --yes ajv-cli@5 validate \
-  -s ../../especificacoes/formatos/skill-manifest.schema.json \
+  -s ../../specs/formats/skill-manifest.schema.json \
   -d './skills/*.json' --spec=draft2020
 ```
 
@@ -86,11 +86,11 @@ This bundle's acceptance tests live in
 
 ## Directory convention
 
-`grafos-de-fabrica/<class>/` is the bundle's shape, named after the document's
+`factory-graphs/<class>/` is the bundle's shape, named after the document's
 `problem_class` string (D8), and it is the same shape the atlas uses: one
 subdirectory per class, with `grafo.json` and the manifests its nodes pin. The
 layout, the publication step and the integrity check during a traversal are in
-[`docs/formatos/atlas-bundle.md`](../../docs/formatos/atlas-bundle.md) — v0, not
+[`docs/formats/atlas-bundle.md`](../../docs/formats/atlas-bundle.md) — v0, not
 frozen, by the rule of two consumers.
 
 In practice that means this directory and an atlas checkout are interchangeable
@@ -99,11 +99,11 @@ copying it there once validated:
 
 ```sh
 node scripts/publish-atlas-bundle.mjs \
-  grafos-de-fabrica/desenvolvimento-de-software ../atlas
+  factory-graphs/desenvolvimento-de-software ../atlas
 ```
 
 The control plane's skill registry already exists, and `cartografo import
-grafos-de-fabrica/desenvolvimento-de-software` registers the five manifests
+factory-graphs/desenvolvimento-de-software` registers the five manifests
 (`POST /v1/skills`, each one revalidated by the server) before sending the
 graph: a manifest the registry refuses aborts the import and the graph never
 goes up. The deterministic validator above remains the acceptance criterion **of

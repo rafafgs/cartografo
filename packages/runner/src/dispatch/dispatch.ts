@@ -14,7 +14,7 @@
  * 2. builds the prompt — the node's instruction plus every question already
  *    asked AND answered for this work. That block is what keeps a re-dispatch
  *    from asking the same thing forever: engine-native resume is out of scope
- *    for the v0 adapter (`docs/formatos/engine-adapter.md`), so "resuming" is
+ *    for the v0 adapter (`docs/formats/engine-adapter.md`), so "resuming" is
  *    always a fresh session that was told what happened;
  * 3. opens the session and records `sessao.aberta` with the engine ref known so
  *    far — it may be `null`, and there is no endpoint to fill it in later;
@@ -29,7 +29,7 @@
  *    plane, in the same transaction (t106, FR1).
  *
  * **And every session gets a tree of its own** (t160). The directory a session
- * runs in is its entire write scope (`docs/formatos/engine-adapter.md`,
+ * runs in is its entire write scope (`docs/formats/engine-adapter.md`,
  * invariant 7), so it is acquired per dispatch from a `WorktreeManager` and
  * given back on every path out of here — kept for diagnosis unless the session
  * completed. There is no static working directory to fall back to, which is the
@@ -112,7 +112,7 @@
  *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * is — since t161 — the registered skill manifest itself, and those are written
- * in Portuguese (`especificacoes/formatos/exemplos/`); what is left of the old
+ * in Portuguese (`specs/formats/examples/`); what is left of the old
  * fixed literal is `DEFAULT_INSTRUCTIONS`, in `options.ts`.
  */
 

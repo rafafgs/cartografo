@@ -3,7 +3,7 @@
  *
  * `packages/core/src/domain/{manifest,graph}.ts` is a hand-written port of two
  * JSON Schemas that live outside this package —
- * `especificacoes/formatos/skill-manifest.schema.json` and
+ * `specs/formats/skill-manifest.schema.json` and
  * `schema/grafo.schema.json`. Nothing compiles the port against the schema, so
  * until this file existed the only thing keeping the two in step was that
  * whoever edited one remembered the other. That is exactly the failure mode a
@@ -41,8 +41,8 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 const MANIFEST_SCHEMA_PATH = path.join(
   REPO_ROOT,
-  'especificacoes',
-  'formatos',
+  'specs',
+  'formats',
   'skill-manifest.schema.json',
 );
 const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'grafo.schema.json');

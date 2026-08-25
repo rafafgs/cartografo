@@ -17,19 +17,19 @@ EngineAdapter + fixed graph before anything here turns into an implementation.
 |---|---|
 | `schemas/envelope.schema.json` | The fields that exist in every event |
 | `schemas/<type>.schema.json` | One per event type (19) |
-| `exemplos/example-log.jsonl` | One end-to-end execution, with all 19 types |
-| `exemplos/expected-final-state.json` | The state that log reconstructs |
+| `examples/example-log.jsonl` | One end-to-end execution, with all 19 types |
+| `examples/expected-final-state.json` | The state that log reconstructs |
 | `reducers/reconstruct-state.mjs` | The fold of the log down to that state |
 | `tests/` | Node's native runner, with no `package.json` and no dependency |
 
 To run them, from the root of the repository:
 
 ```sh
-node --test "especificacoes/eventos/tests/*.test.mjs"   # only this ficha
+node --test "specs/events/tests/*.test.mjs"   # only this ficha
 node --test                                             # everything there is
 ```
 
-Passing the directory (`node --test especificacoes/eventos/tests/`) does **not**
+Passing the directory (`node --test specs/events/tests/`) does **not**
 work on Node 25: from 23 onwards the positional argument is treated as a
 file/glob path, not as a folder to sweep. Use one of the two forms above.
 
@@ -286,7 +286,7 @@ independent watchdogs — wall-clock and silence (t163) — and both end up in
 `silence` | `null`), not one more status: growing the status vocabulary was
 rejected once, for quota states, and the reasoning holds identically — "the real
 reason lives in the event log, which is append-only and loses nothing"
-(`docs/formatos/engine-adapter.md`, *Rejected — a richer `SessionStatus`*).
+(`docs/formats/engine-adapter.md`, *Rejected — a richer `SessionStatus`*).
 
 A course correction, recorded instead of erased: until t163 this section
 described `stuck` as "stopped by silence", in a 1:1 port of flowpilot's
@@ -302,7 +302,7 @@ neutral.
 
 And until t172 that `null` was *always*: the Claude Code adapter sent `usage:
 null` hard-coded, because usage counting was in "Out of scope (v0)" in
-`docs/formatos/engine-adapter.md`. Every session this system ever ran recorded
+`docs/formats/engine-adapter.md`. Every session this system ever ran recorded
 zero cost data, and the placeholder was indistinguishable from an honest absence
 — which is precisely why it lasted so long. That CLI's terminal `result` frame
 always carried the count; what was missing was somebody reading it.
@@ -383,7 +383,7 @@ denied by name is never even offered to the model, so there is never an attempt
 and never an event — what shows up here is the denial of a *pattern*
 (`Bash(curl *)`), which is refused at the call. The absence of an event means
 "did not try, or was not offered", never "nothing was blocked". The residual gap
-is written down in `docs/formatos/engine-adapter.md`, "The session's
+is written down in `docs/formats/engine-adapter.md`, "The session's
 permissions".
 
 ### Input request
@@ -674,8 +674,8 @@ inputs ⇒ an execution replayable from the log. This ficha's executable proof i
   executions:     {[execution_id]: {finished_at}} }
 ```
 
-`tests/replay.test.mjs` runs the reducer against `exemplos/example-log.jsonl`
-and compares it with `exemplos/expected-final-state.json`, computed by hand from
+`tests/replay.test.mjs` runs the reducer against `examples/example-log.jsonl`
+and compares it with `examples/expected-final-state.json`, computed by hand from
 that same log. For as long as that equality holds, the log is sufficient: no
 final state needs another source.
 

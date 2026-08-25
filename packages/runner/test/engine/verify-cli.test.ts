@@ -6,7 +6,7 @@
  * specification demoted it to **best effort** in writing, after measuring an
  * engine that opens the session normally and only discovers the missing
  * credential in the middle of the stream
- * (`docs/formatos/engine-adapter.md:452-461`). These tests pin exactly that: a
+ * (`docs/formats/engine-adapter.md:452-461`). These tests pin exactly that: a
  * probe that promises no more than it can deliver.
  */
 

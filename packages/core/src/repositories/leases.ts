@@ -54,7 +54,7 @@ export type LeaseStatus = 'active' | 'released' | 'expired';
 
 /**
  * Why a lease died, in the vocabulary of
- * `especificacoes/eventos/schemas/lease.expired.schema.json`.
+ * `specs/events/schemas/lease.expired.schema.json`.
  */
 export type ExpirationReason = 'heartbeat_lost' | 'ttl_elapsed';
 

@@ -12,7 +12,7 @@
  *
  * A static sweep and not an execution, on purpose: running it needs the binary,
  * an account and about three minutes, which is exactly why it is not a CI test
- * (`docs/formatos/engine-adapter.md`). What a sweep CAN prove is the invariant
+ * (`docs/formats/engine-adapter.md`). What a sweep CAN prove is the invariant
  * this ficha exists for — that no call in that script reaches the control plane
  * anonymously — and it is the same device `no-privileged-access.test.ts` uses
  * to keep the runner off the database.

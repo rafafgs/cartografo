@@ -4,7 +4,7 @@
  * already running (t165, FR8).
  *
  * NOT a CI test, and it must not become one — the same division every other
- * file in this directory keeps (`docs/formatos/engine-adapter.md:363-366`): the
+ * file in this directory keeps (`docs/formats/engine-adapter.md:363-366`): the
  * suite runs against the fake engine so it never depends on an installed,
  * authenticated binary, and the manual gate is here, where the real CLIs are.
  *
@@ -13,7 +13,7 @@
  *
  * - **Any node list, not a hardcoded pair.** The nodes and the task text of
  *   each come from a JSON plan file, so the same driver walks the five nodes of
- *   `grafos-de-fabrica/desenvolvimento-de-software` or two of a fixture.
+ *   `factory-graphs/desenvolvimento-de-software` or two of a fixture.
  * - **A control plane that OUTLIVES the process.** The spike boots its own
  *   against a throwaway database and deletes it on exit, which is why nothing
  *   it produced could ever feed a surveyor. This one connects to a URL the

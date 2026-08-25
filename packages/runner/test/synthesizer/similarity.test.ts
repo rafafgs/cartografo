@@ -3,7 +3,7 @@
  *
  * The heuristic is the core's — Jaccard over the tokens of the normalized text
  * (`packages/core/src/domain/similarity.ts`, t113) — and this is a PORT, not an
- * import. Same reason `domain/graph.ts` ports `scripts/validar-grafo.mjs`
+ * import. Same reason `domain/graph.ts` ports `scripts/validate-graph.mjs`
  * instead of reaching across the package boundary: the runner is an ordinary
  * API client (D1/D11), and a compile-time dependency on the control plane's
  * internals is exactly the coupling the boundary exists to forbid.

@@ -6,7 +6,7 @@
  * It exists because the kit has to be deterministic and has to run with no CLI
  * installed and no authentication: "the seam is the command construction;
  * swapping the binary for the fake engine is what keeps the suite
- * deterministic" (`docs/formatos/engine-adapter.md:363-366`).
+ * deterministic" (`docs/formats/engine-adapter.md:363-366`).
  *
  * All the control comes from the ENVIRONMENT, never from argv. That is
  * deliberate: argv is the channel the adapter uses to deliver

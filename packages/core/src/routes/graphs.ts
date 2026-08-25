@@ -298,7 +298,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // A pin this registry cannot resolve does not refuse the document, and the
   // reason is what this route IS: `POST /v1/graphs` takes a raw document, and
   // a graph whose skills are registered afterwards is the ordinary case — the
-  // screen's editor, a forked example, every fixture in `schema/exemplos`. The
+  // screen's editor, a forked example, every fixture in `schema/examples`. The
   // path that gets the whole judgement is `cartografo import`, which registers
   // every manifest of the bundle BEFORE sending the graph (`cli/import.ts`), and
   // which also runs this very check offline against the bundle's own `skills/`.

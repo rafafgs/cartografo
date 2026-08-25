@@ -30,10 +30,10 @@ import {
 
 const FACTORY_CLASS = 'desenvolvimento-de-software';
 const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
-const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-invalid-unreachable-node.json');
+const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-invalid-unreachable-node.json');
 
 /** The fixture that declares hooks, and the class it registers as (t194). */
-const HOOKS_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-with-hooks.json');
+const HOOKS_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-with-hooks.json');
 const HOOKS_CLASS = 'short-note-with-hooks';
 
 /**

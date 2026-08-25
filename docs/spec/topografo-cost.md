@@ -115,7 +115,7 @@ This is the lens's hard point, and it is a consequence, not a preference.
 Neither the graph document
 ([`grafo.schema.json`](../../schema/grafo.schema.json), whose node is
 `additionalProperties: false`) nor the
-[skill manifest](../../especificacoes/formatos/skill-manifest.schema.json) has a
+[skill manifest](../../specs/formats/skill-manifest.schema.json) has a
 cost, budget or model-tier field today. A cost policy **has nowhere to land** in
 those formats. And opening either of them is outside this ticket by acceptance
 criterion: what is being proved is that a second topografo fits inside the

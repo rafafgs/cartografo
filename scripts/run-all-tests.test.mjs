@@ -130,12 +130,12 @@ test('AT4 — the specs glob still finds every specification test (t282)', () =>
     specs.length,
     1,
     'the root group no longer carries exactly one specs pattern; the rename of t282 ' +
-      'moved `especificacoes/**/*.test.mjs` to `specs/**/*.test.mjs` and nothing else',
+      'moved `specs/**/*.test.mjs` to `specs/**/*.test.mjs` and nothing else',
   );
 
   assert.ok(
     discovered(specs[0]) >= 4,
     `${specs[0]} finds ${String(discovered(specs[0]))} test files; the four that ran under ` +
-      '`especificacoes/**/*.test.mjs` before t282 renamed the tree have to still run',
+      '`specs/**/*.test.mjs` before t282 renamed the tree have to still run',
   );
 });

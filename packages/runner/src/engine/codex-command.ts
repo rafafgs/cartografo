@@ -4,7 +4,7 @@
  * Pure on purpose, symmetric to `command.ts`: no spawn, no state, no clock. It
  * is the seam the conformance kit demands ("an adapter that does not expose that
  * seam is an adapter you cannot certify",
- * `docs/formatos/engine-adapter.md:363-366`), and keeping it side-effect free is
+ * `docs/formats/engine-adapter.md:363-366`), and keeping it side-effect free is
  * what lets the argv be checked by unit test without a real CLI and without
  * authentication.
  *

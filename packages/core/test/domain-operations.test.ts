@@ -28,7 +28,7 @@ import type * as OperationsModule from '../src/domain/operations.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 
 let operationsCache: typeof OperationsModule | null = null;
 

@@ -138,7 +138,7 @@ method does not take the decision by mistake.**
 ## 5. The session: one turn, one file, no privilege
 
 The `SessionSpec` follows the normative rule of the
-[EngineAdapter](../formatos/engine-adapter.md): `instructions` and `prompt` never
+[EngineAdapter](../formats/engine-adapter.md): `instructions` and `prompt` never
 arrive concatenated by the caller.
 
 - **`instructions`** — the role and the item's hard rules, listed in §6.

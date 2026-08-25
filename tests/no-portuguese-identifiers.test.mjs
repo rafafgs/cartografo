@@ -9,8 +9,8 @@
  * `nos`, `arestas`, `no_inicial`, `nos_finais`, `papel`, `tipo_no`, `skill_ref`,
  * `contrato`, `de`, `para`, `condicao`, `versao`, `hash`, `entrada_schema`,
  * `saida_schema`, `verificacoes`) stay Portuguese per D18's own carve-out, and
- * so do the directory names these tests build paths to — `schema/exemplos/` and
- * `grafos-de-fabrica/desenvolvimento-de-software/` are out of this ticket's
+ * so do the directory names these tests build paths to — `schema/examples/` and
+ * `factory-graphs/desenvolvimento-de-software/` are out of this ticket's
  * scope. All of them live in a literal or a member position, so the masking
  * covers them without a per-file exemption list.
  */
@@ -431,7 +431,11 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     'const ref = node.skill_ref; assert.ok(ref.versao && ref.hash);',
     'return { no_inicial: entry, nos_finais: exits, tipo_no: kind, papel: role };',
     'const contract = node.contrato; assert.ok(contract.entrada_schema, contract.saida_schema);',
-    // the out-of-scope directories these tests build paths to, all literals
+    // A Portuguese word sitting in a string literal is data, not an identifier.
+    // These two keep the spellings t282 retired from the tree on purpose: the
+    // rule under test is that a literal is masked, and an English path proves
+    // nothing about it. They are fixtures handed to a pure function, not paths
+    // anybody resolves, so the rename has no claim on them.
     "const EXAMPLES = path.join(REPO_ROOT, 'schema', 'exemplos');",
     "const BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');",
     "assert.equal(report.violacoes[0].regra, 'alcançável');",

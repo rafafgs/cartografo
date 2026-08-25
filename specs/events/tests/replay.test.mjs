@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const LOG = fileURLToPath(new URL('../exemplos/example-log.jsonl', import.meta.url));
-const EXPECTED = fileURLToPath(new URL('../exemplos/expected-final-state.json', import.meta.url));
+const LOG = fileURLToPath(new URL('../examples/example-log.jsonl', import.meta.url));
+const EXPECTED = fileURLToPath(new URL('../examples/expected-final-state.json', import.meta.url));
 const REDUCER = '../reducers/reconstruct-state.mjs';
 
 function readLog() {

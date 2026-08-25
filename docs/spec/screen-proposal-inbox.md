@@ -77,7 +77,7 @@ The same precedence as
 **duplicated** in `packages/tela/src/proxy.ts`, not imported: the screen declares
 no dependency on the core package, and that is precisely the boundary D11 asks
 for. Duplicated and pinned by a test, like the graph validator of
-[`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs).
+[`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs).
 
 It listens on `127.0.0.1`, and it stays there after `t124`: the screen does not
 ask the browser for a credential — it CARRIES its own (`CARTOGRAFO_TELA_TOKEN`,

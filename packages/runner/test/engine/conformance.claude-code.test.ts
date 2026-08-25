@@ -76,7 +76,7 @@ test('capabilities declares only what has a consumer', () => {
   // `EngineCapabilities` now have one, which is the only condition this adapter
   // has ever declared one under ("declaring the fourth, fifth and sixth before
   // anybody reads them is how a format rots",
-  // `docs/formatos/engine-adapter.md:160-165`).
+  // `docs/formats/engine-adapter.md:160-165`).
   const declared = new ClaudeCodeAdapter().capabilities();
 
   assert.deepEqual(declared, {

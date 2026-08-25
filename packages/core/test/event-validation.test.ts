@@ -2,7 +2,7 @@
  * Unit tests of the validator's own non-empty-string rule (t157, FR5).
  *
  * `src/db/event-validation.ts` adds a rule the JSON schemas of
- * `especificacoes/eventos/schemas/` do not declare: a `string` field cannot be
+ * `specs/events/schemas/` do not declare: a `string` field cannot be
  * the empty string. That rule is this file's own contract — and until t157 it
  * applied to scalar strings only, so `changed_fields: ['']` walked into the
  * log while `title: ''` was refused. An internally inconsistent mirror is the
@@ -458,7 +458,7 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
 /* t196 — the five types the taxonomy declared and nobody recorded.            */
 /*                                                                             */
 /* The mirror is the contract: a payload the schemas of                        */
-/* `especificacoes/eventos/schemas/` accept has to pass here, and one they      */
+/* `specs/events/schemas/` accept has to pass here, and one they      */
 /* refuse has to fail here. These cases are the fields that carry the join —    */
 /* `graph_id`, `target_version`, the lease's own runner — plus the two closed   */
 /* enums, which are the only vocabulary of the five that a caller can get       */

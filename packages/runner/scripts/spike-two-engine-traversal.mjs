@@ -3,7 +3,7 @@
  * Manual proof: ONE graph, ONE work, TWO engines (t141, FR9).
  *
  * NOT a CI test, and it must not become one — the same division every other
- * spike in this repository keeps (`docs/formatos/engine-adapter.md:363-366`):
+ * spike in this repository keeps (`docs/formats/engine-adapter.md:363-366`):
  * the suite runs against the fake engine so it never depends on an installed,
  * authenticated binary, and the manual gate is here, where the real CLIs are.
  *
@@ -13,7 +13,7 @@
  * same graph. What it demonstrates, with nothing simulated:
  *
  * 1. A real control plane runs as a child process and is the only writer (D1).
- * 2. `schema/exemplos/graph-valid-two-engines.json` — the committed fixture,
+ * 2. `schema/examples/graph-valid-two-engines.json` — the committed fixture,
  *    read from disk, not an inline copy — is registered through
  *    `POST /v1/graphs`. Its first node declares no engine; its second declares
  *    `"engine": "codex"`.
@@ -95,8 +95,8 @@ const addFormats = formatsModule.default ?? formatsModule;
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
-const GRAPH_FIXTURE = join(REPO_ROOT, 'schema/exemplos/graph-valid-two-engines.json');
-const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
+const GRAPH_FIXTURE = join(REPO_ROOT, 'schema/examples/graph-valid-two-engines.json');
+const SCHEMAS_DIR = join(REPO_ROOT, 'specs/events/schemas');
 const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 
 const EXECUTION_ID = 141;

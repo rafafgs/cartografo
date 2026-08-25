@@ -2,7 +2,7 @@
 //
 // The executable proof of the quality non-negotiable "replayability by event
 // sourcing": graph vN + log ⇒ final state, without consulting any other source.
-// For as long as this function closes against `exemplos/expected-final-state.json`
+// For as long as this function closes against `examples/expected-final-state.json`
 // the log is sufficient — and the day a new event type carries a fact that no
 // projection here knows how to fold, this file is where that shows up.
 //

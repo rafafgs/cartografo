@@ -27,7 +27,7 @@ import type * as CliModule from '../src/cli.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 
 /** Grouper of the seeded round. Opaque by design (t102). */
 const EXECUTION_ID = 7;

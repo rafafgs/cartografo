@@ -11,7 +11,7 @@
  *
  * What makes this non-trivial is that the entry cannot simply be deleted:
  * invariant 3 of the FROZEN contract says "getStatus só devolve status terminal
- * depois que onFinished correu" (`docs/formatos/engine-adapter.md:778`), and
+ * depois que onFinished correu" (`docs/formats/engine-adapter.md:778`), and
  * four cases of the conformance kit (C1, C3, C8, C9) call `getStatus` AFTER the
  * end and expect the terminal status rather than an `UnknownSessionError`. So
  * what is dropped is the heavy state; what survives is a string per id.

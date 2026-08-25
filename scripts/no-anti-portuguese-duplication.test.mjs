@@ -18,7 +18,7 @@
  *   way the boot helper does (`scripts/no-boot-core-duplication.test.mjs`, the
  *   gate this one is modelled on) and the way the database dimension already
  *   had it in `packages/core/test/glossary-terms.ts`.
- * - **`FROZEN_IDENTIFIERS`.** The four export names of `scripts/validar-grafo.mjs`
+ * - **`FROZEN_IDENTIFIERS`.** The four export names of `scripts/validate-graph.mjs`
  *   that `packages/core/test/domain-graph.test.ts` pins by name, declared
  *   verbatim in both root identifier sweeps. It lives in
  *   `scripts/frozen-portuguese-identifiers.mjs` now.

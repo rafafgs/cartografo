@@ -1,7 +1,7 @@
 /**
  * The asymmetric-bets factory bundle, crossed LIVE (t260).
  *
- * `grafos-de-fabrica/bets-assimetricas` has been contract-proven since t116 —
+ * `factory-graphs/bets-assimetricas` has been contract-proven since t116 —
  * the graph is sound, every one of the seven manifests validates, every pin
  * closes, and `tests/factory-graph-2.test.mjs`'s AT11 walks a real thesis from
  * `triage` to `decide` payload by payload. None of that ever opened a session.
@@ -54,7 +54,7 @@ import { buildCommand } from '../../src/engine/command.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'bets-assimetricas');
+const BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'bets-assimetricas');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 /** The execution this crossing's telemetry lands in. */

@@ -355,7 +355,7 @@ writes the same thing in lowercase.
 The log is append-only and replayable: renaming an event type is rewriting the
 history, and D20 settles that by recreating the development databases (there is
 no production data). The events child ticket renames the schemas of
-`especificacoes/eventos/schemas/` and the taxonomy along with it.
+`specs/events/schemas/` and the taxonomy along with it.
 
 ### 2.1 Type names
 
@@ -691,7 +691,7 @@ applied for the same words — `execucao_id` → `execution_id` (§1.1),
 
 The report has two implementations that have to stay identical — the control
 plane's (`packages/core/src/domain/graph.ts`) and the reference one
-(`scripts/validar-grafo.mjs`), compared line by line by
+(`scripts/validate-graph.mjs`), compared line by line by
 `packages/core/test/domain-graph.test.ts`. The child ticket renames both in the
 same delivery, or the parity test falls.
 
@@ -727,8 +727,8 @@ t213's inventory cites it: the example file is renamed along with it.
 | routes-cli-report | `id_no_duplicado` | `duplicate_node_id` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `id_invalido` | `invalid_id` | `packages/core/src/domain/graph.ts:424` |
 | routes-cli-report | `aresta_invalida` | `invalid_edge` | `packages/core/src/domain/graph.ts` |
-| routes-cli-report | `aresta_no_inexistente` | `edge_unknown_node` | `scripts/validar-grafo.mjs` |
-| routes-cli-report | `no_inicial_inexistente` | `unknown_initial_node` | `scripts/validar-grafo.mjs` |
+| routes-cli-report | `aresta_no_inexistente` | `edge_unknown_node` | `scripts/validate-graph.mjs` |
+| routes-cli-report | `no_inicial_inexistente` | `unknown_initial_node` | `scripts/validate-graph.mjs` |
 | routes-cli-report | `no_final_inexistente` | `unknown_final_node` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `campo_invalido` | `invalid_field` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `campo_obrigatorio_ausente` | `missing_required_field` | `packages/core/src/domain/graph.ts` |

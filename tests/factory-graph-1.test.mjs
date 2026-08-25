@@ -7,7 +7,7 @@
  * `node:child_process`.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
- * (`especificacoes/formatos/skill-manifest.md`, "Identificação" section),
+ * (`specs/formats/skill-manifest.md`, "Identificação" section),
  * rather than imported from the validator: if the test reused the
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
@@ -34,16 +34,16 @@ import path from 'node:path';
 import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BUNDLE_DIR = path.join(ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');
+const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'desenvolvimento-de-software');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
-const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
+const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
 const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
-  'especificacoes',
-  'formatos',
+  'specs',
+  'formats',
   'skill-manifest.schema.json',
 );
 
@@ -101,7 +101,7 @@ function canonicalize(value) {
 
 /**
  * Canonical hash of the manifest, by the procedure in
- * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
+ * `specs/formats/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
@@ -202,7 +202,7 @@ test('AT3 — the five manifests validate against skill-manifest.schema.json', a
   // what proves the green above does not come from a permissive validator.
   assert.ok(schema.$defs.check, 'the manifest schema has to declare $defs.check');
   const invalid = readJson(
-    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'skill-manifest.invalid.fixture.json'),
+    path.join(ROOT, 'specs', 'formats', 'examples', 'skill-manifest.invalid.fixture.json'),
   );
   assert.equal(validateManifest(invalid).valid, false, "t97's negative fixture has to be rejected");
 });
@@ -279,7 +279,7 @@ test('AT7 — alpha-test does not rerun the quality gate; integrate and develop 
         check.type === 'deterministic' &&
         // `project` and not `projeto` since t259: the projection publishes the
         // class's static config at `input.project`
-        // (`especificacoes/formatos/skill-manifest.md`), and the bundle's
+        // (`specs/formats/skill-manifest.md`), and the bundle's
         // templates were the last thing still spelling it the old way. The two
         // keys inside it are English since t280.
         /\{\{input\.project\.(test_command|quality_commands)\}\}/.test(check.command ?? ''),
@@ -311,7 +311,7 @@ test('AT8 — every instructions carries the escalation contract (input-request 
  *
  * `allowed: true` with NO `domains` is what the manifest format itself calls
  * unrestricted network and declares legal for a native skill
- * (`especificacoes/formatos/skill-manifest.md`). It is a wider grant on paper
+ * (`specs/formats/skill-manifest.md`). It is a wider grant on paper
  * and a narrower one in practice, because it is the only one that ever gets
  * enforced. Where the network may point is instructions now, not policy — which
  * is why this test also refuses the old sentence.
@@ -634,7 +634,7 @@ function resolveReference(reference) {
  * markdown link target, a backticked inline reference, and the script of a
  * fenced `node …` command.
  *
- * A reference with a `<placeholder>` in it (`grafos-de-fabrica/<classe>/`) is
+ * A reference with a `<placeholder>` in it (`factory-graphs/<classe>/`) is
  * a shape, not a path, and is skipped. So is an external URL.
  */
 function referencesIn(text) {
@@ -765,7 +765,7 @@ test('t283 — the bundle classifies as checked, so an import needs no re-check'
 // --------------------------------------------------------------------------
 
 /**
- * The placeholder grammar of `especificacoes/formatos/skill-manifest.md`,
+ * The placeholder grammar of `specs/formats/skill-manifest.md`,
  * reimplemented here for the same reason the hash procedure above is: a test
  * that imported the runner's own regex would go blind exactly when that regex
  * is what is wrong.

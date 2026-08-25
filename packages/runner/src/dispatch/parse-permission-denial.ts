@@ -19,7 +19,7 @@
  *
  * What it cannot see: a denial the engine reports outside this correlation, and
  * anything `Bash` reaches by a path no denied pattern names — the residual gap
- * written down in `docs/formatos/engine-adapter.md`, "Permissões da sessão".
+ * written down in `docs/formats/engine-adapter.md`, "Permissões da sessão".
  * The tracker records what the gating caught; it does not close the gap.
  */
 

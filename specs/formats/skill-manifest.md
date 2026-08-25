@@ -34,9 +34,9 @@ dispatch.
 | File | What it is |
 |---|---|
 | [`skill-manifest.schema.json`](./skill-manifest.schema.json) | JSON Schema draft 2020-12; the normative definition. |
-| [`exemplos/skill-manifest.develop.json`](./exemplos/skill-manifest.develop.json) | A complete example, `role: "work"` — a behavioural port of flowpilot's `feature-dev`/`development.py`. |
-| [`exemplos/skill-manifest.verify-develop.json`](./exemplos/skill-manifest.verify-develop.json) | A complete example, `role: "gate"` — a behavioural port of flowpilot's `testing.py`. |
-| [`exemplos/skill-manifest.invalid.fixture.json`](./exemplos/skill-manifest.invalid.fixture.json) | A negative fixture, test material only: it proves the schema refuses a malformed manifest. |
+| [`examples/skill-manifest.develop.json`](./examples/skill-manifest.develop.json) | A complete example, `role: "work"` — a behavioural port of flowpilot's `feature-dev`/`development.py`. |
+| [`examples/skill-manifest.verify-develop.json`](./examples/skill-manifest.verify-develop.json) | A complete example, `role: "gate"` — a behavioural port of flowpilot's `testing.py`. |
+| [`examples/skill-manifest.invalid.fixture.json`](./examples/skill-manifest.invalid.fixture.json) | A negative fixture, test material only: it proves the schema refuses a malformed manifest. |
 
 ## Why this format exists
 
@@ -92,7 +92,7 @@ const sub={instructions:m.instructions,input:m.input,output:m.output,
            checks:m.checks,permissions:m.permissions,budgets:m.budgets};
 console.log("sha256:"+c.createHash("sha256")
   .update(JSON.stringify(canon(sub)),"utf8").digest("hex"));
-' especificacoes/formatos/exemplos/skill-manifest.develop.json
+' specs/formats/examples/skill-manifest.develop.json
 ```
 
 (The two examples of this directory carry the real hash: the command above
@@ -499,19 +499,19 @@ scaffolding, using `ajv-cli` through `npx`. From the root of the repository:
 
 ```bash
 # 1. the schema is a valid JSON Schema (draft 2020-12)
-npx --yes ajv-cli@5 compile -s especificacoes/formatos/skill-manifest.schema.json --spec=draft2020
+npx --yes ajv-cli@5 compile -s specs/formats/skill-manifest.schema.json --spec=draft2020
 
 # 2. the "work" skill example validates against the schema
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
-  -d especificacoes/formatos/exemplos/skill-manifest.develop.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
+  -d specs/formats/examples/skill-manifest.develop.json --spec=draft2020
 
 # 3. the "gate" skill example validates against the schema
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
-  -d especificacoes/formatos/exemplos/skill-manifest.verify-develop.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
+  -d specs/formats/examples/skill-manifest.verify-develop.json --spec=draft2020
 
 # 4. the negative fixture is REFUSED (a non-zero exit is the expected result here)
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
-  -d especificacoes/formatos/exemplos/skill-manifest.invalid.fixture.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
+  -d specs/formats/examples/skill-manifest.invalid.fixture.json --spec=draft2020
 ```
 
 The first three exit 0; the fourth exits with something other than 0 — that is
@@ -526,7 +526,7 @@ hash recipe and the pinned subset have not drifted apart.
 
 ### The negative fixture
 
-`exemplos/skill-manifest.invalid.fixture.json` is **not** an example of a
+`examples/skill-manifest.invalid.fixture.json` is **not** an example of a
 manifest: it is test material. It is a gate manifest that is valid in everything
 else, with **one** deliberate violation — the `criteria-met` check has
 `type: "agentic"` and does not declare `required_evidence`. A single, isolated

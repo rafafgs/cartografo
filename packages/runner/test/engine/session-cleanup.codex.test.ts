@@ -9,7 +9,7 @@
  *
  * The seam is the same and so is the claim: after the end, the heavy state of a
  * session is gone and `getStatus` still answers the terminal status — invariant
- * 3 of the frozen contract (`docs/formatos/engine-adapter.md:778`), exercised by
+ * 3 of the frozen contract (`docs/formats/engine-adapter.md:778`), exercised by
  * C1, C3, C8 and C9 of the kit this adapter also runs.
  *
  * English per D18.

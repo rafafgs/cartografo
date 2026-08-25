@@ -1,7 +1,7 @@
 /**
  * Acceptance tests of the graph validator ported to TypeScript (t101, FR2).
  *
- * The control plane cannot import `scripts/validar-grafo.mjs`: the script lives
+ * The control plane cannot import `scripts/validate-graph.mjs`: the script lives
  * outside the package's publishable tree (`files` in `packages/core/package.json`).
  * That is why the two functions were ported — and why this file is the only
  * place in the package that imports the reference validator: to lock parity
@@ -32,8 +32,8 @@ import type * as GraphModule from '../src/domain/graph.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
-const REFERENCE_VALIDATOR = path.join(REPO_ROOT, 'scripts', 'validar-grafo.mjs');
+const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
+const REFERENCE_VALIDATOR = path.join(REPO_ROOT, 'scripts', 'validate-graph.mjs');
 
 /** Shape of the reference validator, which is JavaScript with no declared types. */
 interface ReferenceValidator {
@@ -188,7 +188,7 @@ const INVALID_ID_CASES: Array<{
   },
 ];
 
-test('AT1 — the TS module agrees with scripts/validar-grafo.mjs on every fixture', async () => {
+test('AT1 — the TS module agrees with scripts/validate-graph.mjs on every fixture', async () => {
   const ported = await loadDomainGraph();
   const reference = await loadReference();
 
@@ -389,7 +389,7 @@ test('t169 — a duplicate hook id is a structure error, and the valid fixture h
  * the document is served whole, exported to disk and published to the atlas.
  *
  * Each case runs through BOTH validators, like every other rule here: the port
- * and `scripts/validar-grafo.mjs` say the same thing or AT1 says so on the next
+ * and `scripts/validate-graph.mjs` say the same thing or AT1 says so on the next
  * run.
  */
 const HOOK_CASES: Array<{
@@ -523,7 +523,7 @@ test('t168 — a document with no custom_fields is a structure error in both val
  *
  * The prose moved with t180; the vocabulary around it with t230, the fifth
  * child of D20. The parity of AT1 is what makes this a two-file claim: the same
- * sentence and the same code have to come out of `scripts/validar-grafo.mjs`,
+ * sentence and the same code have to come out of `scripts/validate-graph.mjs`,
  * or `deepEqual` says so above.
  */
 test('t230 — a structure message and the vocabulary around it are English', async () => {

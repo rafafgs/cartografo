@@ -3,8 +3,8 @@
  *
  * `jobs.test.ts` proves the rule against the minimal example graph, which is
  * where a rule belongs. This file proves it against the documents that actually
- * ship: `grafos-de-fabrica/bets-assimetricas` ends at `record-monitoring`
- * pinning `record-crossing`, and `grafos-de-fabrica/desenvolvimento-de-software`
+ * ship: `factory-graphs/bets-assimetricas` ends at `record-monitoring`
+ * pinning `record-crossing`, and `factory-graphs/desenvolvimento-de-software`
  * ends at `deploy` pinning `verify-release` — the identical shape, and the
  * one t198's first real crossing found broken
  * (`notas/2026-08-17-first-bets-run.md`, gap 2): the job was declared
@@ -47,7 +47,7 @@ import {
 } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BUNDLES = path.join(REPO_ROOT, 'grafos-de-fabrica');
+const BUNDLES = path.join(REPO_ROOT, 'factory-graphs');
 
 /** Artifacts the derivation and the report's validation live in. */
 const ARTIFACTS = [

@@ -116,7 +116,7 @@ function initRepo(base: string): string {
  * reach from out here: `buildCommand` spawns `claude`, full stop. A shim named
  * `claude`, first on the child's PATH, is what lets this file exercise the
  * production wiring end to end without an installed, authenticated CLI — the
- * same division `docs/formatos/engine-adapter.md:363-366` records, applied to
+ * same division `docs/formats/engine-adapter.md:363-366` records, applied to
  * the one seam a separate process has.
  *
  * @returns The directory to prepend to PATH.

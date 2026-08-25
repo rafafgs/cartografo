@@ -3,7 +3,7 @@
  *
  * What these tests protect is the specification's normative rule: "the caller
  * never concatenates the two fields"
- * (`docs/formatos/engine-adapter.md:114-149`). Claude Code has a native
+ * (`docs/formats/engine-adapter.md:114-149`). Claude Code has a native
  * `--system-prompt`, so the correct injection here is the flag — concatenating
  * would be adopting, unreviewed, the path of whoever does *not* have the flag,
  * and erasing the difference precisely on the engine that does it better.

@@ -3,7 +3,7 @@
  *
  * NOT a CI test, and it must not become one. The suite runs against the fake
  * engine precisely so it does not depend on an installed binary, credentials or
- * network (`docs/formatos/engine-adapter.md:363-366`); this proof is the manual
+ * network (`docs/formats/engine-adapter.md:363-366`); this proof is the manual
  * gate on the other side — the half the kit cannot prove because it has no real
  * CLI. Same division the flowpilot's `make spike` set up: evidence attached to
  * the ticket, not an automatic gate.
@@ -13,7 +13,7 @@
  * 1. `verifyCli()` finds the real CLI and reports the version.
  * 2. A session runs in a disposable git repository, with `instructions` coming
  *    from the existing "fazer" skill manifest
- *    (`especificacoes/formatos/exemplos/skill-manifest.develop.json`). It is
+ *    (`specs/formats/examples/skill-manifest.develop.json`). It is
  *    the closest stand-in for "skill coming from the database" available today:
  *    the database is t101/t102 and does not exist yet.
  * 3. The session actually WORKED — the file the prompt asked for is in the
@@ -51,8 +51,8 @@ const Ajv2020 = AjvModule.default ?? AjvModule;
 const addFormats = formatsModule.default ?? formatsModule;
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
-const MANIFEST = join(REPO_ROOT, 'especificacoes/formatos/exemplos/skill-manifest.develop.json');
+const SCHEMAS_DIR = join(REPO_ROOT, 'specs/events/schemas');
+const MANIFEST = join(REPO_ROOT, 'specs/formats/examples/skill-manifest.develop.json');
 
 const REQUESTED_FILE = 'PROVA-T104.md';
 const PHRASE = 'sessao real do EngineAdapter do Claude Code';

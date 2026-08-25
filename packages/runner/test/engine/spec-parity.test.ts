@@ -2,7 +2,7 @@
  * Specification parity: `types.ts` may not drift away from the document.
  *
  * The EngineAdapter specification is **frozen at v1** since t119
- * (`docs/formatos/engine-adapter.md:1-9`) — the two-consumers rule demanded two
+ * (`docs/formats/engine-adapter.md:1-9`) — the two-consumers rule demanded two
  * implemented adapters before the format could be locked, and both exist. The
  * risk this test guards against did not end with the freeze, it changed sides:
  * while the document moved, the danger was the code drifting in silence; now
@@ -24,7 +24,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const DOC = fileURLToPath(new URL('../../../../docs/formatos/engine-adapter.md', import.meta.url));
+const DOC = fileURLToPath(new URL('../../../../docs/formats/engine-adapter.md', import.meta.url));
 const TYPES = fileURLToPath(new URL('../../src/engine/types.ts', import.meta.url));
 
 const SECTION = '## The TypeScript interface';
@@ -90,7 +90,7 @@ test('types.ts exports exactly the symbols of the document — neither less, nor
   assert.deepEqual(
     { missing, extra },
     { missing: [], extra: [] },
-    'types.ts drifted away from docs/formatos/engine-adapter.md § Interface TypeScript',
+    'types.ts drifted away from docs/formats/engine-adapter.md § Interface TypeScript',
   );
   assert.deepEqual(declared, expected);
 
@@ -152,7 +152,7 @@ test('t166 — the document and types.ts both declare EngineModel and ModelCatal
 
 test('t166 — listModels is an OPTIONAL member of EngineAdapter, on both sides', () => {
   for (const [side, source] of [
-    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['docs/formats/engine-adapter.md', DOCUMENT_TYPESCRIPT],
     ['src/engine/types.ts', MODULE_SOURCE],
   ] as const) {
     const body = interfaceBody(source, 'EngineAdapter');
@@ -168,7 +168,7 @@ test('t166 — listModels is an OPTIONAL member of EngineAdapter, on both sides'
 
 test('t166 — EngineModel keeps id and origin required, and label optional', () => {
   for (const [side, source] of [
-    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['docs/formats/engine-adapter.md', DOCUMENT_TYPESCRIPT],
     ['src/engine/types.ts', MODULE_SOURCE],
   ] as const) {
     const body = interfaceBody(source, 'EngineModel');
@@ -198,7 +198,7 @@ test('t166 — EngineModel keeps id and origin required, and label optional', ()
 
 test('t175 — modelTier is an OPTIONAL member of SessionSpec, on both sides', () => {
   for (const [side, source] of [
-    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['docs/formats/engine-adapter.md', DOCUMENT_TYPESCRIPT],
     ['src/engine/types.ts', MODULE_SOURCE],
   ] as const) {
     const body = interfaceBody(source, 'SessionSpec');
@@ -222,6 +222,6 @@ test('t175 — the growth list of the document names the tier', () => {
 
   assert.ok(
     section.includes('modelTier'),
-    'docs/formatos/engine-adapter.md § "Adjustments made in review" does not mention modelTier',
+    'docs/formats/engine-adapter.md § "Adjustments made in review" does not mention modelTier',
   );
 });

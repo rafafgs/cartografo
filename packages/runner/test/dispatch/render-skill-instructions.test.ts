@@ -777,8 +777,8 @@ test('AT17 — a path that walks through a value that is not an object is unreso
 /* --- AT18: the real factory manifests, against the real crossing fixture --- */
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BETS_SKILLS_DIR = path.join(REPO_ROOT, 'grafos-de-fabrica', 'bets-assimetricas', 'skills');
-const BETS_FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'tese-exemplo-bets-assimetricas.json');
+const BETS_SKILLS_DIR = path.join(REPO_ROOT, 'factory-graphs', 'bets-assimetricas', 'skills');
+const BETS_FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'bets-asymmetric-thesis-example.json');
 
 /** One step of the crossing the t116 fixture hand-authored. */
 interface CrossingStep {

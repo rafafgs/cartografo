@@ -41,7 +41,7 @@ import { resolvePinsOver } from './support.ts';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-minimal.json');
 
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
@@ -524,7 +524,7 @@ test('AT13 — reverting without a reason returns 400; reverting a pending propo
 
 /**
  * AT14–AT17: one case per soundness rule, each reproducing through semantic
- * operations the counterexample of the same name in `schema/exemplos/` (t96).
+ * operations the counterexample of the same name in `schema/examples/` (t96).
  */
 const REJECTION_CASES: Array<{
   at: string;

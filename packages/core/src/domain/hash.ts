@@ -4,7 +4,7 @@
  * `grafo_versao.id` is `sha256:` followed by the sha256 of the canonical JSON
  * serialization of the **whole** document — not of a subset. That is the
  * deliberate difference from the skill manifest hash
- * (`especificacoes/formatos/skill-manifest.md`), which only covers
+ * (`specs/formats/skill-manifest.md`), which only covers
  * `{instructions, input, output, checks, permissions}` because there catalogue
  * metadata must not invalidate the pin. Here the opposite holds: the snapshot of
  * a version is the whole document (`docs/spec/graph.md` §7), and changing the

@@ -57,7 +57,7 @@ export const OUTPUT_FILE = 'intake-proposto.json';
  *
  * Separate from the prompt because the `EngineAdapter` contract is explicit that
  * the two are never concatenated by the caller
- * (`docs/formatos/engine-adapter.md`): what is stable across every intake belongs
+ * (`docs/formats/engine-adapter.md`): what is stable across every intake belongs
  * here, what is specific to this request belongs in the prompt.
  */
 export const INTAKE_INSTRUCTIONS = [

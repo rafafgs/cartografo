@@ -125,7 +125,7 @@ per node.
 **Hole 4 was not a defect**, and it is the only item on this list that closes
 without a line of code. `from_node_id: null` is the documented contract of a
 job's FIRST transition — `job.transitioned.schema.json` and
-[`taxonomy.md`](../especificacoes/eventos/taxonomy.md) say so, and `jobs.test.ts`
+[`taxonomy.md`](../specs/events/taxonomy.md) say so, and `jobs.test.ts`
 already pinned the shape. `null` means "it left the entry node", and job 2's
 entry node was `triagem`: whoever wrote the note read "the job was in triagem" as
 contradicting the `null`, and the two are the same thing. t264 investigated and

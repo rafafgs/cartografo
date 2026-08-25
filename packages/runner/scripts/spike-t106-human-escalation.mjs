@@ -4,7 +4,7 @@
  *
  * NOT a CI test, and it must not become one. The suite runs against the fake
  * engine precisely so it does not depend on an installed binary, credentials or
- * network (`docs/formatos/engine-adapter.md:363-366`); this is the manual gate
+ * network (`docs/formats/engine-adapter.md:363-366`); this is the manual gate
  * on the other side — the half the kit cannot prove because it has no real CLI.
  * Same division t104's `spike-real-session.mjs` set up: evidence attached to
  * the ticket, never an automatic gate.

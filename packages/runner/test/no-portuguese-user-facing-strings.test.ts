@@ -119,7 +119,7 @@ const STOPWORDS = Object.freeze([
  *
  * Not "words allowed inside a message" — the literal's entire content has to be
  * one of these. `RULES.REACHABLE` is the report label two validators compare on
- * (`packages/core/src/domain/graph.ts`, `scripts/validar-grafo.mjs`), and
+ * (`packages/core/src/domain/graph.ts`, `scripts/validate-graph.mjs`), and
  * `'para'` is a required edge field of the graph document and a key of
  * `metrica_esperada`.
  */

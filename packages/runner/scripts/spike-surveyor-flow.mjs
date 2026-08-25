@@ -5,7 +5,7 @@
  *
  * NOT a CI test, and it must not become one. The suite runs against the fake
  * engine precisely so it does not depend on an installed binary, credentials or
- * network (`docs/formatos/engine-adapter.md:363-366`); this is the manual gate
+ * network (`docs/formats/engine-adapter.md:363-366`); this is the manual gate
  * on the other side — the half the suite cannot prove because it has no real
  * CLI. Same division `spike-real-session.mjs` (t104) and
  * `spike-t106-human-escalation.mjs` set up: evidence attached to the ficha,
@@ -63,7 +63,7 @@ import { proposeFlowImprovement } from '../src/surveyor/proposal.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
-const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/exemplos/graph-valid-minimal.json');
+const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/examples/graph-valid-minimal.json');
 const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 
 /** The manifest each node of the minimal graph runs, by node id (t161). */

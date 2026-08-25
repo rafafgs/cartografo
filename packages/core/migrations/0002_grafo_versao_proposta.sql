@@ -12,7 +12,7 @@
 --
 -- Os nomes de coluna (graph_id, parent_version, source, proposal_id, reason)
 -- copiam literalmente os schemas de evento já especificados em
--- especificacoes/eventos/schemas/, para que a emissão de telemetria (t102) seja
+-- specs/events/schemas/, para que a emissão de telemetria (t102) seja
 -- mapeamento direto, não tradução. Esta migração NÃO cria a tabela de eventos:
 -- ela é do t102.
 --

@@ -3,7 +3,7 @@
  *
  * Pure on purpose: no spawn, no state, no clock. It is the seam the conformance
  * kit demands ("an adapter that does not expose that seam is an adapter you
- * cannot certify", `docs/formatos/engine-adapter.md:363-366`), and keeping it
+ * cannot certify", `docs/formats/engine-adapter.md:363-366`), and keeping it
  * side-effect free is what lets the argv be checked by unit test without a real
  * CLI and without authentication.
  *
@@ -105,7 +105,7 @@ export const TRIVIAL_MODEL_VARIABLE = 'CLAUDE_TRIVIAL_MODEL';
  * out of running the CLIs instead of reading documentation: an open pipe nobody
  * writes to leaves the engine waiting for EOF forever — "the timeout does fire,
  * but the cost is a whole session lost to a library default"
- * (`docs/formatos/engine-adapter.md:436-445`).
+ * (`docs/formats/engine-adapter.md:436-445`).
  */
 export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
 

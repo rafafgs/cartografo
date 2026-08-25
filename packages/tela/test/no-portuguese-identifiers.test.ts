@@ -459,7 +459,7 @@ export function hitsInSource(source: string): Array<{ line: number; token: strin
  * File and directory names this ticket renames away.
  *
  * Asserted by name rather than by glossary because the sweep's own word list
- * would also flag `scripts/validar-grafo.mjs`, which stays exactly where it is
+ * would also flag `scripts/validate-graph.mjs`, which stays exactly where it is
  * (see `no-portuguese-identifiers.test.mjs` in `scripts/`).
  */
 const RENAMED_AWAY = Object.freeze([

@@ -2,7 +2,7 @@
  * Gate: the numbers a bundle translation produced are written down, and true
  * (t295, from t280's Definition of Done #8-9).
  *
- * t280 translated `grafos-de-fabrica/desenvolvimento-de-software` and its
+ * t280 translated `factory-graphs/desenvolvimento-de-software` and its
  * Definition of Done asked the closing note for three things the next bundle
  * would need in order to plan: the per-file line counts before and after, the
  * full `{old id, old version, old hash} -> {new id, new version, new hash}`
@@ -49,7 +49,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 export const CLOSING_NOTE = path.join('notas', '2026-08-24-t280-closing-note.md');
 
 /** The bundle the note describes, relative to the repository root. */
-export const BUNDLE = path.join('grafos-de-fabrica', 'desenvolvimento-de-software');
+export const BUNDLE = path.join('factory-graphs', 'desenvolvimento-de-software');
 
 /** The sweep whose docblock cites the note; the citation has to resolve. */
 export const CITING_GATE = path.join('tests', 'no-portuguese-factory-bundles.test.mjs');

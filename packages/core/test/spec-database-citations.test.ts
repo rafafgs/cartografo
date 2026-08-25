@@ -78,7 +78,7 @@
  *
  * ## Scope
  *
- * Every specification: `docs/spec/*.md`, `docs/formatos/*.md` and
+ * Every specification: `docs/spec/*.md`, `docs/formats/*.md` and
  * `docs/o-que-e-o-cartografo.md`. It started as four documents — the one t236
  * owned plus the three the t237 round found — and t231 took the growth path
  * this paragraph used to describe, which was to widen `SWEPT` once
@@ -115,7 +115,7 @@ const GLOSSARY = 'docs/spec/glossario-wire.md';
  */
 function swept(): string[] {
   const documents = [
-    ...['docs/spec', 'docs/formatos'].flatMap((directory) =>
+    ...['docs/spec', 'docs/formats'].flatMap((directory) =>
       readdirSync(path.join(REPO_ROOT, directory))
         .filter((entry) => entry.endsWith('.md'))
         .sort()

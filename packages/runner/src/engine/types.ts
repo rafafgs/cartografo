@@ -1,6 +1,6 @@
 /**
  * The EngineAdapter interface — a literal transcription of
- * `docs/formatos/engine-adapter.md` § "Interface TypeScript".
+ * `docs/formats/engine-adapter.md` § "Interface TypeScript".
  *
  * This file is NOT a place for design decisions. It is the specification
  * compiling: the `typescript` blocks of that section, in the order they appear,

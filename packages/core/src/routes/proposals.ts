@@ -470,7 +470,7 @@ function nodesById(document: GraphDocument): Map<string, unknown> {
  * exactly wrong — a graph registered before the registry carried its skills would
  * become unproposable forever, its whole lineage frozen by a rule that did not
  * exist when it was written. (The repository's own fixtures are that case:
- * `schema/exemplos/` pins ids like `cartografo/redigir-nota`, which `ID_PATTERN`
+ * `schema/examples/` pins ids like `cartografo/redigir-nota`, which `ID_PATTERN`
  * can never accept.) A node ADDED by the proposal is left out for the same
  * reason it is left out of `validateOperation`'s shape rules — `add_node` carries
  * a whole node, and demanding a registered pin there is a rule about what a graph

@@ -19,7 +19,7 @@
  * parser: a line that IS a recognized frame contributes only its text, even when
  * that text is empty; a line that is not a frame at all passes through raw. The
  * second half is not sloppiness — plain-text runtime errors interleave with the
- * JSON on both engines (`docs/formatos/engine-adapter.md`'s viability table
+ * JSON on both engines (`docs/formats/engine-adapter.md`'s viability table
  * measured it on Codex), and dropping them would throw away the only account of
  * a session that died mid-stream.
  *
@@ -105,7 +105,7 @@ function claudeCodeFrameText(line: string): string[] | null {
  * Pinned on a REAL transcript, captured for t141/FR9 against `codex-cli 0.147.0`
  * with a credential — before this ficha nothing in this repo had ever seen this
  * engine emit model text, only the status frames of the uncredentialed 401 run
- * (`docs/formatos/engine-adapter.md`'s viability table). What the real stream
+ * (`docs/formats/engine-adapter.md`'s viability table). What the real stream
  * showed, in order:
  *
  * ```

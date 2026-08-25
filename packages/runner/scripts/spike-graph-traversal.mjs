@@ -3,7 +3,7 @@
  * Manual proof: a WHOLE graph crossed with nobody driving it (t161, DoD).
  *
  * NOT a CI test, and it must not become one — the same division every other
- * spike in this directory keeps (`docs/formatos/engine-adapter.md`): the suite
+ * spike in this directory keeps (`docs/formats/engine-adapter.md`): the suite
  * runs against the fake engine so it never depends on an installed,
  * authenticated binary, and the manual gate is here, where the real CLI is. Its
  * CI counterpart, which proves the same wiring deterministically against a
@@ -50,7 +50,7 @@
  * produce. The claude-code adapter can express "all writing or none" and "the
  * network open or closed", and nothing in between.
  *
- * When this ficha landed, `grafos-de-fabrica/desenvolvimento-de-software` had
+ * When this ficha landed, `factory-graphs/desenvolvimento-de-software` had
  * exactly one manifest the adapter could not honour: `testar-alpha` declared
  * `network: {allowed: true, domains: [...]}`, a per-domain allowlist that would
  * take an egress proxy. It no longer does. The product decision this comment
@@ -93,8 +93,8 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 /**
  * The factory graph under proof, and the directory its manifests live in.
  *
- * `grafos-de-fabrica/desenvolvimento-de-software` and not
- * `schema/exemplos/graph-valid-flowpilot.json`: the two are the same flowpilot
+ * `factory-graphs/desenvolvimento-de-software` and not
+ * `schema/examples/graph-valid-flowpilot.json`: the two are the same flowpilot
  * port, but only this one can be registered end to end. The schema example's
  * `skill_ref.id`s are namespaced (`cartografo/refinar-ticket`) and the registry's
  * ids are kebab-case with no slash (`packages/core/src/domain/manifest.ts`), so
@@ -102,7 +102,7 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
  * example is a document that validates against the graph schema, not a graph
  * anything can run.
  */
-const FACTORY_DIR = join(REPO_ROOT, 'grafos-de-fabrica/desenvolvimento-de-software');
+const FACTORY_DIR = join(REPO_ROOT, 'factory-graphs/desenvolvimento-de-software');
 const GRAPH_PATH = join(FACTORY_DIR, 'grafo.json');
 const SKILLS_DIR = join(FACTORY_DIR, 'skills');
 

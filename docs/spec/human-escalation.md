@@ -38,7 +38,7 @@ client of the API.
 ## 2. Asking blocks, in the same transaction
 
 `POST /v1/input-requests` writes the question, the
-[`input_request.created`](../../especificacoes/eventos/schemas/input_request.created.schema.json)
+[`input_request.created`](../../specs/events/schemas/input_request.created.schema.json)
 event **and** raises the owning job's flag, all inside the same transaction — a
 nested `db.transaction` becomes a savepoint in `better-sqlite3`, so either all
 three things happen or none of them does.
@@ -48,7 +48,7 @@ three things happen or none of them does.
 ```
 
 The reason cites the question's id (the example is the
-[taxonomy](../../especificacoes/eventos/taxonomy.md)'s own): whoever reads the
+[taxonomy](../../specs/events/taxonomy.md)'s own): whoever reads the
 job finds out from the reason what has to happen for it to move again, without
 crossing two tables.
 
@@ -77,7 +77,7 @@ where asking and blocking can come apart.
 `PATCH /v1/input-requests/:id/answer` and
 `PATCH /v1/input-requests/:id/auto-resolution` write the answer and lower the
 flag in the same transaction. The
-[`job.unblocked`](../../especificacoes/eventos/schemas/job.unblocked.schema.json)
+[`job.unblocked`](../../specs/events/schemas/job.unblocked.schema.json)
 event carries the **same actor** as the answer's event:
 
 | Who answered | The answer's event | The unblock's actor |
@@ -145,7 +145,7 @@ manual proof catches** (`scripts/spike-t106-human-escalation.mjs`).
 
 There is no session resume. `continueSession`/resume is declaredly outside
 `EngineAdapter` v0
-([engine-adapter.md](../formatos/engine-adapter.md), "Out of scope (v0)"), and
+([engine-adapter.md](../formats/engine-adapter.md), "Out of scope (v0)"), and
 `t106` does not bring it in through the back door: **resuming here is always a
 fresh dispatch**, made by the next `tick()` of the
 [controller](runner-and-controller.md), with a new session.

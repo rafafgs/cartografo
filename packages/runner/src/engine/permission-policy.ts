@@ -22,7 +22,7 @@
  *
  * What this buys and what it does not: `Bash` remains a way out to the network
  * and to the disk that no list of names closes completely (the residual gap is
- * written down in `docs/formatos/engine-adapter.md`, "Permissões da sessão").
+ * written down in `docs/formats/engine-adapter.md`, "Permissões da sessão").
  * This is best-effort in what the engine offers — "sandbox where the engine
  * allows" (`notas/2026-08-14-extension-and-quality.md:44-45`) — not process
  * isolation.
@@ -101,7 +101,7 @@ const refuse = (reason: string): PermissionDecision => ({
  *
  * A closed network IGNORES `dominios`, which is the manifest format's own rule
  * ("`rede.permitido: false` closes the network; `dominios` is ignored in that
- * case", `especificacoes/formatos/skill-manifest.md`). Refusing there would
+ * case", `specs/formats/skill-manifest.md`). Refusing there would
  * turn the safest declaration into an error.
  *
  * @param network The network half of the declared policy.

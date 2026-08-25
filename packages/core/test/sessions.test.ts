@@ -1294,7 +1294,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
 /*                                                                             */
 /* This is the half of the projection that WRITES: without a place to keep      */
 /* what a node produced, nothing can assemble the `input` the next node's       */
-/* skill declares (`especificacoes/formatos/skill-manifest.md`, step 2). The   */
+/* skill declares (`specs/formats/skill-manifest.md`, step 2). The   */
 /* half that READS is `GET /v1/jobs/:id/context`, exercised in `jobs.test.ts`   */
 /* and, pure, in `domain-context.test.ts`.                                      */
 /* -------------------------------------------------------------------------- */
@@ -1311,7 +1311,7 @@ const MINIMAL_GRAPH = path.join(
   '..',
   '..',
   'schema',
-  'exemplos',
+  'examples',
   'graph-valid-minimal.json',
 );
 

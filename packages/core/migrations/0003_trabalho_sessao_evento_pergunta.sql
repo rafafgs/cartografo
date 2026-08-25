@@ -6,14 +6,14 @@
 --
 -- `event` é a fonte de verdade (t98): append-only, sem update e sem delete.
 -- As outras três tabelas são PROJEÇÃO — estado atual, sempre reconstruível a
--- partir do log por `especificacoes/eventos/reducers/reconstruct-state.mjs`.
+-- partir do log por `specs/events/reducers/reconstruct-state.mjs`.
 -- Quando as duas discordarem, quem está errado é a projeção.
 --
 -- Duas ausências de propósito:
 --
 -- - não existe tabela "execução". `execution_id` é um agrupador INTEGER opaco;
 --   a taxonomia nunca listou execução como `entity.type` válido
---   (`especificacoes/eventos/schemas/envelope.schema.json:41`);
+--   (`specs/events/schemas/envelope.schema.json:41`);
 -- - `job.graph_version_id` não tem FK. A tabela `graph_version` é de t101,
 --   que corre em paralelo, e o id dela é hash (string, D15) — travar a FK aqui
 --   acoplaria a ordem de build das duas fichas sem ganhar nada.

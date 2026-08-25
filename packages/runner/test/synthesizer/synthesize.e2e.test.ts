@@ -19,7 +19,7 @@
  *   t124 to t147. A test that patches the global cannot find out whether the
  *   code under test presents a token, because the answer is always yes;
  * - the engine stays fake — deterministic CI, no installed CLI, no
- *   authentication (`docs/formatos/engine-adapter.md:363-366`) — but it is fed
+ *   authentication (`docs/formats/engine-adapter.md:363-366`) — but it is fed
  *   the FRAME shape the real adapter produces, not prose.
  *
  * What is left faked is the model's judgement, which is the one thing no test

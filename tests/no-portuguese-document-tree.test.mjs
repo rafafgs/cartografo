@@ -6,7 +6,7 @@
  * prose (`packages/core/test/no-portuguese-glossary-prose.test.ts`), t299 the
  * documents a stranger reads before the code
  * (`tests/no-portuguese-reader-documents.test.mjs`). What neither reached is the
- * internal record — `especificacoes/`, `notas/`, `schema/` — and what none of
+ * internal record — `specs/`, `notas/`, `schema/` — and what none of
  * the three reached at all is the one thing a reader sees before opening
  * anything: the FILE NAMES.
  *
@@ -45,7 +45,7 @@
  *   `condicao`, `versao`, `no_inicial`) carries neither a diacritic nor a
  *   stopword. What is deliberately NOT carried over is the markdown cut. A
  *   backtick span in source is usually a template literal, and the template
- *   literals of `especificacoes/eventos/tests/schemas.test.mjs` are where its
+ *   literals of `specs/events/tests/schemas.test.mjs` are where its
  *   per-schema test titles are BUILT — blank those and the sweep goes green over
  *   the very lines that opened t301. The gloss is still honoured: it is D24's
  *   escape hatch in every reading, not markdown's alone. The cost of having no
@@ -84,7 +84,7 @@ import { DIACRITIC, GLOSS, STOPWORD, blank } from '../scripts/no-portuguese-pros
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The directories walked whole, each as a repo-relative prefix. */
-export const TREES = Object.freeze(['docs/', 'especificacoes/', 'notas/', 'schema/']);
+export const TREES = Object.freeze(['docs/', 'notas/', 'schema/', 'specs/']);
 
 /** The two documents at the root that belong to the tree without living in it. */
 export const ROOT_DOCUMENTS = Object.freeze(['README.md', 'DECISIONS.md']);
@@ -102,50 +102,40 @@ export const ROOT_DOCUMENTS = Object.freeze(['README.md', 'DECISIONS.md']);
 export const CONTENT_NOT_SWEPT = 'docs/spec/glossario-wire.md';
 
 /**
- * The path segments that stay Portuguese, each with its reason and its owner.
+ * The one path segment that stays Portuguese, with the reason it stays for good.
  *
- * D24 moves file names; it does not move directory names. Renaming a directory
- * moves every path that ends in it at once — every citation, every `path.join`,
- * every relative link — and that fan-out is a ticket of its own, t282's, which
- * is the one that empties this list.
+ * This list had five entries and an owning ticket. Four of them —
+ * `especificacoes`, `eventos`, `formatos`, `exemplos` — were placeholders for
+ * work that had not happened: renaming a directory moves every path that ends in
+ * it at once, and that fan-out was a ticket of its own. t282 is that ticket, the
+ * four directories are now `specs/`, `events/`, `formats/` and `examples/`, and
+ * the entries are gone rather than rewritten.
  *
- * Declared as SEGMENTS rather than paths: one entry for `especificacoes` covers
- * everything under it, which is what keeps the list five lines long instead of
- * eighty-seven.
+ * **`notas` is different, and it is not waiting for anybody.** No ticket of this
+ * series ever proposed renaming the folder — t300 translated its CONTENTS and
+ * left the name alone, and t282's declared scope named four directories and did
+ * not name this one. So the entry stops claiming an owner: it is a standing
+ * exception, and the honest thing is to say so rather than leave a ticket number
+ * on it that shipped long ago. A carve-out whose owner has already delivered is
+ * a TODO nobody is coming back for.
  *
- * **What this list is, honestly.** None of these five trips the two signals
- * today — `especificacoes` carries no cedilla, `exemplos` is not a stopword — so
- * removing an entry would not turn the gate red on its own. Its teeth are the
- * assertion below that every entry still names a segment the tree really has:
- * the day t282 renames one, the entry goes stale, the gate reds, and the reason
- * text gets read by whoever is standing there. A carve-out that outlives its
- * subject is how a carve-out becomes permanent.
+ * **What this list is, honestly.** `notas` trips neither of the two signals — it
+ * carries no diacritic and is not a function word — so deleting the entry would
+ * not turn this gate red on its own. Its teeth are the assertion below that the
+ * entry still names a segment the tree really has, plus the sibling gate
+ * `tests/no-portuguese-path-segments.test.mjs`, which t282 added to read the
+ * WHOLE tracked tree against the five stems D24 retired. Between them, a
+ * Portuguese directory reappearing anywhere has somewhere to be caught.
  */
 export const ALLOWED_SEGMENTS = Object.freeze([
   Object.freeze({
-    segment: 'especificacoes',
-    reason: 'The format and event specifications; renaming the directory moves every citation of it — t282',
-  }),
-  Object.freeze({
     segment: 'notas',
-    reason: 'The working notes; the four English closing notes already live under this name — t282',
-  }),
-  Object.freeze({
-    segment: 'eventos',
-    reason: 'The event taxonomy, its schemas and its reducer, under especificacoes/ — t282',
-  }),
-  Object.freeze({
-    segment: 'formatos',
-    reason: 'Two directories share this name, under docs/ and under especificacoes/ — t282',
-  }),
-  Object.freeze({
-    segment: 'exemplos',
-    reason: 'Three fixture directories share this name, under schema/ and twice under especificacoes/ — t282',
+    reason:
+      'The working notes. A standing exception, owned by no ticket: the folder name was ' +
+      'never in the declared rename scope of t282 or of any sibling, and the English ' +
+      'closing notes of the whole D24 series already live under it.',
   }),
 ]);
-
-/** The ticket every carve-out here names as the one that removes it. */
-const OWNER_TICKET = 't282';
 
 /** An opening or closing code fence, and the run of backticks that makes it. */
 const FENCE = /^\s*(`{3,})/;
@@ -384,7 +374,7 @@ test('AT2 — the walk really reaches all four trees and both root documents', (
   }
 });
 
-test('AT3 — every carve-out names a reason, its owner, and a segment that exists', () => {
+test('AT3 — every carve-out names a reason and a segment that exists', () => {
   const segments = new Set(documentsInScope().flatMap((entry) => entry.split('/')));
 
   assert.ok(ALLOWED_SEGMENTS.length > 0, 'the carve-out list is the FR10 record; it is not empty');
@@ -392,9 +382,18 @@ test('AT3 — every carve-out names a reason, its owner, and a segment that exis
   for (const entry of ALLOWED_SEGMENTS) {
     assert.ok(entry.reason.length > 20, `"${entry.segment}" has no reason worth reading`);
 
-    assert.ok(
-      entry.reason.includes(OWNER_TICKET),
-      `"${entry.segment}" names no ticket that removes it; a carve-out with no owner is permanent`,
+    // What used to be here was `reason.includes(OWNER_TICKET)` — every carve-out
+    // had to name the ticket that would remove it, so that none of them could go
+    // permanent by neglect. t282 IS that ticket, and it removed the four entries
+    // that were waiting on it. Demanding a ticket number from the one entry left
+    // would now mean demanding a promise nobody intends to keep, so the claim
+    // moves: a standing exception has to SAY it is standing.
+    assert.match(
+      entry.reason,
+      /standing exception/,
+      `"${entry.segment}" is the last carve-out and it must declare itself permanent; ` +
+        'a carve-out that quietly waits for a ticket that already shipped is a TODO ' +
+        'nobody is coming back for',
     );
 
     assert.ok(
@@ -438,9 +437,16 @@ test('AT4 — the sweep bites on a reintroduced Portuguese name', () => {
   );
 
   assert.deepEqual(
-    segmentOffendersIn('especificacoes/eventos/exemplos/example-log.jsonl'),
+    segmentOffendersIn('notas/2026-08-25-t300-closing-note.md'),
     [],
-    'the four carved-out segments must not be reported; that is what the list is for',
+    'the one carved-out segment must not be reported; that is what the list is for',
+  );
+
+  assert.deepEqual(
+    segmentOffendersIn('notas/execução/nota.md'),
+    ['notas/execução/nota.md: path segment "execução": diacritic "ç"'],
+    'the carve-out spares the segment it names and nothing else in the path: it is a ' +
+      'segment filter, not a prefix that switches the sweep off below it',
   );
 });
 
@@ -452,8 +458,8 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
   );
 
   assert.deepEqual(
-    contentOffendersIn('schema/exemplos/graph.json', '{\n  "description": "a condição"\n}\n'),
-    ['schema/exemplos/graph.json:2: diacritic "ç" — "description": "a condição"'],
+    contentOffendersIn('schema/examples/graph.json', '{\n  "description": "a condição"\n}\n'),
+    ['schema/examples/graph.json:2: diacritic "ç" — "description": "a condição"'],
     'JSON is read raw: a fixture has no fence to hide behind',
   );
 
@@ -470,14 +476,14 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
   );
 
   assert.deepEqual(
-    contentOffendersIn('especificacoes/formatos/exemplos/m.json', '  "github.com"\n'),
+    contentOffendersIn('specs/formats/examples/m.json', '  "github.com"\n'),
     [],
     'a whole-string hostname is data; `com` is its TLD and not a word of a sentence',
   );
 
   assert.deepEqual(
-    contentOffendersIn('schema/exemplos/g.json', '  "description": "fale com github.com"\n'),
-    ['schema/exemplos/g.json:1: stopword "com" — "description": "fale com github.com"'],
+    contentOffendersIn('schema/examples/g.json', '  "description": "fale com github.com"\n'),
+    ['schema/examples/g.json:1: stopword "com" — "description": "fale com github.com"'],
     'a hostname INSIDE a sentence spares nothing: only the whole string counts',
   );
 
@@ -489,11 +495,11 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
 
   assert.deepEqual(
     contentOffendersIn(
-      'especificacoes/eventos/tests/schemas.test.mjs',
+      'specs/events/tests/schemas.test.mjs',
       '// Qualquer divergência entre um schema e a tabela é um erro do schema.\n',
     ),
     [
-      'especificacoes/eventos/tests/schemas.test.mjs:1: diacritic "ê" — ' +
+      'specs/events/tests/schemas.test.mjs:1: diacritic "ê" — ' +
         '// Qualquer divergência entre um schema e a tabela é um erro do schema.',
     ],
     'a Portuguese comment in source is prose; t301 is the ticket that says so',
@@ -501,11 +507,11 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
 
   assert.deepEqual(
     contentOffendersIn(
-      'especificacoes/eventos/tests/schemas.test.mjs',
+      'specs/events/tests/schemas.test.mjs',
       'test(`${file} é JSON válido`, () => {});\n',
     ),
     [
-      'especificacoes/eventos/tests/schemas.test.mjs:1: diacritic "é" — ' +
+      'specs/events/tests/schemas.test.mjs:1: diacritic "é" — ' +
         'test(`${file} é JSON válido`, () => {});',
     ],
     'a test title built in a template literal is read; blanking spans would hide it',
@@ -513,7 +519,7 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
 
   assert.deepEqual(
     contentOffendersIn(
-      'especificacoes/eventos/reducers/reconstruct-state.mjs',
+      'specs/events/reducers/reconstruct-state.mjs',
       '// Rendered (literally "ausência tem nome") in the projection.\n',
     ),
     [],

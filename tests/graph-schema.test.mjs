@@ -3,7 +3,7 @@
  *
  * They cover the ticket's three artifacts: the JSON Schema
  * (`schema/grafo.schema.json`), the reference validator
- * (`scripts/validar-grafo.mjs`) and the six fixtures in `schema/exemplos/`.
+ * (`scripts/validate-graph.mjs`) and the six fixtures in `schema/examples/`.
  * Zero dependencies: only `node:test`, `node:assert`, `node:fs` and `node:path`
  * (FR9).
  *
@@ -24,8 +24,8 @@ import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SCHEMA_PATH = path.join(ROOT, 'schema', 'grafo.schema.json');
-const VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
-const EXAMPLES_DIR = path.join(ROOT, 'schema', 'exemplos');
+const VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
+const EXAMPLES_DIR = path.join(ROOT, 'schema', 'examples');
 
 const TOP_LEVEL_KEYS = [
   'problem_class',
@@ -61,7 +61,7 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-/** Reads a fixture from `schema/exemplos/` by file name. */
+/** Reads a fixture from `schema/examples/` by file name. */
 function readExample(name) {
   return readJson(path.join(EXAMPLES_DIR, name));
 }
@@ -80,7 +80,7 @@ async function loadValidator() {
     existsSync(VALIDATOR_PATH),
     `artifact does not exist yet: ${path.relative(ROOT, VALIDATOR_PATH)}`,
   );
-  validatorModule ??= await import(new URL('../scripts/validar-grafo.mjs', import.meta.url));
+  validatorModule ??= await import(new URL('../scripts/validate-graph.mjs', import.meta.url));
   return validatorModule;
 }
 
@@ -112,7 +112,7 @@ test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the eigh
   }
 });
 
-test('AT1 — every fixture in schema/exemplos validates against the schema', async () => {
+test('AT1 — every fixture in schema/examples validates against the schema', async () => {
   const { validateAgainstSchema } = await import(
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
@@ -665,7 +665,7 @@ test('t253 — project is an optional top-level object, and both bundles still v
   // bundle standing for it, and it is asserted where it is still a claim about
   // the FORMAT: a document that declares none has to keep validating.
   for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
-    const graph = readJson(path.join(ROOT, 'grafos-de-fabrica', bundle, 'grafo.json'));
+    const graph = readJson(path.join(ROOT, 'factory-graphs', bundle, 'grafo.json'));
     assert.deepEqual(validateAgainstSchema(graph, schema), [], `${bundle}: shape`);
     assert.ok(
       typeof graph.project === 'object' && graph.project !== null,

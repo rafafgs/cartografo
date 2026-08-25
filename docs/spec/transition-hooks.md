@@ -10,7 +10,7 @@ This document is the contract for whoever writes the graph **and** for whoever
 receives the delivery, and it is deliberately self-sufficient: the hook and the
 whole receiver — signature verification included — can be written without opening
 a line of the control plane's code. What travels is the envelope of the
-[event taxonomy](../../especificacoes/eventos/taxonomy.md), with no translation
+[event taxonomy](../../specs/events/taxonomy.md), with no translation
 along the way, exactly the same object the [SSE stream](events-stream.md)
 delivers in its `data:` field and the
 [signed webhooks](webhooks-events.md) deliver by POST.
@@ -90,7 +90,7 @@ had to be touched.
 | `description` | no | What the reaction is for, in one sentence. |
 
 The complete example, with one hook per trigger, is in
-`schema/exemplos/graph-valid-with-hooks.json` — cited and not linked, because
+`schema/examples/graph-valid-with-hooks.json` — cited and not linked, because
 the file's own name is still Portuguese and a link target is prose to a sweep
 that reads lines; renaming it belongs to the path ticket.
 
@@ -289,7 +289,7 @@ is not followed.
 **Success is mute, giving up is an event.** A hook has no registered subscriber:
 nobody is polling its queue, so a reaction that fails forever in silence is
 exactly what whoever wrote the graph cannot find out about. The
-[`job.hook_failed`](../../especificacoes/eventos/schemas/job.hook_failed.schema.json)
+[`job.hook_failed`](../../specs/events/schemas/job.hook_failed.schema.json)
 solves that through the transports that already exist — it shows up in the stream
 and in the registered webhooks with no extra work at all:
 
@@ -324,13 +324,13 @@ old format is refused).
 
 What validation does **not** do is resolve the `secret_ref` against the database.
 Both structural passes are pure and database-free, kept in byte-for-byte parity
-between `scripts/validar-grafo.mjs` and the port in
+between `scripts/validate-graph.mjs` and the port in
 `packages/core/src/domain/graph.ts` — a check that consulted the database would
 break the contract for one of the two and not for the other. A name that does not
 resolve is zero deliveries (§4), never a `422`.
 
 REFERENTIAL validation belongs to the graph validator's **structural** pass
-(`scripts/validar-grafo.mjs` and the port in
+(`scripts/validate-graph.mjs` and the port in
 `packages/core/src/domain/graph.ts`, kept in byte-for-byte parity):
 
 | Code | When |

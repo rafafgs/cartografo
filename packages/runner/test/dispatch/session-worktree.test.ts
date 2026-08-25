@@ -3,7 +3,7 @@
  *
  * The claim under test is the isolation invariant the frozen `EngineAdapter`
  * spells out — "the adapter never gives the engine access to a directory beyond
- * `spec.workingDir`" (`docs/formatos/engine-adapter.md:490-493`, invariant 7).
+ * `spec.workingDir`" (`docs/formats/engine-adapter.md:490-493`, invariant 7).
  * `workingDir` is the ENTIRE write scope of a session, so whoever produces that
  * string decides whether two concurrent sessions can step on each other. Until
  * this ficha every dispatch produced the SAME string, and the first real

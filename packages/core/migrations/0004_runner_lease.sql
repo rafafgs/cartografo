@@ -18,7 +18,7 @@
 -- Apertar a FK é aditivo e fica para a ficha que ligar os dois lados.
 --
 -- Os nomes de coluna copiam os schemas de evento já especificados em
--- especificacoes/eventos/schemas/lease.*.schema.json (runner_id, job_id,
+-- specs/events/schemas/lease.*.schema.json (runner_id, job_id,
 -- expires_at, reason), para que ligar a emissão de telemetria seja mapeamento
 -- direto, não tradução. Esta migração NÃO cria a tabela de eventos: ela é do
 -- t102 (0003).

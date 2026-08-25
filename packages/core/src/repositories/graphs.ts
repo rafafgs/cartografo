@@ -353,10 +353,10 @@ export function movePointer(db: Database, graphId: string, versionId: string): v
  * `registerBaseGraph` and `forkVariant`, which have no previous "current" to
  * preserve, and `applyProposal`, which does. The taxonomy's rule that
  * "registering does not move the pointer"
- * (`especificacoes/eventos/taxonomy.md`) is about the two facts being
+ * (`specs/events/taxonomy.md`) is about the two facts being
  * DIFFERENT, not about them never happening together: whoever does both owes the
  * log both, in this order, which is the order the reference reducer folds them
- * in (`especificacoes/eventos/reducers/reconstruct-state.mjs`).
+ * in (`specs/events/reducers/reconstruct-state.mjs`).
  *
  * `project_id` is `DEFAULT_PROJECT` because a lineage is not project-scoped —
  * `migrations/0002_grafo_versao_proposta.sql` gives `graph` no such column — and
@@ -419,7 +419,7 @@ export function recordVersionBirth(db: Database, data: VersionBirth): void {
  * Bootstrap of a new base lineage, in one transaction.
  *
  * Registering normally does NOT move the pointer
- * (`especificacoes/eventos/taxonomy.md`), but here it does: it is the lineage's
+ * (`specs/events/taxonomy.md`), but here it does: it is the lineage's
  * first version, there is no previous "current" to preserve, and a lineage
  * without a pointer would be a graph that exists without holding.
  *

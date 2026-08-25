@@ -3,7 +3,7 @@
  *
  * `SessionSpec.workingDir` is the ENTIRE write scope of a session — "the
  * adapter never gives the engine access to a directory beyond
- * `spec.workingDir`" (`docs/formatos/engine-adapter.md`, invariant 7). Until
+ * `spec.workingDir`" (`docs/formats/engine-adapter.md`, invariant 7). Until
  * this module existed, every dispatch of this runner produced the same string
  * for it, which is to say: every session, forever, could write into every other
  * session's in-flight state. The first real dogfood run found that out the

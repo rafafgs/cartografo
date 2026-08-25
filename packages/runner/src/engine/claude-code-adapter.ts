@@ -13,7 +13,7 @@
  * - **The process comes up detached, and signals go to the GROUP.** It is what
  *   makes C4 pass: an engine that leaves a child alive brings the runner's
  *   machine down after the hundredth session, not the first
- *   (`docs/formatos/engine-adapter.md:367-369`).
+ *   (`docs/formats/engine-adapter.md:367-369`).
  * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
  *   the pipes are closed, and that is what guarantees invariant 4 (every line
  *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
@@ -349,7 +349,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    *
    * The stub that lets `#finish` drop everything else. Invariant 3 of the frozen
    * contract — "getStatus só devolve status terminal depois que onFinished
-   * correu" (`docs/formatos/engine-adapter.md:778`) — is answerable from a
+   * correu" (`docs/formats/engine-adapter.md:778`) — is answerable from a
    * string, and a string is all a session that is over needs to leave behind:
    * the `ChildProcess`, the caller's listener (in the real dispatch it closes
    * over the whole transcript buffer), the timers and the leftovers all go.

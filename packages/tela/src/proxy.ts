@@ -27,7 +27,7 @@
  * D11), so the precedence `--url` > `CARTOGRAFO_URL` >
  * `http://127.0.0.1:CARTOGRAFO_PORT` is duplicated here rather than imported.
  * Duplicated ONCE, and pinned by test, like the graph validator in
- * `scripts/validar-grafo.mjs`: since t199 this is the package's only resolver,
+ * `scripts/validate-graph.mjs`: since t199 this is the package's only resolver,
  * and both entry points — `startScreen` here and `runScreenCli` in `router.ts` —
  * come through it.
  */

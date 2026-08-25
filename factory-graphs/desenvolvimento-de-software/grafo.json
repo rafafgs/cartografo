@@ -509,7 +509,7 @@
       "DECISIONS.md",
       "packages/core/migrations",
       "schema",
-      "especificacoes"
+      "specs"
     ],
     "application": {
       "running": false,

@@ -4,7 +4,7 @@
  * Extension point nº 5 of `notas/2026-08-14-extension-and-quality.md`: every
  * published transition should reach an outside integration without anybody
  * touching the core. The taxonomy is the contract
- * (`especificacoes/eventos/taxonomy.md`); this route is the transport, and the
+ * (`specs/events/taxonomy.md`); this route is the transport, and the
  * public spec a third party builds a client from is
  * `docs/spec/events-stream.md`.
  *
@@ -18,7 +18,7 @@
  *   stopped reading can slow down its own connection and nothing else. The
  *   price is up to one poll interval of latency, which for telemetry is nothing.
  * - **The cursor IS the envelope's `id`** — "the only total ordering there is"
- *   (`especificacoes/eventos/taxonomy.md:54`). There is no `desde_id` query
+ *   (`specs/events/taxonomy.md:54`). There is no `desde_id` query
  *   parameter alongside it: one resume mechanism, not two ways to do the same
  *   thing.
  *

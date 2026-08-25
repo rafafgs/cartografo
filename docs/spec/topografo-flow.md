@@ -54,7 +54,7 @@ Three rules run through the fold, and each one is a decision:
 - **The order is the `id`, never `occurred_at`.** Two events can carry the same
   stamp; only the id the server assigns is a total order. The same rule as the
   reference reducer
-  ([`reconstruct-state.mjs`](../../especificacoes/eventos/reducers/reconstruct-state.mjs)).
+  ([`reconstruct-state.mjs`](../../specs/events/reducers/reconstruct-state.mjs)).
 - **The node the job was on is reconstructed from the log**, by folding
   `job.created` and `job.transitioned`. The projection only knows where the job
   is *now*, and "where was it when it blocked?" is a question about the past.
@@ -297,7 +297,7 @@ Every item here is another ticket's declared scope, not an oversight:
   a proposal (`t118`).
 - **`proposta.*` events**: the taxonomy deferred those types to a ticket of its
   own in wave 2
-  ([`taxonomy.md`](../../especificacoes/eventos/taxonomy.md)), so a topografo
+  ([`taxonomy.md`](../../specs/events/taxonomy.md)), so a topografo
   round emits no telemetry about itself.
 - **Concurrency** between two topografos on the same execution: v1 assumes a
   single manual invocation.

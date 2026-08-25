@@ -2,10 +2,10 @@
  * The reference validator's pinned export names, frozen WHEREVER they appear
  * (t287, FR5).
  *
- * `packages/core/test/domain-graph.test.ts` imports `scripts/validar-grafo.mjs`
+ * `packages/core/test/domain-graph.test.ts` imports `scripts/validate-graph.mjs`
  * BY PATH and destructures it by these spellings, `deepEqual`ing its report
  * against `packages/core/src/domain/graph.ts` on every fixture in
- * `schema/exemplos/`; `validate-factory-bundle.mjs` imports `validarGrafo` from
+ * `schema/examples/`; `validate-factory-bundle.mjs` imports `validarGrafo` from
  * the same module. Renaming one of the four turns core's suite red without a
  * line of core changing, so both D18 identifier sweeps mask them — moving them
  * is `scripts/`' own identifier migration, and that ticket does not exist yet.

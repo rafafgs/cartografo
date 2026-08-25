@@ -94,7 +94,7 @@ test('AT1 — the contract handed to the session states every rule of an item', 
   const { INTAKE_INSTRUCTIONS, buildIntakePrompt } = await loadPrompt();
 
   // Instructions and prompt are never concatenated by the caller
-  // (`docs/formatos/engine-adapter.md`), so the claim is about the two TOGETHER:
+  // (`docs/formats/engine-adapter.md`), so the claim is about the two TOGETHER:
   // where each rule is written is the prompt author's call, that it is written
   // at all is not.
   const composed = `${INTAKE_INSTRUCTIONS}\n${buildIntakePrompt(REQUEST, CLASS_NAME)}`;

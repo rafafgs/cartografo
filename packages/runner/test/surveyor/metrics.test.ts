@@ -14,7 +14,7 @@
  * a subtraction the reader can do by eye.
  *
  * The fold over `job.transitioned` is the same technique
- * `especificacoes/eventos/reducers/reconstruct-state.mjs` already uses to
+ * `specs/events/reducers/reconstruct-state.mjs` already uses to
  * rebuild `no_atual`: the log is the only place the node a work sat on at a
  * given moment exists.
  *

@@ -5,7 +5,7 @@
  * seam is the command construction, the fake engine stands in for the real
  * binary, and what is asserted is **what the process received** — never what
  * was assembled into the `SessionSpec`, which would be testing the test
- * (`docs/formatos/engine-adapter.md`, case C2's forbidden assertion).
+ * (`docs/formats/engine-adapter.md`, case C2's forbidden assertion).
  *
  * The two halves of the claim:
  *

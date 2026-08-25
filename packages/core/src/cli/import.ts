@@ -32,11 +32,11 @@
  * pin depends on (required fields, shape of `id`/`version`/`hash`, `role` in the
  * enum, and the recalculated hash matching the declared one), not the whole
  * schema. The reason is the same one that made `domain/graph.ts` port the graph
- * rules instead of loading `schema/grafo.schema.json`: `especificacoes/` is
+ * rules instead of loading `schema/grafo.schema.json`: `specs/` is
  * outside the package's publishable tree (`files` in `package.json`), and the
  * core cannot depend at runtime on a file `npm pack` does not carry along. Full
  * conformance against
- * `especificacoes/formatos/skill-manifest.schema.json` remains the job of the
+ * `specs/formats/skill-manifest.schema.json` remains the job of the
  * reference validator, which is what guards the bundle in the repository.
  *
  * The manifest field names are the skill-manifest format's, which the D18 rename

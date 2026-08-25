@@ -19,7 +19,7 @@
  *   dead link and a dead command are different failures to read.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
- * (`especificacoes/formatos/skill-manifest.md`, "Identificação" section),
+ * (`specs/formats/skill-manifest.md`, "Identificação" section),
  * rather than imported from the validator: if the test reused the
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
@@ -53,24 +53,24 @@ import path from 'node:path';
 import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BUNDLE_DIR = path.join(ROOT, 'grafos-de-fabrica', 'bets-assimetricas');
+const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'bets-assimetricas');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
-const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
+const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
 const GRAPH_SCHEMA_PATH = path.join(ROOT, 'schema', 'grafo.schema.json');
 const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
-  'especificacoes',
-  'formatos',
+  'specs',
+  'formats',
   'skill-manifest.schema.json',
 );
 const THESIS_FIXTURE_PATH = path.join(
   ROOT,
   'tests',
   'fixtures',
-  'tese-exemplo-bets-assimetricas.json',
+  'bets-asymmetric-thesis-example.json',
 );
 
 /** D14's seven nodes: node -> { role, node_type, skill }. */
@@ -159,7 +159,7 @@ function canonicalize(value) {
 
 /**
  * Canonical hash of the manifest, by the procedure in
- * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
+ * `specs/formats/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
@@ -279,7 +279,7 @@ test('AT3 — the seven manifests validate against skill-manifest.schema.json', 
   // what proves the green above does not come from a permissive validator.
   assert.ok(schema.$defs.check, 'the manifest schema has to declare $defs.check');
   const invalid = readJson(
-    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'skill-manifest.invalid.fixture.json'),
+    path.join(ROOT, 'specs', 'formats', 'examples', 'skill-manifest.invalid.fixture.json'),
   );
   assert.equal(validateManifest(invalid).valid, false, "t97's negative fixture has to be rejected");
 });
@@ -873,7 +873,7 @@ function resolveReference(reference) {
  * markdown link target, a backticked inline reference, and the script of a
  * fenced `node …` command.
  *
- * A reference with a `<placeholder>` in it (`grafos-de-fabrica/<classe>/`) is
+ * A reference with a `<placeholder>` in it (`factory-graphs/<classe>/`) is
  * a shape, not a path, and is skipped. So is an external URL.
  */
 function referencesIn(text) {

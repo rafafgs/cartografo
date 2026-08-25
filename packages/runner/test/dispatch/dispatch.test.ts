@@ -10,7 +10,7 @@
  * The engine is the fake one (`test/fixtures/fake-engine.mjs`), for the reason
  * the conformance kit already records: CI must be deterministic and must not
  * depend on an installed, authenticated CLI
- * (`docs/formatos/engine-adapter.md:363-366`). The other half of the proof —
+ * (`docs/formats/engine-adapter.md:363-366`). The other half of the proof —
  * a real `claude` session emitting a real block — is the manual spike
  * (`scripts/spike-t106-human-escalation.mjs`), same discipline t104 used.
  *
@@ -4529,7 +4529,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
 /** The bundle whose manifests actually carry `{{input.<caminho>}}` placeholders. */
 const BETS_SKILLS_DIR = path.join(
   REPO_ROOT,
-  "grafos-de-fabrica",
+  "factory-graphs",
   "bets-assimetricas",
   "skills",
 );
@@ -4539,7 +4539,7 @@ const BETS_FIXTURE = path.join(
   REPO_ROOT,
   "tests",
   "fixtures",
-  "tese-exemplo-bets-assimetricas.json",
+  "bets-asymmetric-thesis-example.json",
 );
 
 /** The thesis title the fixture carries, and the string a resolved prompt shows. */

@@ -58,12 +58,20 @@ const SELF = path.join('tests', 'decisions-rename-integrity.test.mjs');
 const ENTRY_HEADING = /^## D(\d+) \((\d{4}-\d{2}-\d{2})\)/;
 
 /**
- * The 23 entries as the ledger recorded them, numbers and dates both.
+ * The 23 entries the translation found, numbers and dates both.
  *
  * Read off the file before a word of it was translated. A translation may
  * rewrite every sentence of an entry and must not touch either of these: the
  * number is how the rest of the repository cites the decision, and the date is
  * when it was taken, which no later edit can change.
+ *
+ * This is a PREFIX, not a total (t121 follow-up, 2026-08-25). As t299 wrote it,
+ * AT2 compared the whole heading list against this one and so refused any new
+ * decision - D24 was the first to trip it. But recording a decision is not
+ * translating one: the property this guard exists for is that a rewrite cannot
+ * renumber or redate what was already there, and that is about the entries this
+ * list names. Entries appended after them are somebody exercising the ledger,
+ * which is what a ledger is for.
  */
 export const ENTRIES = Object.freeze([
   ...Array.from({ length: 18 }, (unused, index) => ({ number: index + 1, date: '2026-08-14' })),
@@ -144,7 +152,7 @@ test('AT2 — the ledger is DECISIONS.md, and the old name is gone from the root
   assert.ok(existsSync(path.join(ROOT, LEDGER)), `${LEDGER} does not exist`);
 });
 
-test('AT2 — the 23 entries keep their numbering, their dates and their order', () => {
+test('AT2 — the entries the translation found keep their numbering, their dates and their order', () => {
   const ledger = path.join(ROOT, LEDGER);
   assert.ok(existsSync(ledger), `${LEDGER} does not exist`);
 
@@ -154,8 +162,13 @@ test('AT2 — the 23 entries keep their numbering, their dates and their order',
     .filter((match) => match !== null)
     .map((match) => ({ number: Number(match[1]), date: match[2] }));
 
+  assert.ok(
+    headings.length >= ENTRIES.length,
+    `the ledger records ${headings.length} entries; the ${ENTRIES.length} the translation found cannot be removed`,
+  );
+
   assert.deepEqual(
-    headings,
+    headings.slice(0, ENTRIES.length),
     ENTRIES.map((entry) => ({ number: entry.number, date: entry.date })),
     'the ledger no longer records the same entries, in the same order, with the same dates',
   );

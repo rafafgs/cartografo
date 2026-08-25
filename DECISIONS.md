@@ -243,3 +243,21 @@ free). **Releasing this work for development, and the publication itself, are
 Rafael's explicit decision, case by case**: ticket t216 stays blocked until he
 himself unblocks it, and if it takes off by mistake it goes back to blocked.
 Recorded by the agent with Rafael's authorization (2026-08-16).
+
+## D24 (2026-08-25) — English is the only language of the project
+
+English is the only language of the project: code, identifiers, commit messages,
+tickets, specs, docs, notes, decisions, factory bundles (skill instructions, class
+keys, check ids, node descriptions), file, folder, package, bin and script names,
+and configuration. Portuguese survives only in the brand name `cartografo`, in
+verbatim quotations marked as such, and in the frozen migration file names (t279,
+never renamed). This supersedes the exemptions of D18, which had left `DECISIONS.md`,
+the notes, `docs/what-cartografo-is.md` and the README in Portuguese. Nothing new is
+born in Portuguese. Enforced by the language sweeps in the test suite — per package
+for identifiers, the wire and user-facing strings, and repo-wide for the document
+tree and for path segments — and by the LANGUAGE convention in the project profile,
+which every agent reads at the start of every session. Origin: Rafael, 2026-08-18,
+"guarantee there is no Portuguese anywhere in the project any more — file, folder,
+structure, configuration, anything else — and that nothing is born in Portuguese any
+more". Tickets: t280, t281, t282, t293, t299, t300, t301, t302, t303, t304, t305,
+t306, t307 and t121. Recorded by the agent with Rafael's authorization (2026-08-25).

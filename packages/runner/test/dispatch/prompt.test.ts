@@ -75,7 +75,7 @@ function question(overrides: Partial<PromptModule.Question> = {}): PromptModule.
     id: 1,
     job_id: JOB.id,
     question: 'Renumber the migration to 0003?',
-    status: 'respondida',
+    status: 'answered',
     answer: 'Keep 0002',
     answered_by: 'rafael',
     source: 'user',
@@ -107,7 +107,7 @@ test('AT2 — a question that is still open is not rendered', async () => {
   const prompt = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, answer: null, answered_by: null, status: 'pendente' })],
+    [question({ id: 1, answer: null, answered_by: null, status: 'pending' })],
   );
 
   assert.ok(!prompt.includes(ANSWERED_HEADING));

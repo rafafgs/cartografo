@@ -1100,3 +1100,49 @@ test('t323 — the pairing probe asserts a grant, and not merely a non-404', () 
     'the masking assertion is back: a 400 passes it, and so does every other refusal',
   );
 });
+
+test('t323 — the answered-question fixture carries values the projection really has', () => {
+  // AT5 cannot reach this, and the reason is worth writing down: `respondida`
+  // and `pendente` are ALIVE in `src/` — six comments across three packages
+  // still describe an input request that way — so a token sweep would be
+  // demanding a rename this ticket was not opened to make. What CAN be checked
+  // is narrower and stronger: the two closed sets this one fixture draws from,
+  // read out of the files that close them, against every value it declares.
+  //
+  // The fixture had `status: 'respondida'` two lines above the `source` the
+  // reproduction named, and `status: 'pendente'` in the case that proves an
+  // open question is not rendered. Both are what the column held before t235,
+  // and neither is what `GET /v1/input-requests` has answered since.
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+  const core = readFileSync(
+    path.join(repoRoot, 'packages', 'core', 'src', 'repositories', 'input-request.ts'),
+    'utf8',
+  );
+  const migration = readFileSync(
+    path.join(repoRoot, 'packages', 'core', 'migrations', '0003_trabalho_sessao_evento_pergunta.sql'),
+    'utf8',
+  );
+
+  const declared = (source: string, pattern: RegExp): string[] => {
+    const listed = pattern.exec(source)?.[1];
+    assert.ok(listed !== undefined, `the closed set is no longer where this test reads it: ${String(pattern)}`);
+    return [...listed.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  };
+
+  const statuses = declared(core, /INPUT_REQUEST_STATUSES: readonly string\[\] = Object\.freeze\(\[([^\]]*)\]\)/);
+  const sources = declared(migration, /CHECK \(source IN \(([^)]*)\)\)/);
+  assert.deepEqual(statuses, ['pending', 'answered'], 'the status set moved; re-read the fixture against it');
+  assert.deepEqual(sources, ['user', 'auto'], 'the source set moved; re-read the fixture against it');
+
+  const fixture = readFileSync(path.join(TEST_ROOT, 'dispatch', 'prompt.test.ts'), 'utf8');
+  const values = (field: string): string[] =>
+    [...fixture.matchAll(new RegExp(`\\b${field}: '([^']*)'`, 'g'))].map((match) => match[1]);
+
+  assert.ok(values('status').length > 0, 'the fixture no longer declares a status; this test reads nothing');
+  for (const value of values('status')) {
+    assert.ok(statuses.includes(value), `prompt.test.ts declares a status no input request ever had: ${value}`);
+  }
+  for (const value of values('source')) {
+    assert.ok(sources.includes(value), `prompt.test.ts declares a source the column's CHECK refuses: ${value}`);
+  }
+});

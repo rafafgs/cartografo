@@ -1,4 +1,4 @@
-# Third real run of the asymmetric-bets graph (round 3 — NFJ thesis)
+# Third real run of the asymmetric-bets graph (round 3 — the tender thesis)
 
 Date: 2026-08-18, 12:01–12:59 UTC. Operator: the on-duty agent (Claude), under Rafael's
 mandate of 2026-08-18: go ahead with the suggested plan
@@ -23,23 +23,23 @@ hand-carry — if a node stalls on a hole the sprint should have closed, stop an
   The example project's circle of competence ("companies with net cash below asset value",
   "dated corporate events") fits the thesis, so the bundle ran exactly as shipped.
 - Job **1**, execution **3**, entry node `triagem`. Fresh database.
-- Thesis (`~/cartografo-bets-run/job-nfj.json`, English): **Virtus Dividend, Interest &
-  Premium Strategy Fund (NFJ)** — a NYSE closed-end fund of listed equities and convertibles
-  trading below the NAV of its liquid holdings (9.75% discount in January 2026), with a
-  board-approved tender for up to 25% of the shares at 99.0% of NAV commencing on or about
-  1 September 2026 (agreement with Saba Capital, standstill through the 2028 proxy season;
-  SC TO-C filed 2026-04-20). Floor = marked-to-market NAV of listed securities; dated event
-  = the tender; `tamanho_pretendido = 3` (% of capital). Sources in the job body (Virtus press
-  release, EDGAR filing, Seeking Alpha).
+- Thesis (a job file in a scratch clone outside this repository, English): **a NYSE
+  closed-end fund** of listed equities and convertibles trading below the NAV of its liquid
+  holdings (a high-single-digit discount at the start of 2026), with a board-approved tender
+  for a quarter of the shares at just under NAV, commencing about six months later (an
+  agreement with an activist holder, a standstill through a later proxy season; the opening
+  tender filing made that spring). Floor = marked-to-market NAV of listed securities; dated
+  event = the tender; `tamanho_pretendido = 3` (% of capital). Sources in the job body (the
+  issuer's own press release, a regulatory filing, a retail research site).
 - Engine `claude-code` (sessions report `claude-haiku-4-5` + `claude-fable-5`); runner with
-  `--working-dir ~/cartografo-bets-run/repo` (scratch repo) and `--worktrees-root`.
+  `--working-dir` and `--worktrees-root` pointing into that scratch clone.
 
 ## What happened, node by node
 
 | # | Session | Node | Result | Duration | Output tokens | Cache created / read | Report |
 |---|---|---|---|---|---|---|---|
 | 1 | 1 | `triagem` | `aprofundar`, 4/4 criteria `atende` | 75 s | 5,311 | 27,170 / 0 | **accepted** |
-| 2 | 2 | `coleta-fundamentos` | 13 premises (7 sourced), the discount is −6.65%, not ~10% | 2,739 s | 16,165 | 20,699 / 238,671 | **accepted** |
+| 2 | 2 | `coleta-fundamentos` | 13 premises (7 sourced), the discount is well under the thesis's ~10% | 2,739 s | 16,165 | 20,699 / 238,671 | **accepted** |
 | 3 | 3 | `analise-assimetria` | **question** (input truncated by the 16 KB cap) | 71 s | 4,559 | 16,693 / 45,898 | — |
 | 4 | 4 | `analise-assimetria` (redispatch) | ratio **0.275** (upside 5.5% vs downside 20%) | 138 s | 10,532 | 4,014 / 27,650 | **accepted** |
 | 5 | 5 | `red-team` | **`morta`** — 8 objections (2 high), 1 high unanswered | 323 s | 23,230 | 18,020 / 14,918 | **accepted** |
@@ -57,21 +57,24 @@ was not reached — the red team killed the thesis.
 ### What each node decided
 
 - **Triage**: 4/4 `atende` — floor of the right kind (listed securities marked daily; a signed
-  tender), event within 12 months (1 Sept 2026), circle ("below asset value" + "dated
-  corporate event"), size (3% vs 62.5% / 7 positions). Scope of research: current discount and
-  NAV; tender terms/status (SC TO-I, dates, pro-ration, the Saba agreement in full); NAV
-  quality (level 1/2/3); tax/withholding for a non-resident; precedents.
-- **Collection (45 min, network open)**: read the SC TO-C and the 13D/A with the full Saba
-  agreement, the N-CSR/NPORT-P, the DEF 14A, cefconnect/Yahoo price–NAV series, the final
-  filings of precedent Saba tenders (VPV, VTN, FMN, BMEZ, BTX, EMO), IRS §302 material,
-  Brazilian tax rules, broker pages. **The fact that most changes the thesis: the discount is
-  −6.65% on 2026-08-17 (US$ 15.73 vs NAV 16.85), August average −7.1%, versus −9.6% in March
-  and −11.7% 3-year average — the ~10% of the thesis is gone.** The Saba agreement does NOT
-  oblige Saba to tender and has no discount commitments; no SC TO-I filed as of 2026-08-18;
-  expiration not before 3 Oct, completion by 14 Oct; pro-ration precedents ~71–74% → weighted
-  gross gain ~4.3–4.5% (not 9–10%); a quarterly distribution (~1.9%, 97.7% ROC) falls in the
-  window; possible 30% withholding on the gross tender for a non-resident (recoverable via
-  1040-NR) is a cash-flow risk. 13 premises, 7 with a source.
+  tender), event within 12 months (the tender's commencement), circle ("below asset value" +
+  "dated corporate event"), size (3% vs 62.5% / 7 positions). Scope of research: current
+  discount and NAV; tender terms/status (the offer filing, dates, pro-ration, the activist
+  agreement in full); NAV quality (level 1/2/3); tax/withholding for a non-resident;
+  precedents.
+- **Collection (45 min, network open)**: read the opening tender filing and the activist's
+  ownership filing with the full agreement, the fund's own periodic reports, the proxy
+  statement, a price–NAV series, the closing filings of that activist's precedent tenders at
+  six other funds, US tender-redemption tax material, Brazilian tax rules, broker pages.
+  **The fact that most changes the thesis: by mid-August the discount had already narrowed to
+  around two thirds of what the thesis assumed, and to little more than half its own
+  three-year average — the ~10% of the thesis is gone.** The activist agreement does NOT
+  oblige the holder to tender and has no discount commitments; no tender-offer filing as of
+  2026-08-18; expiration and completion both falling in the following quarter; pro-ration
+  precedents ~71–74% → weighted gross gain ~4.3–4.5% (not 9–10%); a quarterly distribution,
+  nearly all of it return of capital, falls in the window; possible 30% withholding on the
+  gross tender for a non-resident (recoverable on a filed return) is a cash-flow risk. 13
+  premises, 7 with a source.
 - **Asymmetry analysis (session 4)**: upside ≈ +5.5% gross in ~2 months; downside ≈ −20% in a
   bad scenario (tender delayed/cancelled → discount back to −9/−12%, plus a −10/−12% NAV
   drawdown, plus BRL); ratio **0.275**; four scenarios (works 50%/+5; fragile 20%/−0.8; bad
@@ -80,8 +83,9 @@ was not reached — the red team killed the thesis.
   which is exactly what this node exists to expose".
 - **Red team (`morta`)**: 8 objections (2 high, 4 medium, 2 low), 9 counter-evidence items
   from memory (network closed, each marked "not verified live"). Objection 1, high, unanswered:
-  the thesis states 10% / 9–10% / 3–6% and the evidence says −6.65% / 4.3–4.5% / re-widening
-  after the window (precedents). Two high objections without a documented answer → dead.
+  the thesis states 10% / 9–10% / 3–6% and the evidence says a discount already well below
+  that / 4.3–4.5% / re-widening after the window (precedents). Two high objections without a
+  documented answer → dead.
 - **Registration (`arquivado`)**: `red_team_executado: true` (from `traversal.nodes_visited`),
   `fracao_premissas_com_fonte: 7/13 = 0.5385`, `objecoes_altas_sem_resposta: 1`,
   `decisao_humana_id: null` (the gate was not reached), no P&L (D14).
@@ -118,7 +122,7 @@ attacked the reconstructed premises (labelled) and the register counted them.
   `coleta-fundamentos` at 275,537 tokens is 4.9× the median of the five measured nodes
   (56,170) → "candidate for a cheaper tier or a split". With a 300 k cap no node exceeded the
   ceiling; the cap is still the operator's number, not the bundle's.
-- Both proposals are in the round's database, copied to `~/cartografo-bets-run/rodada3-db/`.
+- Both proposals are in the round's database, copied into that scratch clone.
 
 ## Cost
 
@@ -138,8 +142,8 @@ reference, not invoice; sessions run through the `claude` CLI):
 
 Round 2 cost ≈ US$ 14–15 for the same path; the collection alone fell from ≈ US$ 7.7
 (4.6 M cache-read tokens scanning PDFs) to ≈ US$ 1.3. Same node, same bundle text — the
-difference is the thesis (documents on EDGAR/cefconnect vs. long MD&A PDFs), which says the
-cost of a traversal is dominated by what the collection has to read.
+difference is the thesis (short regulatory filings and a price series vs. long annual-report
+PDFs), which says the cost of a traversal is dominated by what the collection has to read.
 
 ## Holes found (none became a ticket — Rafael decides)
 
@@ -176,8 +180,8 @@ Proves: **the graph now traverses on its own** — six sessions, six reports acc
 first attempt, every input delivered by the projection, the final node opened by itself, one
 question answered at a human gate, `execution.finished`, surveyors with proposals — for
 ≈ US$ 6. The sprint closed the holes it targeted (t267 schema, t268 refusal, t269/t276 label,
-t270 traversal, t262 final node). And the product insight is real again: NFJ's discount had
-already narrowed to −6.65% by August (from ~10% in Q1); at that entry the tender is a
+t270 traversal, t262 final node). And the product insight is real again: the fund's discount
+had already narrowed well below the thesis's number by August; at that entry the tender is a
 ~4–5% gross event with a ~20% bad case — not an asymmetric bet, and the graph said so with
 sourced numbers.
 
@@ -194,5 +198,5 @@ candidate).
   rounds, the honest reading is that a real asymmetric bet is rare — which is what the map is
   for. Candidates: a going-private with a signed cash offer and a wide spread, or a net-net
   with a dated liquidation.
-- Runbook: run rounds from `~/cartografo-bench` (a clone at a pinned commit), never from the
-  board's integration checkout.
+- Runbook: run rounds from a bench clone at a pinned commit, outside this repository, never
+  from the board's integration checkout.

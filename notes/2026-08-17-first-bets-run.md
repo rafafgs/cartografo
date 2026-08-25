@@ -16,16 +16,17 @@ has run outside the fake engine.
   `grafo.json` itself (t260).
 - Job: job **2**, execution **1**, entry node `triagem`. (Job 1 was created with
   no `execution_id` and blocked by hand to keep it out of the round.)
-- Thesis: **Equinox Gold (EQX)** — "miners price gold far below the cash flow at
-  US$ 4,400"; the hypothesis and its origin in the `body` (Era de Ouro, the
-  weekly report of 2026-08-17, read by Rafael); `fields.asset = EQX`,
-  `fields.premise_source` = the 13x/8x fwd multiples, GDX vs SPY, the silver
-  premium in China. The full input at `~/cartografo-bets-run/job.json`;
-  alternative candidates (uranium/CCJ, copper/FCX, silver/SLV) in the session's
+- Thesis: **a listed gold miner** — "miners price gold far below the cash flow at
+  US$ 4,400"; the hypothesis and its origin in the `body` (a third-party weekly
+  newsletter of 2026-08-17, read by Rafael); `fields.asset` = the miner's ticker,
+  `fields.premise_source` = a pair of forward earnings multiples, the gold-mining
+  index against the broad market, the silver premium in China. The full input in a
+  scratch clone outside this repository; alternative candidates (a uranium
+  producer, a copper miner, a silver fund) in the session's
   `scratchpad/teses-metais.json`.
 - Engine: `claude-code` (`claude 2.1.233/2.1.234`, model `claude-fable-5`), the
-  runner with `--working-dir ~/cartografo-bets-run/repo` (a scratch repository)
-  and `--worktrees-root ~/cartografo-bets-run/worktrees`.
+  runner with `--working-dir` and `--worktrees-root` pointing into a scratch
+  clone outside this repository.
 
 ## What happened, node by node
 
@@ -46,9 +47,9 @@ the input:
 
 1. "downside limited by net cash or a real asset, not by a narrative" → **does
    not meet it**: the input offers only a multiple re-rating and a return from
-   GDX; no data on cash, debt, NAV, reserves or cost of production. (A mine is a
-   real asset; the thesis can be reformulated with a balance-sheet floor, but the
-   input does not bring one.)
+   the sector index; no data on cash, debt, NAV, reserves or cost of production.
+   (A mine is a real asset; the thesis can be reformulated with a balance-sheet
+   floor, but the input does not bring one.)
 2. "a dated event that forces the re-rating within 12 months" → **does not meet
    it**: "silver breaking US$ 71" is a price level in another metal, with no
    date; "gold at US$ 8,000 in two years" is outside the 12-month window.
@@ -59,8 +60,8 @@ the input:
    placeholder for it — it never reached the node.
 
 The session returned four reformulations that would reopen the thesis (a floor
-from EQX's balance sheet; a corporate event with a date; the intended size and
-the portfolio; the circle of competence) — exactly the kind of output the node
+from the miner's balance sheet; a corporate event with a date; the intended size
+and the portfolio; the circle of competence) — exactly the kind of output the node
 exists to produce.
 
 ## Topographers over execution 1
@@ -143,6 +144,6 @@ reasons: it was a good trade and not an asymmetric bet by the map's criteria.
 
 It does not prove: the six nodes after the triage (collection with an open
 network, asymmetry analysis, red team, sizing, the human gate, the record) — the
-thesis never got there. A thesis that passes the triage (the uranium/Cameco one,
-or EQX reformulated with a balance-sheet floor and a dated event, as the triage
+thesis never got there. A thesis that passes the triage (the uranium one, or
+this one reformulated with a balance-sheet floor and a dated event, as the triage
 itself suggested) is the next test; and the round with n>1 is still t239.

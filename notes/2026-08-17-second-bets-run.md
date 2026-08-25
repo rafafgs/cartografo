@@ -1,4 +1,4 @@
-# The second real execution of the asymmetric-bets graph (round 2 — the CCJ thesis)
+# The second real execution of the asymmetric-bets graph (round 2 — the uranium thesis)
 
 Date: 2026-08-18, 00:09–00:46 UTC (the night of the 17th in Rafael's time zone).
 Operator: the on-duty agent (Claude), with Rafael's authorization. The second real
@@ -13,31 +13,32 @@ team, record) open a real session. Round 1's note:
   t264's test). The control plane and the runner from the `~/cartografo` checkout; the
   database recreated.
 - Graph imported: a **project variant** of `bets-assimetricas`
-  (`~/cartografo-bets-run/grafo-ccj/`), version
+  (built in a scratch clone outside this repository), version
   `sha256:5c3a20ff1eb62432668b167dc6b1735c8beca1734c6850873dcf2a1100797d98`.
   Two differences from the bundle on `main`, both the operator's choice and recorded here
   because they change what the round tested:
   1. `project.circulo_de_competencia` gained a line ("metals and mining — gold, silver,
      uranium, copper…"). t263 put a circle of ports/logistics/net cash/corporate events in
-     the example; against that one CCJ would fail criterion 3 by construction, and the point
-     of this round was to test the nodes that follow. It is the intended use of a "project
-     variant" (D13, and the bundle's own `project.description` says so).
+     the example; against that one this thesis would fail criterion 3 by construction, and
+     the point of this round was to test the nodes that follow. It is the intended use of a
+     "project variant" (D13, and the bundle's own `project.description` says so).
   2. `triar-tese` 1.0.1: one more sentence in "What to return" giving the exact shape of
      `tese_triada` (`escopo_de_pesquisa` = a list of strings). The reason is in hole 1
      below — without it, attempt 1 stalled at the second node.
   The nodes, the edges, the criteria, the portfolio and the other six skills are `main`'s.
-- Job: job **1**, execution **2**, entry node `triagem`. Thesis: **Cameco (CCJ)** — "the
-  market prices uranium at spot, but the contract book is already at US$ 90/lb"
-  (`~/cartografo-bets-run/teses-metais.json`, the second option; the input in
-  `job-ccj.json`). `fields`: `asset = CCJ`, `premise_source` (Crux Investor / The Deep Dive
-  / Sprott / 6-K), `tamanho_pretendido = 3` (% of capital — a new field from t263, required
-  at the triage).
+- Job: job **1**, execution **2**, entry node `triagem`. Thesis: **a listed uranium
+  producer** — "the market prices uranium at spot, but the contract book is already well
+  above it" (the second of the metals candidates drafted in the scratch clone; the input in
+  a job file beside it). `fields`: `asset` = the producer's ticker, `premise_source` (three
+  third-party research outlets and one of the company's own filings),
+  `tamanho_pretendido = 3` (% of capital — a new field from t263, required at the
+  triage).
 - Engine `claude-code` (`claude 2.1.234`; the sessions report `claude-haiku-4-5` +
-  `claude-fable-5`), the runner with `--working-dir ~/cartografo-bets-run/repo` (a scratch
-  repository) and `--worktrees-root ~/cartografo-bets-run/worktrees`.
+  `claude-fable-5`), the runner with `--working-dir` and `--worktrees-root` pointing into a
+  scratch clone outside this repository.
 - There was an **attempt 1** (00:10–00:13 UTC, version `sha256:90d0e812…`, with only
-  difference 1 above) that died at the second node — it is in hole 1. Its artefacts are at
-  `~/cartografo-bets-run/rodada2-tentativa1/` (database, events, transcript, the triage's
+  difference 1 above) that died at the second node — it is in hole 1. Its artefacts are
+  kept in that scratch clone (database, events, transcript, the triage's
   output). Since the import refuses a second version of the same class
   (`class_already_registered` — a new version is the proposal flow), attempt 2 restarted
   with a fresh database; execution 2 below is attempt 2 only.
@@ -63,45 +64,50 @@ node, answered by the on-duty agent (below).
 ### What each node decided
 
 - **Triage (`aprofundar`)**: all four criteria `atende` — a floor of the right kind (a
-  signed contract + a low-cost mine, with a named document: the 6-K), an event within 12
-  months (Kazatomprom's 2027 guidance in Aug–Sep 26, Cameco's Q3 26/Q4 26 — "a window, not a
-  date", with a caveat), the circle (the variant's metals line) and the size (3% against
-  62.5% and 7 positions). A research scope on five fronts: the contract book in numbers;
-  costs/production/Westinghouse; supply/demand in a primary source; valuation against the
-  floor; dated catalysts.
-- **Collection (open network, ~12 min)**: it downloaded and read Cameco's MD&A (Q2 26, Q1
-  26, annual 2025) with `pdftotext`, Kazatomprom's releases, the text of the ban law
-  (42 USC 2297h-10a) and WNA pages. **It refuted the thesis's central number using the
-  source the thesis cites**: a realised price of US$ 66.96/lb in H1 26 against a term price
-  of US$ 91.92; 2026 guidance ≈ US$ 67–71; the sensitivity table gives US$ 66–76 with spot
-  at US$ 80 and US$ 46–58 with spot at US$ 40 (ceilings + spot purchases). 13 premises (6
-  with a primary source, 7 with `fonte: null`), gaps, a note. It issued no verdict ("the
+  signed contract book + a low-cost mine, with a named filing behind it), an event within 12
+  months (a state-owned peer's guidance update and the company's own next two quarterly
+  reports — "a window, not a date", with a caveat), the circle (the variant's metals line)
+  and the size (3% against 62.5% and 7 positions). A research scope on five fronts: the
+  contract book in numbers; costs, production and the non-mining affiliate; supply/demand in
+  a primary source; valuation against the floor; dated catalysts.
+- **Collection (open network, ~12 min)**: it downloaded and read the company's last two
+  quarterly reports and its latest annual one with `pdftotext`, a state-owned peer's
+  releases, the text of the import-ban statute and an industry body's pages. **It refuted
+  the thesis's central number using the source the thesis cites**: a realised price roughly
+  a quarter below the term price in the last reported half-year, guidance for the year no
+  better, and a sensitivity table whose top of range still sat under the thesis's number at
+  a spot well above the current one (price ceilings plus spot purchases cap it). 13 premises
+  (6 with a primary source, 7 with `fonte: null`), gaps, a note. It issued no verdict ("the
   asymmetry judgement belongs to the next node").
-- **Asymmetry analysis (session 4)**: an asset floor of ≈ US$ 43.5/share (contracts under
-  spot-40 stress ≈ US$ 9.6 + 49% of Westinghouse at US$ 30 bn ≈ US$ 33.75 + net cash 0.2)
-  against US$ 98.58 → 55% downside; a target of US$ 143 (+45%); **a ratio of 0.82** — below
-  1: "for every US$ 1 of real floor at risk, the target pays US$ 0.82". Four scenarios (the
-  thesis dies 30%/−40; sideways 45%/+8; right 20%/+45; euphoria 5%/+90), a weighted expected
-  +5.1%. Five unsourced premises weigh on the arithmetic, and the central one is refuted.
-  Two honesties recorded: the overhead and the floor's multiple are an estimate; the largest
-  piece of the floor is WEC at US$ 30 bn, "an IPO trigger and not a valuation" (at 20x EBITDA
-  the floor falls to ~US$ 28, −72%).
+- **Asymmetry analysis (session 4)**: an asset floor at ≈ 45% of the market price (the
+  contract book under a stressed spot, plus a large minority stake in a private
+  nuclear-services affiliate, plus a sliver of net cash — the affiliate stake being roughly
+  three quarters of the whole floor) → 55% downside; a target at +45%; **a ratio of 0.82** —
+  below 1: "for every US$ 1 of real floor at risk, the target pays US$ 0.82". Four scenarios
+  (the thesis dies 30%/−40; sideways 45%/+8; right 20%/+45; euphoria 5%/+90), a weighted
+  expected +5.1%. Five unsourced premises weigh on the arithmetic, and the central one is
+  refuted. Two honesties recorded: the overhead and the floor's multiple are an estimate;
+  the largest piece of the floor is that stake carried at a headline number that is "an IPO
+  trigger and not a valuation" (on an earnings multiple instead, the floor falls by a
+  further −72%).
 - **Red team (`morta`)**: 10 objections (4 high, 5 medium, 1 low), 15 items of
   counter-evidence of its own — from the model's knowledge, network closed, marked "verify
-  before reusing". O1 (high, unanswered): the book is not at US$ 90 and never was — the base
-  rate 2007–2024 says Cameco realises 35–85% of spot in bull cycles; the contractual floor
-  protects the realised price and never protected the share (2007–08 −73%, 2011–16 −80%,
-  2024–25 −42% with the term price rising); the "US$ 100 from the Russian ban" trigger has
-  neither a date nor a mechanism (the law is about LEU, with fixed waivers through
-  2028-01-01). An alternative explanation for the price: a nuclear-renaissance/Westinghouse
-  premium on a uranium segment capped by ceilings.
+  before reusing". O1 (high, unanswered): the book is not where the thesis puts it and never
+  was — the base rate over two decades says the company realises a wide band of spot in bull
+  cycles; the contractual floor protects the realised price and never protected the share
+  (three past drawdowns of 40–80%, the last of them with the term price rising); the "spot
+  doubles on an import ban" trigger has neither a date nor a mechanism (the statute covers a
+  different enriched product, with fixed waivers running past the thesis's window). An
+  alternative explanation for the price: a nuclear-renaissance premium on the affiliate,
+  over a uranium segment capped by price ceilings.
 - **Record (`arquivado`)**: `metricas_processo` — `red_team_executado: true`,
   `fracao_premissas_com_fonte: 0.4615` (6/13, counted one by one),
   `decisao_humana_id: null` ("there was no human decision", not "not found"),
   `desfecho_final: arquivado`; `como_reconhecer_se_voltar` and
   `o_que_uma_tese_reformulada_teria_de_provar` (a floor for the SHARE and not for the
-  realised price; a dated corporate event — a WEC IPO at a known valuation, or the removal
-  of ceilings; a sum-of-the-parts; a primary source for supply/demand). No P&L (D14).
+  realised price; a dated corporate event — an IPO of the affiliate at a known valuation, or
+  the removal of ceilings; a sum-of-the-parts; a primary source for supply/demand). No P&L
+  (D14).
 
 ### The human gate that opened, and what the on-duty agent answered
 
@@ -111,7 +117,7 @@ never arrived: the prompt brought only the text of the thesis, with no `entrada.
 three options: re-dispatch with the input rendered; authorize reading the run's state in the
 parent directory; analyse with the text of the thesis alone (provisional, it would fail the
 check). The session saw that the worktree was empty, saw that the parent directory had
-`job-ccj.json` and attempt 1, and **did not read** because `filesystem.read = []` — it
+the job file and attempt 1, and **did not read** because `filesystem.read = []` — it
 refused to invent and refused to work around a permission. Exemplary behaviour; it is what
 one wants from a node.
 
@@ -158,7 +164,7 @@ No other human decision: the graph's `decisao` gate was not reached.
   `input_requests_by_node` (t264 item 4) — the table above came from there and from
   `/sessions`.
 - Applying any proposal is Rafael's decision. All seven are in the round's database, copied
-  to `~/cartografo-bets-run/rodada2-db/cartografo.db`.
+  to a `cartografo.db` kept in the scratch clone.
 
 ## The round's cost
 
@@ -249,7 +255,7 @@ path, what a reformulation would have to prove). The final node with a skill now
 (t262), `execution.finished` fires and `metrics-by-version` gives tokens and time per node
 (t264), and `carteira`/circle/size reach the triage (t263). And the product insight is real:
 the uranium thesis, as stated, **is not an asymmetric bet** — the floor is one of realised
-price, not of the share; the market already pays for the term book + Westinghouse.
+price, not of the share; the market already pays for the term book plus the affiliate.
 
 It does not prove: that the projection carries one node's output to the next without an
 operator (holes 1–5: at three of the five nodes the input was loaded by hand by the on-duty
@@ -261,9 +267,10 @@ refusal) was not exercised: no session failed and none was refused in this round
 ## What was still missing
 
 - A thesis that **survives the red team**, to exercise `dimensionamento-risco` → `decisao`
-  (a real human gate) → the record along the `aprovado/recusado` branch. EQX reformulated
-  with a balance-sheet floor and a dated event, or CCJ rewritten as "a floor for the share
-  by sum-of-the-parts + a dated Westinghouse IPO", are candidates — the record itself listed
+  (a real human gate) → the record along the `aprovado/recusado` branch. Round 1's thesis
+  reformulated with a balance-sheet floor and a dated event, or this one rewritten as "a
+  floor for the share by sum-of-the-parts + a dated IPO of the affiliate", are candidates —
+  the record itself listed
   what they would have to prove.
 - Closing holes 1–5 before round 3, or round 3 repeats the operator loading input by hand
   (which invalidates the flow topografo's measurement, since it measured agent time with a

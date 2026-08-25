@@ -201,7 +201,10 @@ test('t162 — the runner is an installable command, started by plain node', asy
       }),
     });
     const body = await response.text();
-    assert.notEqual(response.status, 404, `the command started but never paired: ${body}`);
+    // A GRANT, and not merely a non-404. `notEqual(status, 404)` was satisfied
+    // by the `400 invalid_body` this very call used to earn, so the case passed
+    // for as long as the body named fields the route does not have (t323).
+    assert.equal(response.status, 201, `the command started but never paired: ${body}`);
     assert.doesNotMatch(body, /runner_desconhecido/);
     assert.equal(
       runner.err(),

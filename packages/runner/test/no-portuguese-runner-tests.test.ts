@@ -545,6 +545,128 @@ const WIRE_MIRRORS: ReadonlyArray<{ file: string; line: number; reason: string }
   },
 ]);
 
+/**
+ * A name the wire RETIRED, or never carried at all.
+ *
+ * AT4's class is a live wire word borrowed as prose. This one is its mirror
+ * image, and strictly worse: a name that LOOKS like the wire and is not, so a
+ * reader who trusts it goes looking for a field no route has. All four sweeps
+ * above are blind to every one of these — none carries an accent (AT1), none
+ * is on a stopword list and three of them are `snake_case`, which
+ * {@link MACHINE_NAMES} blanks before AT2 ever reads the line (AT2), no mask
+ * hides them (AT3), and none is a word `src/` still spells (AT4).
+ *
+ * The damage is not cosmetic, and `bin.e2e.test.ts` is the proof. It posted
+ * `teto_runner`/`teto_projeto` to `POST /v1/leases`, which has required
+ * `runner_cap`/`project_cap` since t226 (`packages/core/src/routes/leases.ts`),
+ * so the call meant to prove the runner had paired answered `400 invalid_body`
+ * — and the assertion under it read `notEqual(status, 404)`, which a 400
+ * satisfies. Three lines on, `doesNotMatch(body, /runner_desconhecido/)`
+ * refused an error code the same ticket retired, and therefore refused
+ * nothing. The case stayed green for exactly as long as the pairing it claimed
+ * to prove was broken.
+ *
+ * The other two are the same shape with nothing masking them. `registrado_em`
+ * on a skill fixture is a key `GET /v1/skills/:id` has spelled `registered_at`
+ * since t290 (`packages/core/src/repositories/skill.ts:122`), and
+ * `source: 'humano'` is not a translation of anything at all:
+ * `input_request.source` is a closed enum of `user` and `auto`, and `humano`
+ * was never one of the two.
+ *
+ * ## What was measured and deliberately left out
+ *
+ * `erro` is not on this list, and the next reader should know it was measured
+ * rather than missed: ten lines across eight files build a fake control-plane
+ * error body under that key, where every real refusal envelope says `error`
+ * (`packages/core/src/routes/common.ts:191`). That is one class and one
+ * ticket, and folding it in would have turned a sweep of five names into a
+ * rename of eight files.
+ *
+ * `origem` is out for the opposite reason. It is still a LIVE key of the
+ * engine-model projection (`packages/core/src/repositories/engine-models.ts:21`),
+ * so no token sweep can tell the live use from the dead one — which is the
+ * boundary of this whole instrument. The single line that used it for what the
+ * input request calls `source` is corrected where it stands, with no entry
+ * here.
+ *
+ * Built from a list of strings and not written as a regex literal, for the same
+ * reason {@link PROTOCOL_TOKENS}, {@link MASKED_TOKENS} and {@link WIRE_WORDS}
+ * are: a literal is CODE, and `no-portuguese-identifiers.test.ts` scans this
+ * directory.
+ */
+const WIRE_FICTIONS = new RegExp(
+  `\\b(?:${['teto_runner', 'teto_projeto', 'registrado_em', 'runner_desconhecido', 'humano'].join('|')})\\b`,
+  'i',
+);
+
+/**
+ * Every line allowed to spell a fiction, and why it is allowed.
+ *
+ * One case, and it is the only shape that can survive this sweep honestly: a
+ * test that REFUSES the retired spelling has to name what it refuses. Every
+ * other occurrence the reproduction found was a fixture claiming to depict a
+ * wire, and a fixture that depicts a wire nobody speaks is not evidence.
+ */
+const FICTION_PINS: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
+  {
+    file: 'cli/index.test.ts',
+    line: 604,
+    reason: 'asserts the retired spelling is ABSENT from the usage text; a refusal has to name what it refuses',
+  },
+]);
+
+/**
+ * What each fiction was replaced by, and the file whose word is final on it.
+ *
+ * This is the other half of the sweep, and t319 wrote down why it has to
+ * exist: a claim a reader cannot check is how an exception outlives its
+ * reason. AT5 bans five names on the grounds that no source emits them, and
+ * that ground is itself checkable — so it is checked, per name, against the
+ * file that owns the field. The day core brings one of these spellings back,
+ * this fails and names the ban to lift instead of leaving five tests refusing
+ * a live wire.
+ *
+ * Paths are from the repository root, because two of the three authorities
+ * are core's and one of them is a migration.
+ */
+const REPLACEMENTS: ReadonlyArray<{
+  fiction: string;
+  live: RegExp;
+  file: string;
+  authority: string;
+}> = Object.freeze([
+  {
+    fiction: 'teto_runner',
+    live: /'runner_cap'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the required body fields of POST /v1/leases',
+  },
+  {
+    fiction: 'teto_projeto',
+    live: /'project_cap'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the required body fields of POST /v1/leases',
+  },
+  {
+    fiction: 'runner_desconhecido',
+    live: /'unknown_runner'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the 404 an unpaired runner gets from the same route',
+  },
+  {
+    fiction: 'registrado_em',
+    live: /^ {2}registered_at: string;$/m,
+    file: 'packages/core/src/repositories/skill.ts',
+    authority: 'the column GET /v1/skills/:id projects',
+  },
+  {
+    fiction: 'humano',
+    live: /CHECK \(source IN \('user','auto'\)\)/,
+    file: 'packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql',
+    authority: "the CHECK that closes input_request.source to two values, neither of them this one",
+  },
+]);
+
 test('t312 — AT1: no Portuguese diacritic survives in packages/runner/test', () => {
   const hits = scannedFiles().flatMap((file) =>
     hitsInFile(file, (text) => DIACRITICS.exec(text)?.[0] ?? null),
@@ -878,4 +1000,103 @@ test('t320 — AT4 reads what the other three sweeps have no way of seeing', () 
     assert.ok(!WIRE_WORDS.test(text), `AT4 fires on English: ${text}`);
     assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
   }
+});
+
+test('t323 — AT5: a name the wire retired is spelled only where a test refuses it', () => {
+  const pinned = new Set(FICTION_PINS.map((entry) => `${entry.file}:${entry.line}`));
+  const hits = scannedFiles()
+    .flatMap((file) => linesSpelling(file, WIRE_FICTIONS))
+    .filter((hit) => !pinned.has(`${hit.file}:${hit.line}`))
+    .map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
+
+  assert.deepEqual(hits, [], `a fixture spelling a wire nobody speaks (t323, AT5):\n${hits.join('\n')}`);
+});
+
+test('t323 — every fiction pin still lands on a line that spells one', () => {
+  for (const entry of FICTION_PINS) {
+    const lines = readFileSync(path.join(TEST_ROOT, entry.file), 'utf8').split('\n');
+    assert.ok(
+      WIRE_FICTIONS.test(lines[entry.line - 1] ?? ''),
+      `${entry.file}:${entry.line} no longer spells a retired name; drop the pin (${entry.reason})`,
+    );
+  }
+});
+
+test('t323 — every fiction is dead in the source, and the name that took its place is alive', () => {
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+  for (const entry of REPLACEMENTS) {
+    const source = readFileSync(path.join(repoRoot, entry.file), 'utf8');
+    assert.match(
+      source,
+      entry.live,
+      `${entry.file} no longer carries ${entry.authority}; AT5 is banning \`${entry.fiction}\` on a claim that stopped being true`,
+    );
+    assert.ok(
+      !new RegExp(`\\b${entry.fiction}\\b`).test(source),
+      `${entry.file} spells \`${entry.fiction}\` again; the wire came back and AT5 has to let it through`,
+    );
+  }
+});
+
+test('t323 — AT5 reads what the other four sweeps have no way of seeing', () => {
+  // The seven lines the reproduction measured, verbatim. Two body fields of a
+  // lease request, the error code the assertion under them refuses, one key of
+  // a skill fixture, two `source` values that were never in the enum, and one
+  // fake 404 body that fabricates both a key and a code.
+  //
+  // Each asserts the premise first. AT1 needs an accent and there is none; AT2
+  // needs the word on a closed list, and the three `snake_case` names are
+  // blanked as machine names before it ever looks; AT3 needs a mask to be
+  // hiding the word and no mask touches these; AT4 needs the word to be a name
+  // `src/` still spells, which is the exact opposite of what these are.
+  for (const text of [
+    '        teto_runner: 1,',
+    '        teto_projeto: 1,',
+    '    assert.doesNotMatch(body, /runner_desconhecido/);',
+    "    registrado_em: '2026-08-15T12:00:00.000Z',",
+    "    source: 'humano',",
+    "    [question({ id: 1, source: 'humano', answered_by: 'rafael' })],",
+    "  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { erro: 'runner_desconhecido' } }));",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.ok(WIRE_FICTIONS.test(text), `AT5 missed a name the wire never carried: ${text}`);
+  }
+
+  // And what they became: the name the wire really has, in every one of them.
+  for (const text of [
+    '        runner_cap: 1,',
+    '        project_cap: 1,',
+    '    assert.doesNotMatch(body, /unknown_runner/);',
+    "    registered_at: '2026-08-15T12:00:00.000Z',",
+    "    source: 'user',",
+    "    [question({ id: 1, source: 'user', answered_by: 'rafael' })],",
+    "  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { error: 'unknown_runner' } }));",
+  ]) {
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 fires on a live name: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t323 — the pairing probe asserts a grant, and not merely a non-404', () => {
+  // The half of this defect no token sweep can reach. The body fields could be
+  // spelled right and the case would still prove nothing, because
+  // `notEqual(status, 404)` is satisfied by the `400 invalid_body` that the
+  // wrong spelling produced — which is precisely how the break stayed green.
+  // A lease request that names the right fields for a paired runner is a 201,
+  // and only that number distinguishes a pairing from a malformed request.
+  const source = readFileSync(path.join(TEST_ROOT, 'bin.e2e.test.ts'), 'utf8');
+
+  assert.match(
+    source,
+    /assert\.equal\(\s*response\.status,\s*201,/,
+    'AT14 no longer asserts the grant; a probe that accepts any non-404 measures nothing',
+  );
+  assert.doesNotMatch(
+    source,
+    /assert\.notEqual\(\s*response\.status,\s*404/,
+    'the masking assertion is back: a 400 passes it, and so does every other refusal',
+  );
 });

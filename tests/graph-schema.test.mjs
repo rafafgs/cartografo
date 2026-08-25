@@ -167,7 +167,7 @@ test('AT2 — the minimal example passes validarEstrutura and validarSoundness',
 
 /*
  * Fixed flowpilot table, copied by hand from
- * `~/flowpilot/app/services/flow/state_machine.py` (ACTIVITY_STATES, lines
+ * flowpilot's `app/services/flow/state_machine.py` (ACTIVITY_STATES, lines
  * 153-161; ALLOWED_TRANSITIONS, lines 91-104). The test does NOT read
  * flowpilot's file — D17: a behavioural reference, with no code dependency.
  *

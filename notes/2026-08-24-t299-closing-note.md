@@ -151,7 +151,7 @@ Two things inside the entries were deliberately NOT repaired:
 The ticket asked for a best-effort local edit and flagged it as
 non-durable. In this checkout it is stronger than that: **the file does not
 exist here at all.** `.flowpilot/` is gitignored and lives only in the main
-checkout (`~/cartografo/.flowpilot/profile.yml`), which this stage is forbidden
+checkout (`.flowpilot/profile.yml`), which this stage is forbidden
 to touch — a worktree agent never reaches into another checkout of the same
 repository.
 

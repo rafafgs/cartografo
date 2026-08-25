@@ -136,7 +136,7 @@ function readText(filePath: string): string {
  * Splits a `SKILL.md` into flat frontmatter and Markdown body.
  *
  * Hand-rolled and deliberately flat: the frontmatter of every skill this gate
- * targets (`~/flowpilot`, `~/bootstrap-core`) is `key: value` and nothing else,
+ * targets (flowpilot, bootstrap-core) is `key: value` and nothing else,
  * and a YAML dependency in the control plane to read three lines would be a
  * parser — with its own history of surprises — added to the surface of the very
  * feature that exists to reduce it. A nested frontmatter simply does not parse

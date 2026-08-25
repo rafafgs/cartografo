@@ -583,7 +583,7 @@ ficha that links `lease` and `job` from both sides, as the header of migration
 
 ## Parity with flowpilot
 
-Checked line by line against `~/flowpilot/app/models/ticket_event_model.py`,
+Checked line by line against flowpilot's `app/models/ticket_event_model.py`,
 `agent_session_model.py` and `input_request_model.py`. flowpilot is a reference
 of behaviour, not a code dependency (D17).
 

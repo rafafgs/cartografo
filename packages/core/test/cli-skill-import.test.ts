@@ -9,7 +9,7 @@
  *
  * The fixtures under `test/fixtures/external-skills/` make this hermetic. The
  * `feature-dev` one is a verbatim copy of
- * `~/flowpilot/.claude/skills/feature-dev/SKILL.md`, which is the worked example
+ * flowpilot's `.claude/skills/feature-dev/SKILL.md`, which is the worked example
  * `specs/formats/skill-manifest.md` itself uses for D4: eleven of the
  * twelve required manifest fields simply do not exist at the source. Copying it
  * into the repository is what lets the test prove the pipeline against a real,

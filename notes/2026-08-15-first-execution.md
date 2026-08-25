@@ -2,9 +2,9 @@
 
 A record of the first dogfood: the freshly built cartografo (47 tickets in ~10h
 of a flowpilot wave) crossed the whole of factory graph 1 with real `claude`
-sessions and produced a playable tic-tac-toe at `~/jogo-da-velha` (operator: the
-wave's planner, as the founder's proxy; the full journal and the recording are at
-`github.com/rafafgs/cartografo-story`).
+sessions and produced a playable tic-tac-toe in a scratch repository outside
+this one (operator: the wave's planner, as the founder's proxy; the full journal
+and the recording are at `github.com/rafafgs/cartografo-story`).
 
 **Numbers**: 5 nodes crossed (refinar → desenvolver → integrar → testar →
 implantar), 7 sessions (2 retries, 1 re-dispatch after an answer), 1 human

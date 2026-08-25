@@ -442,7 +442,7 @@ the skill enters the graph with nobody knowing what it consumes, what it produce
 or how what it did is checked.
 
 The reference case is concrete. The frontmatter of
-`~/flowpilot/.claude/skills/feature-dev/SKILL.md` declares three things — `name`,
+flowpilot's `.claude/skills/feature-dev/SKILL.md` declares three things — `name`,
 `description`, `user_invocable` — and nothing else: no input, no output, no
 checks, no permissions. Eleven of the manifest's twelve required fields do not
 exist at the origin.

@@ -12,16 +12,17 @@ three nodes ran by agent and two by hand.
 ## Provenance
 
 - cartografo `main` at `4217673` (t267–t285 included), run from a **separate clone**
-  `~/cartografo-bench` (lesson of the bets round 3: the flowpilot integrator fast-forwards
-  `~/cartografo`, so nothing runs from there any more).
+  at a pinned commit, outside this repository (lesson of the bets round 3: the flowpilot
+  integrator fast-forwards `~/cartografo`, so nothing runs from there any more).
 - **Bundle from `main`, no skill patch at all**: `grafos-de-fabrica/desenvolvimento-de-software`
   (skills 1.0.0, `testar-alpha` 1.0.4 after t271/t277), only the graph's `project` replaced by
   the game's (`make-grafo-jogo.py`: repo, conventions from `docs/TICKETS.md`, four gates,
   `comando_instalacao: npm ci`, `arquivos_de_registro`, static `aplicacao` per t270). Version
   `sha256:2171942af8518a38df4b8ea9bcb20d54686a3731a00e8b1b46a014a8a70dd7fb`, imported via the
   CLI (skills first → contract state `checked`, t278/t283).
-- **Target repo** `~/cartografo-jogo-run/repo2`: clone of the clone Rafael validated in round 1
-  (`main` at `ae41796`, alien family), no remote — nothing can reach `~/vibe-game`.
+- **Target repo**, in a scratch tree outside this repository: clone of the clone Rafael
+  validated in round 1 (`main` at `ae41796`, alien family), no remote — nothing can reach the
+  game's own repository.
 - Runner: `--working-dir repo2 --worktrees-root worktrees2 --test-bench-path repo2
   --bench-install-command "npm ci" --reference-mode ponta_do_principal` (t270/t273 flags),
   engine `claude-code`.
@@ -72,10 +73,10 @@ attempt, no human gate opened, no operator action.** The whole traversal took 15
   `git merge-base --is-ancestor 04c2975 <reference>` → 0 → `publicado`, `implantado_em
   2026-08-18T13:18:18Z`, reference mode `ponta_do_principal`.
 
-The feature is on `main` of `~/cartografo-jogo-run/repo2` (`04c2975`, 13 files, +272/−32),
-served for validation at **http://localhost:5181/** (round 1's build stays at :5180). Nothing
-was pushed to `~/vibe-game`; if Rafael wants it: `git -C ~/vibe-game fetch
-~/cartografo-jogo-run/repo2 main && git -C ~/vibe-game merge --ff-only FETCH_HEAD`.
+The feature is on `main` of that clone (`04c2975`, 13 files, +272/−32), served for
+validation at **http://localhost:5181/** (round 1's build stays at :5180). Nothing was
+pushed to the game's own repository; if Rafael wants it: a `git fetch` of the clone's `main`
+into that repository, then a `git merge --ff-only FETCH_HEAD`.
 
 ## Surveyors on execution 1
 
@@ -88,7 +89,7 @@ was pushed to `~/vibe-game`; if Rafael wants it: `git -C ~/vibe-game fetch
 - **Cost** (`--token-cap 300000`): proposals 2–4 — `desenvolver` 2,388,228 tokens,
   `refinar` 1,582,026, `testar` 1,015,252 over the cap; the two big ones are cache reads of
   the repo (2.3 M and 1.5 M). The cap is still an operator number.
-- Both DBs and proposals kept: `~/cartografo-jogo-run/db2/cartografo.db`.
+- Both DBs and proposals kept, in the scratch tree's own `cartografo.db`.
 
 ## Cost
 
@@ -136,8 +137,8 @@ reference, the surveyor's proposal improving anything (n=3), or cost efficiency 
 
 ## What is still missing
 
-- Rafael's validation of the feature at :5181 and the merge into `~/vibe-game`, if he likes
-  it (founder act).
+- Rafael's validation of the feature at :5181 and the merge into the game's own repository,
+  if he likes it (founder act).
 - t109 acceptance against the D16 bar (parity with the flowpilot pipeline) — this round is
   the evidence; the ticket stays as it is on the board for him.
 - The n=3 round (bets, proposal 1 of round 3) — next step of the plan.

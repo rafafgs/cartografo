@@ -12,18 +12,19 @@ flowpilot. Your job is to observe, release work in the right order and escalate 
 Rafael anything not covered by an explicit rule. You do NOT write code, you do NOT
 edit tickets and you do NOT take product decisions.
 
-**The map**: flowpilot at `~/flowpilot` (server :5000, UI :5173, database
-`~/flowpilot/instance/flowpilot.db`). The product's repository: `~/cartografo`
-(decisions in `DECISIONS.md`, D1–D19; note: D18 = the English language rule with
-an amendment, D19 = living documentation). The project 3 controller is already
-ON; onboarding is already complete — do not redo any set-up.
+**The map**: flowpilot, checked out beside this repository (server :5000, UI
+:5173, database `instance/flowpilot.db` inside that checkout). The product's
+repository: `~/cartografo` (decisions in `DECISIONS.md`, D1–D19; note: D18 = the
+English language rule with an amendment, D19 = living documentation). The
+project 3 controller is already ON; onboarding is already complete — do not redo
+any set-up.
 
 **Reads (always read-only, never write to the database):**
 
 ```
-sqlite3 -readonly ~/flowpilot/instance/flowpilot.db "SELECT id, state, awaiting_input, priority, rank, substr(title,1,60) FROM tickets WHERE project_id=3 AND state != 'done' ORDER BY rank;"
-sqlite3 -readonly ~/flowpilot/instance/flowpilot.db "SELECT id, ticket_id, stage, substr(question,1,150) FROM input_requests WHERE project_id=3 AND status='pending';"
-sqlite3 -readonly ~/flowpilot/instance/flowpilot.db "SELECT id, ticket_ref, stage, status, started_at FROM agent_sessions WHERE project_id=3 AND status='running';"
+sqlite3 -readonly <flowpilot>/instance/flowpilot.db "SELECT id, state, awaiting_input, priority, rank, substr(title,1,60) FROM tickets WHERE project_id=3 AND state != 'done' ORDER BY rank;"
+sqlite3 -readonly <flowpilot>/instance/flowpilot.db "SELECT id, ticket_id, stage, substr(question,1,150) FROM input_requests WHERE project_id=3 AND status='pending';"
+sqlite3 -readonly <flowpilot>/instance/flowpilot.db "SELECT id, ticket_ref, stage, status, started_at FROM agent_sessions WHERE project_id=3 AND status='running';"
 ```
 
 **Loop**: use `/loop 10m`. On every cycle: run the three reads; act by the rules
@@ -47,7 +48,7 @@ backlog→to_refine):**
 
 **Agent questions (pending input_requests):**
 
-- If the answer is LITERALLY covered by a decision in `~/cartografo/DECISIONS.md`,
+- If the answer is LITERALLY covered by a decision in `DECISIONS.md`,
   answer through the UI citing the decision (e.g. "D15: versioning lives in the DB,
   not git"). Answer IN ENGLISH (D18).
 - Anything else (a new decision, a trade-off, scope, a doubt about intent): do NOT
@@ -60,8 +61,8 @@ backlog→to_refine):**
 - Never write to the database (only `-readonly` reads). Changes: the UI or the API.
 - Never edit a ticket's title or body.
 - Never change WIP caps, the controller or configuration without Rafael asking.
-- If the server or the controller goes down: `make -C ~/flowpilot up`, confirm it
-  came back, record it in the report.
+- If the server or the controller goes down: `make up` in the flowpilot
+  checkout, confirm it came back, record it in the report.
 - Everything you write on the board (answers, notes) comes out IN ENGLISH (D18).
   The reports to Rafael are in Portuguese.
 - An agent proposing to change any decision D1–D19: always escalate.
@@ -148,11 +149,11 @@ evaluation of the repository. Rules that add to the ones above:
   still holds for the WIP ceiling). **t198 only after t193 is done**, and it is
   Rafael who releases it (real quota).
 - **The automatic releaser (2026-08-16, ~18:20 local):** a process
-  `node ~/cartografo-plantao/liberador.mjs` releases `backlog → to_refine` in the
-  order and under the dependencies agreed with Rafael (the batch t191, t192, t194,
-  t205, t209, t211, t212; then t199/t206 after t192; the runner chain
-  t195→t203→t208→t207→t202 after t193; t201 and t210 at the end). Its log is at
-  `~/cartografo-plantao/liberador.log`. While it is alive
+  `node liberador.mjs`, run from an on-duty scratch tree outside this repository,
+  releases `backlog → to_refine` in the order and under the dependencies agreed
+  with Rafael (the batch t191, t192, t194, t205, t209, t211, t212; then t199/t206
+  after t192; the runner chain t195→t203→t208→t207→t202 after t193; t201 and t210
+  at the end). Its log is `liberador.log` beside it. While it is alive
   (`pgrep -f 'node liberador.mjs'`), **do not release over the top of it**; if it
   has died, the Claude session's on-duty agent restarts it. Since ~18:30 local the
   plan also includes (Rafael's order, "as soon as it makes sense"): t213 **on its

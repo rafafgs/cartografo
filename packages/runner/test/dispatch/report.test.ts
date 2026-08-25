@@ -599,6 +599,44 @@ test('t265 AT3 — ...and still blocks when the engine named no category', async
   assert.ok((reason as string).includes(JOB.current_node_id));
 });
 
+/* -- t296: the account that refused before the engine ever ran -------------- */
+
+/**
+ * The second kind of failure rides the same closure, with NO source change here
+ * (t296, AC1/FR5).
+ *
+ * That is the whole claim of this case, and it is worth a test rather than a
+ * sentence: `Outcome.failureKind` is typed by reference to
+ * `SessionFinishDetail['failureKind']`, so widening the adapter's set widened
+ * this module's without anybody editing it. The original ticket listed
+ * `report.ts` among the files to change; it turned out not to need one, and a
+ * file left untouched on purpose is exactly the kind of claim that quietly
+ * stops being true.
+ *
+ * No `refusal_category` beside it, and that asymmetry is the point of the pair:
+ * a refusal is the ENGINE classifying itself, and a quota is the ACCOUNT
+ * answering `429` — there is nothing for an engine to have called it.
+ *
+ * What the runner does NOT do with this outcome — post a block — is
+ * `dispatch.ts`'s to prove, and its own test does (AC2/AC3). This side only
+ * ships the fact.
+ */
+test('t296 AT1 — `finishSession` ships a quota refusal exactly as it ships a refusal', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = recorder();
+
+  await finishSession(call, 296, { status: 'failed', exitCode: 1, failureKind: 'quota' }, '');
+
+  const posted = body(sent[0]);
+  assert.equal(posted.status, 'failed', 'a quota is a failed session with a cause beside it');
+  assert.equal(posted.failure_kind, 'quota');
+  assert.equal(
+    posted.refusal_category,
+    null,
+    'the category belongs to the refusal; a quota was never classified by anybody',
+  );
+});
+
 test('AT19 — a question from a work standing on no node is signed `sessao`', async () => {
   const { postSessionQuestion } = await loadReport();
   const { sent, call } = recorder();

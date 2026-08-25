@@ -273,6 +273,55 @@ test('t265 AT4 — PATCH /finish records the refusal kind and category, verbatim
   assert.equal(refusedKind.status, 400);
 });
 
+/**
+ * The account said no, and the log says which kind of no (t296, AT1).
+ *
+ * The second value of the closed set t265 opened, and it arrives the same way
+ * the first one did: `status` stays `failed` — the six-member `SessionStatus`
+ * is frozen against exactly this case, quota named explicitly
+ * (`docs/formats/engine-adapter.md`, "Rejected — a richer `SessionStatus`") —
+ * and the fact that changes the answer rides beside it.
+ *
+ * What the difference buys is elsewhere and is worth stating here, because this
+ * route is where it starts: a `failure_kind` present is a session the
+ * consecutive-failure cap does not count (`repositories/session.ts`), so an
+ * account that hit its own limit no longer burns a job's whole ceiling in
+ * twenty seconds (`notas/2026-08-18-n3-round.md`, hole 1). `refusal_category`
+ * stays absent: a quota is not classified by the engine, and inventing a word
+ * for it would be a category somebody could group sessions by.
+ *
+ * Nothing is promoted to the session projection here either — the same Out of
+ * Scope t265's case above records, for the same reason.
+ */
+test('t296 AT1 — PATCH /finish records a quota refusal as its own kind', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const throttled = await openBareSession(ctx);
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${throttled.id}/finish`, {
+    status: 'failed',
+    exit_code: 1,
+    failure_kind: 'quota',
+  });
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+  assert.equal(finished.body.status, 'failed', 'the status stays one of the six');
+
+  const events = getEventsByEntity(ctx.db, 'session', throttled.id);
+  assert.deepEqual(events[1].data, {
+    status: 'failed',
+    exit_code: 1,
+    usage: null,
+    timeout_reason: null,
+    failure_kind: 'quota',
+    refusal_category: null,
+    models: null,
+    output: null,
+    output_schema_error: null,
+    output_accepted: true,
+  });
+});
+
 test('AT10 — GET /v1/sessions?execution_id=7 returns only that execution\'s sessions', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);

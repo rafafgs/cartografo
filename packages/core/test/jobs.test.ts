@@ -1769,6 +1769,73 @@ test('t265 AT5 — a refused session is not counted by the cap: it blocks on its
   assert.deepEqual(await blocks(ctx, job.id), []);
 });
 
+/**
+ * A quota refusal is not counted by the cap either — and nothing blocks (t296, AT2).
+ *
+ * The sibling case above and this one are the same guard read from two sides.
+ * A refusal is not counted because the RUNNER blocks it, on the first
+ * occurrence, and two owners for one flag is how a job ends up blocked with
+ * nothing pending. A quota is not counted because nobody blocks it at all: the
+ * account will answer again by itself, so the work has to be waiting — the
+ * runner holds it back for a cooldown of its own (`dispatch/quota-retry.ts`)
+ * and the job stays a candidate the whole time.
+ *
+ * That is the fact this case pins, and it is the one the incident was about
+ * (`notas/2026-08-18-n3-round.md`, hole 1): three sessions failed in twenty
+ * seconds, the cap fired, the job read "blocked — consecutive failures", and a
+ * person had to unblock it by hand — twice, because after the unblock the next
+ * attempt hit the same limit. A stranger cloning this repository and hitting
+ * their own account's limit would read that as "broken" rather than as "come
+ * back after the reset".
+ *
+ * Both halves in one test on purpose: "the cap does not fire" only means
+ * something next to the proof that the SAME sessions, with nothing but the kind
+ * removed, do fire it. Two jobs against one registered version, because the
+ * streak is counted per job and per node.
+ */
+test('t296 AT2 — quota sessions leave the job unblocked; plain failures still block it', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const cap = 2;
+  const versionId = await registerGraphWithFailureCap(ctx, cap);
+
+  const throttled = await createJob(ctx, {
+    title: 'a nota cujas sessões bateram no limite da conta',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  for (let attempt = 0; attempt < cap; attempt += 1) {
+    await endSessionWith(ctx, throttled.id, 'redigir', 'failed', { failure_kind: 'quota' });
+  }
+
+  assert.equal(
+    (await readJob(ctx, throttled.id)).blocked,
+    false,
+    'an account that hit its own limit is not a job that is broken',
+  );
+  assert.deepEqual(
+    await blocks(ctx, throttled.id),
+    [],
+    'and nothing was recorded against it either: there is no flag for a person to clear',
+  );
+
+  const broken = await createJob(ctx, {
+    title: 'a nota cujas sessões falham de verdade',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  for (let attempt = 0; attempt < cap; attempt += 1) {
+    await endSessionWith(ctx, broken.id, 'redigir', 'failed');
+  }
+
+  assert.equal(
+    (await readJob(ctx, broken.id)).blocked,
+    true,
+    'the same sessions, with the kind removed, are the streak the cap exists for',
+  );
+  assert.equal((await blocks(ctx, broken.id)).length, 1, 'one block, one event');
+});
+
 /* -------------------------------------------------------------------------- */
 /* t283 — no job runs against a version whose contracts were never checked.    */
 /*                                                                             */

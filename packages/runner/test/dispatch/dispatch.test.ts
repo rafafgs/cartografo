@@ -5342,6 +5342,172 @@ test("t265 — an engine refusal blocks the work instead of failing the dispatch
   assert.equal(stopped.block_reason, outcome.reason);
 });
 
+// --- t296: a quota refusal is a WAIT, not a block and not a crash ------------
+
+/**
+ * The account said no, so the work stops being offered — and stays a candidate
+ * (t296, AC2/AC3).
+ *
+ * This is the third fact `failed` was one word for, and it is the one whose
+ * right answer is neither of the two this file already proves. A crash throws
+ * and rides the control plane's cap. A refusal blocks, on the first occurrence,
+ * because it reproduces identically forever. A quota does neither: the account
+ * answers again by itself at an instant the engine usually names, so blocking
+ * it puts a flag in a person's inbox for something nobody has to do, and
+ * retrying it buys the same `429` three times in twenty seconds — which is
+ * precisely what was measured (`notas/2026-08-18-n3-round.md`, hole 1: three
+ * attempts, US$9.3, and then a job flagged "consecutive failures" twice in
+ * three hours).
+ *
+ * Two halves, and the second is the one with teeth. The first says what one
+ * dispatch does with the outcome: it closes the session with the kind, posts NO
+ * block, and answers `{blocked: true}` so the controller moves to the next
+ * candidate. The second says what the NEXT dispatch of the same job does while
+ * the cooldown is running — nothing at all: no session is opened, so the second
+ * attempt costs zero tokens, which is the whole difference between this and the
+ * incident.
+ *
+ * One dispatch function for both, on purpose: the cooldown lives in that
+ * closure and nowhere else (`quota-retry.ts`), so a test that built a second
+ * dispatch would be testing two runners and would pass no matter what.
+ */
+test("t296 — a quota refusal blocks nothing and is not retried while it cools down", async (t) => {
+  const { createClaudeCodeDispatch, DispatchError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t296-workdir-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      title: "ficha cuja conta bateu no limite da sessão",
+      entry_node_id: "implementar",
+      execution_id: 296,
+    },
+    201,
+    token,
+  );
+
+  const calls: Array<{ method: string; route: string; body: unknown }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      route: String(input).slice(baseUrl.length),
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+    });
+    return fetch(input, init);
+  };
+
+  // No `quotaResetAt`: the engine that does not name its reset instant is the
+  // case the backoff ladder exists for, and it is the one that keeps this test
+  // free of any dependency on a clock.
+  const probe = recordingAdapter({
+    status: "failed",
+    exitCode: 1,
+    detail: { failureKind: "quota" },
+  });
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: {
+      "claude-code": {
+        adapter: probe.adapter,
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+    },
+    worktrees: fakeWorktrees(workDir),
+    timeoutSeconds: 60,
+  });
+
+  let failure: unknown = null;
+  let outcome: { blocked: boolean; reason?: string } | null = null;
+  try {
+    outcome = await dispatch(work.id);
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.equal(
+    failure instanceof DispatchError,
+    false,
+    `a quota is a wait, not a dispatch failure, got: ${String(failure)}`,
+  );
+  assert.equal(failure, null, `nothing at all may be thrown: ${String(failure)}`);
+  assert.ok(outcome !== null);
+  assert.equal(outcome.blocked, true, "the caller has to be told this candidate is not runnable");
+
+  const blocks = calls.filter(
+    (call) => call.method === "POST" && call.route === `/v1/jobs/${work.id}/blocks`,
+  );
+  assert.deepEqual(
+    blocks,
+    [],
+    "no block, ever: an account at its limit is not a job for a person to unblock",
+  );
+
+  const finish = calls.find(
+    (call) => call.method === "PATCH" && call.route.endsWith("/finish"),
+  );
+  assert.ok(finish, "the session still has to be closed before the work is put down");
+  const closed = finish.body as Record<string, unknown>;
+  assert.equal(closed.status, "failed", "the status stays one of the six");
+  assert.equal(
+    closed.failure_kind,
+    "quota",
+    "and the kind is what keeps the control plane's cap from counting it",
+  );
+
+  const waiting = await api<Work>(
+    baseUrl,
+    "GET",
+    `/v1/jobs/${work.id}`,
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    waiting.blocked,
+    false,
+    "the work stays a candidate: the board has to read 'in progress', not 'blocked'",
+  );
+  assert.equal(waiting.block_reason, null);
+
+  // ...and now the half the incident is actually about.
+  const opened = calls.filter(
+    (call) => call.method === "POST" && call.route === "/v1/sessions",
+  ).length;
+  assert.equal(opened, 1, "the first attempt did open one session");
+
+  const second = await dispatch(work.id);
+
+  assert.equal(second.blocked, true, "the same job, offered again, is still not runnable");
+  assert.equal(
+    calls.filter((call) => call.method === "POST" && call.route === "/v1/sessions").length,
+    opened,
+    "and it opened no second session: a cooldown that still pays for a session is not one",
+  );
+  assert.equal(
+    probe.specs.length,
+    1,
+    "the engine was never asked for anything the second time round",
+  );
+  assert.deepEqual(
+    calls.filter(
+      (call) => call.method === "POST" && call.route === `/v1/jobs/${work.id}/blocks`,
+    ),
+    [],
+    "and still no block: waiting is not being stuck",
+  );
+});
+
 test("t262 — the controller dispatches a final node that pins a skill, and only its report ends the traversal", async (t) => {
   const { ClienteControle } = await loadModule<typeof ClientModule>(
     "src/controller/cliente-controle.ts",

@@ -454,6 +454,48 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
   }
 });
 
+/**
+ * The wire learns the second failure kind (t296, AT1/FR1).
+ *
+ * A quota refusal and a crash are one word — `failed` — with two different
+ * answers: a crash is worth another attempt right now, and an account that hit
+ * its own limit will refuse the next three the same way, in twenty seconds, for
+ * free (`notas/2026-08-18-n3-round.md`, hole 1). The kind is what tells them
+ * apart, and it travels in exactly the shape t265 built for the refusal.
+ *
+ * Which makes this file the FIRST gate on it: `PATCH /finish` calls
+ * `requireValidData` before it writes anything, so a `failure_kind` this list
+ * does not carry is a `400` and the adapter's whole reading is lost on the way
+ * in. Widening the list is the one change this ficha makes here — `status` is
+ * untouched on purpose (the frozen `SessionStatus` is a decision, not an
+ * oversight: `docs/formats/engine-adapter.md`, "Rejected — a richer
+ * `SessionStatus`"), and no cross-field rule is added, because
+ * `timeout_reason` next door has never had one either.
+ *
+ * The set stays CLOSED, which is the half that is easy to lose while widening
+ * it: this word is ours, and a second value entered because a second kind of
+ * failure was measured — not because an engine invented one.
+ */
+test('t296 AT1 — `failure_kind` carries the quota refusal, and still refuses the rest', () => {
+  for (const kind of ['engine_refusal', 'quota']) {
+    assert.equal(
+      requireValidData('session.finished', { status: 'failed', failure_kind: kind }).failure_kind,
+      kind,
+      `\`${kind}\` is a kind this system measured and declared`,
+    );
+  }
+
+  for (const invented of ['engine_crash', 'cota', 'quota_paused', '']) {
+    refuses('session.finished', { status: 'failed', failure_kind: invented }, 'failure_kind');
+  }
+
+  assert.equal(
+    requireValidData('session.finished', { status: 'failed' }).failure_kind,
+    null,
+    'absence is still absence: a session that reported no kind records none',
+  );
+});
+
 /* -------------------------------------------------------------------------- */
 /* t196 — the five types the taxonomy declared and nobody recorded.            */
 /*                                                                             */

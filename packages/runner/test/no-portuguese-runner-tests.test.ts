@@ -151,14 +151,16 @@ const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
 /**
  * Plain-ASCII Portuguese, closed and short.
  *
- * Four groups. The first is the package guard's own list: function words a
+ * Five groups. The first is the package guard's own list: function words a
  * Portuguese sentence cannot avoid. The second is the content words this
  * package's tests actually used — every one measured in a file t312
  * translated, not imagined. The third is t318's: the prose a test INVENTS for
  * illustration, which is neither a function word nor a term of the domain, and
  * so belonged to no earlier list. The fourth is t319's: the text a fixture
  * writes about ITSELF — the reason it hands the block route, the message it
- * commits with, the ticket it says it came from. A closed list only catches
+ * commits with, the ticket it says it came from. The fifth is t321's: the whole
+ * of a scratch name that is a single bare word, which is the half of that
+ * ticket's class {@link SCRATCH_WORDS} cannot reach. A closed list only catches
  * what somebody has seen before, which is exactly why AT1 runs beside it
  * rather than instead of it.
  */
@@ -318,6 +320,19 @@ const STOPWORDS: readonly string[] = Object.freeze([
   'resposta',
   'pergunta',
   'inicial',
+  // t321: the bare word a scratch name is, when the name is one word long
+  //
+  // AT5 below reads the Portuguese hiding INSIDE a machine name, and cannot
+  // read a name that is not one: a directory called `principal`, a branch
+  // called `experimento`, a job title `colisao`, a filler argv `sobra`, a
+  // branch template `tese-${jobId}` whose `-` is followed by an interpolation
+  // and so forms no kebab span at all. AT2 was always the sweep that could see
+  // these five — it simply had no word for any of them.
+  'principal',
+  'experimento',
+  'colisao',
+  'sobra',
+  'tese',
 ]);
 
 /**
@@ -544,6 +559,142 @@ const WIRE_MIRRORS: ReadonlyArray<{ file: string; line: number; reason: string }
     reason: 'asserts the English `reason` the report sends is that Portuguese field (`src/dispatch/report.ts:395`)',
   },
 ]);
+
+/**
+ * The spans {@link MACHINE_NAMES} blanks that a PERSON, not the wire, names.
+ *
+ * AT5's class, and it is a hole the two masks cut between them rather than a
+ * word any list was missing. {@link MACHINE_NAMES} blanks a kebab span whole,
+ * which is what keeps `nota-curta` and `grafo-proposto` out of AT2's report;
+ * the price is that everything inside such a span is invisible too, and a
+ * scratch directory, a branch, a temp prefix, a problem class or a case label
+ * is exactly that shape. `despacho-com-negacao.json`, `banco-de-testes`,
+ * `cartografo-t259-fabrica-`, `selecao-de-modelo-declarado`, `sem-arquivo` and
+ * `um-no-que-ninguem-declarou` were all in this tree the day t312 declared it
+ * English, and no sweep could see one of them: they carry no accent, so AT1 is
+ * blind; they are masked, so AT2 is; they spell none of the four masked tokens,
+ * so AT3 is; and no `src/` interface declares any of these words, so AT4 has no
+ * alibi to check them against (t321).
+ *
+ * The snake_case shape is the one deliberately left out. `banco_de_testes`,
+ * `metrica_esperada`, `no_com_contrato`, `contexto_falha`, `ponta_do_principal`
+ * and `custo_por_travessia` are wire keys frozen by earlier decisions, and
+ * snake_case is how this repository spells the wire. So AT5 reads the shapes a
+ * test invents — kebab, dotted, and the flags a person types — and leaves the
+ * wire's own shape to {@link PROTOCOL_TOKENS} and the guards that own it.
+ */
+const SCRATCH_SPANS: readonly RegExp[] = Object.freeze([
+  // the same dotted name written into a regex literal MACHINE_NAMES reads
+  /(?:\\\.[A-Za-z0-9_]+)+/g,
+  /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]+)+\b/g,
+  /\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b/g,
+  /--?[A-Za-z][A-Za-z0-9-]*/g,
+]);
+
+/**
+ * The Portuguese a scratch name is built from, segment by segment.
+ *
+ * Closed and measured, like every other list here: each word was counted in a
+ * name this ticket renamed. Two groups, and the second is the reason AT5 is a
+ * segment pass and not another whole-line one — `sem`, `nao`, `que`, `ninguem`,
+ * `um` and `ja` are unreadable as a line-wide pattern and unambiguous as a
+ * kebab segment, because no English identifier of this tree has a segment
+ * spelled that way.
+ *
+ * Three words a reader will look for and not find, each left out on purpose:
+ *
+ * - `no`, which is `nó` in `roteamento-por-no-at3` and plain English in
+ *   `no-graph.json`, `no-op` and `no-portuguese-identifiers.test.ts`. A segment
+ *   that means both cannot be a detector.
+ * - `classe` and `registro`, which survive only where a comment quotes a name
+ *   the product RETIRED — the `--classe` flag D20 §5.2 replaced, the
+ *   `registro-monitoramento` node the bets bundle renamed. Those are verbatim
+ *   quotations of pre-existing Portuguese, and every scratch name they would
+ *   have caught is already caught by a word beside them.
+ *
+ * The illustrative node and skill ids stay out for the reason
+ * {@link ILLUSTRATIVE_IDS} records — `travessia`, `grafo`, `nota`, `revisar`,
+ * `implementar`, `conferir`, `publicar` and the rest are a repo-wide
+ * convention shared with `schema/examples/`, `docs/spec/` and three other
+ * packages, and renaming half of a convention is worse than the convention.
+ */
+const SCRATCH_WORDS: ReadonlySet<string> = new Set([
+  // the content words a scratch name was built from
+  'antigo',
+  'arquivo',
+  'ausente',
+  'avanca',
+  'banco',
+  'bloco',
+  'contexto',
+  'credencial',
+  'declarado',
+  'declarou',
+  'desconhecida',
+  'despacho',
+  'escala',
+  'fabrica',
+  'fecha',
+  'fechamento',
+  'injetado',
+  'negacao',
+  'pendurada',
+  'portao',
+  'primeiro',
+  'projecao',
+  'quadro',
+  'recusa',
+  'registrada',
+  'registrou',
+  'resolvido',
+  'rota',
+  'roteamento',
+  'segundo',
+  'selecao',
+  'teto',
+  'torto',
+  'transitorio',
+  'unica',
+  'vazio',
+  'vazios',
+  'vazou',
+  // the function words, readable only because a segment is not a line
+  'ja',
+  'nao',
+  'ninguem',
+  'que',
+  'sem',
+  'um',
+]);
+
+/**
+ * The Portuguese segments of one line's machine names, if any.
+ *
+ * @param text One raw line of a scanned file.
+ * @returns Every offending segment found, sorted, or an empty list.
+ */
+export function scratchNamesIn(text: string): string[] {
+  const found = new Set<string>();
+  for (const span of SCRATCH_SPANS) {
+    for (const match of text.matchAll(span)) {
+      for (const segment of match[0].split(/[-.\\]+/)) {
+        const word = segment.toLowerCase();
+        if (SCRATCH_WORDS.has(word)) found.add(word);
+      }
+    }
+  }
+  return [...found].sort();
+}
+
+/** The lines of one file whose machine names carry Portuguese, as AT5 reports them. */
+function scratchHitsInFile(relative: string): string[] {
+  const source = readFileSync(path.join(TEST_ROOT, relative), 'utf8');
+  return source.split('\n').flatMap((text, index) => {
+    const found = scratchNamesIn(text);
+    if (found.length === 0) return [];
+    return [`${relative}:${index + 1} — ${found.join(', ')} — ${text.trim().slice(0, 120)}`];
+  });
+}
 
 test('t312 — AT1: no Portuguese diacritic survives in packages/runner/test', () => {
   const hits = scannedFiles().flatMap((file) =>
@@ -877,5 +1028,114 @@ test('t320 — AT4 reads what the other three sweeps have no way of seeing', () 
   ]) {
     assert.ok(!WIRE_WORDS.test(text), `AT4 fires on English: ${text}`);
     assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t321 — AT5: a scratch name reads in English, segment by segment', () => {
+  const hits = scannedFiles().flatMap((file) => scratchHitsInFile(file));
+
+  assert.deepEqual(hits, [], `Portuguese inside a machine name (t321, AT5):\n${hits.join('\n')}`);
+});
+
+test('t321 — AT5 reads inside the masks, which is the only reason it exists', () => {
+  // One line per shape the reproduction measured: a fixture file name, a
+  // problem class, a temp prefix, a scratch directory, a case label, a node id.
+  //
+  // Each asserts the premise first, against all four older sweeps. AT1 needs an
+  // accent and there is none. AT2 would have the word — `sem`, `que`, `arquivo`
+  // and `portao` are on its own list — but {@link MACHINE_NAMES} blanks the
+  // span before it reads the line. AT3 needs one of four masked tokens and AT4
+  // a `src/` interface to check against, and neither is here. AT5 is the only
+  // sweep that can flag them.
+  for (const text of [
+    '  const record = path.join(workDir, "despacho-com-negacao.json");',
+    '        twoEngineGraph("roteamento-por-no-at3", "codex"),',
+    "  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-fabrica-'));",
+    "  const benchPath = path.join(root, 'banco-de-testes');",
+    '        modelGraph("selecao-de-modelo-declarado", { model: "claude-haiku-4-5" }),',
+    '      const record = path.join(workDir, "portao.json");',
+    "    { label: 'sem-arquivo', env: {}, code: 'missing_output' },",
+    "  const dir = scratch(t, 'quadro-sem-bloco');",
+    "    { current_node_id: 'um-no-que-ninguem-declarou', graph_version_id: VERSION_ID },",
+    "  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-nao-repo-'));",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.ok(scratchNamesIn(text).length > 0, `AT5 missed a Portuguese scratch name: ${text}`);
+  }
+
+  // And the English they became: no segment left for AT5 to find.
+  for (const text of [
+    '  const record = path.join(workDir, "dispatch-with-denial.json");',
+    '        twoEngineGraph("routing-by-node-at3", "codex"),',
+    "  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-factory-'));",
+    "  const benchPath = path.join(root, 'test-bench');",
+    '        modelGraph("model-choice-declared", { model: "claude-haiku-4-5" }),',
+    '      const record = path.join(workDir, "gate.json");',
+    "    { label: 'no-file', env: {}, code: 'missing_output' },",
+    "  const dir = scratch(t, 'frame-without-block');",
+    "    { current_node_id: 'node-nobody-declared', graph_version_id: VERSION_ID },",
+    "  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-not-a-repo-'));",
+  ]) {
+    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on English: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t321 — AT5 leaves the wire shape alone, and the ids the repo shares', () => {
+  // The snake_case keys earlier tickets froze, and the illustrative ids the
+  // bundles, the schema examples and three other packages all spell the same
+  // way. Renaming half of either is worse than leaving both alone, so AT5 has
+  // to stay quiet on every one of these.
+  for (const text of [
+    "    (first.banco_de_testes as Record<string, unknown>).caminho,",
+    "  expected_metric: { nome: 'tempo_espera_ms:revisar', direcao: 'cai', de: 100, para: 80 },",
+    '  assert.ok(refused.includes(`no_com_contrato`), `an empty checks list is refused`);',
+    "    referenceMode: 'ponta_do_principal',",
+    "  assert.match(prompt, /grafo-proposto/, 'the fenced block the session has to hand back');",
+    "      const dir = path.join(root, 'nota-curta');",
+    '      traversalGraph("travessia-t272-cap"),',
+    '  // bundles end exactly this way (`registro-monitoramento`, `implantar`).',
+    "    refusal(parseArguments([REQUEST, '--classe', 'nota-curta'], EMPTY_ENV)),",
+    '  const bareRecord = path.join(workDir, "no-graph.json");',
+    "test('AT5 — an absent install command is a no-op, and the merge alone succeeds', async (t) => {",
+  ]) {
+    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on a name the repo keeps: ${text}`);
+  }
+});
+
+test('t321 — AT2 bites on a scratch name that is one bare word', () => {
+  // The five shapes AT5 cannot reach: a name with no separator in it, and one
+  // whose separator is followed by an interpolation rather than by a segment.
+  // AT2 is the sweep that can see them, and only because of the fifth group.
+  for (const text of [
+    "  const repoRoot = path.join(root, 'principal');",
+    "  git(benchPath, 'checkout', '--quiet', '-b', 'experimento');",
+    "    'the test bench is checked out on `experimento`, not on the main line `main`',",
+    '    const argv = await toldTo(t, "colisao", 2704, {',
+    "    refusal(parseArguments([REQUEST, 'sobra', '--class', 'x'], EMPTY_ENV)),",
+    '      return Promise.resolve({ path: dir, branch: `tese-${String(jobId)}` });',
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT5 would have caught this one: ${text}`);
+    assert.ok(offendersIn(text).length > 0, `AT2 missed a one-word scratch name: ${text}`);
+  }
+});
+
+test('t321 — AT2 stays quiet on the English those six lines became', () => {
+  for (const text of [
+    "  const repoRoot = path.join(root, 'main-repo');",
+    "  git(benchPath, 'checkout', '--quiet', '-b', 'experiment');",
+    "    'the test bench is checked out on `experiment`, not on the main line `main`',",
+    '    const argv = await toldTo(t, "collision", 2704, {',
+    "    refusal(parseArguments([REQUEST, 'leftover', '--class', 'x'], EMPTY_ENV)),",
+    '      return Promise.resolve({ path: dir, branch: `thesis-${String(jobId)}` });',
+  ]) {
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on English: ${text}`);
   }
 });

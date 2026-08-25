@@ -4,7 +4,7 @@
  *
  * The surveyor opens a hypothesis naming the number it expects to move, and it
  * names it as `"<medida>:<node_id>"` — `"agent_ms:redigir"`
- * (`docs/spec/topografo-flow.md` §4, `proposal.ts:buildExpectedMetric`). The
+ * (`docs/spec/surveyor-flow.md` §4, `proposal.ts:buildExpectedMetric`). The
  * control plane closes it against `depois`, a plain number the caller computes
  * (`POST /v1/proposals/:id/outcome`, t112: "there is no engine of named metrics
  * in v1"). Between the two there was nothing but a person reading a ranking and
@@ -43,7 +43,7 @@ import { DEFAULT_URL, ENV_TOKEN } from './command-line.ts';
  * A closed list and not "any key of `NodeMetric`": `node_id` and `event_ids` are
  * not measurements, and reading an arbitrary key off an object would let
  * `"constructor:redigir"` resolve to something. The five here are exactly the
- * four of `topografo-flow.md` §2 plus the total the ranking sorts by.
+ * four of `surveyor-flow.md` §2 plus the total the ranking sorts by.
  */
 export const MEASURES = Object.freeze([
   'agent_ms',

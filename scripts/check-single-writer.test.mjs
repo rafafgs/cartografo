@@ -66,12 +66,12 @@ function buildTree(root, { SQLITE_DRIVERS, DB_OWNER_SEGMENT }, overrides = {}) {
     'packages/core/test/connection.test.ts':
       `import { open } from '../${DB_OWNER_SEGMENT.split('/').slice(1).join('/')}/connection.ts';\n` +
       `export const target = open;\n`,
-    'packages/tela/package.json': JSON.stringify(
-      { name: '@cartografo/tela', dependencies: {} },
+    'packages/screen/package.json': JSON.stringify(
+      { name: '@cartografo/screen', dependencies: {} },
       null,
       2,
     ),
-    'packages/tela/src/index.ts': `export const health = (url) => fetch(url + '/health');\n`,
+    'packages/screen/src/index.ts': `export const health = (url) => fetch(url + '/health');\n`,
     ...overrides,
   };
   for (const [relative, content] of Object.entries(files)) {
@@ -156,7 +156,7 @@ test('AT13 — a module outside the core importing the private database exits 1'
   const script = await loadScript();
   const { DB_OWNER_SEGMENT } = script;
   const root = buildTree(temporaryArea(t), script, {
-    'packages/tela/src/index.ts':
+    'packages/screen/src/index.ts':
       `import { open } from '../../${DB_OWNER_SEGMENT}/connection.ts';\n` +
       `export const health = open;\n`,
   });
@@ -165,23 +165,23 @@ test('AT13 — a module outside the core importing the private database exits 1'
   assert.equal(report.valid, false);
   const violation = report.violations.find((v) => v.code === 'db_privado_importado');
   assert.ok(violation, 'expected violation: db_privado_importado');
-  assert.equal(violation.file, 'packages/tela/src/index.ts');
+  assert.equal(violation.file, 'packages/screen/src/index.ts');
 
   assert.equal(runCli(root).status, 1);
 
   // The same sweep, now with the root pointing only at the screen (FR7).
-  const screenOnly = script.check(path.join(root, 'packages', 'tela'));
+  const screenOnly = script.check(path.join(root, 'packages', 'screen'));
   assert.equal(screenOnly.valid, false);
   assert.ok(screenOnly.violations.some((v) => v.code === 'db_privado_importado'));
-  assert.equal(runCli(path.join(root, 'packages', 'tela')).status, 1);
+  assert.equal(runCli(path.join(root, 'packages', 'screen')).status, 1);
 });
 
 test('AT14 — a package outside the core declaring the driver as a dependency exits 1', async (t) => {
   const script = await loadScript();
   const { SQLITE_DRIVERS } = script;
   const root = buildTree(temporaryArea(t), script, {
-    'packages/tela/package.json': JSON.stringify(
-      { name: '@cartografo/tela', dependencies: { [SQLITE_DRIVERS[0]]: '^13.0.0' } },
+    'packages/screen/package.json': JSON.stringify(
+      { name: '@cartografo/screen', dependencies: { [SQLITE_DRIVERS[0]]: '^13.0.0' } },
       null,
       2,
     ),
@@ -191,7 +191,7 @@ test('AT14 — a package outside the core declaring the driver as a dependency e
   assert.equal(report.valid, false);
   const violation = report.violations.find((v) => v.code === 'driver_declarado_fora_do_core');
   assert.ok(violation, 'expected violation: driver_declarado_fora_do_core');
-  assert.equal(violation.file, 'packages/tela/package.json');
+  assert.equal(violation.file, 'packages/screen/package.json');
 
   assert.equal(runCli(root).status, 1);
 });

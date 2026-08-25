@@ -7,7 +7,7 @@
  * file would break the single-writer guarantee in the exact scenario where it
  * matters most — several distributed runners competing for the same work.
  *
- * Same pair of assertions as `packages/tela/test/no-privileged-access.test.ts`,
+ * Same pair of assertions as `packages/screen/test/no-privileged-access.test.ts`,
  * through the same gate (`scripts/check-single-writer.mjs`).
  */
 

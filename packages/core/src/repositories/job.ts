@@ -1379,7 +1379,7 @@ export interface NodeTokenTotals {
  * read the same way.
  *
  * Two counters instead of one, twice over, and that is the discipline this
- * shape exists to carry (`packages/topografo-custo/src/cost.ts`, whose
+ * shape exists to carry (`packages/cost-surveyor/src/cost.ts`, whose
  * `aggregateCost` computes exactly this client-side): an absent `usage` is the
  * engine having reported NOTHING, never a measurement of zero, and a session
  * still open is a duration nobody knows, never an instant one. `sessions` minus

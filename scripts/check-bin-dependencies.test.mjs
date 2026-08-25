@@ -61,8 +61,8 @@ function buildTree(root, { RUNTIME_LOADER }, overrides = {}) {
     },
     // No `bin`: nobody ever runs this one as a command, so the loader stays a
     // development tool and the gate has nothing to say about it.
-    'packages/topografo-custo/package.json': {
-      name: '@cartografo/topografo-custo',
+    'packages/cost-surveyor/package.json': {
+      name: '@cartografo/cost-surveyor',
       devDependencies: { [RUNTIME_LOADER]: '^4.23.12' },
     },
     ...overrides,
@@ -85,16 +85,16 @@ test('AT — a bin whose loader is only a devDependency fails, and passes once i
   const root = temporaryArea(t);
 
   buildTree(root, script, {
-    'packages/tela/package.json': {
-      name: '@cartografo/tela',
-      bin: { 'cartografo-tela': './bin/tela.mjs' },
+    'packages/screen/package.json': {
+      name: '@cartografo/screen',
+      bin: { 'cartografo-screen': './bin/screen.mjs' },
       devDependencies: { [RUNTIME_LOADER]: '^4.23.12' },
     },
   });
 
   const failing = script.check(root);
   assert.equal(failing.valid, false);
-  const violation = failing.violations.find((entry) => entry.file === 'packages/tela/package.json');
+  const violation = failing.violations.find((entry) => entry.file === 'packages/screen/package.json');
   assert.ok(violation, 'expected a violation on the package that ships the bin');
   assert.equal(violation.code, script.MISSING_RUNTIME_DEPENDENCY);
   assert.equal(violation.target, RUNTIME_LOADER);
@@ -103,9 +103,9 @@ test('AT — a bin whose loader is only a devDependency fails, and passes once i
 
   // The same tree with the single line moved: nothing else changes.
   buildTree(root, script, {
-    'packages/tela/package.json': {
-      name: '@cartografo/tela',
-      bin: { 'cartografo-tela': './bin/tela.mjs' },
+    'packages/screen/package.json': {
+      name: '@cartografo/screen',
+      bin: { 'cartografo-screen': './bin/screen.mjs' },
       dependencies: { [RUNTIME_LOADER]: '^4.23.12' },
     },
   });
@@ -144,9 +144,9 @@ test('AT — a bin declared as a plain string is read like the object form', asy
   const script = await loadScript();
   const { RUNTIME_LOADER } = script;
   const root = buildTree(temporaryArea(t), script, {
-    'packages/tela/package.json': {
-      name: '@cartografo/tela',
-      bin: './bin/tela.mjs',
+    'packages/screen/package.json': {
+      name: '@cartografo/screen',
+      bin: './bin/screen.mjs',
       devDependencies: { [RUNTIME_LOADER]: '^4.23.12' },
     },
   });

@@ -14,7 +14,7 @@
  * 1. argv and the environment become a token, with `--token` winning over
  *    `CARTOGRAFO_TOKEN` — the same precedence the `cartografo` CLI
  *    (`packages/core/src/cli/url.ts`) and the cost lens
- *    (`packages/topografo-custo/src/cli.ts`) already use, because a person who
+ *    (`packages/cost-surveyor/src/cli.ts`) already use, because a person who
  *    exported the variable once should not have to learn a third rule;
  * 2. the positional contract does not move: `<execution_id> [url] [dir]` is what
  *    the spec documents and what the flag has to survive;

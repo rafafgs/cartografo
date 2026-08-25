@@ -265,7 +265,7 @@ export function findPendingProposalByDedupeKey(
  * The accumulation is a LIST, and it starts being one only from the second
  * occurrence on: the first repeat wraps whatever was there into a one-element list
  * and appends to it. That asymmetry is the whole reason every reader of
- * `proposal.evidence.<field>` across `core`, `runner` and `topografo-custo` keeps
+ * `proposal.evidence.<field>` across `core`, `runner` and `cost-surveyor` keeps
  * working unchanged — a proposal nobody repeated is byte-for-byte the object that
  * was posted.
  *

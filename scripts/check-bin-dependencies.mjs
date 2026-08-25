@@ -13,7 +13,7 @@
  * — which makes the loader a RUNTIME dependency of whoever types the command. In
  * a workspace install every dependency of every kind is on disk, so a `tsx`
  * misfiled under `devDependencies` behaves perfectly. Install the tarball
- * instead, the way `npx cartografo-tela` does, and the command dies on its first
+ * instead, the way `npx cartografo-screen` does, and the command dies on its first
  * line with `ERR_MODULE_NOT_FOUND`.
  *
  * Same shape as `scripts/check-single-writer.mjs`: exported function plus a thin

@@ -43,7 +43,7 @@
  * - **`AS <name>`.** The alias used to be the bridge the unconverted
  *   repositories were built on — a `SELECT title AS titulo` is precisely how a
  *   renamed column reached an unrenamed TypeScript field without dragging
- *   `routes/`, `packages/runner` and `packages/tela` into one ticket. The mask
+ *   `routes/`, `packages/runner` and `packages/screen` into one ticket. The mask
  *   stays after t290 deleted the last of them, because it is about the SQL
  *   position and says nothing about whether the alias should exist; that
  *   question belongs to the sweep named above, which now answers it repo-wide.
@@ -66,8 +66,8 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
  *
  * Every repository, the owner of the log, and the one raw query left outside
  * both (`routes/events.ts`, the stream's cursor). D1 is what keeps the list this
- * short: nothing in `packages/runner`, `packages/tela` or
- * `packages/topografo-custo` touches the database at all.
+ * short: nothing in `packages/runner`, `packages/screen` or
+ * `packages/cost-surveyor` touches the database at all.
  */
 function scannedFiles(): string[] {
   const repositories = path.join(PACKAGE_ROOT, 'src', 'repositories');

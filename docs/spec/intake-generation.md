@@ -54,7 +54,7 @@ The credential's precedence is `--token` > `CARTOGRAFO_TOKEN` > none, the same a
 topografo, the flow topografo and the synthesizer. With no credential at all the
 client sends no header and takes a `401` — an empty header would look like a
 credential. This has been here since the first commit because of
-[t146](./topografo-flow.md): the topografo was born with no token flag and was
+[t146](./surveyor-flow.md): the topografo was born with no token flag and was
 entirely unusable until it got one.
 
 The exit codes are the contract, because that is what a person (or a script)
@@ -117,7 +117,7 @@ and a write to the control plane", and they decided differently **on purpose**:
 | Ticket | What the session produces | Who writes | Why |
 |---|---|---|---|
 | Synthesizer ([t115](./synthesizer.md), [D10](../../DECISIONS.md)) | A local draft file | A person, running `cartografo import` | Registering a graph has no undo at the API level: **the import IS the gate**. |
-| Topografo ([t110](./topografo-flow.md)) | The operations of a semantic diff | The command itself, in `POST /v1/proposals` | A proposal is born `pendente` and nobody applies it: the safety ladder is the **absence** of an `apply` method in the client. |
+| Topografo ([t110](./surveyor-flow.md)) | The operations of a semantic diff | The command itself, in `POST /v1/proposals` | A proposal is born `pendente` and nobody applies it: the safety ladder is the **absence** of an `apply` method in the client. |
 
 Intake follows the topografo, and the reason is t122's own design: the draft is
 born `pendente`, is freely editable by `PATCH`, discardable by `/discards`,

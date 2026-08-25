@@ -2,7 +2,7 @@
  * OpenAPI acceptance tests (t171, FR1–FR3 and FR7).
  *
  * D11 says the screen is an unprivileged client of the public API. Until this
- * ticket there was no public ARTIFACT saying what that API is: `packages/tela`,
+ * ticket there was no public ARTIFACT saying what that API is: `packages/screen`,
  * or any third party, had to read the route files. What is pinned here is the
  * document that closes the gap, and the two properties that keep it honest.
  *

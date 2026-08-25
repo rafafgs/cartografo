@@ -359,7 +359,7 @@ not want to keep a connection open. With it, extension point nº 5 is closed on
 both halves — this document is the *pull* one. Its §1 compares the two and says
 when each one serves.
 
-**The stream crossing the screen** — `packages/tela`'s `/v1/*` forwarding reads
+**The stream crossing the screen** — `packages/screen`'s `/v1/*` forwarding reads
 the whole response before handing it back, which serves for JSON and does not
 serve for a body that never ends. Until that changes, §8's `EventSource` has no
 way in: consuming the stream is a job for a client outside the browser, with the

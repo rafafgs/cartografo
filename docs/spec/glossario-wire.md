@@ -203,20 +203,20 @@ intake's item report (`domain/intake.ts`), which travels inside the `400` of
 
 | surface | today | becomes | defined in |
 |---|---|---|---|
-| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:75,88` |
-| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:76,89` |
+| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/screen/src/proxy.ts:225-352`, `packages/screen/src/static.ts:75,88` |
+| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/screen/src/proxy.ts:225-352`, `packages/screen/src/static.ts:76,89` |
 | api | `campo` | `field` | `packages/core/src/routes/leases.ts:148` |
 | api | `codigo` | `code` | `packages/core/src/domain/intake.ts` |
 | api | `alvo` | `target` | `packages/core/src/domain/intake.ts` |
-| api | `arquivo_nao_encontrado` | `file_not_found` | `packages/tela/src/static.ts:75,88` |
+| api | `arquivo_nao_encontrado` | `file_not_found` | `packages/screen/src/static.ts:75,88` |
 | api | `base_invalida` | `invalid_base` | `packages/core/src/routes/graphs.ts` |
 | api | `bifurcacao_sem_efeito` | `fork_without_effect` | `packages/core/src/routes/graphs.ts` |
 | api | `campo_invalido` | `invalid_field` | `packages/core/src/routes/leases.ts`, `packages/core/src/routes/proposals.ts` |
 | api | `campo_obrigatorio_ausente` | `missing_required_field` | `packages/core/src/routes/intake.ts` |
 | api | `ciclo_de_dependencia` | `dependency_cycle` | `packages/core/src/domain/intake.ts` |
 | api | `classe_ja_registrada` | `class_already_registered` | `packages/core/src/routes/graphs.ts` |
-| api | `control_plane_indisponivel` | `control_plane_unavailable` | `packages/tela/src/proxy.ts:57` |
-| api | `corpo_grande_demais` | `body_too_large` | `packages/tela/src/proxy.ts:63` |
+| api | `control_plane_indisponivel` | `control_plane_unavailable` | `packages/screen/src/proxy.ts:57` |
+| api | `corpo_grande_demais` | `body_too_large` | `packages/screen/src/proxy.ts:63` |
 | api | `corpo_invalido` | `invalid_body` | `packages/core/src/routes/leases.ts:148` |
 | api | `credencial_ausente` | `missing_credential` | `packages/core/src/auth.ts:43` |
 | api | `credencial_fora_de_escopo` | `out_of_scope_credential` | `packages/core/src/auth.ts:49` |
@@ -248,7 +248,7 @@ intake's item report (`domain/intake.ts`), which travels inside the `400` of
 | api | `operacao_inaplicavel` | `inapplicable_operation` | `packages/core/src/routes/proposals.ts` |
 | api | `operacoes_invalidas` | `invalid_operations` | `packages/core/src/routes/proposals.ts` |
 | api | `origem_invalida` | `invalid_source` | `packages/core/src/routes/engines.ts` |
-| api | `origem_nao_confiavel` | `untrusted_origin` | `packages/tela/src/proxy.ts:60` |
+| api | `origem_nao_confiavel` | `untrusted_origin` | `packages/screen/src/proxy.ts:60` |
 | api | `origem_proposta_desconhecida` | `unknown_origin_proposal` | `packages/core/src/routes/graphs.ts` |
 | api | `origem_proposta_id_invalido` | `invalid_origin_proposal_id` | `packages/core/src/routes/graphs.ts` |
 | api | `proposta_desatualizada` | `stale_proposal` | `packages/core/src/routes/proposals.ts` |
@@ -654,13 +654,13 @@ uses the entity name the API already publishes: `/perguntas` becomes
 
 | surface | today | becomes | defined in |
 |---|---|---|---|
-| routes-cli-report | `/quadro` | `/board` | `packages/tela/src/router.ts:350` |
-| routes-cli-report | `/execucoes` | `/executions` | `packages/tela/src/router.ts:351` |
-| routes-cli-report | `/execucoes/:id` | `/executions/:id` | `packages/tela/src/router.ts:355` |
-| routes-cli-report | `/perguntas` | `/input-requests` | `packages/tela/src/router.ts:352` |
-| routes-cli-report | `/perguntas/:id/resposta` | `/input-requests/:id/answer` | `packages/tela/src/router.ts:373` |
-| routes-cli-report | `/trabalhos/:id` | `/jobs/:id` | `packages/tela/src/router.ts:363` |
-| routes-cli-report | `/runners` | `/runners` | `packages/tela/src/router.ts:353` |
+| routes-cli-report | `/quadro` | `/board` | `packages/screen/src/router.ts:350` |
+| routes-cli-report | `/execucoes` | `/executions` | `packages/screen/src/router.ts:351` |
+| routes-cli-report | `/execucoes/:id` | `/executions/:id` | `packages/screen/src/router.ts:355` |
+| routes-cli-report | `/perguntas` | `/input-requests` | `packages/screen/src/router.ts:352` |
+| routes-cli-report | `/perguntas/:id/resposta` | `/input-requests/:id/answer` | `packages/screen/src/router.ts:373` |
+| routes-cli-report | `/trabalhos/:id` | `/jobs/:id` | `packages/screen/src/router.ts:363` |
+| routes-cli-report | `/runners` | `/runners` | `packages/screen/src/router.ts:353` |
 
 ### 5.2 Command line: subcommands and flags
 
@@ -668,7 +668,7 @@ What a person TYPES, and not only what starts with `--`: a subcommand is as
 typed as a flag, and `avaliar` sat one row outside the gate that would have
 caught it, because t230's reading filtered by `--`.
 
-`topografo-custo`'s six rows arrived with t255. Three of them (`--execucao`,
+`cost-surveyor`'s six rows arrived with t255. Three of them (`--execucao`,
 `--teto-tokens`, `--teto-segundos`) t230 had already renamed in the code, but
 left in a local array of that package's test instead of here, and the other
 three it declared outside its own scope. Neither of those was a decision: D20
@@ -680,12 +680,12 @@ applied for the same words — `execucao_id` → `execution_id` (§1.1),
 |---|---|---|---|
 | routes-cli-report | `--classe` | `--class` | `packages/runner/src/synthesizer/synthesize.ts:139`, `packages/runner/src/intake/command-line.ts:49` |
 | routes-cli-report | `--saida` | `--out` | `packages/runner/src/synthesizer/synthesize.ts:149` |
-| routes-cli-report | `avaliar` | `evaluate` | `packages/topografo-custo/src/cli.ts` |
-| routes-cli-report | `--execucao` | `--execution` | `packages/topografo-custo/src/cli.ts` |
-| routes-cli-report | `--teto-tokens` | `--token-cap` | `packages/topografo-custo/src/cli.ts` |
-| routes-cli-report | `--teto-segundos` | `--second-cap` | `packages/topografo-custo/src/cli.ts` |
-| routes-cli-report | `--tier-fator` | `--tier-factor` | `packages/topografo-custo/src/cli.ts` |
-| routes-cli-report | `--tier-minimo-nos` | `--tier-min-nodes` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `avaliar` | `evaluate` | `packages/cost-surveyor/src/cli.ts` |
+| routes-cli-report | `--execucao` | `--execution` | `packages/cost-surveyor/src/cli.ts` |
+| routes-cli-report | `--teto-tokens` | `--token-cap` | `packages/cost-surveyor/src/cli.ts` |
+| routes-cli-report | `--teto-segundos` | `--second-cap` | `packages/cost-surveyor/src/cli.ts` |
+| routes-cli-report | `--tier-fator` | `--tier-factor` | `packages/cost-surveyor/src/cli.ts` |
+| routes-cli-report | `--tier-minimo-nos` | `--tier-min-nodes` | `packages/cost-surveyor/src/cli.ts` |
 
 ### 5.3 Graph validation report keys
 
@@ -738,7 +738,7 @@ t213's inventory cites it: the example file is renamed along with it.
 
 ### 5.5 Cost lens candidate and evidence
 
-What `topografo-custo` PUTS on the wire: the keys of the candidate and of the
+What `cost-surveyor` PUTS on the wire: the keys of the candidate and of the
 evidence that travel inside `POST /v1/proposals`. A tag of its own (`cost-lens`)
 because it is not a screen route, not a flag and not the graph report — it is
 one lens's vocabulary, and that package's gate is the only one that needs to
@@ -756,20 +756,20 @@ convention as the core's gate.
 
 | surface | today | becomes | defined in |
 |---|---|---|---|
-| cost-lens | `lente` | `lens` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `custo` | `cost` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `no_id` | `node_id` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `grafo_versao_id` | `graph_version_id` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `tempo_total_segundos` | `total_seconds` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `sessoes_com_uso` | `sessions_with_usage` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `sessoes_sem_uso` | `sessions_without_usage` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `teto_excedido` | `ceiling_exceeded` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `tipo` | `type` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `teto` | `ceiling` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `tempo` | `time` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `operacoes` | `operations` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `evidencia` | `evidence` | `packages/topografo-custo/src/policy.ts` |
-| cost-lens | `metrica_esperada` | `expected_metric` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `lente` | `lens` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `custo` | `cost` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `no_id` | `node_id` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `grafo_versao_id` | `graph_version_id` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `tempo_total_segundos` | `total_seconds` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `sessoes_com_uso` | `sessions_with_usage` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `sessoes_sem_uso` | `sessions_without_usage` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `teto_excedido` | `ceiling_exceeded` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `tipo` | `type` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `teto` | `ceiling` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `tempo` | `time` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `operacoes` | `operations` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `evidencia` | `evidence` | `packages/cost-surveyor/src/policy.ts` |
+| cost-lens | `metrica_esperada` | `expected_metric` | `packages/cost-surveyor/src/policy.ts` |
 
 ### 5.6 Flow lens evidence and measures
 
@@ -789,7 +789,7 @@ closes it, and the first real crossing is what found it
 Three things are NOT here, each for a reason of its own:
 
 - **`total_ms` and `lens` are already English.** Nothing to map.
-- **`fonte` stays.** [`topografo-flow.md` §4](topografo-flow.md) already
+- **`fonte` stays.** [`surveyor-flow.md` §4](surveyor-flow.md) already
   records that it is the provenance the module declares, distinct from the
   `lens` the server reads to deduplicate. Renaming it would be reverting a
   recorded decision, not leaving one unrecorded.
@@ -800,7 +800,7 @@ Three things are NOT here, each for a reason of its own:
 
 `gargalo`, `evidencia`, `metrica_esperada` and `proposta` as keys of
 `SurveyorResult` are not here either: that is the runner's internal return
-value, read by `cli.mjs` and by `packages/topografo`, never serialized — the
+value, read by `cli.mjs` and by `packages/surveyor`, never serialized — the
 same convention that leaves `IdentifiedCostRow` out of §5.5.
 
 `evidencia.eventos` appears qualified because `eventos` is already `events` in

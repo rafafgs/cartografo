@@ -48,7 +48,7 @@ export const DB_OWNER_PREFIX = 'packages/core/src/db';
 /**
  * Suffix of the owner's path, used to recognize a reach into the private
  * database even when the sweep starts outside the repo root (e.g. sweeping only
- * `packages/tela/`, where the import target falls outside the swept tree).
+ * `packages/screen/`, where the import target falls outside the swept tree).
  */
 export const DB_OWNER_SEGMENT = 'core/src/db';
 

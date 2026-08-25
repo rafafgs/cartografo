@@ -1,7 +1,7 @@
 # Specification: the minimal observability screen
 
-**Version of the API consumed:** `v1` · **Package:** [`packages/tela`](../../packages/tela)
-**Command:** `npx cartografo-tela` · **Default port:** `4318`
+**Version of the API consumed:** `v1` · **Package:** [`packages/screen`](../../packages/screen)
+**Command:** `npx cartografo-screen` · **Default port:** `4318`
 **Founding decision:** [D11](../../DECISIONS.md) — "observability and the inbox
 first; the screen is a client of the public API, with no privileges" · the PoC
 criterion of [D16](../../DECISIONS.md)
@@ -22,7 +22,7 @@ on its own (§4).
 The rule is checked statically by
 [`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), which
 runs in `npm run lint`, and locked down by
-[`packages/tela/test/no-privileged-access.test.ts`](../../packages/tela/test/no-privileged-access.test.ts).
+[`packages/screen/test/no-privileged-access.test.ts`](../../packages/screen/test/no-privileged-access.test.ts).
 
 ---
 
@@ -53,7 +53,7 @@ hand, is an entity: `/jobs/424242` answers **404**.
 D11 asks two things of the screen: observability and the inbox. They arrived in
 different tickets — this one and `t111` — and they share the same package, the
 same process and the same port. A single handler
-([`packages/tela/src/servidor.ts`](../../packages/tela/src/servidor.ts)) decides
+([`packages/screen/src/servidor.ts`](../../packages/screen/src/servidor.ts)) decides
 between them, in this order:
 
 | Path | Who answers |
@@ -162,7 +162,7 @@ Four rules close the definition:
    goes on accumulating queue, open-ended; it is exactly the time nobody wants to
    see growing without an explanation.
 4. **The reconstruction is a pure function** and does not look at the clock
-   ([`timeline.ts`](../../packages/tela/src/timeline.ts)): the same inputs — the
+   ([`timeline.ts`](../../packages/screen/src/timeline.ts)): the same inputs — the
    three responses and rule 3's `concluido` — produce the same timeline today and
    a month from now. It is what makes it testable without real time.
 
@@ -211,7 +211,7 @@ character typed and it is not a reliable accessible name, and this is the page's
 only required field. The id comes from the question's id, which is already the
 card's unique key. It is the same rule the proposal inbox follows on its reason
 field ([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3); pinned in
-[`packages/tela/test/questions-answer-field.test.ts`](../../packages/tela/test/questions-answer-field.test.ts),
+[`packages/screen/test/questions-answer-field.test.ts`](../../packages/screen/test/questions-answer-field.test.ts),
 which resolves the name the way a screen reader would.
 
 **The one that unblocks the job is not the screen.** The question → block →
@@ -247,7 +247,7 @@ invalid filter is a **400**, never a filter ignored in silence.
 
 | Variable | Default | What it is |
 |---|---|---|
-| `CARTOGRAFO_TELA_PORT` | `4318` | The port the screen listens on. |
+| `CARTOGRAFO_SCREEN_PORT` | `4318` | The port the screen listens on. |
 | `CARTOGRAFO_URL` (or `--url`) | `http://127.0.0.1:4317` | The control plane it reads. |
 | `CARTOGRAFO_PORT` | `4317` | The control plane's port in the default above. |
 
@@ -256,9 +256,9 @@ The address's precedence: `--url` > `CARTOGRAFO_URL` >
 ([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)), so that
 bringing the control plane up on another port does not demand configuring two
 things in two vocabularies. What resolves it is
-[`resolveControlPlaneUrl`](../../packages/tela/src/proxy.ts), one for the whole
+[`resolveControlPlaneUrl`](../../packages/screen/src/proxy.ts), one for the whole
 package since `t199`: until then there was a second resolver in `router.ts`, with
-no `CARTOGRAFO_PORT`, and it was the one `bin/tela.mjs` reached. The screen
+no `CARTOGRAFO_PORT`, and it was the one `bin/screen.mjs` reached. The screen
 listens on **loopback**, like the control plane and for the same reason: there is
 no authentication at this stage.
 
@@ -337,7 +337,7 @@ Every item is another ticket's declared scope, not an oversight:
   `pergunta`) — it is the package's other half, delivered by `t111` and served at
   `/` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
 - **Logging in from the browser** — `t124` authenticated the API and gave the
-  screen a service credential (`CARTOGRAFO_TELA_TOKEN`, with `CARTOGRAFO_TOKEN`
+  screen a service credential (`CARTOGRAFO_SCREEN_TOKEN`, with `CARTOGRAFO_TOKEN`
   as a fallback), which it presents on every call to the control plane. The
   browser still reaches the screen with no credential at all, the screen is still
   on loopback and `respondido_por` still falls back to `"tela"`: by D11 the

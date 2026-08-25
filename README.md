@@ -160,22 +160,22 @@ After a round, for the cost lens to read its telemetry:
 
 ```bash
 CARTOGRAFO_TOKEN=<the token from step 2> \
-  npx topografo-custo evaluate --url http://127.0.0.1:4317 \
+  npx cost-surveyor evaluate --url http://127.0.0.1:4317 \
     --execution 7 --token-cap 200000
 ```
 
-`topografo-custo` is a topografo: it reads that execution's sessions and jobs
+`cost-surveyor` is a surveyor: it reads that execution's sessions and jobs
 through the public API, aggregates cost per `(graph version, node)` and
 **deposits a pending proposal** per candidate — it never applies any, because
 applying is a human decision at the gate (principle 5). Without `--token-cap` or
 `--second-cap` the cap policy does not run: there is nothing to exceed.
-`npx topografo-custo --help` lists the rest.
+`npx cost-surveyor --help` lists the rest.
 
 And, so that nobody has to type the id of every round, an observer that does it
 on its own:
 
 ```bash
-npx cartografo-topografo watch --url http://127.0.0.1:4317 --token <the token from step 2>
+npx cartografo-surveyor watch --url http://127.0.0.1:4317 --token <the token from step 2>
 ```
 
 It subscribes to the event stream, waits for the control plane to declare an
@@ -196,7 +196,7 @@ step that brings it up, and switching it on is the operator's decision
 And, to see what is going on:
 
 ```bash
-npx cartografo-tela                                     # http://127.0.0.1:4318
+npx cartografo-screen                                     # http://127.0.0.1:4318
 ```
 
 One command, the two halves of the screen D11 asks for. At `/`, the **proposal
@@ -230,8 +230,8 @@ throughput is more runner processes under the same project; `CARTOGRAFO_URL` (or
 `--url`) to point the other subcommands — and the screen, and the runner — at a
 control plane that is not at the default `http://127.0.0.1:4317`;
 `CARTOGRAFO_TOKEN` (or `--token`) for the credential the subcommands and the
-runner present; `CARTOGRAFO_TELA_PORT` to change the screen's port and
-`CARTOGRAFO_TELA_TOKEN` to give the screen a credential of its own — without it,
+runner present; `CARTOGRAFO_SCREEN_PORT` to change the screen's port and
+`CARTOGRAFO_SCREEN_TOKEN` to give the screen a credential of its own — without it,
 the screen uses the one in `CARTOGRAFO_TOKEN`. The screen presents that
 credential to the control plane on every call and asks the browser for none: it
 is an unprivileged client of the API (D11), and that is why it listens on
@@ -285,7 +285,7 @@ fixed graph offers.
 - **Graph validation gate** — the graph is an artifact with a contract; somebody
   checks it before it runs.
 - **Executor** — traversal with gates, queues, escalation to a human.
-- **Evaluator (topografo)** — process mining over the log; mutation proposals.
+- **Evaluator (surveyor)** — process mining over the log; mutation proposals.
 - **Process memory** — graphs versioned per problem class.
 
 ## Lineage and neighbours

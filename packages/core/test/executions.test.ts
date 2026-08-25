@@ -37,7 +37,7 @@ import {
 /**
  * The per-node breakdown that rides on every `metrics[]` row since t264 (FR7).
  *
- * The field set mirrors `packages/topografo-custo/src/cost.ts`'s `aggregateCost`
+ * The field set mirrors `packages/cost-surveyor/src/cost.ts`'s `aggregateCost`
  * on purpose, discipline included: an absent `usage` is never worth zero, so
  * `sessions` and `sessions_with_usage` are two counters and only the second one
  * says how much of `tokens` can be believed. The same holds for time.
@@ -850,7 +850,7 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
 /* so both of its callers — the note of t198's first real crossing (gap 8) and */
 /* the cost lens — recomputed tokens and agent time per `(version, node)` by   */
 /* hand, pulling `GET /v1/sessions` and `GET /v1/jobs` and joining them in the */
-/* runner process (`packages/topografo-custo/src/cost.ts`). This is that join, */
+/* runner process (`packages/cost-surveyor/src/cost.ts`). This is that join, */
 /* done once, on the side that owns the two tables (D1).                      */
 /*                                                                            */
 /* The two disciplines it inherits from that lens are the whole point of the   */

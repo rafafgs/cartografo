@@ -3,7 +3,7 @@
  *
  * `measureForExpectedMetric` is the missing half of the learning loop. The
  * surveyor names the number it expects to move as `"<medida>:<node_id>"`
- * (`docs/spec/topografo-flow.md` §4, `proposal.ts:buildExpectedMetric`); the
+ * (`docs/spec/surveyor-flow.md` §4, `proposal.ts:buildExpectedMetric`); the
  * outcome route wants the same number measured in the NEXT round
  * (`POST /v1/proposals/:id/outcome`, t112). Between the two there was nothing —
  * a human reading a ranking and typing a float. This function is that step, and

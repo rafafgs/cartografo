@@ -55,7 +55,7 @@
  * 24 — the ten anonymous expressions named below, plus fourteen outside the
  * clusters (`job.ts`'s and `input-request.ts`'s aggregates,
  * `db/connection.ts`'s `SELECT 1 AS one`, `routes/events.ts`'s
- * `MAX(id) AS last_id`, and one sentence in `packages/tela/src/router.ts` that
+ * `MAX(id) AS last_id`, and one sentence in `packages/screen/src/router.ts` that
  * happens to say the word "AS" in prose).
  *
  * The `toWire`/`fromWire` rule is already repo-wide, and not by accident — every

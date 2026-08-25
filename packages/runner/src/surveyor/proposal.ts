@@ -39,7 +39,7 @@
  *
  * `evidencia`, `metrica_esperada` and `proposta` on {@link SurveyorResult} are
  * NOT that surface: they are this module's own return value, read by
- * `cli.mjs` and by `packages/topografo`, and renaming them is identifier debt
+ * `cli.mjs` and by `packages/surveyor`, and renaming them is identifier debt
  * of another ficha (`test/no-portuguese-wire.test.ts`'s own exemption says so).
  */
 
@@ -55,7 +55,7 @@ import type {
 /**
  * The one client this lens runs on, re-exported (t247).
  *
- * `packages/topografo` calls `proposeFlowImprovement` across the package
+ * `packages/surveyor` calls `proposeFlowImprovement` across the package
  * boundary and has to hand it a client; without this line the only way to build
  * one would be a fourth entry in this package's `exports`, publishing the whole
  * controller so that a caller can reach one constructor. The lens is what needs

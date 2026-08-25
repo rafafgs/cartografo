@@ -1,6 +1,6 @@
 # Specification: the graph configuration screen
 
-**Package:** [`packages/tela`](../../packages/tela) · **Port:** `4318` ·
+**Package:** [`packages/screen`](../../packages/screen) · **Port:** `4318` ·
 **Page:** `/graph-editor.html`
 **Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
 the public API, with no privileges" · [D15](../../DECISIONS.md) — "a semantic
@@ -60,7 +60,7 @@ hex characters, and an id that came from the API is not a path fragment the page
 trusts.
 
 Pinned against the real client in
-[`packages/tela/test/graph-editor-acceptance.test.ts`](../../packages/tela/test/graph-editor-acceptance.test.ts),
+[`packages/screen/test/graph-editor-acceptance.test.ts`](../../packages/screen/test/graph-editor-acceptance.test.ts),
 which records the sequence of calls the page made and compares it with this list
 — a seventh call fails it.
 
@@ -153,7 +153,7 @@ The four soundness rules become these sentences:
 | `no_com_contrato` | `o nó "X" não declara skill_ref e contract completos: sem contrato não há como verificar o que ele produziu` |
 
 The mapping lives in
-[`src/public/graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js),
+[`src/public/graph-soundness.js`](../../packages/screen/src/public/graph-soundness.js),
 a pure function, tested in Node. And it cannot diverge in silence:
 `graph-soundness.test.ts` runs the four counterexamples of
 [`schema/examples/`](../../schema/examples) through the reference validator
@@ -170,9 +170,9 @@ outside the browser:
 
 | Module | What it is |
 |---|---|
-| [`graph-operations.js`](../../packages/tela/src/public/graph-operations.js) | A pure function: `diffGraphs(loaded, edited)` → typed operations with inverses. |
-| [`graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js) | A pure function: the gate's report → one line per problem. |
-| [`graph-editor.js`](../../packages/tela/src/public/graph-editor.js) | The only one that touches the DOM. It takes `document` and `fetch` as arguments, which is what makes it drivable from Node. |
+| [`graph-operations.js`](../../packages/screen/src/public/graph-operations.js) | A pure function: `diffGraphs(loaded, edited)` → typed operations with inverses. |
+| [`graph-soundness.js`](../../packages/screen/src/public/graph-soundness.js) | A pure function: the gate's report → one line per problem. |
+| [`graph-editor.js`](../../packages/screen/src/public/graph-editor.js) | The only one that touches the DOM. It takes `document` and `fetch` as arguments, which is what makes it drivable from Node. |
 
 **The order of the operations is not cosmetic.** `applyOperations` runs the list
 in order over a single document and refuses an operation the snapshot does not

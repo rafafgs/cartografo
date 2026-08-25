@@ -3,7 +3,7 @@
  * The runner's command: `cartografo-runner`.
  *
  * A thin shell, in the same mould as `packages/core/bin/cartografo.mjs` and
- * `packages/tela/bin/tela.mjs`: the executable is `.mjs` (and not `.ts`) so it
+ * `packages/screen/bin/screen.mjs`: the executable is `.mjs` (and not `.ts`) so it
  * depends on no Node flag at all — it registers the tsx loader in process and
  * only then imports `src/cli/index.ts`. That is the whole of gap #5 of the
  * first dogfood (`notas/2026-08-15-first-execution.md:54-56`): parameter

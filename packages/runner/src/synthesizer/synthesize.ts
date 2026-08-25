@@ -184,7 +184,7 @@ export const HELP = [
  * leading token as an error would refuse the only argument that matters.
  *
  * Precedence of the credential is `--token` > {@link ENV_TOKEN} > nothing,
- * which is the rule `packages/core/src/cli/url.ts`, `topografo-custo` and the
+ * which is the rule `packages/core/src/cli/url.ts`, `cost-surveyor` and the
  * flow surveyor already use. A fourth rule for a fourth command would be a
  * fourth thing to remember, and the person running all of them is one person.
  *

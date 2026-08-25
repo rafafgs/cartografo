@@ -281,7 +281,7 @@ const PROPOSAL_FIELDS: ReadonlyArray<GlossaryTerm> = Object.freeze([
  * reader filters on a surface tag, and `flow-lens`'s rows are readable only by
  * this package — pointing it at them would hand three other sweeps a
  * vocabulary none of them can see. `fonte` is deliberately absent: it is the
- * module's own provenance label, and `docs/spec/topografo-flow.md` §4 already
+ * module's own provenance label, and `docs/spec/surveyor-flow.md` §4 already
  * records the decision to leave it where it is.
  */
 const FLOW_LENS_KEYS: ReadonlyArray<GlossaryTerm> = Object.freeze([

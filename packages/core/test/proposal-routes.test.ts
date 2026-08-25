@@ -1132,7 +1132,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
 /* t165 — the human gate: pendente → aprovada → aplicada                       */
 /*                                                                            */
 /* The tela has offered `Aprovar`/`Rejeitar` since t111 against routes that    */
-/* did not exist (`packages/tela/src/public/actions.js`), and `aprovada` — the */
+/* did not exist (`packages/screen/src/public/actions.js`), and `aprovada` — the */
 /* only status from which it offers `Aplicar` — was not even in the            */
 /* migration's CHECK. These are the two ends of that contract meeting.         */
 /* -------------------------------------------------------------------------- */

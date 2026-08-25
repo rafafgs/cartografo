@@ -1,5 +1,5 @@
 /**
- * D24 gate: no Portuguese survives in a path, anywhere in the tree (t282).
+ * D24 gate: no Portuguese survives in a path, anywhere in the tree (t282, t303).
  *
  * The closing sweep of D24's document series, and the one that finally reads
  * the whole repository rather than a slice of it. Its four predecessors each
@@ -25,7 +25,7 @@
  * - **`no-portuguese-document-tree`** — four trees, two general signals (a
  *   Portuguese diacritic, a Portuguese function word). It catches an unknown
  *   Portuguese word nobody predicted, but only where it walks.
- * - **this gate** — the WHOLE tracked tree, five specific stems. It catches
+ * - **this gate** — the WHOLE tracked tree, seven specific stems. It catches
  *   nothing it was not told about, but it catches it everywhere.
  *
  * Neither subsumes the other. `especificacoes` carries no diacritic and is not a
@@ -37,15 +37,17 @@
  *
  * ## The stems, and why stems rather than words
  *
- * Five, one per name D24 retired, matched as a SUBSTRING of a path component:
+ * Seven, one per name D24 retired, matched as a SUBSTRING of a path component:
  *
- * | stem          | the names it retires                                     |
- * |---------------|----------------------------------------------------------|
+ * | stem          | the names it retires                                      |
+ * |---------------|-----------------------------------------------------------|
  * | `fabrica`     | `grafos-de-fabrica/` -> `factory-graphs/`                 |
  * | `especificac` | `especificacoes/` -> `specs/`                             |
- * | `exemplo`     | `exemplos/` -> `examples/`, and the bets thesis fixture   |
+ * | `exemplo`     | `exemplos/` -> `examples/`, and the bets thesis fixture    |
  * | `formato`     | `formatos/` -> `formats/`, under `docs/` and under specs  |
  * | `validar`     | `validar-grafo.mjs` -> `validate-graph.mjs`               |
+ * | `tela`        | `packages/tela/` -> `packages/screen/`, bin script too     |
+ * | `topografo`   | `packages/topografo{,-custo}/`, and the two spec documents |
  *
  * A substring rather than a whole component, because these words inflect and
  * compose: `especificacoes` is the plural of `especificacao`, and
@@ -53,14 +55,24 @@
  * hyphenated name. Matching the stem catches the family; matching the exact
  * spelling would have caught one member of it and let `especificacao/` in.
  *
- * The five are also, deliberately, narrower than the pattern the original
- * ticket carried. `tela` and `topografo` came out because the package identities
- * are a separate ticket and this gate would have gone red on work nobody had
- * started. Bare `grafo` came out because it is not retired at all: `grafo.json`
- * is the factory-bundle convention `packages/core/src/cli/import.ts` hardcodes,
- * `schema/grafo.schema.json` carries it in a URN `$id`, and a gate that demanded
- * their rename would be demanding a contract change under cover of a path sweep.
- * When those names do move, their stems belong in the table above.
+ * The last two arrived with t303, which is the separate ticket t282 wrote them
+ * down for: the package identities were work nobody had started, so a gate that
+ * carried their stems on day one would have gone red on a rename that did not
+ * exist yet. It exists now — `packages/screen/`, `packages/surveyor/`,
+ * `packages/cost-surveyor/` — and the two stems are what stops it coming back.
+ *
+ * `topografo` covers the cost package on its own, which is why there is no
+ * `custo` stem beside it: the substring rule already reads it inside
+ * `topografo-custo`, and `custo` would have bitten the English word `custom`
+ * — `packages/core/src/domain/custom-fields.ts` and the frozen
+ * `0015_trabalho_campos_customizados.sql` are both real paths in this tree.
+ *
+ * Bare `grafo` is still out, and not because anybody deferred it: it is not
+ * retired at all. `grafo.json` is the factory-bundle convention
+ * `packages/core/src/cli/import.ts` hardcodes, `schema/grafo.schema.json`
+ * carries it in a URN `$id`, and a gate that demanded their rename would be
+ * demanding a contract change under cover of a path sweep. When that name does
+ * move, its stem belongs in the table above.
  *
  * ## What is excluded, and why that is a boundary and not a hole
  *
@@ -68,8 +80,8 @@
  * names outright — `0003_trabalho_sessao_evento_pergunta.sql` is Portuguese and
  * stays Portuguese, because a migration's name is its identity in
  * `schema_migrations` and renaming one re-runs it. The exclusion says which tree
- * this gate has authority over; it is not covering for a match. As of t282 no
- * migration name trips any of the five stems, and the test below pins that the
+ * this gate has authority over; it is not covering for a match. As of t303 no
+ * migration name trips any of the seven stems, and the test below pins that the
  * excluded prefix still names a tree that is really there — so the day the
  * directory moves, this exclusion reds rather than going quietly blind.
  *
@@ -90,6 +102,8 @@ export const RETIRED_STEMS = Object.freeze([
   'exemplo',
   'formato',
   'validar',
+  'tela',
+  'topografo',
 ]);
 
 /**

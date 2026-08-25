@@ -17,7 +17,7 @@
  * its whole explanation.
  *
  * Precedence is `--token` > `CARTOGRAFO_TOKEN` > nothing, which is the rule
- * `packages/core/src/cli/url.ts`, `packages/topografo-custo/src/cli.ts`, the flow
+ * `packages/core/src/cli/url.ts`, `packages/cost-surveyor/src/cli.ts`, the flow
  * surveyor and the synthesizer already use. A fifth rule for a fifth command
  * would be a fifth thing to remember, and the person running all of them is one
  * person.

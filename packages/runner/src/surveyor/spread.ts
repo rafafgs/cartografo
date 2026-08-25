@@ -133,7 +133,7 @@ function usable(candidate: string | undefined): string | undefined {
  * length, so a positional url would be indistinguishable from an id that failed
  * to parse — and guessing which one the operator meant is exactly the kind of
  * cleverness that makes a measurement unreproducible. `--url` is also what the
- * `cartografo` CLI and `topografo-custo` already spell (`packages/core/src/cli/url.ts`).
+ * `cartografo` CLI and `cost-surveyor` already spell (`packages/core/src/cli/url.ts`).
  *
  * @param argv Arguments after the script name.
  * @param env Environment to read the credential from.

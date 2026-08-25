@@ -23,7 +23,7 @@
  * `http://127.0.0.1:4317`. The default is REDECLARED here and not imported from
  * `@cartografo/core`: the runner imports nothing from the control plane's
  * package (D1), which is the boundary `cliente-controle.ts`'s own header states
- * and `packages/tela/src/router.ts:83-92` already set the precedent for. The
+ * and `packages/screen/src/router.ts:83-92` already set the precedent for. The
  * price is a constant in two places; the alternative is a package boundary that
  * only holds while nobody looks.
  *

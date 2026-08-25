@@ -144,7 +144,7 @@ const BRAND = '`cartografo`';
  */
 const RESOLVED_FILES = Object.freeze([
   'packages/core/src/webhooks/signature.ts',
-  'packages/tela/src/static.ts',
+  'packages/screen/src/static.ts',
 ]);
 
 /** Separator between two spellings of one term inside a single cell. */

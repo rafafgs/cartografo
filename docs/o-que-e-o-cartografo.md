@@ -17,7 +17,7 @@ strength of its own history.
 ## What you can do with it
 
 **Install it and bring it up in one command.** `npx cartografo` creates the
-local database and brings up the server; `npx cartografo-tela` opens the
+local database and brings up the server; `npx cartografo-screen` opens the
 interface. Everything on your machine; everything the screen shows comes from a
 public API any tool can consume.
 
@@ -143,11 +143,11 @@ reads the history and deposits proposals in your inbox, each one with the diff,
 the evidence and the metric it expects to move. You approve, and the new version
 is born. There are two evaluators: the flow one (where the round spent time) and
 the cost one (tokens and time per node). Both are called by hand — `npx
-topografo-custo evaluate …` —, and now on their own as well, if you let them.
+cost-surveyor evaluate …` —, and now on their own as well, if you let them.
 Projects that diverge get a variant of the map of their own, and what the variant
 learns goes back to the base map as a proposal, through the same gate.
 
-**The map watches on its own.** `npx cartografo-topografo watch …` listens to the
+**The map watches on its own.** `npx cartografo-surveyor watch …` listens to the
 control plane and, every time a round ends, runs both lenses over it with nobody
 typing anything. You still switch the observer on — it does not come up with the
 system —, but after that the inbox fills up on its own. Running twice over the

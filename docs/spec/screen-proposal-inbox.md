@@ -1,6 +1,6 @@
 # Specification: the proposal inbox on the screen
 
-**Package:** [`packages/tela`](../../packages/tela) · **Port:** `4318`
+**Package:** [`packages/screen`](../../packages/screen) · **Port:** `4318`
 **Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
 the public API" · [D1](../../DECISIONS.md) — "only the server writes to the
 database" · principle 5 of the [README](../../README.md) — "the safety ladder"
@@ -15,7 +15,7 @@ it.
 One sentence sums up the boundary: **the screen knows nothing the public API does
 not tell it**. No import of `packages/core`, no SQLite driver in the manifest, no
 private route — the same surface any other client would have, and a static gate
-(`packages/tela/test/no-privileged-access.test.ts`,
+(`packages/screen/test/no-privileged-access.test.ts`,
 [`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs)) that
 fails the opposite.
 
@@ -31,7 +31,7 @@ of its own, with two jobs:
 | Path | What happens |
 |---|---|
 | `/v1/*` | A **verbatim** proxy to `CARTOGRAFO_URL` — method, path, query, body and headers cross unchanged, and the status comes back as it came. |
-| Anything else | A static file from `packages/tela/src/public/` (`/` serves `index.html`). |
+| Anything else | A static file from `packages/screen/src/public/` (`/` serves `index.html`). |
 
 The browser talks only to the origin the page came from; the screen is still one
 more HTTP client of the public API. Nothing on the core's boundary changes.
@@ -67,26 +67,26 @@ be avoided).
 
 | Variable | Default | What for |
 |---|---|---|
-| `CARTOGRAFO_TELA_PORT` | `4318` | The screen's port (the control plane's, plus one). |
+| `CARTOGRAFO_SCREEN_PORT` | `4318` | The screen's port (the control plane's, plus one). |
 | `CARTOGRAFO_URL` | `http://127.0.0.1:4317` | The control plane `/v1/*` goes to. |
 | `CARTOGRAFO_PORT` | `4317` | The control plane's port in the default above. |
 
 The same precedence as
 [`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts):
 `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT` > default. The resolution is
-**duplicated** in `packages/tela/src/proxy.ts`, not imported: the screen declares
+**duplicated** in `packages/screen/src/proxy.ts`, not imported: the screen declares
 no dependency on the core package, and that is precisely the boundary D11 asks
 for. Duplicated and pinned by a test, like the graph validator of
 [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs).
 
 It listens on `127.0.0.1`, and it stays there after `t124`: the screen does not
-ask the browser for a credential — it CARRIES its own (`CARTOGRAFO_TELA_TOKEN`,
+ask the browser for a credential — it CARRIES its own (`CARTOGRAFO_SCREEN_TOKEN`,
 with `CARTOGRAFO_TOKEN` as a fallback) and presents it to the control plane on
 every call, including the ones the proxy passes along. Whoever exposes the screen
 on an external interface is deciding to open the system's only writer to whoever
 reaches the port.
 
-To bring it up: `npm start --workspace @cartografo/tela`. It prints a readiness
+To bring it up: `npm start --workspace @cartografo/screen`. It prints a readiness
 line on stdout, in the spirit of `cartografo.ready`:
 
 ```json
@@ -114,7 +114,7 @@ The paths are those of the English `/v1` surface (D18, renamed by `t127`); the
 **keys** of the bodies (`propostas`, `proposta`, `motivo`, `grafo_versao`) and
 the status vocabulary (`pendente`, `aprovada`, …) are still Portuguese, which is
 what D18 deliberately left out. Pinned against the real client in
-`packages/tela/test/inbox-spec-routes.test.ts`.
+`packages/screen/test/inbox-spec-routes.test.ts`.
 
 The response envelope the screen expects — and how it protects itself from being
 wrong about it:
@@ -171,11 +171,11 @@ Where the reason is required, the field appears with its question in a visible
 placeholder is a hint, it disappears on the first character typed and it is not a
 reliable accessible name — and this is precisely the page's field that asks for a
 written justification. Pinned in
-`packages/tela/test/inbox-reason-field.test.ts`, which resolves the name the way
+`packages/screen/test/inbox-reason-field.test.ts`, which resolves the name the way
 a screen reader would.
 
 The rule lives in a pure function, `resolveActionsForStatus`
-([`src/public/actions.js`](../../packages/tela/src/public/actions.js)), tested in
+([`src/public/actions.js`](../../packages/screen/src/public/actions.js)), tested in
 Node even though it runs in the browser.
 
 After a successful action **only that row changes** — the new status and, on
@@ -216,8 +216,8 @@ What moved was the key, not the text a person reads before approving.
 Nothing here throws. The operations come from a topografo this screen has never
 seen, and a strange line is a bad render — an exception is the whole page blank.
 Implementation and format pinned in
-[`src/public/diff.js`](../../packages/tela/src/public/diff.js) and
-`packages/tela/test/diff.test.ts`.
+[`src/public/diff.js`](../../packages/screen/src/public/diff.js) and
+`packages/screen/test/diff.test.ts`.
 
 ---
 

@@ -76,6 +76,13 @@ export const ENTRIES = Object.freeze([
  *
  * `intake.md` was already English and does not move; `glossario-wire.md` is
  * t281's and does not move either.
+ *
+ * Two names moved again after this ticket: t303 renamed `topografo-cost.md` and
+ * `topografo-flow.md` to `surveyor-cost.md` and `surveyor-flow.md` when it gave
+ * the evaluator's two packages English identities. They are listed here under
+ * the names they carry now, because this assertion is a claim about what is on
+ * disk today — the record of what t299's own table said is
+ * `RETIRED_SPEC_DOCUMENTS` below, and that list is untouched.
  */
 export const SPEC_DOCUMENTS = Object.freeze([
   'entities-versioning.md',
@@ -89,9 +96,9 @@ export const SPEC_DOCUMENTS = Object.freeze([
   'screen-graph-editor.md',
   'screen-proposal-inbox.md',
   'screen.md',
+  'surveyor-cost.md',
+  'surveyor-flow.md',
   'synthesizer.md',
-  'topografo-cost.md',
-  'topografo-flow.md',
   'transition-hooks.md',
   'webhooks-events.md',
 ]);

@@ -17,7 +17,7 @@
  * 401` as its whole explanation.
  *
  * Precedence is `--token` > `CARTOGRAFO_TOKEN` > nothing, which is the rule
- * `packages/core/src/cli/url.ts` and `packages/topografo-custo/src/cli.ts`
+ * `packages/core/src/cli/url.ts` and `packages/cost-surveyor/src/cli.ts`
  * already use. A third rule for a third command would be a third thing to
  * remember, and the person running all three is the same person.
  *

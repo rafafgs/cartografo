@@ -5,7 +5,7 @@
  * The D24 rename moved fourteen specifications and thirteen notes, and FR7
  * repointed every citation of them. Repointing a citation is two edits, not
  * one: the target inside `(...)` and the name a human reads inside `[...]`.
- * Thirteen sites got both; one got only the first. `docs/spec/topografo-flow.md`
+ * Thirteen sites got both; one got only the first. `docs/spec/surveyor-flow.md`
  * ended up carrying `` [`extensao-e-qualidade.md`](../../notas/2026-08-14-extension-and-quality.md) ``
  * — an href pointing at the real file under a display text spelling a file that
  * no longer exists anywhere in the tree.
@@ -35,7 +35,7 @@
  *   carries the directory a reader needs and the target carries the `../..` a
  *   filesystem needs.
  *
- * Only links whose text NAMES a file are read. `[the flow topografo](topografo-flow.md)`
+ * Only links whose text NAMES a file are read. `[the flow surveyor](surveyor-flow.md)`
  * makes no claim about a filename and this gate has nothing to say about it.
  *
  * ## What this gate does not claim
@@ -84,7 +84,7 @@ const MARKDOWN_NAME = /[A-Za-z0-9._/-]+\.md/g;
 export const RENAMED_NOTE = 'notas/2026-08-14-extension-and-quality.md';
 
 /** The document that carried the stale display text. */
-export const REPAIRED_DOCUMENT = 'docs/spec/topografo-flow.md';
+export const REPAIRED_DOCUMENT = 'docs/spec/surveyor-flow.md';
 
 /** The name the note used to have, which no display text may spell again. */
 export const RETIRED_NOTE_NAME = 'extensao-e-qualidade.md';
@@ -158,7 +158,7 @@ test('every citation displays the name of the file it links to', () => {
   );
 });
 
-test('the flow topografo cites the extension-and-quality note by its real name', () => {
+test('the flow surveyor cites the extension-and-quality note by its real name', () => {
   const wanted = path.basename(RENAMED_NOTE);
   const citations = citationsIn(REPAIRED_DOCUMENT).filter(
     (citation) => targetBasename(citation.target) === wanted,

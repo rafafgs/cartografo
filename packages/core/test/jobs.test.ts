@@ -357,7 +357,7 @@ test('AT1 — POST /v1/jobs creates the job and records job.created', async (t) 
  * reach the same tier the projection shows. No new route: the field rides the
  * projection `GET /v1/jobs` and `GET /v1/jobs/:id` already return, which is
  * what makes it joinable against `GET /v1/sessions` by `job_id` (FR8) the
- * same way `packages/topografo-custo` already joins for `grafo_versao_id`.
+ * same way `packages/cost-surveyor` already joins for `grafo_versao_id`.
  */
 test('t175 — POST /v1/jobs round-trips tier through the projection and the fact', async (t) => {
   requireArtifacts(...ARTIFACTS);

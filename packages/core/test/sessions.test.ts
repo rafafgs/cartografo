@@ -1264,7 +1264,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
       groupBy((session) => [versionOf.get(session.job_id ?? -1) ?? null]),
     ),
     { [V1]: 110, [V2]: 1000 },
-    'by graph version — the join `topografo-custo` already performs',
+    'by graph version — the join `cost-surveyor` already performs',
   );
   // By model, a session with two of them counts in BOTH: the CLI reports which
   // models ran, never how the four counts split between them, and inventing a

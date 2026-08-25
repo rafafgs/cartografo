@@ -443,15 +443,78 @@ const KEPT_TOKENS: ReadonlyArray<{ file: string; line: number; reason: string }>
   },
 ]);
 
-/** Every line of one file that spells a masked token, pinned or not. */
-function maskedTokenLines(relative: string): Array<{ file: string; line: number; text: string }> {
+/**
+ * Every line of one file that spells one of `pattern`'s tokens, pinned or not.
+ *
+ * @param relative A path under `test/`, as {@link scannedFiles} returns one.
+ * @param pattern The token alternation to look for, one line at a time.
+ */
+function linesSpelling(
+  relative: string,
+  pattern: RegExp,
+): Array<{ file: string; line: number; text: string }> {
   const source = readFileSync(path.join(TEST_ROOT, relative), 'utf8');
   return source.split('\n').flatMap((text, index) =>
-    MASKED_TOKENS.test(text)
+    pattern.test(text)
       ? [{ file: relative, line: index + 1, text: text.trim().slice(0, 120) }]
       : [],
   );
 }
+
+/**
+ * A word that IS a wire key somewhere in `src/`, and prose everywhere else.
+ *
+ * The class AT4 exists for, and it is not AT3's. `motivo` carries no accent, so
+ * AT1 is blind to it; it is nobody's function word and nobody's term of this
+ * domain, so no {@link STOPWORDS} group ever had it; and no mask hides it, so
+ * AT3 would not have been the sweep to add it to either. What it has instead is
+ * an alibi: `src/dispatch/parse-permission-denial.ts:35` declares
+ * `PermissionDenial.motivo`, and a test that reads that field has to spell it
+ * the way the interface does.
+ *
+ * The alibi is real in four lines and borrowed in the rest. A local `const` for
+ * a value read off the English `reason` field, a loop variable over refusal
+ * reasons, a key invented for an illustrative output schema — none of those has
+ * a wire on the other end, and each one reads as though the product spoke
+ * Portuguese there (t320).
+ *
+ * Built from a list of strings and not written as a regex literal, for the same
+ * reason {@link PROTOCOL_TOKENS} and {@link MASKED_TOKENS} are: a literal is
+ * CODE, and `no-portuguese-identifiers.test.ts` scans this directory.
+ */
+const WIRE_WORDS = new RegExp(`\\b(?:${['motivo', 'motivos'].join('|')})\\b`, 'i');
+
+/**
+ * Every line allowed to spell one of those words, and why it is allowed.
+ *
+ * Two files, and both mirror the same still-Portuguese interface: the tracker
+ * builds a `PermissionDenial`, the reporter reads one, and neither test can
+ * name that field in English while the type declares it in Portuguese.
+ * Translating the interface is a `src/` change and belongs to whoever owns the
+ * denial path, not to a sweep over `test/`.
+ */
+const WIRE_MIRRORS: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
+  {
+    file: 'dispatch/parse-permission-denial.test.ts',
+    line: 83,
+    reason: 'reads `PermissionDenial.motivo`, the field `src/dispatch/parse-permission-denial.ts:35` declares',
+  },
+  {
+    file: 'dispatch/parse-permission-denial.test.ts',
+    line: 84,
+    reason: 'the same read, quoted in the failure message the assertion above prints',
+  },
+  {
+    file: 'dispatch/report.test.ts',
+    line: 323,
+    reason: 'the denial fixture IS a `PermissionDenial`, so its field is spelled the way the interface spells it',
+  },
+  {
+    file: 'dispatch/report.test.ts',
+    line: 346,
+    reason: 'asserts the English `reason` the report sends is that Portuguese field (`src/dispatch/report.ts:395`)',
+  },
+]);
 
 test('t312 — AT1: no Portuguese diacritic survives in packages/runner/test', () => {
   const hits = scannedFiles().flatMap((file) =>
@@ -546,7 +609,7 @@ test('t312 — AT2 does NOT bite on the wire tokens the source tickets kept', ()
 test('t317 — AT3: the tokens the masks hide are spelled only where the wire needs them', () => {
   const pinned = new Set(KEPT_TOKENS.map((entry) => `${entry.file}:${entry.line}`));
   const hits = scannedFiles()
-    .flatMap(maskedTokenLines)
+    .flatMap((file) => linesSpelling(file, MASKED_TOKENS))
     .filter((hit) => !pinned.has(`${hit.file}:${hit.line}`))
     .map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
 
@@ -653,4 +716,63 @@ test('t318 — an escalation fixture reads in ONE language, field by field', () 
     }
   }
   assert.deepEqual(offendersIn(fixture), [], 'the escalation fixture still carries Portuguese');
+});
+
+test('t320 — AT4: a wire word is spelled only where the wire spells it', () => {
+  const pinned = new Set(WIRE_MIRRORS.map((entry) => `${entry.file}:${entry.line}`));
+  const hits = scannedFiles()
+    .flatMap((file) => linesSpelling(file, WIRE_WORDS))
+    .filter((hit) => !pinned.has(`${hit.file}:${hit.line}`))
+    .map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
+
+  assert.deepEqual(hits, [], `a wire word used as prose (t320, AT4):\n${hits.join('\n')}`);
+});
+
+test('t320 — every wire-mirror pin still lands on a line that spells the word', () => {
+  for (const entry of WIRE_MIRRORS) {
+    const lines = readFileSync(path.join(TEST_ROOT, entry.file), 'utf8').split('\n');
+    assert.ok(
+      WIRE_WORDS.test(lines[entry.line - 1] ?? ''),
+      `${entry.file}:${entry.line} no longer spells the wire word; drop the pin (${entry.reason})`,
+    );
+  }
+});
+
+test('t320 — AT4 reads what the other three sweeps have no way of seeing', () => {
+  // The lines the reproduction measured, verbatim: two local `const`s bound to
+  // the English `reason` a block carries, the loop variable of a refusal-reason
+  // case, and the field of an illustrative output schema nothing reads back.
+  //
+  // Each asserts the premise first. AT1 needs an accent and there is none; AT2
+  // needs the word on a closed list and no group of it is about wire keys; AT3
+  // needs a mask to be hiding the word and no mask touches this one. AT4 is the
+  // only sweep that can flag them, which is the only reason it exists.
+  for (const text of [
+    '      const motivo = String(blocks[0].reason);',
+    '      assert.ok(motivo.includes("implementar"), motivo);',
+    '      assert.equal(after.block_reason, motivo);',
+    "for (const motivo of ['runner_cap', 'project_cap'] as const) {",
+    '    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, reason: motivo }]);',
+    "    required: ['outcome', 'motivo'],",
+    "    properties: { outcome: { enum: ['aprovado', 'retrabalho'] }, motivo: { type: 'string' } },",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(WIRE_WORDS.test(text), `AT4 missed a wire word used as prose: ${text}`);
+  }
+
+  // And the English they became: the name the value already has on the wire.
+  for (const text of [
+    '      const reason = String(blocks[0].reason);',
+    '      assert.ok(reason.includes("implementar"), reason);',
+    '      assert.equal(after.block_reason, reason);',
+    "for (const reason of ['runner_cap', 'project_cap'] as const) {",
+    '    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, reason }]);',
+    "    required: ['outcome', 'reason'],",
+    "    properties: { outcome: { enum: ['aprovado', 'retrabalho'] }, reason: { type: 'string' } },",
+  ]) {
+    assert.ok(!WIRE_WORDS.test(text), `AT4 fires on English: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
 });

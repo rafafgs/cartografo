@@ -378,6 +378,66 @@ function hitsInFile(relative: string, flag: (text: string) => string | null): st
   });
 }
 
+/**
+ * The Portuguese the two sweeps above are blind to, by construction.
+ *
+ * Both masks exist for good reasons and both stay. {@link PROTOCOL_TOKENS}
+ * blanks `sessao` before the stopword pass reads a line, because
+ * `src/dispatch/report.ts:589` really does sign an actor with that literal;
+ * {@link MACHINE_NAMES} blanks every kebab span, because that is what keeps
+ * `nota-curta` and `grafo-proposto` out of the report. Together, though, they
+ * hide a whole class of line neither was meant to excuse: an arbitrary local
+ * scratch directory named in Portuguese. `worktree-da-sessao`,
+ * `sessao-${jobId}-${serial}`, `sessao-boa` and `quadro-sucesso` were all in
+ * this tree the day t312 declared it English, and both sweeps walked over
+ * every one of them in silence (t317).
+ *
+ * AT3 is the difference between a token-wide excuse and a per-line one. The
+ * wire token is kept where the wire needs it and nowhere else, and
+ * {@link KEPT_TOKENS} is the whole list of places the wire needs it.
+ *
+ * Built from a list of strings and not written as a regex literal, for the
+ * same reason {@link PROTOCOL_TOKENS} is: a literal is CODE, and
+ * `no-portuguese-identifiers.test.ts` — which does scan this directory — reads
+ * `sessao` in code position as a Portuguese identifier.
+ */
+const MASKED_TOKENS = new RegExp(
+  `\\b(?:${['sessao', 'sessoes', 'sucesso', 'sucessos'].join('|')})\\b`,
+  'i',
+);
+
+/**
+ * Every line allowed to spell one of those tokens, and why it is allowed.
+ *
+ * One case, and it is the wire: a work standing on no node has its question
+ * signed with the bare literal, and a test that asserts the signature has to
+ * spell it the way the event does. Everything else the reproduction found was
+ * a directory name a person invented on the spot, with nothing on the other
+ * end of it reading the name back — so it reads in English now.
+ */
+const KEPT_TOKENS: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
+  {
+    file: 'dispatch/report.test.ts',
+    line: 640,
+    reason: 'the case name quotes the wire value the assertion below checks',
+  },
+  {
+    file: 'dispatch/report.test.ts',
+    line: 649,
+    reason: '`src/dispatch/report.ts:589` signs the actor with this literal; the assertion spells it the way the wire does',
+  },
+]);
+
+/** Every line of one file that spells a masked token, pinned or not. */
+function maskedTokenLines(relative: string): Array<{ file: string; line: number; text: string }> {
+  const source = readFileSync(path.join(TEST_ROOT, relative), 'utf8');
+  return source.split('\n').flatMap((text, index) =>
+    MASKED_TOKENS.test(text)
+      ? [{ file: relative, line: index + 1, text: text.trim().slice(0, 120) }]
+      : [],
+  );
+}
+
 test('t312 — AT1: no Portuguese diacritic survives in packages/runner/test', () => {
   const hits = scannedFiles().flatMap((file) =>
     hitsInFile(file, (text) => DIACRITICS.exec(text)?.[0] ?? null),
@@ -465,5 +525,50 @@ test('t312 — AT2 does NOT bite on the wire tokens the source tickets kept', ()
   ];
   for (const text of allowed) {
     assert.deepEqual(offendersIn(text), [], `AT2 flagged a kept wire token: ${text}`);
+  }
+});
+
+test('t317 — AT3: the tokens the masks hide are spelled only where the wire needs them', () => {
+  const pinned = new Set(KEPT_TOKENS.map((entry) => `${entry.file}:${entry.line}`));
+  const hits = scannedFiles()
+    .flatMap(maskedTokenLines)
+    .filter((hit) => !pinned.has(`${hit.file}:${hit.line}`))
+    .map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
+
+  assert.deepEqual(hits, [], `Portuguese hiding under a sweep mask (t317, AT3):\n${hits.join('\n')}`);
+});
+
+test('t317 — every kept-token pin still lands on a line that spells it', () => {
+  for (const entry of KEPT_TOKENS) {
+    const lines = readFileSync(path.join(TEST_ROOT, entry.file), 'utf8').split('\n');
+    assert.ok(
+      MASKED_TOKENS.test(lines[entry.line - 1] ?? ''),
+      `${entry.file}:${entry.line} no longer spells the kept token; drop the pin (${entry.reason})`,
+    );
+  }
+});
+
+test('t317 — AT3 reads what AT1 and AT2 mask, which is the only reason it exists', () => {
+  // The four shapes the reproduction measured, verbatim. Each one asserts the
+  // premise first — both older sweeps stay quiet — and then that AT3 does not.
+  for (const text of [
+    '  const worktreePath = path.join(workDir, "worktree-da-sessao");',
+    '      const dir = path.join(root, `sessao-${String(jobId)}-${String(serial)}`);',
+    "    workingDir: scratch(t, 'sessao-boa'),",
+    "  const dir = scratch(t, 'quadro-sucesso');",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(MASKED_TOKENS.test(text), `AT3 missed a masked-token line: ${text}`);
+  }
+
+  // And the English they became: no token left for AT3 to find.
+  for (const text of [
+    '  const worktreePath = path.join(workDir, "worktree-of-the-session");',
+    '      const dir = path.join(root, `session-${String(jobId)}-${String(serial)}`);',
+    "    workingDir: scratch(t, 'good-session'),",
+    "  const dir = scratch(t, 'frame-success');",
+  ]) {
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 fires on English: ${text}`);
   }
 });

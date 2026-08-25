@@ -3,10 +3,35 @@
 > A framework that draws, executes and evolves work graphs per problem class.
 > You declare the problem; the system draws the map.
 
-**State: idea on the record, pre-prototype.** Origin: a conversation of
-2026-08-14 about graph engineering, during the production of article O001 of the
-newsletter (repository `substack-agentes`). Rafael's idea; refined in the
-discussion.
+**State: it runs; what it has not yet shown is that it learns.** What is in this
+repository today is a control plane, a runner, a screen and the two factory
+graphs D14 asks for — and on 2026-08-18 both of those graphs closed a real
+traversal on their own.
+
+The software graph took a game feature through
+`refinar → desenvolver → integrar → testar → implantar`: five nodes by agent,
+five reports accepted at the first attempt, no human gate opened, no operator,
+15 minutes and around US$ 12
+([`notas/2026-08-18-game-feature-2.md`](notas/2026-08-18-game-feature-2.md)). The
+same day, the asymmetric-bets graph took a tender thesis through
+`triagem → coleta-fundamentos → analise-assimetria → red-team`, and its red team
+killed the thesis: 8 objections, 2 of them high, verdict `morta`, the `decisao`
+gate never reached, again with no operator
+([`notas/2026-08-18-third-bets-run.md`](notas/2026-08-18-third-bets-run.md)).
+
+What has NOT been shown is the other half, the one the whole meta-layer rests
+on. **The learning loop stands at n=1**: one complete traversal on version A of
+one bundle, no version B, the human gate at the proposal never exercised, and
+**no A/B measurement of any proposal exists**. The round that was to produce it
+was stopped after the account's own quota killed the same node twice
+([`notas/2026-08-18-n3-round.md`](notas/2026-08-18-n3-round.md)). The evaluator
+proposes and a human decides, as principle 5 says; whether what it proposes
+makes the next round better is an open question in this repository, not a
+settled one.
+
+Origin: a conversation of 2026-08-14 about graph engineering, during the
+production of article O001 of the newsletter (repository `substack-agentes`).
+Rafael's idea; refined in the discussion.
 
 ## The idea in one paragraph
 

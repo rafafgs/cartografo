@@ -18,8 +18,10 @@
  *   captured for FR9. Neither carries a credential value: the engine never
  *   prints one.
  *
- * English per D18; the fixture CONTENT is Portuguese because the sessions were
- * prompted in Portuguese, same as every other prompt in this repo.
+ * English, content included (D24). The one exception is the two `codex-*.jsonl`
+ * transcripts: they are RECORDINGS of real runs prompted in Portuguese, and
+ * rewriting a recording falsifies the evidence it was captured to be. Every
+ * fixture invented here reads in English (t318).
  */
 
 import assert from 'node:assert/strict';
@@ -53,12 +55,12 @@ test('AT1 — the text blocks of an assistant message are decoded back to text',
     message: {
       role: 'assistant',
       content: [
-        { type: 'text', text: 'Primeira parte.' },
-        { type: 'text', text: 'Segunda parte.' },
+        { type: 'text', text: 'First part.' },
+        { type: 'text', text: 'Second part.' },
       ],
     },
   });
-  assert.equal(decodeClaudeCodeSessionText([frame]), 'Primeira parte.\nSegunda parte.');
+  assert.equal(decodeClaudeCodeSessionText([frame]), 'First part.\nSecond part.');
 });
 
 test('AT1 — a frame whose content has no text block is dropped, not fed as prose', () => {
@@ -84,14 +86,14 @@ test('AT1 — the escaped block of a real frame comes back parseable', () => {
   // its newlines as `\n`, so without decoding nothing downstream ever parses.
   const block = [
     '```input-request',
-    JSON.stringify({ question: 'Renumerar para 0003?', default: 'Manter 0002' }),
+    JSON.stringify({ question: 'Renumber to 0003?', default: 'Keep 0002' }),
     '```',
   ].join('\n');
   const frame = JSON.stringify({ type: 'result', result: block });
 
   const request = parseInputRequest(decodeClaudeCodeSessionText([frame]));
   assert.ok(request !== null, 'the fenced block has to survive the decoding');
-  assert.equal(request.question, 'Renumerar para 0003?');
+  assert.equal(request.question, 'Renumber to 0003?');
 });
 
 // --- t148: the cases the synthesizer's own copy of this decoder had pinned ---

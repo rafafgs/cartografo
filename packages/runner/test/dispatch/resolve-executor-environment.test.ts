@@ -132,7 +132,7 @@ test('t270 AT — instalacao_em_uso reads the commit once and never again', asyn
   // The repository moves under it, which is exactly the situation the
   // mode exists for: an installation started from `started` is still running
   // that code, whatever the tip does afterwards.
-  const moved = commit(repoRoot, 'segunda entrega');
+  const moved = commit(repoRoot, 'second delivery');
   assert.notEqual(moved, started, 'the fixture has to actually move for this to prove anything');
 
   const second = await resolve(readEnvironment);

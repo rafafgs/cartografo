@@ -85,9 +85,9 @@ const DEADLINE_MS = 30_000;
 const ESCALATION = {
   question: "Renumber the migration to 0003?",
   context: "t101 runs in parallel and owns the same numbering space.",
-  options: ["Renumerar para 0003", "Manter 0002"],
+  options: ["Renumber to 0003", "Keep 0002"],
   recommendation: "Keep 0002 and renumber only if it collides at the merge.",
-  default: "Manter 0002",
+  default: "Keep 0002",
 };
 
 /** What the human answers through the API. */

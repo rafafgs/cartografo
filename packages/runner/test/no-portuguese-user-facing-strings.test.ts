@@ -1,31 +1,38 @@
 /**
- * D18's last layer: no Portuguese in the text a PERSON reads (t180).
+ * D18's last layer: no Portuguese in the text a PERSON reads (t180) — which
+ * since t309 means every source file of this package, not a chosen few.
  *
  * `no-portuguese-identifiers.test.ts` deliberately masks every string and
  * template literal before scanning, because that is where the wire format lives
  * — SQL, column-mirrored keys, CHECK-constrained enum values, frozen error
  * codes. This guard is that one, applied in reverse: it looks ONLY inside string
- * and template literals, of only the files whose literals are a message somebody
- * reads, and refuses Portuguese prose there.
+ * and template literals — plus, since t309, the comments around them — and
+ * refuses Portuguese prose in either.
  *
  * Two halves, and they cannot be collapsed:
  *
- * - **What is scanned.** An explicit file list, not the package tree. Most of
- *   `src/` builds prompts and instruction text for the dispatched agent, which
- *   t180 says out loud is not "user-facing": nobody reads it, a subprocess
- *   consumes it. Four of the files here are the ones t180's Code Changes table
- *   names — the synthesizer command and the two operational scripts an operator
- *   runs by hand; the three of `src/intake/` joined them with t144, which is the
- *   rule applied to a command written after the decision instead of converted by
- *   it. `src/intake/prompt.ts` is deliberately absent, the same exemption
- *   `src/synthesizer/prompt.ts` has: its content is agent instruction, not text
- *   a person reads. `src/controller/control-plane-client.ts` joined with t254,
- *   and it was the odd one: the file was Portuguese from its header down — that
- *   was identifier debt of another ficha, which t304 paid, renaming the file out
- *   of `cliente-controle.ts` on its way — but it BUILDS one message, and every
- *   command in this package shows that message to whoever typed it when a call
- *   goes wrong. `GET /v1/jobs respondeu 404` was the last Portuguese word in
- *   it, and this gate is why nothing put another one back.
+ * - **What is scanned.** Every source file under `src/`, `scripts/` and `bin/`,
+ *   walked — no longer an explicit list. The list it replaces is worth
+ *   remembering for the argument that justified it: most of `src/` builds
+ *   prompts and instruction text for the dispatched agent, which t180 said out
+ *   loud is not "user-facing" — nobody reads it, a subprocess consumes it. That
+ *   was sound about the product t180 was shipping and wrong about the
+ *   repository it ships from. This repository is published to be read (D7), and
+ *   to somebody who opens `src/synthesizer/prompt.ts` to find out how a
+ *   synthesizer is prompted, that prompt is not a subprocess's input: it is the
+ *   most interesting file in the package, and it was the one file the exemption
+ *   guaranteed nobody would check. t309 lifted the exemption and translated the
+ *   30 files it had been covering — among them `src/intake/prompt.ts` and
+ *   `src/synthesizer/prompt.ts`, named in the old text as deliberately absent.
+ *
+ *   The walk replaces the list rather than growing it, because the list is how
+ *   the drift stayed quiet: t180 named the files that existed in t180, t144 and
+ *   t254 each added the one file they touched, and every file written in
+ *   between simply never joined — 30 of them, and the guard never said a word.
+ *   A directory cannot forget to add itself. What the list did well is kept in
+ *   {@link OUT_OF_SCOPE} and {@link VERBATIM_QUOTATIONS} below: an exception is
+ *   still written down one line at a time, with its reason, and still breaks
+ *   loudly when the line moves.
  * - **What is not Portuguese prose even though it is spelled in Portuguese.**
  *   A message that quotes a wire name is still English: `"nos" has to be a list`
  *   is one English sentence about a field called `nos`. So before the scan, the
@@ -35,6 +42,12 @@
  *   {@link WIRE_LITERALS} skips the literals that ARE a frozen wire value whole
  *   (`'alcançável'`, `'para'`), which FR2 freezes exactly as they are.
  *
+ * Two sweeps over that set, because one of them cannot see half the file: the
+ * scanner below reads literals and skips comments by construction, so a
+ * separate whole-file pass looks for diacritics in the prose AROUND the code.
+ * A comment is text a person reads by definition — it is written for no other
+ * purpose — so nothing about it was ever covered by the exemption above.
+ *
  * The detector is a diacritic set plus a closed stopword list, and not the
  * glossary the identifier guard uses: that glossary is domain vocabulary
  * (`grafo`, `trabalho`, `proposta`), and plain prose like `precisa ser um objeto
@@ -43,23 +56,42 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
-/** The surfaces t180 converts in this package: everything a person reads. */
-const SCANNED_FILES = Object.freeze([
-  'scripts/close-surveyor-outcome.mjs',
-  'scripts/run-graph-traversal.mjs',
-  'src/controller/control-plane-client.ts',
-  'src/intake/cli.mjs',
-  'src/intake/command-line.ts',
-  'src/intake/generate.ts',
-  'src/synthesizer/cli.mjs',
-  'src/synthesizer/synthesize.ts',
-]);
+/** The trees that hold this package's source; `test/` is deliberately not one. */
+const SCANNED_ROOTS = Object.freeze(['src', 'scripts', 'bin']);
+
+/** What counts as source here: TypeScript, and the `.mjs` commands beside it. */
+const SOURCE_EXTENSION = /\.(?:ts|mjs)$/;
+
+/**
+ * Every source file of the package, in path order (t309, FR7).
+ *
+ * `test/` is out and stays out: this very file quotes Portuguese prose to prove
+ * the sweep bites on it, and the fixtures under `test/fixtures/` are test data
+ * rather than product text. Every other tree is in, whether or not anybody
+ * remembered to say so.
+ *
+ * @returns Package-relative paths, sorted, directories walked depth-first.
+ */
+export function scannedFiles(): string[] {
+  const found: string[] = [];
+
+  function walk(relative: string): void {
+    for (const entry of readdirSync(path.join(PACKAGE_ROOT, relative)).sort()) {
+      const next = `${relative}/${entry}`;
+      if (statSync(path.join(PACKAGE_ROOT, next)).isDirectory()) walk(next);
+      else if (SOURCE_EXTENSION.test(entry)) found.push(next);
+    }
+  }
+
+  for (const root of SCANNED_ROOTS) walk(root);
+  return found;
+}
 
 /**
  * The literals of a scanned file that t180's Out of Scope carves out, by line.
@@ -85,6 +117,34 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     reason: 'a `motivo` sent to the API as data, which the tela renders in Portuguese (t133)',
   },
 ]);
+
+/**
+ * Portuguese that stays Portuguese because translating it would falsify it.
+ *
+ * D24 (2026-08-25) allows exactly one thing through: a verbatim quotation,
+ * marked as such. Paraphrasing a citation changes what it cites, so a comment
+ * that quotes what a note actually said has to keep the words the note actually
+ * used. Only the whole-file sweep needs this list — a quotation lives in prose,
+ * and the literal sweep never reads prose.
+ *
+ * Pinned by line, for {@link OUT_OF_SCOPE}'s reason and one more: the mark that
+ * makes a quotation a quotation is a pair of quotes, and a rule that excused
+ * every Portuguese span between quotes would excuse the next untranslated
+ * paragraph somebody wraps in them. A person writes the line number down.
+ */
+const VERBATIM_QUOTATIONS: ReadonlyArray<{ file: string; line: number; reason: string }> =
+  Object.freeze([
+    {
+      file: 'scripts/measure-executions.mjs',
+      line: 10,
+      reason: 'quotes `notes/2026-08-15-closed-learning-loop.md`, which is Portuguese (D24)',
+    },
+    {
+      file: 'scripts/measure-executions.mjs',
+      line: 11,
+      reason: 'the same quotation, continued; its last line carries no diacritic to excuse',
+    },
+  ]);
 
 /** Any of these in a message means the sentence around it is Portuguese. */
 const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
@@ -338,10 +398,81 @@ function hitsInFile(relative: string): string[] {
   });
 }
 
+/**
+ * Every Portuguese line of one file, comments included (t309, AT2).
+ *
+ * Diacritics only, and no stopwords: the literal sweep can afford stopwords
+ * because it has already masked the machine names out of a message, and a
+ * whole-file pass has no such luxury — it reads import paths, identifiers and
+ * URLs, where `com` and `para` are spelled all day without a word of Portuguese
+ * being meant. A diacritic in a comment has no such excuse.
+ *
+ * Both pin lists apply, and for the same reason each was written: a line
+ * excused because of what it IS — a throwaway fixture's contents, a quotation
+ * — does not stop being that when a second sweep reads it as raw text instead
+ * of as a literal. Excusing it twice is one exception, not two.
+ */
+function diacriticHitsInFile(relative: string): string[] {
+  const source = readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8');
+  const excused = new Set(
+    [...OUT_OF_SCOPE, ...VERBATIM_QUOTATIONS]
+      .filter((entry) => entry.file === relative)
+      .map((entry) => entry.line),
+  );
+  return source.split('\n').flatMap((text, index) => {
+    const line = index + 1;
+    if (excused.has(line)) return [];
+    const found = DIACRITICS.exec(text);
+    if (found === null) return [];
+    return [`${relative}:${line} — ${found[0]} — ${text.trim()}`];
+  });
+}
+
 test('t180 — no Portuguese survives in a user-facing string of packages/runner', () => {
-  const hits = SCANNED_FILES.flatMap(hitsInFile);
+  const hits = scannedFiles().flatMap(hitsInFile);
 
   assert.deepEqual(hits, [], `Portuguese user-facing strings still present (t180):\n${hits.join('\n')}`);
+});
+
+test('t309 — no Portuguese survives anywhere in the package source, comments included', () => {
+  const hits = scannedFiles().flatMap(diacriticHitsInFile);
+
+  assert.deepEqual(hits, [], `Portuguese still present outside the literals (t309):\n${hits.join('\n')}`);
+});
+
+test('t309 — the walk reads the whole package, not a corner of it', () => {
+  const files = scannedFiles();
+
+  // The three files t180's list named that are still here, one per tree, and
+  // three the list never had: if the walk ever narrows to an allowlist's worth
+  // of files again, it fails here rather than passing quietly.
+  for (const expected of [
+    'bin/cartografo-runner.mjs',
+    'scripts/run-graph-traversal.mjs',
+    'src/synthesizer/cli.mjs',
+    'src/dispatch/prompt.ts',
+    'src/intake/prompt.ts',
+    'src/synthesizer/prompt.ts',
+  ]) {
+    assert.ok(files.includes(expected), `the sweep no longer reads ${expected}`);
+  }
+  assert.ok(files.length > 60, `the sweep reads only ${files.length} files; the package has more`);
+  assert.deepEqual(
+    files.filter((file) => file.startsWith('test/')),
+    [],
+    'test/ is out of the sweep, and this file is why',
+  );
+});
+
+test('t309 — every verbatim-quotation pin still lands on a Portuguese line', () => {
+  for (const entry of VERBATIM_QUOTATIONS) {
+    const lines = readFileSync(path.join(PACKAGE_ROOT, entry.file), 'utf8').split('\n');
+    const pinned = lines[entry.line - 1] ?? '';
+    assert.ok(
+      DIACRITICS.test(pinned),
+      `${entry.file}:${entry.line} is no longer Portuguese; drop the exception (${entry.reason})`,
+    );
+  }
 });
 
 test('t254 — the message every command shows for a refused call is English', () => {

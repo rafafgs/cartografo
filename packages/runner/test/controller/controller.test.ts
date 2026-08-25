@@ -542,7 +542,7 @@ for (const reason of ['runner_cap', 'project_cap'] as const) {
   });
 }
 
-test('t208 — tick() still tries the next candidate after `trabalho_ja_leased`', async () => {
+test('t208 — tick() still tries the next candidate after `job_already_leased`', async () => {
   const { Controller } = await loadController();
 
   // The regression guard of the case above: this refusal says another runner got

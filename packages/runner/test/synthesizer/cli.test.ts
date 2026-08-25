@@ -104,7 +104,7 @@ test('AT5 — --out overrides the default draft path', async () => {
   assert.equal(overridden.options.outputPath, '/tmp/somewhere-else.json');
 });
 
-test('AT5 — the default draft path is <classe>.grafo.rascunho.json in the current directory', async () => {
+test('AT5 — the default draft path is <class>.grafo.rascunho.json in the current directory', async () => {
   const { resolveOutputPath } = await loadSynthesis();
 
   assert.equal(

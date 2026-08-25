@@ -15,10 +15,12 @@
  * was declared that there are none" are different statements, and the node that
  * refines has to be able to tell them apart.
  *
- * English per D18; the prompt's own prose is Portuguese, like every other agent
- * instruction in this repository. The payload KEYS it teaches are English since
- * t255: they are the wire format of `POST /v1/intake`, and a prompt that taught
- * the retired spelling would be teaching a batch the validator refuses.
+ * English per D24, the prompt's own PROSE included: t309 lifted the exemption
+ * that had held an agent instruction to be text only a subprocess reads, and
+ * `src/intake/prompt.ts` records why. The payload KEYS it teaches went English
+ * earlier, with t255: they are the wire format of `POST /v1/intake`, and a
+ * prompt that taught the retired spelling would be teaching a batch the
+ * validator refuses.
  */
 
 import assert from 'node:assert/strict';

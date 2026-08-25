@@ -6,7 +6,7 @@
  * closing fence), a malformed block is ignored instead of raised, and the last
  * valid block wins. The rules are inherited rather than re-decided — a
  * synthesis session emits exactly the kind of output that breaks a naive scan,
- * because a graph document's `descricao` routinely quotes fenced examples.
+ * because a graph document's `description` routinely quotes fenced examples.
  *
  * The fence is its own name, not a reuse of `input-request`: two blocks that
  * mean different things must not be able to be mistaken for one another by a
@@ -45,14 +45,14 @@ function block(payload: string): string {
 function graph(className: string): Record<string, unknown> {
   return {
     problem_class: className,
-    lineage: { tipo: 'base' },
-    metadata: { nome: className, schema_version: '1.0.0' },
+    lineage: { type: 'base' },
+    metadata: { name: className, schema_version: '1.0.0' },
     nodes: [
       {
         id: 'redigir',
         role: 'redator',
         node_type: 'work',
-        skill_ref: { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },
+        skill_ref: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },
         contract: { input_schema: {}, output_schema: {}, checks: [] },
       },
     ],
@@ -130,7 +130,7 @@ test('AT3 — a closing fence inside the JSON does not truncate the block', asyn
   const { parseGraphProposal } = await loadParser();
 
   // The reason the extent comes from the JSON and never from a search for the
-  // next fence: a node's `descricao` is prose written by a model, and prose about
+  // next fence: a node's `description` is prose written by a model, and prose about
   // a graph quotes fenced examples of graphs.
   const document = graph('nota-curta');
   const nodes = document.nodes as Record<string, unknown>[];

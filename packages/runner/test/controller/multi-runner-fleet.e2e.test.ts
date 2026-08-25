@@ -444,7 +444,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
       runnerCap: DECLARED,
       projectCap: DECLARED,
       // Long enough that nothing expires during the race: an overdue lease that
-      // no grant has swept yet still reads `ativa`, and the poll below would
+      // no grant has swept yet still reads `active`, and the poll below would
       // count it as a live one.
       ttlSeconds: 30,
       dispatch: async () => {
@@ -545,7 +545,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
     dispatch: async () => {
       // It dies AFTER the server has recorded a heartbeat, so that the lease it
       // leaves behind is the interesting kind — one that was alive and went
-      // quiet (`heartbeat_perdido`), not one that never started (`expirou`,
+      // quiet (`heartbeat_lost`), not one that never started (`ttl_elapsed`,
       // already proven by `dispatch-and-lease.e2e.test.ts`).
       await waitFor(async () => {
         const [lease] = await leasesOf(cp, `&runner_id=${RUNNER_A}`);

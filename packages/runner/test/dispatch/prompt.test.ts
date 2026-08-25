@@ -13,8 +13,11 @@
  * three plain values, and here it is tested as one. No HTTP, no engine, no
  * worktree, no control plane.
  *
- * English per D18; the prompt's own CONTENT is Portuguese, because it is what
- * reaches a model — the same rule the module it tests records.
+ * English per D24, the prompt's own CONTENT included. The sentence here used to
+ * say the opposite and cite the module as agreeing with it; t309 lifted that
+ * exemption and `src/dispatch/prompt.ts` records the argument at length, the
+ * short of which is D7: a repository published to be read has its prompts read
+ * too, and a model reads English at least as well.
  */
 
 import assert from 'node:assert/strict';

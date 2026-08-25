@@ -202,7 +202,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
 
   // The dispatch holds the lease open until a heartbeat has really landed:
   // "grant, heartbeat, release" is only proven if the middle one is observed,
-  // and the server's own `heartbeat_em` is the observation.
+  // and the server's own `heartbeat_at` is the observation.
   const dispatched: number[] = [];
   const controller = new Controller({
     client,

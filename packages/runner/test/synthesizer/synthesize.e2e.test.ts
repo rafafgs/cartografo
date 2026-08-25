@@ -29,8 +29,12 @@
  * rather than shared, for the reason that file already records about its own
  * copy: it belongs to another ticket's surface.
  *
- * English per D18; the draft file name and the graph document's keys are the
- * published, Portuguese surface.
+ * English per D24. The draft file NAME is the one Portuguese surface left, and
+ * it is a published one: `DRAFT_SUFFIX` is `.grafo.rascunho.json` and renaming
+ * it breaks every draft already on disk. The graph document's KEYS are English
+ * — `schema/graph.schema.json` declares them and `SYNTHESIS_INSTRUCTIONS` has
+ * taught them that way since t178 — so `proposedGraph` below spells them the
+ * way the schema does.
  */
 
 import assert from 'node:assert/strict';
@@ -94,19 +98,19 @@ function scratch(t: TestHook, label: string): string {
 
 /** A graph document, in the shape of `schema/graph.schema.json`. */
 function proposedGraph(): Record<string, unknown> {
-  const pin = { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'a'.repeat(64)}` };
+  const pin = { id: 'cartografo/redigir-nota', version: '1.0.0', hash: `sha256:${'a'.repeat(64)}` };
   const contract = {
     input_schema: {},
     output_schema: {},
-    checks: [{ type: 'deterministic', comando: 'npm test', descricao: 'Prova.' }],
+    checks: [{ type: 'deterministic', command: 'npm test', description: 'Proof.' }],
   };
   return {
     problem_class: CLASS_NAME,
-    lineage: { tipo: 'base' },
-    metadata: { nome: CLASS_NAME, descricao: 'Redige e revisa.', schema_version: '1.0.0' },
+    lineage: { type: 'base' },
+    metadata: { name: CLASS_NAME, description: 'Drafts and reviews.', schema_version: '1.0.0' },
     nodes: [
-      { id: 'redigir', papel: 'redator', node_type: 'work', skill_ref: pin, contrato: contract },
-      { id: 'revisar', papel: 'revisor', node_type: 'gate', skill_ref: pin, contrato: contract },
+      { id: 'redigir', role: 'redator', node_type: 'work', skill_ref: pin, contract },
+      { id: 'revisar', role: 'revisor', node_type: 'gate', skill_ref: pin, contract },
     ],
     edges: [{ from: 'redigir', to: 'revisar', condition: 'sempre' }],
     initial_node: 'redigir',

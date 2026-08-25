@@ -13,24 +13,36 @@
  * is true here, which is why {@link scannedFiles} skips the three language
  * gates and this very file.
  *
- * Two sweeps, because neither sees what the other does:
+ * It started as two sweeps and is seven, because no one of them sees what the
+ * next one does. Each arrived with the ticket that measured its class:
  *
- * - **AT1, the diacritics.** A whole-file pass. It found 39 of the package's
- *   81 non-gate test files when this ticket started, and 631 diacritics in
- *   them.
- * - **AT2, the plain-ASCII Portuguese.** The same closed-stopword method the
- *   package guard uses, over the whole file rather than over its literals. It
- *   exists because a diacritic grep is a floor and not a checklist: t309's
- *   closing note measured two files that go red on Portuguese carrying no
- *   accent at all — `dispatch/pre-session-failure.test.ts` (`desbloqueie`, and
- *   a `/srv/bancos/…` path) and `intake/prompt.test.ts` (`para depois`,
+ * - **AT1, the diacritics** (t312). A whole-file pass. It found 39 of the
+ *   package's 81 non-gate test files when that ticket started, and 631
+ *   diacritics in them.
+ * - **AT2, the plain-ASCII Portuguese** (t312, grown by t318 and t319). The
+ *   same closed-stopword method the package guard uses, over the whole file
+ *   rather than over its literals. It exists because a diacritic grep is a
+ *   floor and not a checklist: t309's closing note measured two files that go
+ *   red on Portuguese carrying no accent at all —
+ *   `dispatch/pre-session-failure.test.ts` (`desbloqueie`, and a
+ *   `/srv/bancos/…` path) and `intake/prompt.test.ts` (`para depois`,
  *   `opcional`) — and neither is visible to AT1.
+ * - **AT3, what the masks hide** (t317). The tokens AT2 has to blank to be
+ *   usable at all, spelled only where the wire needs them.
+ * - **AT4, a wire word borrowed as prose** (t320): a word that IS a field
+ *   somewhere in `src/`, used where no wire reads it back.
+ * - **AT5, a name the wire never carried** (t323): AT4's mirror image, and
+ *   worse — a spelling that LOOKS like the wire and never was.
+ * - **AT6, a name something renamed** (t322): the one class that is not a
+ *   language problem at all. See {@link RETIRED_NAMES}.
+ * - **AT7, a header that reports the wrong language** (t322): a docstring
+ *   describing a file that stopped being that way. See {@link LANGUAGE_CLAIMS}.
  *
- * **This pair is this ticket's own verification, not a permanent gate.** The
+ * **This set is these tickets' own verification, not a permanent gate.** The
  * canonical `no-portuguese-*` guards still exclude `test/`, and folding this
  * scope into them belongs to the gate ticket that closes the series. Until
- * then these two sweeps are a cheap regression check, and deleting them when
- * that ticket subsumes them costs nothing.
+ * then these sweeps are a cheap regression check, and deleting them when that
+ * ticket subsumes them costs nothing.
  */
 
 import assert from 'node:assert/strict';

@@ -540,9 +540,9 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
       "session.opened",
     ],
     // `session.finished` and `input_request.answered` are absent BY CONTRACT, not
-    // by omission: their payloads carry no `trabalho_id`, so the work timeline
+    // by omission: their payloads carry no `job_id`, so the work timeline
     // cannot see them (t102, `packages/core/src/db/events.ts`
-    // `FiltroDeEventos`). They are proven below, on the projections.
+    // `EventFilter`). They are proven below, on the projections.
     "the work timeline, in the order the log recorded it",
   );
 
@@ -782,7 +782,7 @@ test("t159 — what the engine printed is what the finish call ships, and what a
   assert.equal(
     body.usage,
     null,
-    "the transcript rides along with `uso`; it does not replace it",
+    "the transcript rides along with `usage`; it does not replace it",
   );
 
   const sessions = await api<{ sessions: Session[] }>(
@@ -1072,7 +1072,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   assert.equal(questions.input_requests[0].question, ESCALATION.question);
 
   // The execution stream and not the work timeline: a denial is recorded
-  // against the session and its payload carries no `trabalho_id`, so the work's
+  // against the session and its payload carries no `job_id`, so the work's
   // own timeline structurally cannot show it — the same contract the t106 test
   // above records for `session.finished`.
   const timeline = await api<{ events: Event[] }>(
@@ -1473,7 +1473,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         },
       };
 
-      // --- 1. no `grafo_versao_id` at all: today's behaviour, byte for byte ------
+      // --- 1. no `graph_version_id` at all: today's behaviour, byte for byte ------
       const bare = await api<Work>(
         baseUrl,
         "POST",
@@ -2592,7 +2592,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
 
   for (const [index, reason] of (["silence", "wall_clock"] as const).entries()) {
     await parent.test(
-      `a "${reason}" stop closes the session as tempo_esgotado with its cause`,
+      `a "${reason}" stop closes the session as timed_out with its cause`,
       async (t) => {
         const { calls, failure } = await run(t, 1640 + index, {
           status: "timed_out",
@@ -3428,7 +3428,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       assert.deepEqual(
         body.actor,
         { type: "system", ref: "runner" },
-        "the wiring raised this one, not the session — a session-authored one is `agente`",
+        "the wiring raised this one, not the session — a session-authored one is `agent`",
       );
       assert.deepEqual(
         body.options,

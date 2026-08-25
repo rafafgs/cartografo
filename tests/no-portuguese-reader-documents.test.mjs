@@ -138,7 +138,7 @@ export function documentsInScope() {
   return [
     'README.md',
     'DECISIONS.md',
-    'docs/o-que-e-o-cartografo.md',
+    'docs/what-cartografo-is.md',
     ...under('docs/formats'),
     ...under('docs/spec'),
   ];
@@ -194,7 +194,7 @@ test('AT1 — no Portuguese survives in the documents a stranger reads first', (
 test('AT1 — the gate reads the whole reader-facing set, and only the glossary is out', () => {
   const documents = documentsInScope();
 
-  for (const required of ['README.md', 'DECISIONS.md', 'docs/o-que-e-o-cartografo.md']) {
+  for (const required of ['README.md', 'DECISIONS.md', 'docs/what-cartografo-is.md']) {
     assert.ok(documents.includes(required), `${required} is not in the swept set`);
   }
 

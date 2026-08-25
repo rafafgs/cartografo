@@ -316,7 +316,7 @@ function sweptDocuments(): string[] {
   return [
     ...markdownUnder(path.join('docs', 'spec')),
     ...markdownUnder(path.join('docs', 'formats')),
-    path.join('docs', 'o-que-e-o-cartografo.md'),
+    path.join('docs', 'what-cartografo-is.md'),
     ...markdownUnder('specs'),
   ].filter((relative) => !NOT_SWEPT.includes(relative));
 }

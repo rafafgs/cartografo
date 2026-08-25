@@ -927,6 +927,75 @@ test('FR10 — the command the README documents under "How to validate" runs gre
   }
 });
 
+/**
+ * The README as paragraphs: runs of lines separated by a blank line.
+ *
+ * The unit is the paragraph because AT8's claim is about POSITION — the
+ * disclaimer sits between the blockquote and the state line — and a claim about
+ * position needs blocks rather than lines: this repository wraps at eighty
+ * columns and every one of the three blocks below spans several lines.
+ */
+function paragraphsOf(markdown) {
+  return markdown
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => block !== '');
+}
+
+/**
+ * t121, AT8 — the bundle says what it is before a reader decides what it is.
+ *
+ * This bundle models a real investment-decision workflow, with a red team that
+ * kills theses and a mandatory human gate on the allocation, and it does it
+ * convincingly enough that the third round's write-up reads like research. In a
+ * public repository that is a hazard: the product here is the SHAPE of the
+ * process — seven nodes, nine edges, a contract per step — and nothing in it is
+ * a recommendation about any security, sector or strategy.
+ *
+ * The position is asserted, not just the presence. A disclaimer at the bottom of
+ * a 339-line document is one a reader meets after forming the impression it
+ * exists to correct, so it goes in the one place it cannot be missed: directly
+ * under the opening blockquote, before the state line.
+ */
+test('AT8 — the README disclaims investment advice, between the blockquote and the state', () => {
+  const paragraphs = paragraphsOf(readFileSync(README_PATH, 'utf8'));
+
+  const quote = paragraphs.findIndex((block) => block.startsWith('>'));
+  const state = paragraphs.findIndex((block) => block.startsWith('**State:'));
+
+  assert.notEqual(quote, -1, 'the README no longer opens with the blockquote that summarizes it');
+  assert.notEqual(state, -1, 'the README no longer carries the "**State:**" paragraph');
+
+  assert.equal(
+    state - quote,
+    2,
+    'exactly one paragraph belongs between the opening blockquote and the state line, and it ' +
+      'is the disclaimer; anything else there has pushed it out of the place it has to be in',
+  );
+
+  const disclaimer = paragraphs[quote + 1];
+
+  assert.match(
+    disclaimer,
+    /not investment advice/i,
+    `the paragraph between the blockquote and the state line does not disclaim investment ` +
+      `advice:\n${disclaimer}`,
+  );
+
+  assert.match(
+    disclaimer,
+    /\bexample\b/i,
+    'the disclaimer has to say what the bundle IS as well as what it is not: an example',
+  );
+
+  assert.match(
+    disclaimer,
+    /\bgraph\b/i,
+    'the disclaimer has to name what the example is an example OF — the graph structure — or ' +
+      'it reads as a legal formula rather than as a statement of what a reader is looking at',
+  );
+});
+
 /*
  * t278 — contract matching, over the bundle's REAL manifests.
  *

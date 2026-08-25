@@ -79,7 +79,7 @@
  * ## Scope
  *
  * Every specification: `docs/spec/*.md`, `docs/formats/*.md` and
- * `docs/o-que-e-o-cartografo.md`. It started as four documents — the one t236
+ * `docs/what-cartografo-is.md`. It started as four documents — the one t236
  * owned plus the three the t237 round found — and t231 took the growth path
  * this paragraph used to describe, which was to widen `SWEPT` once
  * `screen-graph-editor.md`'s `grafo_versao.id` had a ticket of its own.
@@ -121,7 +121,7 @@ function swept(): string[] {
         .sort()
         .map((entry) => `${directory}/${entry}`),
     ),
-    'docs/o-que-e-o-cartografo.md',
+    'docs/what-cartografo-is.md',
   ];
   return documents.filter((relative) => relative !== GLOSSARY);
 }

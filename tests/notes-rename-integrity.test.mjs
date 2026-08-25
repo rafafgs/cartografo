@@ -41,10 +41,27 @@
  *
  * **That the notes' own prose cites `notes/`.** It cites `notas/` in about
  * forty-six places and is meant to: a note records what was true on the day it
- * was written, and the same discipline that preserves
- * `2026-08-24-bets-assimetricas-closing-note.md` under its retired spelling
- * preserves the sentences inside it. That is why AT3b reads the tree OUTSIDE
- * `notes/`, and why AT3c only asks about targets that already name `notes/`.
+ * was written, and the discipline that preserves those sentences preserves the
+ * filenames around them too. That is why AT3b reads the tree OUTSIDE `notes/`,
+ * and why AT3c only asks about targets that already name `notes/`.
+ *
+ * ## The one filename that discipline did not cover (t121)
+ *
+ * `2026-08-24-bets-assimetricas-closing-note.md` was preserved here under its
+ * retired spelling for exactly the reason above, and the founder's rescope of
+ * t121 overturned it by explicit instruction. The distinction he drew is the
+ * one this fixture now records: that name was never a record of a day's truth,
+ * it was a DANGLING REFERENCE. The note is t293's closing note — its own H1
+ * says so — and the thing it was named after, the `bets-assimetricas/` bundle,
+ * has existed nowhere in this tree since t306 renamed it; the note's own
+ * subject is that translation. So the file is `2026-08-24-t293-closing-note.md`
+ * now, matching every sibling closing note's `<date>-t<n>-closing-note.md`
+ * convention, and the fixture entry below moved with it — a rename, not a
+ * removal, which is why AT3a still counts twenty-seven.
+ *
+ * Read it as the exception it is. No other note was renamed, and the discipline
+ * above holds for every one of them: `2026-08-18-n3-round.md` and the two
+ * `game-feature` notes are named for what they are about and stay as they are.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
@@ -94,9 +111,11 @@ const SELF = MAY_SPELL_THE_OLD_NAME[0];
  * that quietly re-dated one would be invisible to a check that only counted
  * files. Twenty-six carry a date; `execution-monitoring-prompt.md` never did.
  *
- * Four of these spell something D24 retired (`bets-assimetricas`, the two
- * `game-feature` notes' subject, `n3-round`) and they are preserved exactly as
- * they are: a rename must not touch a file whose subject IS the old name.
+ * Three of these spell something D24 retired (the two `game-feature` notes'
+ * subject, `n3-round`) and they are preserved exactly as they are: a rename must
+ * not touch a file whose subject IS the old name. There was a fourth, and it is
+ * the entry this fixture no longer lists under the name the rename handed it —
+ * see "The one filename that discipline did not cover" above.
  */
 export const NOTES = Object.freeze(
   [
@@ -115,9 +134,9 @@ export const NOTES = Object.freeze(
     { name: '2026-08-18-game-feature-2.md', date: '2026-08-18' },
     { name: '2026-08-18-n3-round.md', date: '2026-08-18' },
     { name: '2026-08-18-third-bets-run.md', date: '2026-08-18' },
-    { name: '2026-08-24-bets-assimetricas-closing-note.md', date: '2026-08-24' },
     { name: '2026-08-24-t280-closing-note.md', date: '2026-08-24' },
     { name: '2026-08-24-t281-closing-note.md', date: '2026-08-24' },
+    { name: '2026-08-24-t293-closing-note.md', date: '2026-08-24' },
     { name: '2026-08-24-t299-closing-note.md', date: '2026-08-24' },
     { name: '2026-08-25-t282-closing-note.md', date: '2026-08-25' },
     { name: '2026-08-25-t296-closing-note.md', date: '2026-08-25' },

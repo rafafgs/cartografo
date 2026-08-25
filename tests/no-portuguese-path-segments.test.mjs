@@ -99,7 +99,7 @@
  * `grafo` is nearly safe as a substring, and the exception is the whole reason
  * this gate now blanks one word before it reads a path. It does not read inside
  * `graph`, `graphs`, `factory-graphs` or `paragraph` — but it reads inside
- * `cartografo`, and `docs/o-que-e-o-cartografo.md`,
+ * `cartografo`, and `docs/what-cartografo-is.md`,
  * `packages/core/bin/cartografo.mjs` and `packages/runner/bin/cartografo-runner.mjs`
  * are three real paths in this tree.
  *
@@ -128,13 +128,29 @@
  * declarative.
  *
  * `notes/` second, added by t306 as `notas/` and moved by t305 with the folder.
- * This one IS covering for live matches, and they are the FILE names rather than
- * the directory: `notes/2026-08-24-bets-assimetricas-closing-note.md` spells a
- * retired name in its own filename, and `notes/2026-08-15-first-execution.md`
- * and its siblings cite `grafo.json` all through their prose. The working notes
- * are a dated historical record — a note is named for what was true on the day
- * it was written, and rewriting one to match a later rename would falsify the
- * record rather than fix it.
+ * It covered a live match until t121: `notes/2026-08-24-bets-assimetricas-closing-note.md`
+ * spelled a retired name in its own filename, and the exclusion was what let it
+ * stay. That file is `notes/2026-08-24-t293-closing-note.md` now — the founder's
+ * rescope of t121 ruled the old spelling a dangling reference rather than a
+ * record, because the bundle it named has existed nowhere in this tree since
+ * t306 and the note's own subject is that translation
+ * (`tests/notes-rename-integrity.test.mjs` carries the full reasoning).
+ *
+ * **So the exclusion is PROSPECTIVE from here, and it stays.** No tracked path
+ * under `notes/` trips a stem today; nothing here is covering for anything. What
+ * it covers is the next dated note, and the reason to keep it is that the next
+ * one may legitimately need it: a note is titled for what it is ABOUT, and a
+ * note about the `grafo.json` rename has a retired name in its subject the same
+ * way `notes/2026-08-15-first-execution.md` and its siblings cite `grafo.json`
+ * all through their prose. Whether any particular filename is a record or a
+ * dangling reference is a judgment the founder makes ticket by ticket — t121 is
+ * him making it once — and it is not a judgment a stem sweep can make. This
+ * entry keeps the sweep out of that decision; it does not pre-approve either
+ * answer.
+ *
+ * An exclusion covering nothing is a thing to watch, which is why the test below
+ * asserts the tree still EXISTS rather than that it still matches: the day
+ * `notes/` moves again, this reds instead of going quietly blind.
  *
  * What this exclusion is NOT, since t305, is a claim about the directory. The
  * sibling gate `tests/no-portuguese-document-tree.test.mjs` used to carry
@@ -178,13 +194,12 @@ export const RETIRED_STEMS = Object.freeze([
  * See the header for both. `packages/core/migrations/` is a statement of
  * authority first: the migration file names are frozen by the convention, and
  * since t305's `grafo` stem it also covers a real match,
- * `0002_grafo_versao_proposta.sql`. `notes/` is a carve-out for live matches and
- * says so — the working notes are a dated record, t306's `assimetric` bites
- * `notes/2026-08-24-bets-assimetricas-closing-note.md` and t305's `grafo` bites
- * nothing in a NAME there but would if a note were ever named after the file it
- * discusses. What moved with t305 is the prefix, not the reasoning: the FOLDER
- * is English now, the historical filenames under it are not, and this entry is
- * about the second.
+ * `0002_grafo_versao_proposta.sql`. `notes/` is a carve-out for the FILENAMES
+ * under a folder of dated records, and since t121 it is prospective: the one
+ * name it was covering was renamed by founder instruction, so nothing under
+ * `notes/` trips a stem today. It stays for the note nobody has written yet —
+ * `grafo` would bite a note named after the file it discusses — and the header
+ * says why that decision is not a sweep's to make.
  */
 export const FROZEN_TREES = Object.freeze(['packages/core/migrations/', 'notes/']);
 
@@ -356,7 +371,7 @@ test('AT2 — the sweep spares the names that replaced them', () => {
     // the brand name, which spells `grafo` and is D24's own first exception
     'packages/core/bin/cartografo.mjs',
     'packages/runner/bin/cartografo-runner.mjs',
-    'docs/o-que-e-o-cartografo.md',
+    'docs/what-cartografo-is.md',
   ];
 
   assert.deepEqual(
@@ -388,8 +403,8 @@ test('AT2 — the brand name is spared, and nothing on either side of it is', ()
   );
 
   assert.equal(
-    withoutBrand('docs/o-que-e-o-cartografo.md'),
-    'docs/o-que-e-o-##########.md',
+    withoutBrand('docs/what-cartografo-is.md'),
+    'docs/what-##########-is.md',
     'the brand is blanked to a run of the same length, never deleted: deleting it ' +
       'would splice its two neighbours into a match neither of them made',
   );
@@ -410,17 +425,22 @@ test('AT2 — a stem only counts inside a path component, not across one', () =>
 });
 
 test('AT2 — the working notes are outside this gate, retired name and all', () => {
+  // Synthetic since t121: the real filename this pair used to be written around
+  // was renamed, and `offendersIn` never touches disk, so the claim is made with
+  // the note nobody has written yet rather than with one that no longer exists.
+  const hypothetical = '2026-09-01-grafo-json-rename.md';
+
   assert.deepEqual(
-    offendersIn(['notes/2026-08-24-bets-assimetricas-closing-note.md']),
+    offendersIn([`notes/${hypothetical}`]),
     [],
-    'a note is named for what was true the day it was written: t306 retired the ' +
-      'directory and did not rewrite the record of the ticket that built it, and ' +
-      't305 moved the folder without touching the filenames under it',
+    'a note is titled for what it is ABOUT, and a note about a retired name carries ' +
+      'that name: the exclusion is what keeps this sweep out of a decision that is ' +
+      'the founder\u2019s to make note by note',
   );
 
   assert.deepEqual(
-    offendersIn(['docs/2026-08-24-bets-assimetricas-closing-note.md']),
-    ['docs/2026-08-24-bets-assimetricas-closing-note.md: retired stem "assimetric"'],
+    offendersIn([`docs/${hypothetical}`]),
+    [`docs/${hypothetical}: retired stem "grafo"`],
     'the exclusion is a prefix and nothing wider: the same filename one directory ' +
       'over is read like any other path',
   );

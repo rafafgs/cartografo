@@ -166,22 +166,22 @@ const PREMISE_SOURCE = 'fato relevante de 2026-07-30, arquivado no regulador';
 /** ...and how big a position is being asked for, the third field it demands (t263). */
 const INTENDED_SIZE = 1.5;
 
-const TITLE = 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário';
+const TITLE = 'Navelar Logistics (NVLR3) — repricing after the sale of the road haulage arm';
 const BODY =
-  'O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. ' +
-  'Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e ' +
-  'caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.';
+  'The market still prices Navelar as a low-margin road haulier. With the road ' +
+  'haulage arm sold, what is left is a port operation with a long-term contract and ' +
+  'net cash; the discount tends to disappear once the first pro-forma quarter is reported.';
 
 /** What the fake `triage` session hands back — `triage-thesis`'s `output`. */
 const TRIAGED_THESIS = {
-  id: 'tese-1',
+  id: 'thesis-1',
   title: TITLE,
   asset: ASSET,
   hypothesis: BODY,
   research_scope: [
-    'termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam',
-    'contrato portuário: prazo, cláusula de reajuste e concentração de cliente',
-    'caixa e dívida pró-forma depois da venda',
+    'terms of the road haulage sale: price, form of payment and the liabilities that stay',
+    'port contract: term, price-revision clause and customer concentration',
+    'pro-forma cash and debt after the sale',
   ],
 };
 const TRIAGED = {
@@ -192,38 +192,38 @@ const TRIAGED = {
   triaged_thesis: TRIAGED_THESIS,
   evaluated_criteria: [
     {
-      criterion: 'o downside está limitado por caixa líquido ou ativo real, não por narrativa',
+      criterion: 'the downside is bounded by net cash or a real asset, not by a narrative',
       verdict: 'meets',
-      evidence: 'A venda está fixada em R$ 1,2 bi à vista contra valor de mercado de R$ 2,1 bi.',
+      evidence: 'The sale is fixed at BRL 1.2bn in cash against a market value of BRL 2.1bn.',
     },
   ],
-  rationale: 'A ideia tem piso contratado e evento datado: merece uma rodada de pesquisa.',
-  note: 'Escopo restrito a três frentes para a coleta não virar leitura infinita.',
+  rationale: 'The idea has a contracted floor and a dated event: it deserves a research round.',
+  note: 'Scope held to three fronts so the collection does not turn into endless reading.',
 };
 
 /** ...and the fake `collect-fundamentals` session — `collect-fundamentals`'s. */
 const COLLECTED = {
   fundamentals: {
-    summary: 'Sobra um terminal portuário com contrato take-or-pay até 2032 e caixa líquido.',
+    summary: 'What is left is a port terminal with a take-or-pay contract to 2032 and net cash.',
     figures: [
       {
-        metric: 'caixa líquido pró-forma',
-        value: 'R$ 0,9 bi',
-        period: 'pró-forma 2T26',
-        source: 'release do 2T26, nota 14',
+        metric: 'pro-forma net cash',
+        value: 'BRL 0.9bn',
+        period: 'pro-forma Q2 2026',
+        source: 'Q2 2026 release, note 14',
       },
     ],
-    known_risks: ['concentração de 71% da receita em um único embarcador'],
+    known_risks: ['71% of revenue concentrated in a single shipper'],
   },
   assumptions: [
     {
-      assumption: 'o contrato take-or-pay é honrado até 2032',
-      source: 'anexo contratual do formulário de referência 2026',
+      assumption: 'the take-or-pay contract is honoured through 2032',
+      source: 'contract annex of the 2026 reference form',
       confidence: 'high',
     },
   ],
-  gaps: ['não há documento público com o preço por tonelada do contrato'],
-  note: 'Uma premissa com fonte primária; a lacuna de preço fica registrada.',
+  gaps: ['no public document carries the contract price per tonne'],
+  note: 'One assumption with a primary source; the price gap is recorded.',
 };
 
 test('t260 — triage → collect-fundamentals crosses the real bets bundle', async (t) => {
@@ -403,13 +403,13 @@ const DISCARDED = {
   triaged_thesis: { ...TRIAGED_THESIS, research_scope: [] },
   evaluated_criteria: [
     {
-      criterion: 'o downside está limitado por caixa líquido ou ativo real, não por narrativa',
+      criterion: 'the downside is bounded by net cash or a real asset, not by a narrative',
       verdict: 'does_not_meet',
-      evidence: 'O piso alegado é uma projeção de múltiplo, não um ativo contratado.',
+      evidence: 'The claimed floor is a multiple projection, not a contracted asset.',
     },
   ],
-  rationale: 'Sem piso observável, a ideia não merece uma rodada de pesquisa.',
-  note: 'Descartada no primeiro filtro; a travessia ainda produz métrica.',
+  rationale: 'With no observable floor, the idea does not deserve a research round.',
+  note: 'Discarded at the first filter; the crossing still produces a metric.',
 };
 
 /** ...and what `record-monitoring` reports — `record-crossing`'s `output`. */
@@ -423,10 +423,10 @@ const RECORDED = {
   },
   record: {
     thesis_id: TRIAGED_THESIS.id,
-    summary: 'A tese foi descartada na triage por não ter piso observável.',
+    summary: 'The thesis was discarded at triage for having no observable floor.',
     monitoring: [],
   },
-  note: 'Travessia fechada pelo caminho mais curto do grafo.',
+  note: 'Crossing closed by the shortest path through the graph.',
 };
 
 test('t270 — triage → record-monitoring closes the bets traversal on its own', async (t) => {
@@ -611,20 +611,20 @@ const MEASURED = {
     asymmetry_ratio: 5.3,
     scenarios: [
       {
-        name: 'o pró-forma sai e o desconto de classificação some',
+        name: 'the pro-forma comes out and the classification discount disappears',
         probability: 0.6,
         return_pct: 95,
-        key_assumptions: ['o contrato take-or-pay é honrado até 2032'],
+        key_assumptions: ['the take-or-pay contract is honoured through 2032'],
       },
       {
-        name: 'o embarcador renegocia o volume mínimo e o piso encolhe',
+        name: 'the shipper renegotiates the minimum volume and the floor shrinks',
         probability: 0.4,
         return_pct: -18,
-        key_assumptions: ['o contrato take-or-pay é honrado até 2032'],
+        key_assumptions: ['the take-or-pay contract is honoured through 2032'],
       },
     ],
   },
-  note: 'Piso vem do caixa líquido pró-forma, não da narrativa de reprecificação.',
+  note: 'The floor comes from pro-forma net cash, not from the repricing narrative.',
 };
 
 /** ...and the fake `red-team` session, when the thesis answers the objection. */
@@ -636,27 +636,27 @@ const SURVIVED = {
   objections: [
     {
       objection:
-        'Com 71% da receita em um único embarcador, o take-or-pay vira risco de contraparte: se ele renegociar, o piso contratual não é piso.',
+        'With 71% of revenue in a single shipper, the take-or-pay becomes counterparty risk: if it renegotiates, the contractual floor is no floor.',
       severity: 'high',
       thesis_answer:
-        'O contrato tem garantia bancária de 18 meses de receita — cláusula 11 do anexo contratual do formulário de referência 2026.',
+        'The contract carries a bank guarantee of 18 months of revenue — clause 11 of the contract annex of the 2026 reference form.',
     },
     {
       objection:
-        'A data do gatilho é escolha do agente: nada obriga a reprecificação a acontecer no release do 1T27.',
+        'The trigger date is the agent\'s choice: nothing forces the repricing to happen at the Q1 2027 release.',
       severity: 'low',
       thesis_answer: null,
     },
   ],
   researched_counter_evidence: [
     {
-      claim_attacked: 'o contrato take-or-pay é honrado até 2032',
+      claim_attacked: 'the take-or-pay contract is honoured through 2032',
       source: 'arbitragem 0021xxx, noticiada em 2025-11-04',
       finding:
-        'O mesmo embarcador arbitrou um take-or-pay com outro terminal em 2025 e obteve redução de 12% no volume mínimo.',
+        'The same shipper arbitrated a take-or-pay with another terminal in 2025 and got a 12% cut in the minimum volume.',
     },
   ],
-  note: 'A objeção alta tem resposta documental; a baixa não move o piso.',
+  note: 'The high objection has a documented answer; the low one does not move the floor.',
 };
 
 /** ...and the same session when the thesis has no answer to give. */
@@ -666,19 +666,19 @@ const KILLED = {
   objections: [
     {
       objection:
-        'As duas vendas anteriores tiveram o caixa reinvestido fora do core em menos de três trimestres: o caixa líquido pode não chegar ao acionista.',
+        'Both previous sales had the cash reinvested outside the core within three quarters: the net cash may never reach the shareholder.',
       severity: 'high',
       thesis_answer: null,
     },
   ],
   researched_counter_evidence: [
     {
-      claim_attacked: 'o caixa líquido permanece no balanço até o release do 1T27',
+      claim_attacked: 'the net cash stays on the balance sheet through the Q1 2027 release',
       source: 'atas de assembleia de 2023 e 2024',
-      finding: 'O padrão histórico da controladora contradiz a premissa, duas vezes seguidas.',
+      finding: 'The parent company\'s historical pattern contradicts the assumption, twice in a row.',
     },
   ],
-  note: 'Objeção alta sem resposta: a tese morre aqui, que é a morte mais barata do grafo.',
+  note: 'A high objection with no answer: the thesis dies here, which is the cheapest death in the graph.',
 };
 
 /** ...and the fake `size-risk` session. */
@@ -686,31 +686,31 @@ const SIZED = {
   sizing: {
     position_size_pct: 1.2,
     max_accepted_loss_pct: 0.22,
-    exit_trigger: 'saída integral se a renovação do contrato portuário não sair até o 3T27',
-    horizon: '18 meses, até o release do 1T27',
-    portfolio_correlation: 'baixa: nenhuma outra posição em terminal portuário',
+    exit_trigger: 'full exit if the port contract renewal does not come through by Q3 2027',
+    horizon: '18 months, to the Q1 2027 release',
+    portfolio_correlation: 'low: no other position in a port terminal',
   },
-  note: 'Pediram 1,5%; a objeção alta sobrevivente puxou o tamanho para 1,2%.',
+  note: 'They asked for 1.5%; the surviving high objection pulled the size down to 1.2%.',
 };
 
 /** The allocation question the `decide` session ends its first turn with. */
 const ALLOCATION_QUESTION = {
   question:
-    'Alocar 1,2% do capital em NVLR3 a até R$ 18,00, com saída se o contrato portuário não for renovado até o 3T27?',
+    'Allocate 1.2% of capital to NVLR3 at up to BRL 18.00, with an exit if the port contract is not renewed by Q3 2027?',
   context:
-    'Piso no caixa líquido pró-forma de R$ 0,9 bi; assimetria de 5,3x; uma objeção alta respondida por garantia bancária de 18 meses e uma baixa sem resposta; uma premissa, com fonte primária.',
-  options: ['Aprovar como proposto', 'Recusar'],
-  recommendation: 'Aprove 1,2% do capital em NVLR3, com entrada limitada a R$ 18,00.',
-  default: 'Aprovar como proposto',
+    'Floor at pro-forma net cash of BRL 0.9bn; asymmetry of 5.3x; one high objection answered by an 18-month bank guarantee and one low objection unanswered; one assumption, with a primary source.',
+  options: ['Approve as proposed', 'Refuse'],
+  recommendation: 'Approve 1.2% of capital in NVLR3, with entry capped at BRL 18.00.',
+  default: 'Approve as proposed',
 };
 
 /** ...and what the founder answers, which is the only thing that authorizes an edge. */
 const FOUNDER_ANSWER =
-  'Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até o 3T27.';
+  'Approved: allocate 1.2% of capital, entry capped at BRL 18.00, and a full exit if the port contract renewal does not come through by Q3 2027.';
 
 /** The lines of a session that pauses for a person instead of deciding. */
 const ASKS = JSON.stringify([
-  { stream: 'stdout', text: 'Não há decisão registrada para esta tese, então eu pergunto:' },
+  { stream: 'stdout', text: 'There is no decision on record for this thesis, so I am asking:' },
   { stream: 'stdout', text: '```input-request' },
   { stream: 'stdout', text: JSON.stringify(ALLOCATION_QUESTION) },
   { stream: 'stdout', text: '```' },
@@ -721,7 +721,7 @@ const transcribed = (questionId: string): Record<string, unknown> => ({
   resultado: 'approved',
   outcome: 'pass',
   human_decision: { question_id: questionId, literal_answer: FOUNDER_ANSWER },
-  note: 'O tamanho que vale é o da resposta (1,2%), e ele coincide com o proposto.',
+  note: 'The size that counts is the one in the answer (1.2%), and it matches the proposal.',
 });
 
 /** One crossing of the real bundle, driven node by node with the fake engine. */
@@ -969,13 +969,13 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
       record: {
         thesis_id: TRIAGED_THESIS.id,
         summary:
-          'Tese triada, pesquisada, medida, atacada pelo red team, dimensionada em 1,2% e aprovada pelo fundador.',
+          'Thesis triaged, researched, measured, red-teamed, sized at 1.2% and approved by the founder.',
         monitoring: [
-          { trigger: 'renovação do contrato portuário', deadline: '3T27' },
-          { trigger: 'release pró-forma do 1T27', deadline: '1T27' },
+          { trigger: 'port contract renewal', deadline: 'Q3 2027' },
+          { trigger: 'Q1 2027 pro-forma release', deadline: 'Q1 2027' },
         ],
       },
-      note: 'Travessia longa fechada: os sete nós do grafo rodaram.',
+      note: 'A long crossing closed: all seven nodes of the graph ran.',
     }),
   );
 
@@ -1036,10 +1036,10 @@ test('t276 — the red team kills the thesis, and the `dead` edge closes the tra
       },
       record: {
         thesis_id: TRIAGED_THESIS.id,
-        summary: 'A tese morreu no red team: o caixa líquido não tem histórico de chegar ao acionista.',
+        summary: 'The thesis died in the red team: the net cash has no history of reaching the shareholder.',
         monitoring: [],
       },
-      note: 'Travessia fechada sem chegar ao portão humano — desfecho arquivado.',
+      note: 'Crossing closed without reaching the human gate — outcome archived.',
     }),
   );
 

@@ -127,6 +127,16 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     line: 221,
     reason: 'asserts the byte offset that run lands on',
   },
+  {
+    file: 'fixtures/codex-input-request.jsonl',
+    line: 4,
+    reason: 'a RECORDED frame of a real credentialed codex run; rewriting a recording falsifies the evidence (D24)',
+  },
+  {
+    file: 'surveyor/close-outcome.e2e.test.ts',
+    line: 38,
+    reason: 'an English sentence that LISTS the frozen wire keys, `depois` among them, and names the decision freezing each',
+  },
 ]);
 
 /** Any of these means the line around it is Portuguese. */
@@ -305,11 +315,31 @@ const PROTOCOL_TOKENS = new RegExp(`\\b(?:${['sempre', 'para', 'sessao'].join('|
  * dotted paths (`input.producao.nota`) and the flags a person types.
  */
 const MACHINE_NAMES: readonly RegExp[] = Object.freeze([
+  // a dotted name written into a regex literal: `\.grafo\.rascunho\.json`,
+  // which is the draft suffix `src/synthesizer/synthesize.ts` exports
+  /(?:\\\.[A-Za-z0-9_]+)+/g,
   /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]+)+\b/g,
   /\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g,
   /\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b/g,
   /--?[A-Za-z][A-Za-z0-9-]*/g,
 ]);
+
+/**
+ * Node and skill ids this repository reuses as illustration, everywhere.
+ *
+ * `fazer` is a node of the two `spike-real-session*.mjs` proofs and of the skill
+ * manifest they both name — files this ticket does not touch — so a test that
+ * dispatches it has to spell it the way they do. It is a Portuguese verb, which
+ * is the only reason it needs saying: the other illustrative ids of the same
+ * family (`implementar`, `conferir`, `publicar`, `redigir`, `revisar`) are not
+ * words the stopword list has.
+ *
+ * The full argument for leaving them alone is in this ticket's Out of Scope:
+ * they are shared with `schema/examples/`, `docs/spec/` and three other
+ * packages, and renaming half of a repo-wide convention is worse than the
+ * convention.
+ */
+const ILLUSTRATIVE_IDS = new RegExp(`\\b(?:${['fazer'].join('|')})\\b`, 'g');
 
 /** Replaces a span with same-length blanks, so no offset shifts under it. */
 function blank(text: string): string {
@@ -323,7 +353,7 @@ function blank(text: string): string {
  * @returns Every offending token found, or an empty list.
  */
 export function offendersIn(text: string): string[] {
-  let masked = text.replace(PROTOCOL_TOKENS, blank);
+  let masked = text.replace(PROTOCOL_TOKENS, blank).replace(ILLUSTRATIVE_IDS, blank);
   for (const span of MACHINE_NAMES) masked = masked.replace(span, blank);
 
   const offenders: string[] = [];

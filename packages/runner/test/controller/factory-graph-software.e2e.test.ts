@@ -461,10 +461,10 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
    * where it is a claim: the text the manifest wrote.
    */
   // The split marker is the heading `render-skill-instructions.ts` renders
-  // TODAY: it was `## O contrato do nó` until t309 renamed it, and a marker
-  // that matches nothing does not fail here — it silently returns the whole
-  // prompt, contract `checks` included, which is what made this read like a
-  // placeholder-resolution regression when it was a stale string.
+  // TODAY. It carried the pre-t309 Portuguese spelling of the same heading
+  // until t312, and a marker that matches nothing does not fail here — it
+  // silently returns the whole prompt, contract `checks` included, which is
+  // what made this read like a placeholder-resolution regression.
   const bodyOf = (nodeId: string): string => toldTo(nodeId).split('## The contract of node')[0];
 
   // --- 1. `refine` dispatches at all, which is the whole of the repair ------

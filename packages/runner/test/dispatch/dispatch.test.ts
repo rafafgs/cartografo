@@ -83,15 +83,15 @@ const DEADLINE_MS = 30_000;
 
 /** The escalation the fake session emits on the first dispatch. */
 const ESCALATION = {
-  question: "Renumerar a migração para 0003?",
-  context: "A t101 corre em paralelo e é dona do mesmo espaço de numeração.",
+  question: "Renumber the migration to 0003?",
+  context: "t101 runs in parallel and owns the same numbering space.",
   options: ["Renumerar para 0003", "Manter 0002"],
-  recommendation: "Manter 0002 e renumerar só se colidir no merge.",
+  recommendation: "Keep 0002 and renumber only if it collides at the merge.",
   default: "Manter 0002",
 };
 
 /** What the human answers through the API. */
-const ANSWER = "Manter 0002 e renumerar só no merge";
+const ANSWER = "Keep 0002 and renumber only at the merge";
 const ANSWERED_BY = "rafael";
 
 interface TestHook {
@@ -255,10 +255,10 @@ async function api<T>(
 /** The lines the fake session prints when it needs the founder. */
 function linesWithBlock(): string {
   return JSON.stringify([
-    { stream: "stdout", text: "Li a ticket e os arquivos que ela nomeia." },
+    { stream: "stdout", text: "I read the ticket and the files it names." },
     {
       stream: "stdout",
-      text: "Uma coisa a ticket não resolve, então eu pergunto:",
+      text: "One thing the ticket does not settle, so I am asking:",
     },
     { stream: "stdout", text: "```input-request" },
     { stream: "stdout", text: JSON.stringify(ESCALATION) },
@@ -269,8 +269,8 @@ function linesWithBlock(): string {
 /** ...and the lines it prints when it has the answer and just works. */
 function linesWithoutBlock(): string {
   return JSON.stringify([
-    { stream: "stdout", text: "A resposta já veio no prompt; segui com ela." },
-    { stream: "stdout", text: "Terminei o trabalho, nada a perguntar." },
+    { stream: "stdout", text: "The answer was already in the prompt; I went with it." },
+    { stream: "stdout", text: "I finished the work, nothing to ask." },
   ]);
 }
 
@@ -319,7 +319,7 @@ function linesWithDenial(): string {
     },
     {
       stream: "stdout",
-      text: "Sem rede, segui pelo que já estava no repositório.",
+      text: "With no network, I went by what was already in the repository.",
     },
   ]);
 }
@@ -358,14 +358,14 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
   });
 
   const client = new ControlPlaneClient({ urlBase: baseUrl });
-  await client.registerRunner("runner-t106", "o que despacha de verdade");
+  await client.registerRunner("runner-t106", "the one that dispatches for real");
 
   const work = await api<Work>(
     baseUrl,
     "POST",
     "/v1/jobs",
     {
-      title: "ticket que escala",
+      title: "a ticket that escalates",
       entry_node_id: "implementar",
       execution_id: 7,
     },
@@ -618,7 +618,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const client = new ControlPlaneClient({ urlBase: baseUrl });
   await client.registerRunner(
     "runner-t125",
-    "o que despacha com política de permissão",
+    "the one that dispatches with a permission policy",
   );
 
   const work = await api<Work>(
@@ -727,7 +727,7 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     "POST",
     "/v1/jobs",
     {
-      title: "a ticket cuja saída precisa sobreviver ao processo",
+      title: "the ticket whose output has to survive the process",
       entry_node_id: "implementar",
       execution_id: 11,
     },
@@ -1100,14 +1100,14 @@ function contract(): Record<string, unknown> {
       {
         type: "deterministic",
         command: "test -s saida.md",
-        description: "A saída existe.",
+        description: "The output exists.",
       },
     ],
   };
 }
 
 /**
- * A `trabalho` node, with `engine` only when the routing test declares one.
+ * A `work` node, with `engine` only when the routing test declares one.
  *
  * The `skill_ref` points at the fixture manifest this file registers, and since
  * t161 that is not decoration: a dispatch that resolves a node now resolves its
@@ -1121,7 +1121,7 @@ function node(id: string, engine?: string): Record<string, unknown> {
     id,
     role: "desenvolvedor",
     node_type: "work",
-    description: `Nó ${id} da prova de roteamento por nó.`,
+    description: `Node ${id} of the per-node routing proof.`,
     skill_ref: skillPin(WORK_SKILL),
     contract: contract(),
     ...(engine === undefined ? {} : { engine }),
@@ -1141,9 +1141,9 @@ function twoEngineGraph(
     problem_class: className,
     lineage: { type: "base" },
     metadata: {
-      name: "Prova de roteamento por nó",
+      name: "Per-node routing proof",
       description:
-        "Dois nós de trabalho numa aresta, um deles declarando engine.",
+        "Two work nodes on one edge, one of them declaring an engine.",
       schema_version: "1.0.0",
       created_at: "2026-08-15",
       source: "fixture da t141",
@@ -1359,7 +1359,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       const workDir = mkdtempSync(
         path.join(tmpdir(), "cartografo-t141-codex-workdir-"),
       );
-      const claudeRecord = path.join(workDir, "nunca-despachado.json");
+      const claudeRecord = path.join(workDir, "never-dispatched.json");
       const codexRecord = path.join(workDir, "despacho-codex.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
@@ -1378,7 +1378,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cujo nó declara codex",
+          title: "a ticket whose node declares codex",
           entry_node_id: "revisar",
           execution_id: 141,
           graph_version_id: versionId,
@@ -1479,7 +1479,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ticket sem grafo",
+          title: "a ticket with no graph",
           entry_node_id: "implementar",
           execution_id: 1410,
         },
@@ -1494,7 +1494,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
-          FAKE_ENGINE_RECORD: path.join(workDir, "sem-grafo.json"),
+          FAKE_ENGINE_RECORD: path.join(workDir, "no-graph.json"),
           FAKE_ENGINE_LINES: linesWithoutBlock(),
         },
       })(bare.id);
@@ -1510,7 +1510,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cujo nó não declara engine",
+          title: "a ticket whose node declares no engine",
           entry_node_id: "implementar",
           execution_id: 1411,
           graph_version_id: versionId,
@@ -1564,7 +1564,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       const workDir = mkdtempSync(
         path.join(tmpdir(), "cartografo-t141-unknown-workdir-"),
       );
-      const record = path.join(workDir, "nunca-despachado.json");
+      const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -1579,7 +1579,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cujo nó pede um engine que ninguém registrou",
+          title: "a ticket whose node asks for an engine nobody registered",
           entry_node_id: "revisar",
           execution_id: 1412,
           graph_version_id: versionId,
@@ -1793,7 +1793,7 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     "POST",
     "/v1/jobs",
     {
-      title: "ticket cujo POST /v1/sessions cai com o engine já de pé",
+      title: "a ticket whose POST /v1/sessions fails with the engine already up",
       entry_node_id: "implementar",
       execution_id: 148,
     },
@@ -1908,7 +1908,7 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
     "POST",
     "/v1/jobs",
     {
-      title: "ticket que pergunta e cujo fechamento de sessão cai",
+      title: "a ticket that asks and whose session close fails",
       entry_node_id: "implementar",
       execution_id: 1481,
     },
@@ -2024,7 +2024,7 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
     "POST",
     "/v1/jobs",
     {
-      title: "ticket que roda no worktree que o runner criou",
+      title: "a ticket that runs in the worktree the runner created",
       entry_node_id: "implementar",
       execution_id: 160,
     },
@@ -2090,7 +2090,7 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
     "POST",
     "/v1/jobs",
     {
-      title: "ticket cujo worktree não pôde ser criado",
+      title: "a ticket whose worktree could not be created",
       entry_node_id: "implementar",
       execution_id: 1601,
     },
@@ -2284,7 +2284,7 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
           "POST",
           "/v1/jobs",
           {
-            title: `ticket cuja sessão termina como ${label}`,
+            title: `a ticket whose session ends as ${label}`,
             entry_node_id: "implementar",
             execution_id: executionId,
             graph_version_id: versionId,
@@ -2476,7 +2476,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
       "POST",
       "/v1/jobs",
       {
-        title: "ticket com orçamento de silêncio",
+        title: "a ticket with a silence budget",
         entry_node_id: "implementar",
         execution_id: executionId,
       },
@@ -2671,7 +2671,7 @@ function traversalGraph(className: string): Record<string, unknown> {
  * they inject it, which is what `resolveInput` exists for. What the PRODUCTION
  * default reads is the subject of the t259 suite at the end of this file.
  */
-const GATE_NOTA = "a etapa anterior deixou saida.md pronto";
+const GATE_NOTA = "the previous step left saida.md ready";
 const gateInput = (): Promise<Record<string, unknown>> =>
   Promise.resolve({ producao: { nota: GATE_NOTA } });
 
@@ -2704,14 +2704,14 @@ const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
  */
 function linesWithResult(result: string): string {
   return JSON.stringify([
-    { stream: "stdout", text: "Conferi o artefato contra o que a etapa pedia." },
+    { stream: "stdout", text: "I checked the artifact against what the step asked for." },
     { stream: "stdout", text: "```resultado" },
     {
       stream: "stdout",
       text: JSON.stringify({
         resultado: result,
         outcome: GATE_OUTCOME[result] ?? "escalate_human",
-        evidencia: "li saida.md inteiro antes de decidir",
+        evidencia: "I read saida.md whole before deciding",
       }),
     },
     { stream: "stdout", text: "```" },
@@ -2778,7 +2778,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num nó com skill registrada",
+          title: "a ticket on a node with a registered skill",
           entry_node_id: "publicar",
           execution_id: 1612,
           graph_version_id: versionId,
@@ -2791,7 +2791,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket sem grafo nenhum",
+          title: "a ticket with no graph at all",
           entry_node_id: "publicar",
           execution_id: 1612,
         },
@@ -2800,7 +2800,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       );
 
       const record = path.join(workDir, "com-grafo.json");
-      const bareRecord = path.join(workDir, "sem-grafo.json");
+      const bareRecord = path.join(workDir, "no-graph.json");
       const base = {
         urlBase: baseUrl,
         token,
@@ -2843,7 +2843,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       );
       assert.ok(
         !withGraph.includes(
-          "Trabalhe no diretório atual e faça o que o trabalho pede.",
+          "Work in the current directory and do what the job asks for.",
         ),
         "the fixed literal is what this ticket replaces, not something it appends to",
       );
@@ -2866,7 +2866,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-pin-"));
-      const record = path.join(workDir, "nunca-despachado.json");
+      const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -2897,7 +2897,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cujo nó aponta para uma skill adulterada",
+          title: "a ticket whose node points at a tampered skill",
           entry_node_id: "publicar",
           execution_id: 1613,
           graph_version_id: versionId,
@@ -2981,7 +2981,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       const workDir = mkdtempSync(
         path.join(tmpdir(), "cartografo-t252-sem-registro-"),
       );
-      const record = path.join(workDir, "nunca-despachado.json");
+      const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -3011,7 +3011,7 @@ test("t161 — the node's skill drives the session, and the session advances the
           ),
         },
         {
-          title: "ticket cujo nó fixa uma skill que ninguém registrou",
+          title: "a ticket whose node pins a skill nobody registered",
           entry_node_id: "publicar",
           execution_id: 2521,
         },
@@ -3070,7 +3070,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       const workDir = mkdtempSync(
         path.join(tmpdir(), "cartografo-t252-pendurada-"),
       );
-      const record = path.join(workDir, "nunca-despachado.json");
+      const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -3084,7 +3084,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket apontando para uma versão de grafo que ninguém registrou",
+          title: "a ticket pointing at a graph version nobody registered",
           entry_node_id: "publicar",
           execution_id: 2522,
           graph_version_id: dangling,
@@ -3162,7 +3162,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cujo control plane teve um soluço",
+          title: "a ticket whose control plane hiccuped",
           entry_node_id: "publicar",
           execution_id: 2523,
           graph_version_id: versionId,
@@ -3251,7 +3251,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num nó de saída única",
+          title: "a ticket on a single-exit node",
           entry_node_id: "implementar",
           execution_id: 1614,
           graph_version_id: versionId,
@@ -3322,7 +3322,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num portão que reprova",
+          title: "a ticket on a gate that rejects",
           entry_node_id: "conferir",
           execution_id: 1615,
           graph_version_id: versionId,
@@ -3392,7 +3392,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num portão que não sabe rotear",
+          title: "a ticket on a gate that does not know how to route",
           entry_node_id: "conferir",
           execution_id: 1616,
           graph_version_id: versionId,
@@ -3473,7 +3473,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cuja sessão pergunta",
+          title: "a ticket whose session asks",
           entry_node_id: "implementar",
           execution_id: 1617,
           graph_version_id: versionId,
@@ -3538,7 +3538,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cuja transição o control plane recusa",
+          title: "a ticket whose transition the control plane refuses",
           entry_node_id: "implementar",
           execution_id: 1618,
           graph_version_id: versionId,
@@ -3623,7 +3623,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num portão que não pode escrever",
+          title: "a ticket on a gate that cannot write",
           entry_node_id: "conferir",
           execution_id: 1619,
           graph_version_id: versionId,
@@ -3748,7 +3748,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num nó que não tem a quem perguntar",
+          title: "a ticket on a node with nobody to ask",
           entry_node_id: "implementar",
           execution_id: 1671,
           graph_version_id: versionId,
@@ -3828,7 +3828,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num nó que pergunta como sempre perguntou",
+          title: "a ticket on a node that asks the way it always asked",
           entry_node_id: "implementar",
           execution_id: 1672,
           graph_version_id: versionId,
@@ -3884,7 +3884,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ticket num portão que não sabe rotear e não tem a quem perguntar",
+          title: "a ticket on a gate that cannot route and has nobody to ask",
           entry_node_id: "conferir",
           execution_id: 1673,
           graph_version_id: versionId,
@@ -3941,7 +3941,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
 // --- t166: per-node model selection ------------------------------------------
 
 /**
- * A `trabalho` node that may declare an engine, a model, both or neither.
+ * A `work` node that may declare an engine, a model, both or neither.
  *
  * Separate from `node()` above on purpose: that one is the t141 routing
  * fixture and its two callers care about engines, not models. Growing its
@@ -3955,7 +3955,7 @@ function modelNode(
     id,
     role: "desenvolvedor",
     node_type: "work",
-    description: `Nó ${id} da prova de seleção de modelo.`,
+    description: `Node ${id} of the model-selection proof.`,
     skill_ref: skillPin(WORK_SKILL),
     contract: contract(),
     ...(declared.engine === undefined ? {} : { engine: declared.engine }),
@@ -3972,8 +3972,8 @@ function modelGraph(
     problem_class: className,
     lineage: { type: "base" },
     metadata: {
-      name: "Prova de seleção de modelo por nó",
-      description: "Dois nós de trabalho numa aresta, um deles declarando model.",
+      name: "Per-node model-selection proof",
+      description: "Two work nodes on one edge, one of them declaring a model.",
       schema_version: "1.0.0",
       created_at: "2026-08-16",
       source: "fixture da t166",
@@ -4098,7 +4098,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1660,
-        title: "ticket cujo nó declara model",
+        title: "a ticket whose node declares a model",
       });
 
       assert.equal(spec.model, "claude-haiku-4-5");
@@ -4117,7 +4117,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1661,
-        title: "ticket cujo nó não declara model",
+        title: "a ticket whose node declares no model",
       });
 
       // `undefined`, never a hardcoded fallback: "absence has a name" for every
@@ -4143,7 +4143,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1662,
-        title: "ticket cujo nó declara model em branco",
+        title: "a ticket whose node declares a blank model",
       });
 
       assert.equal(
@@ -4190,7 +4190,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
           graph_id: graphId,
           target_version: versionId,
           operations: [swap],
-          evidence: { fonte: "telemetria", observacao: "o portão não precisa do modelo grande" },
+          evidence: { source: "telemetry", observation: "the gate does not need the big model" },
           expected_metric: {
             nome: "custo_por_travessia",
             direcao: "cai",
@@ -4215,7 +4215,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const after = await dispatchOn(t, {
         versionId: applied.graph_version.id,
         executionId: 1663,
-        title: "ticket sob a versão que a proposta escreveu",
+        title: "a ticket under the version the proposal wrote",
       });
       assert.equal(after.model, "claude-haiku-4-5");
 
@@ -4225,7 +4225,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const before = await dispatchOn(t, {
         versionId,
         executionId: 1664,
-        title: "ticket que ficou na versão anterior",
+        title: "a ticket that stayed on the previous version",
       });
       assert.equal(before.model, undefined);
     },
@@ -4266,7 +4266,7 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       "POST",
       "/v1/jobs",
       {
-        title: "ticket que reporta uso e modelo",
+        title: "a ticket that reports usage and model",
         entry_node_id: "implementar",
         execution_id: executionId,
       },
@@ -4330,9 +4330,10 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       // ...and the control plane accepted them: a body the schema refuses would
       // have been a 400 the dispatch swallows into `finishFailure`, and the row
       // would read `null` with every assertion above still green.
-      // Read by property and never destructured: `sessoes` is a wire key, and a
-      // local binding of that name is a Portuguese identifier D18 forbids in
-      // this package (`test/no-portuguese-identifiers.test.ts`).
+      // Read by property and never destructured. The reason used to be that the
+      // wire key was Portuguese and a local binding of it would have been an
+      // identifier D18 forbids here; the route answers `sessions` since the
+      // document tree was renamed, so what is left is only the habit.
       const listed = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
@@ -4451,7 +4452,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
     const spec = await dispatchWithTier(t, {
       versionId,
       executionId: 1750,
-      title: "ticket triada como trivial",
+      title: "a ticket triaged as trivial",
       tier: "trivial",
     });
 
@@ -4468,7 +4469,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
     const spec = await dispatchWithTier(t, {
       versionId,
       executionId: 1751,
-      title: "ticket triada como standard",
+      title: "a ticket triaged as standard",
       tier: "standard",
     });
 
@@ -4487,7 +4488,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const spec = await dispatchWithTier(t, {
         versionId,
         executionId: 1752,
-        title: "ticket que ninguém triou",
+        title: "a ticket nobody triaged",
         tier: null,
       });
 
@@ -4514,7 +4515,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const spec = await dispatchWithTier(t, {
         versionId,
         executionId: 1753,
-        title: "ticket trivial num nó que fixou modelo",
+        title: "a trivial ticket on a node that pinned a model",
         tier: "trivial",
       });
 
@@ -4636,7 +4637,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         token,
         placeholderGraph("travessia-t204-at19", manifest),
         {
-          title: "ticket num nó cuja skill tem placeholder",
+          title: "a ticket on a node whose skill carries a placeholder",
           entry_node_id: "publicar",
           execution_id: 2041,
         },
@@ -4698,7 +4699,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
       const workDir = mkdtempSync(
         path.join(tmpdir(), "cartografo-t204-fecha-"),
       );
-      const record = path.join(workDir, "nunca-despachado.json");
+      const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -4708,7 +4709,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         token,
         placeholderGraph("travessia-t204-at20", manifest),
         {
-          title: "ticket cuja entrada ninguém monta",
+          title: "a ticket whose input nobody assembles",
           entry_node_id: "publicar",
           execution_id: 2042,
         },
@@ -4883,7 +4884,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
   await registerSkill(baseUrl, token, GATE_SKILL);
 
   /** The node this suite dispatches: `conferir` names `{{input.producao.nota}}`. */
-  const NOTA = "a etapa anterior deixou saida.md pronto";
+  const NOTA = "the previous step left saida.md ready";
 
   /**
    * Wraps `fetch`, recording every route and optionally answering `/context`
@@ -4922,7 +4923,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
       "POST",
       "/v1/jobs",
       {
-        title: "ticket num nó cuja skill lê o que o nó anterior produziu",
+        title: "a ticket on a node whose skill reads what the previous node produced",
         entry_node_id: "conferir",
         execution_id: executionId,
         graph_version_id: versionId,
@@ -5045,7 +5046,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
       engines: claudeOnly(fakeAdapter()),
       worktrees: fakeWorktrees(workDir),
       timeoutSeconds: 60,
-      resolveInput: () => Promise.resolve({ producao: { nota: "veio do teste" } }),
+      resolveInput: () => Promise.resolve({ producao: { nota: "it came from the test" } }),
       envOverrides: {
         FAKE_ENGINE_RECORD: record,
         FAKE_ENGINE_LINES: linesWithoutBlock(),
@@ -5059,7 +5060,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
     );
 
     const argv = (JSON.parse(readFileSync(record, "utf8")) as FakeRecord).argv.join("\n");
-    assert.ok(argv.includes("veio do teste"));
+    assert.ok(argv.includes("it came from the test"));
   });
 });
 
@@ -5089,9 +5090,9 @@ test("t270 — the executor environment merges into the input, and wins on a col
   await registerSkill(baseUrl, token, GATE_SKILL);
 
   /** What the control plane would project for the gate. */
-  const FROM_PROJECTION = "isto veio da projeção do control plane";
+  const FROM_PROJECTION = "this came from the control plane projection";
   /** ...and what only the machine running the session can know. */
-  const FROM_EXECUTOR = "isto veio do banco de testes desta máquina";
+  const FROM_EXECUTOR = "this came from the test bench of this machine";
 
   /** A job standing on the gate, in a class of its own. */
   async function jobOnGate(className: string, executionId: number): Promise<Work> {
@@ -5101,7 +5102,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
       "POST",
       "/v1/jobs",
       {
-        title: "ticket cujo nó lê o que só a máquina do executor sabe",
+        title: "a ticket on a node that reads what only the executor machine knows",
         entry_node_id: "conferir",
         execution_id: executionId,
         graph_version_id: versionId,
@@ -5167,7 +5168,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
     const argv = await toldTo(t, "so-projecao", 2703, {
       producao: { nota: FROM_PROJECTION },
     }, {
-      banco_de_testes: { caminho: "/srv/bancos/cartografo" },
+      banco_de_testes: { caminho: "/srv/benches/cartografo" },
     });
 
     assert.ok(
@@ -5206,7 +5207,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
  */
 function linesWithReport(nota: string): string {
   return JSON.stringify([
-    { stream: "stdout", text: "Fiz a etapa e escrevi o que fiz em saida.md." },
+    { stream: "stdout", text: "I did the step and wrote what I did in saida.md." },
     { stream: "stdout", text: "```resultado" },
     { stream: "stdout", text: JSON.stringify({ nota }) },
     { stream: "stdout", text: "```" },
@@ -5251,7 +5252,7 @@ test("t265 — an engine refusal blocks the work instead of failing the dispatch
     "POST",
     "/v1/jobs",
     {
-      title: "ticket cuja sessão o engine recusou",
+      title: "a ticket whose session the engine refused",
       entry_node_id: "implementar",
       execution_id: 265,
     },
@@ -5389,7 +5390,7 @@ test("t296 — a quota refusal blocks nothing and is not retried while it cools 
     "POST",
     "/v1/jobs",
     {
-      title: "ticket cuja conta bateu no limite da sessão",
+      title: "a ticket whose account hit the session limit",
       entry_node_id: "implementar",
       execution_id: 296,
     },
@@ -5543,7 +5544,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
     "POST",
     "/v1/jobs",
     {
-      title: "ticket que ainda tem o último nó para rodar",
+      title: "a ticket that still has its last node to run",
       entry_node_id: "implementar",
       execution_id: 262,
       graph_version_id: versionId,
@@ -5553,7 +5554,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner("runner-t262", "o que roda o nó final");
+  await client.registerRunner("runner-t262", "the one that runs the final node");
 
   let currentRecord = path.join(workDir, "implementar.json");
   const controller = new Controller({
@@ -5573,7 +5574,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
         envOverrides: {
           FAKE_ENGINE_RECORD: currentRecord,
           FAKE_ENGINE_LINES: linesWithReport(
-            "a etapa deixou saida.md pronto",
+            "the step left saida.md ready",
           ),
         },
       })(jobId),
@@ -5634,7 +5635,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
   assert.equal(last.status, "completed");
   assert.deepEqual(
     last.output,
-    { nota: "a etapa deixou saida.md pronto" },
+    { nota: "the step left saida.md ready" },
     "the report survived the pinned skill's own `output` schema",
   );
   assert.ok(
@@ -5782,11 +5783,11 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
         doFetch,
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
-        resolveInput: () => Promise.resolve({ pedido: "faça a etapa" }),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_LINES: JSON.stringify([
-            { stream: "stdout", text: "Fiz a etapa." },
+            { stream: "stdout", text: "I did the step." },
             { stream: "stdout", text: "```resultado" },
             { stream: "stdout", text: JSON.stringify({ resultado: "sempre" }) },
             { stream: "stdout", text: "```" },
@@ -5915,7 +5916,7 @@ test("t272 — a permission policy the adapter cannot enforce blocks the work on
     "POST",
     "/v1/jobs",
     {
-      title: "ticket do jogo, no nó testar-alpha",
+      title: "a ticket of the game, on node testar-alpha",
       entry_node_id: "testar-alpha",
       execution_id: 2721,
     },
@@ -6136,7 +6137,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cuja leitura de versão de grafo teve um soluço",
+          title: "a ticket whose graph-version read hiccuped",
           entry_node_id: "publicar",
           execution_id: 2722,
           graph_version_id: versionId,
@@ -6230,7 +6231,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
         "POST",
         "/v1/jobs",
         {
-          title: "ticket cuja leitura de versão de grafo nunca voltou",
+          title: "a ticket whose graph-version read never came back",
           entry_node_id: "publicar",
           execution_id: 2723,
           graph_version_id: versionId,

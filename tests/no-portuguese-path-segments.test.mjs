@@ -194,6 +194,12 @@ test('AT2 — the sweep bites on every name D24 retired', () => {
     ['tests/fixtures/tese-exemplo-bets-assimetricas.json', 'exemplo'],
     // the singular, which the plural spelling alone would have let through
     ['especificacao/formato/exemplo.md', 'especificac'],
+    // the three package identities t303 retired, directory and bin script alike
+    ['packages/topografo/bin/topografo.mjs', 'topografo'],
+    ['packages/tela/bin/tela.mjs', 'tela'],
+    // one stem, not two: `topografo` already reads inside `topografo-custo`,
+    // and a `custo` stem would have bitten the English word `custom`
+    ['packages/topografo-custo/bin/topografo-custo.mjs', 'topografo'],
   ];
 
   for (const [dead, stem] of retired) {
@@ -214,6 +220,10 @@ test('AT2 — the sweep spares the names that replaced them', () => {
     'docs/formats/engine-adapter.md',
     'scripts/validate-graph.mjs',
     'tests/fixtures/bets-asymmetric-thesis-example.json',
+    // the three package identities that replaced the ones above (t303)
+    'packages/surveyor/bin/surveyor.mjs',
+    'packages/screen/bin/screen.mjs',
+    'packages/cost-surveyor/bin/cost-surveyor.mjs',
     // the two names this ticket deliberately did not retire (see the header)
     'schema/grafo.schema.json',
     'packages/runner/test/fixtures/grafo-travessia.json',

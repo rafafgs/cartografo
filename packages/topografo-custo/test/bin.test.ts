@@ -39,7 +39,7 @@ test('AT — `topografo-custo --help` exits 0 and prints the usage text', () => 
   const result = run('--help');
 
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
-  assert.match(result.stdout, /^usage: topografo-custo evaluate/m);
+  assert.match(result.stdout, /^usage: cost-surveyor evaluate/m);
   assert.match(result.stdout, /--token-cap/);
   assert.equal(result.stderr, '', 'asking for help is stdout, not an error');
 });
@@ -59,7 +59,7 @@ test('AT — the package declares the bin under the same name its usage text doc
     dependencies?: Record<string, string>;
   };
 
-  assert.deepEqual(manifest.bin, { 'topografo-custo': './bin/topografo-custo.mjs' });
+  assert.deepEqual(manifest.bin, { 'cost-surveyor': './bin/cost-surveyor.mjs' });
   // The bin imports `tsx/esm/api` on its first line: outside the monorepo a
   // devDependency is not installed and the command dies right there (t199, FR2).
   assert.ok(manifest.dependencies?.tsx, 'tsx is a runtime dependency for whoever publishes a bin');

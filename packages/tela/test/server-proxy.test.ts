@@ -146,7 +146,7 @@ async function startScreenFor(
   env: NodeJS.ProcessEnv,
 ): Promise<ScreenServerModule.Screen> {
   const { startScreen } = await loadServer();
-  const screen = await startScreen({ CARTOGRAFO_TELA_PORT: '0', ...env });
+  const screen = await startScreen({ CARTOGRAFO_SCREEN_PORT: '0', ...env });
   t.after(async () => {
     await screen.close();
   });
@@ -237,25 +237,25 @@ test('AT3 — a path outside /v1/* is served from the static page, not proxied',
   assert.deepEqual(upstream.requests, [], 'static paths never touch the control plane');
 });
 
-test('AT4 — the screen listens on CARTOGRAFO_TELA_PORT, and on 4318 when it is unset', async (t) => {
+test('AT4 — the screen listens on CARTOGRAFO_SCREEN_PORT, and on 4318 when it is unset', async (t) => {
   const { resolveScreenPort, DEFAULT_SCREEN_PORT, SCREEN_PORT_ENV } = await loadServer();
 
-  assert.equal(SCREEN_PORT_ENV, 'CARTOGRAFO_TELA_PORT');
+  assert.equal(SCREEN_PORT_ENV, 'CARTOGRAFO_SCREEN_PORT');
   assert.equal(DEFAULT_SCREEN_PORT, 4318);
   // The default is asserted on the resolver, not by binding 4318 for real: a
   // test that grabs the product's default port fails for the wrong reason the
   // day someone leaves the screen running next to it.
   assert.equal(resolveScreenPort({}), 4318);
-  assert.equal(resolveScreenPort({ CARTOGRAFO_TELA_PORT: '5099' }), 5099);
-  assert.equal(resolveScreenPort({ CARTOGRAFO_TELA_PORT: '  ' }), 4318);
+  assert.equal(resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: '5099' }), 5099);
+  assert.equal(resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: '  ' }), 4318);
   assert.throws(
-    () => resolveScreenPort({ CARTOGRAFO_TELA_PORT: 'não é porta' }),
-    /CARTOGRAFO_TELA_PORT/,
+    () => resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: 'não é porta' }),
+    /CARTOGRAFO_SCREEN_PORT/,
   );
 
   const port = await freePort();
   const screen = await startScreenFor(t, {
-    CARTOGRAFO_TELA_PORT: String(port),
+    CARTOGRAFO_SCREEN_PORT: String(port),
     CARTOGRAFO_URL: 'http://127.0.0.1:4317',
   });
 
@@ -272,7 +272,7 @@ test('t124 AT — the screen presents its service credential on every call it ma
 
   const screen = await startScreenFor(t, {
     CARTOGRAFO_URL: upstream.url,
-    CARTOGRAFO_TELA_TOKEN: 'token-de-servico-da-tela',
+    CARTOGRAFO_SCREEN_TOKEN: 'token-de-servico-da-tela',
   });
 
   // 1. The verbatim `/v1/*` passthrough, with the browser sending nothing.
@@ -319,7 +319,7 @@ test('t124 AT — CARTOGRAFO_TOKEN is the fallback, and the browser cannot swap 
   assert.equal(
     upstream.requests[0].authorization,
     'Bearer token-compartilhado',
-    'with CARTOGRAFO_TELA_TOKEN unset the screen falls back to CARTOGRAFO_TOKEN, and what the browser sent is replaced, never forwarded',
+    'with CARTOGRAFO_SCREEN_TOKEN unset the screen falls back to CARTOGRAFO_TOKEN, and what the browser sent is replaced, never forwarded',
   );
 });
 
@@ -481,8 +481,8 @@ async function runScreenBin(options: {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.CARTOGRAFO_URL;
   delete env.CARTOGRAFO_PORT;
-  delete env.CARTOGRAFO_TELA_PORT;
-  delete env.CARTOGRAFO_TELA_TOKEN;
+  delete env.CARTOGRAFO_SCREEN_PORT;
+  delete env.CARTOGRAFO_SCREEN_TOKEN;
   delete env.CARTOGRAFO_TOKEN;
   Object.assign(env, options.env ?? {});
 
@@ -534,7 +534,7 @@ test('t199 AT — the shipped command honors CARTOGRAFO_PORT when CARTOGRAFO_URL
   const controlPlanePort = await freePort();
 
   const run = await runScreenBin({
-    env: { CARTOGRAFO_PORT: String(controlPlanePort), CARTOGRAFO_TELA_PORT: '0' },
+    env: { CARTOGRAFO_PORT: String(controlPlanePort), CARTOGRAFO_SCREEN_PORT: '0' },
   });
 
   assert.ok(run.readiness, `the screen did not announce itself:\n${run.stdout}\n${run.stderr}`);
@@ -552,7 +552,7 @@ test('t199 AT — --url wins over the environment, through the same command', { 
 
   const run = await runScreenBin({
     args: ['--url', `http://127.0.0.1:${fromFlag}/`],
-    env: { CARTOGRAFO_URL: `http://127.0.0.1:${fromEnv}`, CARTOGRAFO_TELA_PORT: '0' },
+    env: { CARTOGRAFO_URL: `http://127.0.0.1:${fromEnv}`, CARTOGRAFO_SCREEN_PORT: '0' },
   });
 
   assert.ok(run.readiness, `the screen did not announce itself:\n${run.stdout}\n${run.stderr}`);
@@ -563,10 +563,10 @@ test('t199 AT — --url wins over the environment, through the same command', { 
   );
 });
 
-test('t199 AT — a bad --url and a bad CARTOGRAFO_TELA_PORT both fail in English', { timeout: 120_000 }, async () => {
+test('t199 AT — a bad --url and a bad CARTOGRAFO_SCREEN_PORT both fail in English', { timeout: 120_000 }, async () => {
   const badUrl = await runScreenBin({
     args: ['--url', 'nem url é'],
-    env: { CARTOGRAFO_TELA_PORT: '0' },
+    env: { CARTOGRAFO_SCREEN_PORT: '0' },
   });
   assert.equal(badUrl.readiness, null, 'a screen pointed at nothing must not come up');
   assert.notEqual(badUrl.code, 0);
@@ -574,11 +574,11 @@ test('t199 AT — a bad --url and a bad CARTOGRAFO_TELA_PORT both fail in Englis
   assert.doesNotMatch(badUrl.stderr, /inválida|esperado|precisa ser/);
 
   const badPort = await runScreenBin({
-    env: { CARTOGRAFO_TELA_PORT: 'não é porta' },
+    env: { CARTOGRAFO_SCREEN_PORT: 'não é porta' },
   });
   assert.equal(badPort.readiness, null);
   assert.notEqual(badPort.code, 0);
-  assert.match(badPort.stderr, /CARTOGRAFO_TELA_PORT invalid/);
+  assert.match(badPort.stderr, /CARTOGRAFO_SCREEN_PORT invalid/);
   assert.doesNotMatch(badPort.stderr, /inválida|esperado um inteiro/);
 });
 

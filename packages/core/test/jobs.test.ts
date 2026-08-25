@@ -1781,7 +1781,7 @@ test('t265 AT5 — a refused session is not counted by the cap: it blocks on its
  * and the job stays a candidate the whole time.
  *
  * That is the fact this case pins, and it is the one the incident was about
- * (`notas/2026-08-18-n3-round.md`, hole 1): three sessions failed in twenty
+ * (`notes/2026-08-18-n3-round.md`, hole 1): three sessions failed in twenty
  * seconds, the cap fired, the job read "blocked — consecutive failures", and a
  * person had to unblock it by hand — twice, because after the unblock the next
  * attempt hit the same limit. A stranger cloning this repository and hitting

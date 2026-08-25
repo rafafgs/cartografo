@@ -9,7 +9,7 @@ data: what a work graph declares, what each field means, and the four formal
 rules that separate an executable graph from a pretty drawing.
 
 It is the project's extension point nº 1 — of the four formats treated as a
-product (`notas/2026-08-14-extension-and-quality.md`), this is the first, and
+product (`notes/2026-08-14-extension-and-quality.md`), this is the first, and
 everything that comes afterwards consumes it: the control plane keeps this whole
 document in the `snapshot` column of `graph_version`; the factory graphs are
 written in it; the atlas packages it.
@@ -380,7 +380,7 @@ having to be rewritten when delivery arrives. It is not even read by the runner.
 
 **A gate is not a separate entity.** A gate is a node whose role is to check and
 route, and it carries a skill and a contract exactly like any other node
-(`notas/2026-08-14-learning.md`). The `trabalho` / `portao` distinction exists
+(`notes/2026-08-14-learning.md`). The `trabalho` / `portao` distinction exists
 for reading and for telemetry — "how much time did the job spend in verification?"
 —, not to give a gate a privileged place in the format.
 
@@ -596,7 +596,7 @@ monitoring step —, and the software one ends at `implantar`, which pins
 `implantar-release`. While completion came from arrival, those two steps never
 got a session, and the traversal ended in silence: no failure, no event, no
 record. It was gap 2 of the first real execution
-(`notas/2026-08-17-first-bets-run.md`).
+(`notes/2026-08-17-first-bets-run.md`).
 
 A session that finishes `completed` with a report the schema refused does **not**
 conclude and does **not** block: the job is still a candidate. A ceiling on
@@ -697,8 +697,8 @@ Structure and soundness judge the document's shape and its topology. Neither one
 asks the question a session actually depends on: **when a job arrives at this
 node, will the data its skill declares as required be there?** Three real
 crossings answered that at dispatch time, after the sessions were paid for
-(`notas/2026-08-17-second-bets-run.md` gap 5,
-`notas/2026-08-17-t109-game-feature.md` gap 4). `validateContracts`
+(`notes/2026-08-17-second-bets-run.md` gap 5,
+`notes/2026-08-17-t109-game-feature.md` gap 4). `validateContracts`
 ([`packages/core/src/domain/graph.ts`](../../packages/core/src/domain/graph.ts))
 is that question, answered statically, before any session opens.
 

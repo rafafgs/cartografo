@@ -44,7 +44,7 @@
  *   paths — deliberately, both of them: where a session may write is the
  *   operator's decision, and a location guessed in code is how the first
  *   dogfood run ended up with sessions writing in the operator's own checkout
- *   (`notas/2026-08-15-first-execution.md`, gap #6). This function is the
+ *   (`notes/2026-08-15-first-execution.md`, gap #6). This function is the
  *   last place that could have invented one, and it does not.
  *
  * The `engineFactory` seam is the same shape `commandBuilder` already is on

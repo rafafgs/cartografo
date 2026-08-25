@@ -75,7 +75,7 @@
  * `grafo_versao_id` is the field the whole ficha turns on. `POST /v1/jobs`
  * accepts it (`packages/core/src/repositories/job.ts`), and without it the
  * telemetry cannot be joined to a version — which is exactly why the first real
- * dogfood run (`notas/2026-08-15-first-execution.md`) is unusable as surveyor
+ * dogfood run (`notes/2026-08-15-first-execution.md`) is unusable as surveyor
  * input: `proposeFlowImprovement` refuses it with `execution_without_version`.
  *
  * Usage:

@@ -24,7 +24,7 @@
  * and to the disk that no list of names closes completely (the residual gap is
  * written down in `docs/formats/engine-adapter.md`, "Permissões da sessão").
  * This is best-effort in what the engine offers — "sandbox where the engine
- * allows" (`notas/2026-08-14-extension-and-quality.md:44-45`) — not process
+ * allows" (`notes/2026-08-14-extension-and-quality.md:44-45`) — not process
  * isolation.
  */
 

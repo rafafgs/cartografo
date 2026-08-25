@@ -243,7 +243,7 @@ export async function blockForEngineRefusal(
  * (t268, FR5).
  *
  * The fifth block of this module, and the one that closes gap 2 of
- * `notas/2026-08-17-second-bets-run.md`. `PATCH /finish` has held a
+ * `notes/2026-08-17-second-bets-run.md`. `PATCH /finish` has held a
  * reported `output` against the `output` schema of the skill the node pins since
  * t253 — storing `null` and the reasons when it refuses, because losing the END
  * of a session over a malformed self-report would be strictly worse than losing
@@ -317,7 +317,7 @@ export async function blockForOutputSchemaRefusal(
  * it stops is the failure mode that promise hides when it is not kept: `testar`
  * and `implantar` observe the bench, so a bench that stayed where it was makes
  * the next two nodes measure the commit BEFORE this one and report on it as if
- * it were the work (`notas/2026-08-17-t109-game-feature.md`, gap 3).
+ * it were the work (`notes/2026-08-17-t109-game-feature.md`, gap 3).
  *
  * A block and not a throw, for the reason t252 wrote down: a git that refuses
  * here refuses identically on every retry — the branch is still wrong, the

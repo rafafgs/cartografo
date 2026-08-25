@@ -3,7 +3,7 @@
  * a subprocess.
  *
  * It exists to satisfy the two-consumers rule
- * (`notas/2026-08-14-extension-and-quality.md:58-64`): "no extension point is
+ * (`notes/2026-08-14-extension-and-quality.md:58-64`): "no extension point is
  * frozen before two real consumers exist". The feasibility review of t99 chose
  * this CLI "for the structural likeness to Claude Code's `stream-json`"
  * (`docs/formats/engine-adapter.md:378-395`) and measured it method by method
@@ -420,7 +420,7 @@ export class CodexAdapter implements EngineAdapter {
    * How many sessions this adapter still holds live — diagnostics only.
    *
    * NOT part of `EngineAdapter`, which is frozen by the rule of two consumers
-   * (`notas/2026-08-14-extension-and-quality.md`): it is a seam of this class, in
+   * (`notes/2026-08-14-extension-and-quality.md`): it is a seam of this class, in
    * the same family as `commandBuilder` and `probeEnvironment`, and a third-party
    * adapter owes nobody an implementation of it. What it measures is the map of
    * sessions with a process on the other side; the terminal-status stubs are not

@@ -286,7 +286,7 @@ test('t265 AT4 — PATCH /finish records the refusal kind and category, verbatim
  * route is where it starts: a `failure_kind` present is a session the
  * consecutive-failure cap does not count (`repositories/session.ts`), so an
  * account that hit its own limit no longer burns a job's whole ceiling in
- * twenty seconds (`notas/2026-08-18-n3-round.md`, hole 1). `refusal_category`
+ * twenty seconds (`notes/2026-08-18-n3-round.md`, hole 1). `refusal_category`
  * stays absent: a quota is not classified by the engine, and inventing a word
  * for it would be a category somebody could group sessions by.
  *

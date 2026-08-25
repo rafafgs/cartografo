@@ -158,7 +158,7 @@ test('t267 — the block is the heading, the fenced JSON, and nothing else under
  *
  * The number is not a preference: it is the largest input-values block a real
  * traversal has carried — the `red-team` node of `asymmetric-bets`, at 39.092
- * bytes, in the third real bets run (`notas/2026-08-18-third-bets-run.md`, hole
+ * bytes, in the third real bets run (`notes/2026-08-18-third-bets-run.md`, hole
  * 1). At the 16 KB cap that block lost `premissas` and `assimetria`, both
  * `required` by the skill reading them, and the session escalated over an
  * environment limit instead of proceeding.
@@ -175,7 +175,7 @@ test('t298 — the cap never regresses under the bets bundle\'s confirmed real m
   assert.ok(
     INPUT_VALUES_CAP_BYTES >= BETS_REAL_MAXIMUM_BYTES,
     `the cap (${INPUT_VALUES_CAP_BYTES}) is under the largest block a real traversal ` +
-      `carried (${BETS_REAL_MAXIMUM_BYTES}, notas/2026-08-18-third-bets-run.md): the ` +
+      `carried (${BETS_REAL_MAXIMUM_BYTES}, notes/2026-08-18-third-bets-run.md): the ` +
       'red team would lose required keys again and escalate over the cut',
   );
 });

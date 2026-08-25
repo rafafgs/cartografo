@@ -2,7 +2,7 @@
  * Unit tests for the hypothesis verdict (t112, FR4).
  *
  * A proposal is a hypothesis, approving it is the experiment, and the next
- * round's telemetry is the outcome (`notas/2026-08-14-learning.md`). The
+ * round's telemetry is the outcome (`notes/2026-08-14-learning.md`). The
  * whole judgement is one pure comparison against the metric the proposal
  * declared, so it is tested here without a database, a server or a fixture:
  * `computeVerdict` never reads anything it was not handed.

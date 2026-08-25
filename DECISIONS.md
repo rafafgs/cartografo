@@ -156,7 +156,7 @@ comments, docstrings, test names, API route paths and commit messages from here
 on. The reason: D12 (Apache-2.0) and the open-source preparation make the code
 the project's public surface, and the audience is global. The protocol vocabulary
 was already English (session status and so on) and stays that way. The
-repository's documents (DECISIONS.md, README, notas/) stay in Portuguese until a
+repository's documents (DECISIONS.md, README, notes/) stay in Portuguese until a
 decision of their own during the open-source preparation. Code written before
 this decision is regularized by a dedicated refactor ticket.
 Left out, as a separate decision not yet taken: the KEYS of the data formats,
@@ -170,7 +170,7 @@ subcommands, entity names in the API) also converge on English; tickets and
 specifications produced on the board, likewise. Changing a format key is a change
 of specification: the dedicated ticket amends t96–t99 and regularizes the
 bundles. These stay in Portuguese: the brand name cartografo, the repository's
-internal documents (DECISIONS.md, notas/) and docs/o-que-e-o-cartografo.md (the
+internal documents (DECISIONS.md, notes/) and docs/o-que-e-o-cartografo.md (the
 EN version is born during the open-source preparation, t121).
 
 ## D19 (2026-08-15) — Living functional documentation

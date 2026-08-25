@@ -123,7 +123,7 @@ the read side: barring reads would be more complexity with no less risk.
 ## 2. The rule of the three buckets
 
 The timeline is flowpilot's `t81` "generic time"
-([`notas/2026-08-14-learning.md`](../../notas/2026-08-14-learning.md)): a
+([`notes/2026-08-14-learning.md`](../../notes/2026-08-14-learning.md)): a
 job's total time says nothing; what says something is how it splits.
 
 | Bucket | Interval | Source |

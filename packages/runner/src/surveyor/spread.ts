@@ -6,7 +6,7 @@
  * purpose (`packages/core/src/domain/hypothesis.ts`: "A margin would be a
  * product decision about what counts as 'no effect', and burying one in a
  * comparison operator is how it would never get made on purpose"). The only
- * closed cycle this project has recorded (`notas/2026-08-15-closed-learning-loop.md`)
+ * closed cycle this project has recorded (`notes/2026-08-15-closed-learning-loop.md`)
  * ends by naming exactly what it could not say: "uma rodada só não é uma
  * medição […] nada neste ciclo separa 'a mudança piorou' de 'a sessão demorou
  * mais dessa vez'".

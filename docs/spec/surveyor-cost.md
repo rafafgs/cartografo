@@ -1,7 +1,7 @@
 # Specification: the cost surveyor (the token and time lens)
 
 **Package:** [`packages/cost-surveyor`](../../packages/cost-surveyor) · **Version of the API consumed:** `v1`
-**Founding rule:** ["two topografos (flow and cost) before the proposal format is frozen"](../../notas/2026-08-14-extension-and-quality.md)
+**Founding rule:** ["two topografos (flow and cost) before the proposal format is frozen"](../../notes/2026-08-14-extension-and-quality.md)
 
 A topografo reads telemetry and writes a hypothesis. This one reads **cost**: how
 many tokens and how much session time each node consumed, in each graph version,
@@ -199,7 +199,7 @@ decision is the past.
 **The honest consequence:** applying a proposal from this lens reduces no cost by
 itself — it informs whoever reads the node. Mechanical enforcement of a ceiling
 or a tier waits for a real policy surface, which the
-[learning note](../../notas/2026-08-14-learning.md) already names as a surface
+[learning note](../../notes/2026-08-14-learning.md) already names as a surface
 of its own. This is not an irreversible regression: when the field exists, the
 same aggregation and the same policies start emitting the structural operation,
 and only the operation changes.

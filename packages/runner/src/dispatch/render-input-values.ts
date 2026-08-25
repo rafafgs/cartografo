@@ -8,7 +8,7 @@
  * without it, because the body never named it. The second real crossing of the
  * bets graph is where that stopped being theoretical — `analise-assimetria`
  * escalated asking for two fields the control plane had already assembled
- * (`notas/2026-08-17-second-bets-run.md`).
+ * (`notes/2026-08-17-second-bets-run.md`).
  *
  * So the block below is not a convenience: it is the difference between a
  * session that can act on what it has and one that can only act on what a
@@ -49,12 +49,12 @@
  *
  * - **`asymmetric-bets`, in production.** The largest input-values blocks a
  *   real traversal has ever carried: `analise-assimetria` at 34.209 bytes and
- *   `red-team` at 39.092 (`notas/2026-08-18-third-bets-run.md`, hole 1). Both
+ *   `red-team` at 39.092 (`notes/2026-08-18-third-bets-run.md`, hole 1). Both
  *   were cut inside `fundamentos.numeros` at 16 KB, so `premissas` and
  *   `assimetria` — `required` by the very skills reading them — never rendered
  *   at all. The analysis node noticed and asked a question, which cost a
  *   redispatch and opened a human gate for an environment limit rather than a
- *   judgement. `notas/2026-08-18-n3-round.md` (hole 4) confirms every run of the
+ *   judgement. `notes/2026-08-18-n3-round.md` (hole 4) confirms every run of the
  *   following round would have hit the same wall.
  * - **`software-development`, by design shape only.** That bundle has
  *   never carried a real ticket end to end; its single crossing runs a fake

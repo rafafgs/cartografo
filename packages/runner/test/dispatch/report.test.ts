@@ -664,7 +664,7 @@ test('AT19 — a question from a work standing on no node is signed `sessao`', a
  * but the answer went nowhere: the runner discarded everything but the write
  * failure and then routed the job from its OWN parse of the same block. So a
  * report core rejected still moved the work along an edge, which is gap 2 of
- * `notas/2026-08-17-second-bets-run.md`.
+ * `notes/2026-08-17-second-bets-run.md`.
  *
  * The verdict is read off the one response that carries it, and it is a
  * three-state answer on purpose: `true` accepted, `false` refused, and

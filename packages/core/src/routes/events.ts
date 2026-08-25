@@ -1,7 +1,7 @@
 /**
  * Outbound event stream (t123, FR1–FR8).
  *
- * Extension point nº 5 of `notas/2026-08-14-extension-and-quality.md`: every
+ * Extension point nº 5 of `notes/2026-08-14-extension-and-quality.md`: every
  * published transition should reach an outside integration without anybody
  * touching the core. The taxonomy is the contract
  * (`specs/events/taxonomy.md`); this route is the transport, and the

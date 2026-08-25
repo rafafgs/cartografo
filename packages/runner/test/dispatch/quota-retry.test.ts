@@ -2,7 +2,7 @@
  * Acceptance tests for the per-job quota cooldown (t296, AC3/FR6/FR7).
  *
  * The incident this closes is one line of arithmetic
- * (`notas/2026-08-18-n3-round.md`, hole 1): the engine account answered `429`,
+ * (`notes/2026-08-18-n3-round.md`, hole 1): the engine account answered `429`,
  * the adapter reported a session that "failed", and the runner re-leased the
  * job on the very next tick — three attempts in twenty seconds, US$9.3 spent,
  * and then a job flagged "blocked: consecutive failures" for a fact that was

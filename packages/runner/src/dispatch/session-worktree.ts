@@ -9,7 +9,7 @@
  * session's in-flight state. The first real dogfood run found that out the
  * cheap way — "the session works in the shared checkout; the OPERATOR itself
  * became a concurrent writer (a verification `git checkout` under a live
- * session — harmless by luck)" (`notas/2026-08-15-first-execution.md`, gap
+ * session — harmless by luck)" (`notes/2026-08-15-first-execution.md`, gap
  * #6) — and the flowpilot law it cites (worktree-per-session) is what this
  * module implements.
  *

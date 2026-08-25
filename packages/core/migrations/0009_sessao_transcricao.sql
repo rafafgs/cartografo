@@ -1,7 +1,7 @@
 -- 0009_sessao_transcricao — a saída crua da sessão, guardada para diagnóstico (t159).
 --
 -- Fecha o buraco nº 3 da primeira execução de verdade
--- (`notas/2026-08-15-first-execution.md`): "a perna 1 do refinar morreu com
+-- (`notes/2026-08-15-first-execution.md`): "a perna 1 do refinar morreu com
 -- exit 1 e trabalho quase pronto, e não há como diagnosticar: o prompt é
 -- gravado, a saída não". A `0003` já guarda o `prompt` — o que ENTROU na
 -- sessão — e nada guardava o que SAIU dela.

@@ -7,7 +7,7 @@
  * — and until this ficha nobody kept it: the t109 game run reported
  * `merge_commit ae41796`, the bench's `main` stayed where it was, and a person
  * typed `git merge --ff-only ticket-1` by hand before `testar` could open
- * (`notas/2026-08-17-t109-game-feature.md`, gap 3).
+ * (`notes/2026-08-17-t109-game-feature.md`, gap 3).
  *
  * The repositories here are REAL, cut per test into a scratch directory: what
  * is being asserted is what git does — a fast-forward that is possible, one

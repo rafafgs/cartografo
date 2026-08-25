@@ -302,7 +302,7 @@ const RULES: Record<string, TypeRule> = {
       // three different answers — retry now, never retry, retry after the reset.
       // Closed set, like `tier` and unlike `models`: this word is ours, and the
       // second value entered because a second kind was measured
-      // (`notas/2026-08-18-n3-round.md`, hole 1), never because an engine
+      // (`notes/2026-08-18-n3-round.md`, hole 1), never because an engine
       // invented one. No cross-field check against `status` here either, for the
       // reason `timeout_reason` has never had one.
       failure_kind: optional('string', { values: ['engine_refusal', 'quota'] }),

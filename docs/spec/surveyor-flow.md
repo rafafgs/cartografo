@@ -16,7 +16,7 @@ detail:
   `packages/runner`, not in the control plane. It does not open the database, it
   does not import `packages/core/src/db` and it has no privilege the screen does
   not have — the same posture as [D11], extended to the analysers by
-  [`notas/2026-08-14-extension-and-quality.md`](../../notas/2026-08-14-extension-and-quality.md):
+  [`notes/2026-08-14-extension-and-quality.md`](../../notes/2026-08-14-extension-and-quality.md):
   "analysers reading the same telemetry and emitting proposals in the same
   format".
 - **The agent decides ONE thing.** The numbers, the evidence and the hypothesis
@@ -289,7 +289,7 @@ Every item here is another ticket's declared scope, not an oversight:
   ([`runner-and-controller.md` §5](runner-and-controller.md)).
 - **A second topografo** (cost, quality) and freezing the proposal format: the
   rule of two consumers asks for two before freezing
-  ([`notas/2026-08-14-extension-and-quality.md`](../../notas/2026-08-14-extension-and-quality.md)).
+  ([`notes/2026-08-14-extension-and-quality.md`](../../notes/2026-08-14-extension-and-quality.md)).
 - **The hypothesis's `resultado`** (`confirmada`/`sem_efeito`/`piorou`): that is
   `t112`, and it exists already — it is only that this layer is not the one that
   calls it.

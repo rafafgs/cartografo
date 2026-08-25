@@ -4,7 +4,7 @@
  * The third instance of one shape: `failed` is a single word for facts that
  * need different answers. t265 separated the engine's refusal from the crash;
  * this separates the account's quota from both. The measurement is a real run
- * (`notas/2026-08-18-n3-round.md`, hole 1): `api_error_status: 429`,
+ * (`notes/2026-08-18-n3-round.md`, hole 1): `api_error_status: 429`,
  * `terminal_reason: api_error`, the reset time in the message — and
  * `failure_kind: null` on the way out, so the runner retried it into the
  * consecutive-failure cap and blocked the job twice in three hours.
@@ -61,7 +61,7 @@ const DEADLINE_MS = 15_000;
 
 /**
  * The refusal text the real CLI printed, verbatim from the note that measured
- * it (`notas/2026-08-18-n3-round.md:23`).
+ * it (`notes/2026-08-18-n3-round.md:23`).
  *
  * A quotation, so it stays spelled exactly as the engine spells it — the
  * middle dot included: whatever the parser ends up matching on, it has to match

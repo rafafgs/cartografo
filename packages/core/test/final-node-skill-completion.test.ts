@@ -7,7 +7,7 @@
  * pinning `record-crossing`, and `factory-graphs/software-development`
  * ends at `deploy` pinning `verify-release` — the identical shape, and the
  * one t198's first real crossing found broken
- * (`notas/2026-08-17-first-bets-run.md`, gap 2): the job was declared
+ * (`notes/2026-08-17-first-bets-run.md`, gap 2): the job was declared
  * `completed` the instant it LANDED there, so D14's own "registro e
  * monitoramento" step never got a session.
  *

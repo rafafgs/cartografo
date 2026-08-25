@@ -5,7 +5,7 @@
  * keeps doing exactly that when called with no argument. That is not
  * backward-compatibility out of politeness: `npx cartografo` is the project's
  * front door, and time-to-first-graph is a quality non-negotiable
- * (`notas/2026-08-14-extension-and-quality.md`). A mandatory subcommand would add
+ * (`notes/2026-08-14-extension-and-quality.md`). A mandatory subcommand would add
  * a word to the most travelled path of the product for nobody's benefit.
  *
  * Every other subcommand — `import`, `export`, `status` and the three steps of

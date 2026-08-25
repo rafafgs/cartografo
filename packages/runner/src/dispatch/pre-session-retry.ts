@@ -9,7 +9,7 @@
  * meant retried FOREVER. The t109 game run measured what that costs: 38
  * `lease.granted` in about two minutes, zero `session.opened`, nothing in
  * anybody's inbox, and no other job of the project ever tried, because the
- * queue's head never moved (`notas/2026-08-17-t109-game-feature.md`, gap 2).
+ * queue's head never moved (`notes/2026-08-17-t109-game-feature.md`, gap 2).
  *
  * So this module makes a strictly WEAKER claim than a classification, and it is
  * the weakness that makes it safe: it says nothing about the cause, only that

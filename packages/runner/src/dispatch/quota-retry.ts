@@ -11,7 +11,7 @@
  * nobody doing anything.
  *
  * The n=3 round measured what treating it as a crash costs
- * (`notas/2026-08-18-n3-round.md`, hole 1): a session died on a `429` after 25
+ * (`notes/2026-08-18-n3-round.md`, hole 1): a session died on a `429` after 25
  * minutes and 4M cache-read tokens, the runner re-leased the work about three
  * seconds later, the next two attempts died in 11 and 2.5 seconds, and t265's
  * consecutive-failure ceiling blocked the job — 20 seconds to burn a whole

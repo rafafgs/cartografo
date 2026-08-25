@@ -3,7 +3,7 @@
 **API version:** `v1` · **Migration:** none (it reads the `event` table of
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
 **Origin:** extension point nº 5 —
-["events going out"](../../notas/2026-08-14-extension-and-quality.md) · **Ticket:** t123
+["events going out"](../../notes/2026-08-14-extension-and-quality.md) · **Ticket:** t123
 
 This document is the contract for whoever consumes. It is deliberately
 self-sufficient: a whole client can be written without opening a line of the

@@ -13,7 +13,7 @@ dist/
 .eslintcache
 
 # Perfil do projeto que a ferramenta de fichas monta sozinha a cada refino, a
-# partir de DECISIONS.md/README.md/notas — cache, não fonte de verdade: versionar
+# partir de DECISIONS.md/README.md/notes — cache, não fonte de verdade: versionar
 # só garantiria um retrato do repo desatualizado a cada mudança de forma dele.
 .flowpilot/
 

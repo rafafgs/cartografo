@@ -434,7 +434,7 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
  * traversal is none of those. It is a fact about `job.transitioned`, and the
  * control plane is the only thing that has that log (D1) — which is why the
  * second real bets crossing was unblocked by a person typing the two values
- * into `fields` by hand (`notas/2026-08-17-second-bets-run.md`, gap 5).
+ * into `fields` by hand (`notes/2026-08-17-second-bets-run.md`, gap 5).
  *
  * ## The one rule worth stating: the LAST transition is not a visit
  *
@@ -526,7 +526,7 @@ export function jobTraversal(
  * Nothing looked again when that lease cleared a moment later, so the round
  * stayed open until some job of it happened to move again. t198's first real
  * crossing measured exactly that
- * (`notas/2026-08-17-first-bets-run.md`, gap 3).
+ * (`notes/2026-08-17-first-bets-run.md`, gap 3).
  *
  * The fix is the fourth caller, and it is `routes/leases.ts` and not
  * `repositories/leases.ts`: that repository treats `job_id` as an opaque integer
@@ -1446,7 +1446,7 @@ function nodeIdOrder(a: string | null, b: string | null): number {
  *
  * The level below {@link metricsByVersion}, and the one its two callers were
  * already computing by hand: the flow surveyor's note
- * (`notas/2026-08-17-first-bets-run.md`, gap 8) and the cost lens, which
+ * (`notes/2026-08-17-first-bets-run.md`, gap 8) and the cost lens, which
  * pulls `GET /v1/sessions` and `GET /v1/jobs` and joins them in the runner
  * process. "v2 is more expensive than v1" is an opinion until it says WHICH node
  * became expensive, and the join that answers that belongs on the side that owns

@@ -460,7 +460,7 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
  * A quota refusal and a crash are one word — `failed` — with two different
  * answers: a crash is worth another attempt right now, and an account that hit
  * its own limit will refuse the next three the same way, in twenty seconds, for
- * free (`notas/2026-08-18-n3-round.md`, hole 1). The kind is what tells them
+ * free (`notes/2026-08-18-n3-round.md`, hole 1). The kind is what tells them
  * apart, and it travels in exactly the shape t265 built for the refusal.
  *
  * Which makes this file the FIRST gate on it: `PATCH /finish` calls

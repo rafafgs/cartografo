@@ -45,7 +45,7 @@ had left the FLOW lens's vocabulary in Portuguese on purpose, and that decision
 held for as long as no lens had migrated. t255 migrated the sibling (§5.5), and
 from there on "it is free JSON, nobody governs it" turned into two languages in
 one column. §5.6 is that leftover, found by the first real crossing
-(`notas/2026-08-17-first-bets-run.md`, hole 7).
+(`notes/2026-08-17-first-bets-run.md`, hole 7).
 
 The last row is the child that closes D20: every surface's CODE already had a
 gate of its own when it started (one `no-portuguese-wire.test.ts` per package,
@@ -784,7 +784,7 @@ header: they were free JSON (D15), no glossary row governed them, and no sibling
 lens had migrated. t255 migrated the sibling, and from there on the choice
 stopped being "not yet" and became "two languages in one column". t264 is what
 closes it, and the first real crossing is what found it
-(`notas/2026-08-17-first-bets-run.md`, hole 7).
+(`notes/2026-08-17-first-bets-run.md`, hole 7).
 
 Three things are NOT here, each for a reason of its own:
 

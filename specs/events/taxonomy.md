@@ -4,7 +4,7 @@ The format of the telemetry log is a **public API**. It is what the
 observability screen reads, what the pluggable topographers consume and what a
 third-party integration will receive once the event stream exists. That is why
 it is one of the four formats treated as a product, with a versioned schema and
-a specification document (`notas/2026-08-14-extension-and-quality.md`,
+a specification document (`notes/2026-08-14-extension-and-quality.md`,
 organising principle and extension point 5).
 
 This is the v1 specification. It delivers **a contract, not code**: no SQL

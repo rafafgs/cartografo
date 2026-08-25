@@ -2,7 +2,7 @@
  * The timeline of a job, in three buckets (t107, FR10).
  *
  * It is the "generic time" of flowpilot's t81, the lesson recorded in
- * `notas/2026-08-14-learning.md`: a job's total time says nothing; what does
+ * `notes/2026-08-14-learning.md`: a job's total time says nothing; what does
  * say something is HOW it splits between waiting in the queue, having an agent
  * working on it, and waiting for a human. Those three curves are the surveyor's
  * raw material — without them, proposing a graph mutation is guesswork.

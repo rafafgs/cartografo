@@ -93,7 +93,7 @@ export const DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES = 5;
  * The ladder is only reached when the engine did NOT name its own reset instant
  * — when it does, that instant wins, because it is the truth and this is a
  * guess. 30 seconds doubling to a 15-minute cap, and both ends were picked
- * against the same incident (`notas/2026-08-18-n3-round.md`, hole 1): the
+ * against the same incident (`notes/2026-08-18-n3-round.md`, hole 1): the
  * measured re-leases were 3 seconds apart, which is fast enough to burn three
  * attempts and the whole failure ceiling before anybody could read the log, and
  * the measured window was hours, which is long enough that a wait growing past

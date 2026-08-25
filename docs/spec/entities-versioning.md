@@ -412,7 +412,7 @@ telemetry. Reverting without saying why loses the useful half of the fact.
 
 A proposal is a hypothesis, an approval is an experiment, the next round's
 telemetry is the result
-([`notas/2026-08-14-learning.md`](../../notas/2026-08-14-learning.md)).
+([`notes/2026-08-14-learning.md`](../../notes/2026-08-14-learning.md)).
 `POST /v1/propostas/:id/resultado` is where that cycle closes: it takes
 `{execucao_id, depois}` and writes the hypothesis's verdict into
 `proposal.result`.

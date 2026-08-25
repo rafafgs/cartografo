@@ -22,7 +22,8 @@
  * - **AT3b — nothing outside `notes/` still spells `notas/`.** One grep holds
  *   the whole fan-out: ~130 citations across docs, specs, the runtime's own doc
  *   comments, two frozen migration comments, a `.gitignore` comment and eight
- *   gates.
+ *   gates. Two files are excused and both have to earn it — see
+ *   `MAY_SPELL_THE_OLD_NAME`.
  * - **AT3c — every citation of a note resolves on disk.** The sweep above proves
  *   nothing still says `notas/`; this one proves that what it says instead is
  *   real, and it is the claim that would have caught a `notes/` typo that no
@@ -62,8 +63,28 @@ export const OLD_TREE = 'notas/';
 /** Its name after it. */
 export const TREE = 'notes/';
 
-/** This file, repo-relative: the one place the old name may still be written. */
-const SELF = path.join('tests', 'notes-rename-integrity.test.mjs');
+/**
+ * The two gates allowed to spell the old name, and why each one has to.
+ *
+ * This file first: AT3b cannot hunt a substring without writing it, the same
+ * self-exclusion `tests/decisions-rename-integrity.test.mjs` takes for the same
+ * reason.
+ *
+ * `tests/no-portuguese-path-segments.test.mjs` second, and this one is not a
+ * technicality. That gate's whole job is to BITE on the retired name: it carries
+ * `notas` among its stems, and its AT2 hands `notas/2026-08-18-action-plan.md`
+ * to the sweep and asserts the sweep reports it. A gate that proves the old name
+ * is caught has to be able to write the old name. The exclusion keeps teeth in
+ * the test below: it is not enough for the file to be on this list, it has to
+ * really be carrying `notas` as a retired stem.
+ */
+export const MAY_SPELL_THE_OLD_NAME = Object.freeze([
+  path.join('tests', 'notes-rename-integrity.test.mjs'),
+  path.join('tests', 'no-portuguese-path-segments.test.mjs'),
+]);
+
+/** This file, repo-relative. */
+const SELF = MAY_SPELL_THE_OLD_NAME[0];
 
 /**
  * The notes as `git ls-files notas/` listed them the morning of the rename.
@@ -120,7 +141,7 @@ export function trackedFiles() {
   return execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
     .split('\0')
     .filter((entry) => entry !== '')
-    .filter((entry) => entry !== SELF);
+    .filter((entry) => !MAY_SPELL_THE_OLD_NAME.includes(entry));
 }
 
 /**
@@ -141,6 +162,11 @@ export function noteCitationsIn(relativePath) {
   for (const match of contents.matchAll(LINK)) {
     const target = match[1].split('#')[0];
     if (!target.endsWith('.md')) continue;
+    // The target has to NAME the folder, not merely land in it once resolved.
+    // A note citing `notas/x.md` as an illustration of the house citation style
+    // would otherwise resolve to `notes/notas/x.md` and be read as a broken
+    // citation, which is the one thing the notes are allowed to keep spelling.
+    if (!target.includes(TREE)) continue;
     const resolved = path.normalize(path.join(directory, target));
     if (!resolved.startsWith(TREE)) continue;
     found.push({ written: match[1], resolved });
@@ -183,6 +209,25 @@ test('AT3a — the old folder is gone, and nothing was left behind in it', () =>
   const stragglers = trackedFiles().filter((entry) => entry.startsWith(OLD_TREE));
 
   assert.deepEqual(stragglers, [], `git still tracks files under ${OLD_TREE}`);
+});
+
+test('AT3b — the two gates allowed to spell the old name really need to', () => {
+  for (const gate of MAY_SPELL_THE_OLD_NAME) {
+    const contents = readFileSync(path.join(ROOT, gate), 'utf8');
+
+    assert.ok(
+      contents.includes(OLD_TREE) || gate === SELF,
+      `${gate} is excused from AT3b and no longer writes "${OLD_TREE}": an exclusion ` +
+        'that outlives its reason is a hole nobody is watching',
+    );
+  }
+
+  assert.match(
+    readFileSync(path.join(ROOT, MAY_SPELL_THE_OLD_NAME[1]), 'utf8'),
+    /RETIRED_STEMS = Object\.freeze\(\[[^\]]*'notas'/,
+    `${MAY_SPELL_THE_OLD_NAME[1]} is excused because it hunts the old name; if it stopped ` +
+      'carrying `notas` as a retired stem, it is just a file with a stale citation in it',
+  );
 });
 
 test('AT3b — no tracked file outside notes/ still spells the folder by its old name', () => {

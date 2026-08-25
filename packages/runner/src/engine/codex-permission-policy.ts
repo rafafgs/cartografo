@@ -48,7 +48,7 @@
  * What this buys and what it does not: this is a real OS sandbox, so it is a
  * harder guarantee than the first adapter's tool-name gating — but it is still
  * "sandbox where the engine allows"
- * (`notas/2026-08-14-extension-and-quality.md:44-45`), bounded by what the
+ * (`notes/2026-08-14-extension-and-quality.md:44-45`), bounded by what the
  * CLI's own `-s`/`-c` surface offers, and not process isolation this runner
  * built itself.
  */

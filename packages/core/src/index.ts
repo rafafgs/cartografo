@@ -4,7 +4,7 @@
  * The order is fixed and has no manual step: open/create the database → apply
  * the pending migrations → bring HTTP up → print the readiness line. It is the
  * quality non-negotiable recorded in
- * `notas/2026-08-14-extension-and-quality.md` ("one-command start", "automatic
+ * `notes/2026-08-14-extension-and-quality.md` ("one-command start", "automatic
  * migrations").
  */
 

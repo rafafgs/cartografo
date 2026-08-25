@@ -231,7 +231,7 @@ redoing the diff over the new base is another round's work
 | `POST` | `/v1/proposals` | The only write. Returns `201` with the `pendente` proposal. |
 
 On the runner's side, all of that goes through `ClienteControle`
-([`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts)),
+([`control-plane-client.ts`](../../packages/runner/src/controller/control-plane-client.ts)),
 which is still the process's only HTTP door.
 
 The command is manual, and it is that way on purpose (§8):

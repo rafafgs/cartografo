@@ -261,7 +261,7 @@ not privileged for being "one of ours".
 
 The types the package consumes from the API are **redeclared locally**, in the
 subset it uses, rather than imported from the core — the same choice as
-[`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts).
+[`control-plane-client.ts`](../../packages/runner/src/controller/control-plane-client.ts).
 It is what lets the lens survive a new field in the core without changing a line,
 and what keeps the dependency from coming back through the types' door.
 

@@ -19,12 +19,13 @@
  *   rule applied to a command written after the decision instead of converted by
  *   it. `src/intake/prompt.ts` is deliberately absent, the same exemption
  *   `src/synthesizer/prompt.ts` has: its content is agent instruction, not text
- *   a person reads. `src/controller/cliente-controle.ts` joined with t254, and
- *   it is the odd one: the file is Portuguese from its header down — that is
- *   identifier debt of another ficha, and D18 covers code written from the
- *   decision onward — but it BUILDS one message, and every command in this
- *   package shows that message to whoever typed it when a call goes wrong.
- *   `GET /v1/jobs respondeu 404` was the last Portuguese word in it.
+ *   a person reads. `src/controller/control-plane-client.ts` joined with t254,
+ *   and it was the odd one: the file was Portuguese from its header down — that
+ *   was identifier debt of another ficha, which t304 paid, renaming the file out
+ *   of `cliente-controle.ts` on its way — but it BUILDS one message, and every
+ *   command in this package shows that message to whoever typed it when a call
+ *   goes wrong. `GET /v1/jobs respondeu 404` was the last Portuguese word in
+ *   it, and this gate is why nothing put another one back.
  * - **What is not Portuguese prose even though it is spelled in Portuguese.**
  *   A message that quotes a wire name is still English: `"nos" has to be a list`
  *   is one English sentence about a field called `nos`. So before the scan, the
@@ -52,7 +53,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SCANNED_FILES = Object.freeze([
   'scripts/close-surveyor-outcome.mjs',
   'scripts/run-graph-traversal.mjs',
-  'src/controller/cliente-controle.ts',
+  'src/controller/control-plane-client.ts',
   'src/intake/cli.mjs',
   'src/intake/command-line.ts',
   'src/intake/generate.ts',
@@ -348,7 +349,7 @@ test('t254 — the message every command shows for a refused call is English', (
   // diacritic and is in no stopword list, so the detector this file documents
   // would never have fired on it. It is the whole reason the word survived
   // three renames of this surface.
-  const source = readFileSync(path.join(PACKAGE_ROOT, 'src/controller/cliente-controle.ts'), 'utf8');
+  const source = readFileSync(path.join(PACKAGE_ROOT, 'src/controller/control-plane-client.ts'), 'utf8');
   const built = literalsOf(source).map((literal) => literal.text);
 
   assert.deepEqual(

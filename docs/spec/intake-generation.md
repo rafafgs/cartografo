@@ -129,7 +129,7 @@ first.
 The consequence in the HTTP client is literal: it gained `criarIntake` and
 nothing else. There is no `confirmarIntake`, `emendarIntake` or `descartarIntake`
 in
-[`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts),
+[`control-plane-client.ts`](../../packages/runner/src/controller/control-plane-client.ts),
 for the same reason `aplicar` never went in: **a client that does not have the
 method does not take the decision by mistake.**
 

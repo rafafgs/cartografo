@@ -30,8 +30,8 @@
  * and it is deliberately not swept. The CLI's display name and the wire field it
  * feeds are two different things, and renaming the second one is nobody's ticket.
  *
- * That body lives in `src/controller/cliente-controle.ts`
- * (`fecharResultadoDeProposta`), and until t264 the assertion below pointed at
+ * That body lives in `src/controller/control-plane-client.ts`
+ * (`closeProposalOutcome`), and until t264 the assertion below pointed at
  * `src/surveyor/proposal.ts` instead — a file that never calls it. It only ever
  * passed because `FlowEvidence.execucao_id`, a key of the FLOW LENS and nobody's
  * frozen anything, happened to share the spelling. t264 migrated that lens to
@@ -66,11 +66,13 @@
  * (`` `versao_alvo:` ``). Those are exactly the two ways a client touches a
  * field name — it reads it off a body, or it prints it at a person. Everything
  * else is left alone on purpose, and one thing in particular: a plain
- * identifier. `cliente-controle.ts` still names its own parameters `pedido` and
- * `nome`, its own class `ErroDoControlPlane`; that is identifier debt of
- * another ficha (the file's own header says so, and t254's Out of Scope keeps
- * it out), and a sweep that fired on it would be demanding a rename this ticket
- * was told not to make.
+ * identifier. That distinction is what let `control-plane-client.ts` keep
+ * naming its own parameters `pedido` and `nome` and its own class
+ * `ErroDoControlPlane` while this gate stayed green on it — identifier debt is
+ * not a wire read, and a sweep that fired on it would have been demanding a
+ * rename t254 was told not to make. t304 made that rename on its own ticket, so
+ * the file no longer HAS those names; the position rule outlives them, and the
+ * fixtures at the bottom still pin it.
  *
  * Three field names the `api` surface does not carry BY NAME are listed inline
  * in {@link DERIVED_FIELDS}, the same way {@link DISPLAYED_POSITIONALS} already
@@ -106,12 +108,16 @@
  * surveyor's command is the runner-internal result of `proposeFlowImprovement`,
  * whose keys (`gargalo`, `evidencia`, `metrica_esperada`, `proposta`) are that
  * module's own — what came off the wire is what is INSIDE it, and reading
- * `.graph_id` off THAT is precisely what t254 fixed. `this.corpo` in
- * `cliente-controle.ts` is a field of `ErroDoControlPlane` being assigned, and
- * it is here because of t255 rather than t254: that ficha mapped `corpo` →
- * `body` on the `api` surface for the intake item that really carries it, and
- * this file has no intake item — it has the decoded body of a failed call, under
- * a name of its own.
+ * `.graph_id` off THAT is precisely what t254 fixed.
+ *
+ * Three `.corpo` entries used to sit beside it — one for the control plane
+ * client, two for the commands that read `error.corpo` off what it threw. They
+ * were t255's rather than t254's: that ficha mapped `corpo` → `body` on the
+ * `api` surface for the intake item that really carries it, and none of those
+ * three had an intake item, only the decoded body of a failed call under a name
+ * of their own. t304 renamed that name to `body`, so the span they excused
+ * stopped existing and the entries went with it — which is exactly what the
+ * last test of this file demands.
  *
  * ## The three commands nobody was sweeping either (t285)
  *
@@ -197,7 +203,7 @@ const CLIENT_FILES = [
   path.join('src', 'intake', 'cli.mjs'),
   path.join('src', 'intake', 'command-line.ts'),
   path.join('src', 'surveyor', 'cli.mjs'),
-  path.join('src', 'controller', 'cliente-controle.ts'),
+  path.join('src', 'controller', 'control-plane-client.ts'),
 ];
 
 /**
@@ -354,19 +360,6 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
       'is swept (t266)',
   },
   {
-    file: path.join('src', 'controller', 'cliente-controle.ts'),
-    span: '.corpo',
-    reason:
-      'the field of `ErroDoControlPlane`, this package’s own error class, being ' +
-      'ASSIGNED — not a field read off an answer. t255 mapped `corpo` → `body` ' +
-      'because the intake item carries it on the wire (`domain/intake.ts`), and ' +
-      'this file never reads that item: what it stores here is the whole decoded ' +
-      'body of a failed call, under a name its own consumers spell (`erro.corpo` ' +
-      'in `test/controller/cliente-controle.test.ts` and `test/dispatch/dispatch.test.ts`). ' +
-      'Renaming it is the same identifier debt the file’s own header flags, and ' +
-      't254’s Out of Scope keeps it out',
-  },
-  {
     file: path.join('scripts', 'close-surveyor-outcome.mjs'),
     span: '.nome',
     reason:
@@ -374,19 +367,6 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
       '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossario-wire.md:796`, ' +
       'a format D20 does not unfreeze. The WRAPPER is `expected_metric` and t285 ' +
       'fixed that read; what is inside it does not move (t285, Out of Scope)',
-  },
-  {
-    file: path.join('scripts', 'close-surveyor-outcome.mjs'),
-    span: '.corpo',
-    reason:
-      'the same field of `ErroDoControlPlane` the exemption above excuses, being ' +
-      'READ this time: `error.corpo` is the decoded body of a failed call, under ' +
-      'this package’s own name for it (t285)',
-  },
-  {
-    file: path.join('scripts', 'measure-executions.mjs'),
-    span: '.corpo',
-    reason: 'the same read of `ErroDoControlPlane.corpo`, in the sibling command (t285)',
   },
   {
     file: path.join('scripts', 'run-graph-traversal.mjs'),
@@ -738,7 +718,7 @@ test('t230 — the surveyor commands print English positionals, without touching
   // had quietly renamed it too would have moved a wire field no D20 child owns.
   // The file is the one that BUILDS that body (t264, FR6); see this file's
   // header for why it used to be `proposal.ts`, and why that never proved this.
-  const client = sourceOf(path.join('src', 'controller', 'cliente-controle.ts'));
+  const client = sourceOf(path.join('src', 'controller', 'control-plane-client.ts'));
   assert.ok(
     client.includes('execucao_id'),
     'the hypothesis body lost `execucao_id`; that field is frozen (entities-versioning.md §5)',
@@ -987,8 +967,10 @@ test('t254 — the client sweep bites on a read of the old wire and lets the new
     // The package's own name ends in `grafo`, and it is in every usage line.
     "  '  npm run intake --workspace @cartografo/runner -- \\\\',",
     "export const READY_EVENT = 'cartografo.runner.ready';",
-    // An identifier is neither a read of a body nor a name printed at a person:
-    // `cliente-controle.ts` still has these, and renaming them is another ficha.
+    // An identifier is neither a read of a body nor a name printed at a person.
+    // These two are how `control-plane-client.ts` really read until t304 renamed
+    // it; they stay here as fixtures because what they pin is the POSITION, and
+    // that rule did not move with the file.
     'async pedirLease(pedido: PedidoDeLease): Promise<RespostaDeConcessao> {',
     'constructor(mensagem: string, status: number, corpo: unknown) {',
     // ...and so is a key of the frozen hypothesis body it writes.

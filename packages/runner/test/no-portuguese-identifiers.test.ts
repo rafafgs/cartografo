@@ -365,7 +365,7 @@ test('AC1 — no file or directory name under packages/runner/{src,test,scripts}
   assert.deepEqual(offenders, [], `Portuguese file/directory names (D18):\n${offenders.join('\n')}`);
 });
 
-test('AC1 — the sweep bites on real Portuguese identifiers and spares the FR1/FR2 exceptions', () => {
+test('AC1 — the sweep bites on real Portuguese identifiers and spares the FR2 exceptions', () => {
   const caught = [
     'const trabalho = getJob(db, 1);',
     'function calcularMetricasDeFluxo(eventos) { return eventos; }',
@@ -374,6 +374,12 @@ test('AC1 — the sweep bites on real Portuguese identifiers and spares the FR1/
     'export const ARQUIVO_DE_SAIDA = "x.json";',
     'import { proporMelhoriaDeFluxo } from "./proposta.ts";',
     '// a versao corrente do grafo muda aqui',
+    // The whole-file exception t304 retired: these four lines were ALLOWED
+    // until it landed, and the sweep has to bite on them now that the client
+    // they name is English.
+    "import { ErroDoControlPlane } from '../controller/cliente-controle.ts';",
+    'const jobs = await this.#options.client.listarTrabalhosLiberados();',
+    'const proposal: Proposta = await client.criarProposta(entry);',
   ];
   for (const source of caught) {
     assert.ok(hitsInSource(source).length > 0, `the sweep missed a Portuguese identifier: ${source}`);
@@ -392,11 +398,11 @@ test('AC1 — the sweep bites on real Portuguese identifiers and spares the FR1/
     "const OPERATION_TYPES = ['adicionar_no', 'alterar_campo_no'];",
     // the prompt constants keep their Portuguese content (FR3)
     "const DEFAULT_INSTRUCTIONS = ['Você é uma sessão de trabalho do cartografo.'].join('\\n');",
-    // the excluded client, called by its current spelling (FR1)
-    "import { ErroDoControlPlane } from '../controller/cliente-controle.ts';",
-    'const jobs = await this.#options.client.listarTrabalhosLiberados();',
+    // the control plane client, called by the spelling t304 gave it
+    "import { ControlPlaneClientError } from '../controller/control-plane-client.ts';",
+    'const jobs = await this.#options.client.listReleasedJobs();',
     'async #dispatch(lease: Lease, jobId: number): Promise<void> {}',
-    'const proposal: Proposta = await client.criarProposta(entry);',
+    'const proposal: Proposal = await client.createProposal(entry);',
     // English code that merely contains a forbidden token as a substring
     'export class ValidationError extends Error { readonly errors: string[]; }',
     'const finished = TERMINAL_STATUSES.includes(status);',

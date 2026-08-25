@@ -660,11 +660,11 @@ test('t253 — project is an optional top-level object, and both bundles still v
   // "ticket 2" would change it. t259 was that ticket for the software bundle —
   // it filled the field so the five manifests could resolve
   // `{{input.project.*}}` and dispatch at all — and t260 did the same for
-  // bets-assimetricas, whose entry node reads
+  // asymmetric-bets, whose entry node reads
   // `{{input.project.criterios_de_triagem}}`. So "optional" no longer has a real
   // bundle standing for it, and it is asserted where it is still a claim about
   // the FORMAT: a document that declares none has to keep validating.
-  for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
+  for (const bundle of ['software-development', 'asymmetric-bets']) {
     const graph = readJson(path.join(ROOT, 'factory-graphs', bundle, 'grafo.json'));
     assert.deepEqual(validateAgainstSchema(graph, schema), [], `${bundle}: shape`);
     assert.ok(

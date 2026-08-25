@@ -51,7 +51,7 @@ const GENERATE_MODULE = 'src/intake/generate.ts';
 const PROMPT_MODULE = 'src/intake/prompt.ts';
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
-const CLASS_NAME = 'desenvolvimento-de-software';
+const CLASS_NAME = 'software-development';
 const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num portao humano.';
 
 /** What the session wrote, and what the control plane has to receive untouched. */
@@ -183,7 +183,7 @@ test('AT3a — a class that is not registered is refused, with no session and no
   await assert.rejects(
     async () =>
       await generateIntakeDraft({
-        reader: readerWith('nota-curta', 'bets-assimetricas'),
+        reader: readerWith('nota-curta', 'asymmetric-bets'),
         client,
         adapter,
         request: REQUEST,

@@ -28,7 +28,7 @@ import {
   startControlPlane,
 } from './cli-support.ts';
 
-const FACTORY_CLASS = 'desenvolvimento-de-software';
+const FACTORY_CLASS = 'software-development';
 
 /** A job, in the only part these tests read of it. */
 interface CreatedJob {

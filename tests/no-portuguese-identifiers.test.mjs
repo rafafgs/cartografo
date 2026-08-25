@@ -10,7 +10,7 @@
  * `contrato`, `de`, `para`, `condicao`, `versao`, `hash`, `entrada_schema`,
  * `saida_schema`, `verificacoes`) stay Portuguese per D18's own carve-out, and
  * so do the directory names these tests build paths to — `schema/examples/` and
- * `factory-graphs/desenvolvimento-de-software/` are out of this ticket's
+ * `factory-graphs/software-development/` are out of this ticket's
  * scope. All of them live in a literal or a member position, so the masking
  * covers them without a per-file exemption list.
  */

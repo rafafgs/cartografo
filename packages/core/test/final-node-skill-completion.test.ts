@@ -3,8 +3,8 @@
  *
  * `jobs.test.ts` proves the rule against the minimal example graph, which is
  * where a rule belongs. This file proves it against the documents that actually
- * ship: `factory-graphs/bets-assimetricas` ends at `record-monitoring`
- * pinning `record-crossing`, and `factory-graphs/desenvolvimento-de-software`
+ * ship: `factory-graphs/asymmetric-bets` ends at `record-monitoring`
+ * pinning `record-crossing`, and `factory-graphs/software-development`
  * ends at `deploy` pinning `verify-release` — the identical shape, and the
  * one t198's first real crossing found broken
  * (`notas/2026-08-17-first-bets-run.md`, gap 2): the job was declared
@@ -88,7 +88,7 @@ interface FinalNodeCase {
  */
 const CASES: readonly FinalNodeCase[] = Object.freeze([
   {
-    bundle: 'bets-assimetricas',
+    bundle: 'asymmetric-bets',
     finalNode: 'record-monitoring',
     manifest: 'record-crossing.json',
     report: {
@@ -106,7 +106,7 @@ const CASES: readonly FinalNodeCase[] = Object.freeze([
     },
   },
   {
-    bundle: 'desenvolvimento-de-software',
+    bundle: 'software-development',
     finalNode: 'deploy',
     manifest: 'verify-release.json',
     report: {

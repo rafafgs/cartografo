@@ -4530,7 +4530,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
 const BETS_SKILLS_DIR = path.join(
   REPO_ROOT,
   "factory-graphs",
-  "bets-assimetricas",
+  "asymmetric-bets",
   "skills",
 );
 
@@ -5064,7 +5064,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
  * The executor environment, merged into the input right before it renders
  * (t270 Half B).
  *
- * Two of the values `desenvolvimento-de-software` asks its nodes for are facts
+ * Two of the values `software-development` asks its nodes for are facts
  * about the MACHINE and not about the graph — the path of the test bench and
  * the commit the verification runs against — and the control plane's database
  * is exactly the wrong place for either (D1). So the dispatch gains a second

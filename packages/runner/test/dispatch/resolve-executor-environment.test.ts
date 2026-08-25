@@ -1,7 +1,7 @@
 /**
  * Acceptance tests for the executor environment the runner alone knows (t270).
  *
- * Two of the four values `desenvolvimento-de-software` asks for are facts about
+ * Two of the four values `software-development` asks for are facts about
  * the MACHINE running the session and not about the graph: the path of the test
  * bench (`banco_de_testes.caminho`) and the commit the verification is made
  * against (`referencia.commit`). Neither can live in the control plane's

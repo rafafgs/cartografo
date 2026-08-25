@@ -28,7 +28,7 @@ import {
   startControlPlane,
 } from './cli-support.ts';
 
-const FACTORY_CLASS = 'desenvolvimento-de-software';
+const FACTORY_CLASS = 'software-development';
 const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
 const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-invalid-unreachable-node.json');
 

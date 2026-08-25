@@ -34,7 +34,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'desenvolvimento-de-software');
+const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'software-development');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
@@ -176,7 +176,7 @@ test('AT2 — ids, roles and edges match the topology pinned by t96', () => {
 
   assert.equal(doc.initial_node, 'refine');
   assert.deepEqual(doc.final_nodes, ['deploy']);
-  assert.equal(doc.problem_class, 'desenvolvimento-de-software');
+  assert.equal(doc.problem_class, 'software-development');
 });
 
 test('AT3 — the five manifests validate against skill-manifest.schema.json', async () => {

@@ -8,7 +8,7 @@
  * `trabalho` rows on the graph.
  *
  * The batch runs against the class registered from factory bundle 1
- * (`factory-graphs/desenvolvimento-de-software/grafo.json`), with no editing:
+ * (`factory-graphs/software-development/grafo.json`), with no editing:
  * a synthetic graph would not prove that the jobs are born on the entry node of
  * the version that really holds today.
  *
@@ -49,7 +49,7 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
-  'desenvolvimento-de-software',
+  'software-development',
   'grafo.json',
 );
 
@@ -125,7 +125,7 @@ interface VersionRow {
 }
 
 /** The class of factory bundle 1 — the one every test here breaks work down for. */
-const CLASS = 'desenvolvimento-de-software';
+const CLASS = 'software-development';
 
 /** Entry node of that graph. Read from the document, never hardcoded twice. */
 function entryNode(): string {

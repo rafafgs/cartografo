@@ -157,7 +157,7 @@ test('t267 — the block is the heading, the fenced JSON, and nothing else under
  * The floor under the cap, and the only permanent artifact of t298's calibration.
  *
  * The number is not a preference: it is the largest input-values block a real
- * traversal has carried — the `red-team` node of `bets-assimetricas`, at 39.092
+ * traversal has carried — the `red-team` node of `asymmetric-bets`, at 39.092
  * bytes, in the third real bets run (`notas/2026-08-18-third-bets-run.md`, hole
  * 1). At the 16 KB cap that block lost `premissas` and `assimetria`, both
  * `required` by the skill reading them, and the session escalated over an

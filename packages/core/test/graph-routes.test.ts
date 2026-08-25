@@ -40,7 +40,7 @@ const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
 const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
-  'desenvolvimento-de-software',
+  'software-development',
   'grafo.json',
 );
 
@@ -180,8 +180,8 @@ test('AT6 — factory graph 1 goes in through the API unedited, hashing the whol
   const response = await post(address, '/v1/graphs', document);
   const body = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
-  assert.equal(body.graph.id, 'desenvolvimento-de-software');
-  assert.equal(body.graph.class, 'desenvolvimento-de-software');
+  assert.equal(body.graph.id, 'software-development');
+  assert.equal(body.graph.class, 'software-development');
   assert.equal(body.graph.lineage_type, 'base');
   assert.equal(body.graph.base_class, null);
 
@@ -193,7 +193,7 @@ test('AT6 — factory graph 1 goes in through the API unedited, hashing the whol
   assert.match(body.graph_version.id, /^sha256:[0-9a-f]{64}$/);
   assert.equal(body.graph_version.parent_version, null, 'the first version of the lineage has no parent');
   assert.equal(body.graph_version.source, 'manual');
-  assert.equal(body.graph_version.graph_id, 'desenvolvimento-de-software');
+  assert.equal(body.graph_version.graph_id, 'software-development');
 
   // Bootstrapping a new lineage is the only situation in which registering moves
   // the pointer in the same call: there is no previous "current" to preserve.

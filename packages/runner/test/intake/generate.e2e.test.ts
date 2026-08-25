@@ -60,11 +60,11 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
-  'desenvolvimento-de-software',
+  'software-development',
   'grafo.json',
 );
 
-const CLASS_NAME = 'desenvolvimento-de-software';
+const CLASS_NAME = 'software-development';
 const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num portao humano.';
 
 /** Two items, one depending on the other — the shape a real batch has. */

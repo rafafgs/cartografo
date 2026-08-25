@@ -11,7 +11,7 @@
  * list of artifacts in the manifest and the literal `true` in the graph — and
  * `packages/runner/src/synthesizer/prompt.ts` instructs the synthesizer to
  * REWRITE the verification on each side rather than copy it. A rule that
- * demanded identical prose would reject `bets-assimetricas`, which lines up
+ * demanded identical prose would reject `asymmetric-bets`, which lines up
  * today and has no bug reported against it.
  *
  * Every fixture is a COPY of the real bundle in a temp dir, mutated on the
@@ -36,7 +36,7 @@ import test from 'node:test';
 import { validateBundle } from './validate-factory-bundle.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SOURCE_BUNDLE = path.join(ROOT, 'factory-graphs', 'desenvolvimento-de-software');
+const SOURCE_BUNDLE = path.join(ROOT, 'factory-graphs', 'software-development');
 
 /** A throwaway copy of the real bundle, ready to be mutated. */
 function bundleCopy() {

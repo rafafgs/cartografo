@@ -53,7 +53,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'bets-assimetricas');
+const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'asymmetric-bets');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
@@ -252,7 +252,7 @@ test('AT2 — the 7 nodes and 9 edges match the FR1-FR2 tables exactly', () => {
 
   assert.equal(doc.initial_node, 'triage');
   assert.deepEqual(doc.final_nodes, ['record-monitoring']);
-  assert.equal(doc.problem_class, 'bets-assimetricas');
+  assert.equal(doc.problem_class, 'asymmetric-bets');
   assert.equal(doc.lineage.type, 'base');
 });
 

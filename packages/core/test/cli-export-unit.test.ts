@@ -32,7 +32,7 @@ import { capture, startFakeControlPlane, type FakeAnswer } from './cli-unit-supp
 
 /** A graph document, in the only shape this command cares about: opaque. */
 const SNAPSHOT = {
-  problem_class: 'desenvolvimento-de-software',
+  problem_class: 'software-development',
   nodes: [{ id: 'refinar' }],
   edges: [],
 };

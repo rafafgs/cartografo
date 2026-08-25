@@ -177,7 +177,7 @@ test('AT7 — anything that is not one of the five classifies to null', async ()
 /**
  * AT8/AT9 — the seventh cause, and the boundary right next to it (t272).
  *
- * The t109 game run put a real job through `desenvolvimento-de-software` and hit
+ * The t109 game run put a real job through `software-development` and hit
  * the loop this classifier was built to close, from a direction it did not
  * cover: `testar-alpha` declares a domain-scoped `network`, `resolvePermissions`
  * cannot express that on this engine, and `ClaudeCodeAdapter.startSession`

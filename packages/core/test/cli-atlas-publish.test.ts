@@ -50,8 +50,8 @@ const PUBLISH_SCRIPT = path.join(REPO_ROOT, 'scripts', 'publish-atlas-bundle.mjs
 
 /** The two factory bundles, each with the class it publishes under. */
 const MAPS = [
-  { bundle: FACTORY_BUNDLE, name: 'desenvolvimento-de-software' },
-  { bundle: BETS_BUNDLE, name: 'bets-assimetricas' },
+  { bundle: FACTORY_BUNDLE, name: 'software-development' },
+  { bundle: BETS_BUNDLE, name: 'asymmetric-bets' },
 ];
 
 /** A registered skill, in the part these tests read. */
@@ -152,7 +152,7 @@ test('AT6-AT8 — both factory bundles round-trip through a git-backed atlas', {
     databasePath: path.join(base, 'local', 'cartografo.db'),
   });
 
-  await t.test('AT6 — desenvolvimento-de-software imports from the clone with the same id', async () => {
+  await t.test('AT6 — software-development imports from the clone with the same id', async () => {
     const [map] = MAPS;
     const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url], { token: mirrored.token });
     assert.equal(fromClone.code, 0, `stdout:\n${fromClone.stdout}\nstderr:\n${fromClone.stderr}`);
@@ -167,7 +167,7 @@ test('AT6-AT8 — both factory bundles round-trip through a git-backed atlas', {
     );
   });
 
-  await t.test('AT7 — bets-assimetricas imports from the clone with the same id', async () => {
+  await t.test('AT7 — asymmetric-bets imports from the clone with the same id', async () => {
     const map = MAPS[1];
     const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url], { token: mirrored.token });
     assert.equal(fromClone.code, 0, `stdout:\n${fromClone.stdout}\nstderr:\n${fromClone.stderr}`);

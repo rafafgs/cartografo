@@ -207,7 +207,7 @@ test('the derrubar-tese policy — no writes, no network — reaches the engine 
   const listener = collector();
 
   try {
-    // `factory-graphs/bets-assimetricas/skills/red-team-thesis.json` — the skill
+    // `factory-graphs/asymmetric-bets/skills/red-team-thesis.json` — the skill
     // this test still calls by the name t280 retired, `derrubar-tese` — declares
     // exactly this: `filesystem.write: []` and `network.allowed: false`. It is
     // the acceptance criterion of the ficha made concrete — a real factory

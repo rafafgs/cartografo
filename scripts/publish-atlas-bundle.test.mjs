@@ -37,12 +37,12 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const SCRIPT_PATH = path.join(ROOT, 'scripts', 'publish-atlas-bundle.mjs');
 
 /** Factory bundle 1 (D14) and the class it publishes under. */
-const BUNDLE_ONE = path.join(ROOT, 'factory-graphs', 'desenvolvimento-de-software');
-const CLASS_ONE = 'desenvolvimento-de-software';
+const BUNDLE_ONE = path.join(ROOT, 'factory-graphs', 'software-development');
+const CLASS_ONE = 'software-development';
 
 /** Factory bundle 2 (D14) — the second class, which proves the atlas is multi-map. */
-const BUNDLE_TWO = path.join(ROOT, 'factory-graphs', 'bets-assimetricas');
-const CLASS_TWO = 'bets-assimetricas';
+const BUNDLE_TWO = path.join(ROOT, 'factory-graphs', 'asymmetric-bets');
+const CLASS_TWO = 'asymmetric-bets';
 
 /** The format doc this ticket publishes, and the three files that must point at it. */
 const FORMAT_DOC = path.join(ROOT, 'docs', 'formats', 'atlas-bundle.md');

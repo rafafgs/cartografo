@@ -37,7 +37,7 @@ const REQUEST = [
   'confirma, e a tela fica para depois.',
 ].join('\n');
 
-const CLASS_NAME = 'desenvolvimento-de-software';
+const CLASS_NAME = 'software-development';
 
 let cache: typeof PromptModule | null = null;
 

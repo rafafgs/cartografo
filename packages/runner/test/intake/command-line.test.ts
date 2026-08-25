@@ -100,7 +100,7 @@ test('AT2 — the request is positional and --class is required; either missing 
     'the message names the flag that is missing',
   );
   assert.match(
-    refusal(parseArguments(['--class', 'desenvolvimento-de-software'], EMPTY_ENV)),
+    refusal(parseArguments(['--class', 'software-development'], EMPTY_ENV)),
     /request/i,
     'the message names what is missing',
   );

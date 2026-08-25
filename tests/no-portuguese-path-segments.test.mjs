@@ -1,5 +1,6 @@
 /**
- * D24 gate: no Portuguese survives in a path, anywhere in the tree (t282, t303).
+ * D24 gate: no Portuguese survives in a path, anywhere in the tree (t282, t303,
+ * t306).
  *
  * The closing sweep of D24's document series, and the one that finally reads
  * the whole repository rather than a slice of it. Its four predecessors each
@@ -25,7 +26,7 @@
  * - **`no-portuguese-document-tree`** — four trees, two general signals (a
  *   Portuguese diacritic, a Portuguese function word). It catches an unknown
  *   Portuguese word nobody predicted, but only where it walks.
- * - **this gate** — the WHOLE tracked tree, seven specific stems. It catches
+ * - **this gate** — the WHOLE tracked tree, nine specific stems. It catches
  *   nothing it was not told about, but it catches it everywhere.
  *
  * Neither subsumes the other. `especificacoes` carries no diacritic and is not a
@@ -37,17 +38,19 @@
  *
  * ## The stems, and why stems rather than words
  *
- * Seven, one per name D24 retired, matched as a SUBSTRING of a path component:
+ * Nine, one per name D24 retired, matched as a SUBSTRING of a path component:
  *
- * | stem          | the names it retires                                      |
- * |---------------|-----------------------------------------------------------|
- * | `fabrica`     | `grafos-de-fabrica/` -> `factory-graphs/`                 |
- * | `especificac` | `especificacoes/` -> `specs/`                             |
- * | `exemplo`     | `exemplos/` -> `examples/`, and the bets thesis fixture    |
- * | `formato`     | `formatos/` -> `formats/`, under `docs/` and under specs  |
- * | `validar`     | `validar-grafo.mjs` -> `validate-graph.mjs`               |
- * | `tela`        | `packages/tela/` -> `packages/screen/`, bin script too     |
- * | `topografo`   | `packages/topografo{,-custo}/`, and the two spec documents |
+ * | stem              | the names it retires                                       |
+ * |-------------------|------------------------------------------------------------|
+ * | `fabrica`         | `grafos-de-fabrica/` -> `factory-graphs/`                  |
+ * | `especificac`     | `especificacoes/` -> `specs/`                              |
+ * | `exemplo`         | `exemplos/` -> `examples/`, and the bets thesis fixture    |
+ * | `formato`         | `formatos/` -> `formats/`, under `docs/` and under specs   |
+ * | `validar`         | `validar-grafo.mjs` -> `validate-graph.mjs`                |
+ * | `tela`            | `packages/tela/` -> `packages/screen/`, bin script too     |
+ * | `topografo`       | `packages/topografo{,-custo}/`, and the two spec documents |
+ * | `assimetric`      | `bets-assimetricas/` -> `asymmetric-bets/`                 |
+ * | `desenvolvimento` | `desenvolvimento-de-software/` -> `software-development/`  |
  *
  * A substring rather than a whole component, because these words inflect and
  * compose: `especificacoes` is the plural of `especificacao`, and
@@ -55,11 +58,19 @@
  * hyphenated name. Matching the stem catches the family; matching the exact
  * spelling would have caught one member of it and let `especificacao/` in.
  *
- * The last two arrived with t303, which is the separate ticket t282 wrote them
- * down for: the package identities were work nobody had started, so a gate that
- * carried their stems on day one would have gone red on a rename that did not
- * exist yet. It exists now — `packages/screen/`, `packages/surveyor/`,
+ * `tela` and `topografo` arrived with t303, which is the separate ticket t282
+ * wrote them down for: the package identities were work nobody had started, so a
+ * gate that carried their stems on day one would have gone red on a rename that
+ * did not exist yet. It exists now — `packages/screen/`, `packages/surveyor/`,
  * `packages/cost-surveyor/` — and the two stems are what stops it coming back.
+ *
+ * The last two arrived with t306, the same way and for the same reason. t280 and
+ * t293 translated the two factory bundles' CONTENTS and left the directories
+ * standing, because each basename is also the registered `problem_class` key,
+ * and t282 recorded that as the one rename still owed. t306 is it — the two
+ * directories are `factory-graphs/asymmetric-bets/` and
+ * `factory-graphs/software-development/` now, their `problem_class` values moved
+ * with them, and these two stems are what stops either coming back.
  *
  * `topografo` covers the cost package on its own, which is why there is no
  * `custo` stem beside it: the substring rule already reads it inside
@@ -76,14 +87,30 @@
  *
  * ## What is excluded, and why that is a boundary and not a hole
  *
- * `packages/core/migrations/` only. The language convention freezes those file
+ * Two trees, for two different reasons.
+ *
+ * `packages/core/migrations/` first. The language convention freezes those file
  * names outright — `0003_trabalho_sessao_evento_pergunta.sql` is Portuguese and
  * stays Portuguese, because a migration's name is its identity in
  * `schema_migrations` and renaming one re-runs it. The exclusion says which tree
  * this gate has authority over; it is not covering for a match. As of t303 no
- * migration name trips any of the seven stems, and the test below pins that the
- * excluded prefix still names a tree that is really there — so the day the
- * directory moves, this exclusion reds rather than going quietly blind.
+ * migration name trips any of the seven stems it then carried.
+ *
+ * `notas/` second, added by t306 alongside the two stems above, and this one IS
+ * covering for a live match: `notas/2026-08-24-bets-assimetricas-closing-note.md`
+ * spells the retired name in its own filename, and no ticket of this series ever
+ * proposed renaming it. The working notes are a dated historical record — a note
+ * is named for what was true on the day it was written, and rewriting one to
+ * match a later rename would falsify the record rather than fix it. The sibling
+ * gate `tests/no-portuguese-document-tree.test.mjs` reached the same conclusion
+ * about the same folder from the other direction: its `ALLOWED_SEGMENTS` carries
+ * `notas` as a standing exception owned by no ticket, because t282's declared
+ * scope named four directories and did not name this one. This entry is that
+ * exception, restated where the stems can see it.
+ *
+ * Both are pinned the same way: the test below asserts that each excluded prefix
+ * still names a tree that is really there — so the day either directory moves,
+ * the exclusion reds rather than going quietly blind.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
@@ -104,15 +131,21 @@ export const RETIRED_STEMS = Object.freeze([
   'validar',
   'tela',
   'topografo',
+  'assimetric',
+  'desenvolvimento',
 ]);
 
 /**
- * The one tree this gate does not read, as a repo-relative prefix.
+ * The two trees this gate does not read, as repo-relative prefixes.
  *
- * See the header: the migration file names are frozen by the convention, and
- * this is a statement of authority rather than a carve-out for a live match.
+ * See the header for both. `packages/core/migrations/` is a statement of
+ * authority rather than a carve-out for a live match: the migration file names
+ * are frozen by the convention. `notas/` is a carve-out for a live match and
+ * says so — the working notes are a dated record, t306's two stems bite
+ * `notas/2026-08-24-bets-assimetricas-closing-note.md`, and no ticket of this
+ * series ever proposed renaming the folder or the notes inside it.
  */
-export const FROZEN_TREES = Object.freeze(['packages/core/migrations/']);
+export const FROZEN_TREES = Object.freeze(['packages/core/migrations/', 'notas/']);
 
 /** One component of a path, matched whole, that carries the given stem. */
 function componentCarrying(stem) {
@@ -214,6 +247,11 @@ test('AT2 — the sweep bites on every name D24 retired', () => {
     // one stem, not two: `topografo` already reads inside `topografo-custo`,
     // and a `custo` stem would have bitten the English word `custom`
     ['packages/topografo-custo/bin/topografo-custo.mjs', 'topografo'],
+    // the two factory-bundle directories t306 retired, and the `problem_class`
+    // key each basename doubles as: `grafo.json` and the manifests move with them
+    ['factory-graphs/bets-assimetricas/grafo.json', 'assimetric'],
+    ['factory-graphs/bets-assimetricas/skills/red-team-thesis.json', 'assimetric'],
+    ['factory-graphs/desenvolvimento-de-software/grafo.json', 'desenvolvimento'],
   ];
 
   for (const [dead, stem] of retired) {
@@ -227,7 +265,9 @@ test('AT2 — the sweep bites on every name D24 retired', () => {
 
 test('AT2 — the sweep spares the names that replaced them', () => {
   const living = [
-    'factory-graphs/bets-assimetricas/grafo.json',
+    'factory-graphs/asymmetric-bets/grafo.json',
+    'factory-graphs/asymmetric-bets/skills/red-team-thesis.json',
+    'factory-graphs/software-development/grafo.json',
     'specs/events/taxonomy.md',
     'specs/formats/examples/skill-manifest.develop.json',
     'schema/examples/graph-valid-minimal.json',
@@ -261,5 +301,21 @@ test('AT2 — a stem only counts inside a path component, not across one', () =>
     offendersIn(['packages/core/migrations/0003_trabalho_exemplo.sql']),
     [],
     'the frozen migration names are outside this gate, whatever they spell',
+  );
+});
+
+test('AT2 — the working notes are outside this gate, retired name and all', () => {
+  assert.deepEqual(
+    offendersIn(['notas/2026-08-24-bets-assimetricas-closing-note.md']),
+    [],
+    'a note is named for what was true the day it was written: t306 retired the ' +
+      'directory and did not rewrite the record of the ticket that built it',
+  );
+
+  assert.deepEqual(
+    offendersIn(['notes/2026-08-24-bets-assimetricas-closing-note.md']),
+    ['notes/2026-08-24-bets-assimetricas-closing-note.md: retired stem "assimetric"'],
+    'the exclusion is a prefix and nothing wider: the day the folder is renamed, ' +
+      'its files are read like any other',
   );
 });

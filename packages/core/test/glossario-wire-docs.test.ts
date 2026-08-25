@@ -388,7 +388,7 @@ test('FR1 — the sweep does NOT bite on the English, nor on prose that only loo
     'A migração é `0003_trabalho_sessao_evento_pergunta.sql`, e a lease é `0004_runner_lease.sql`.',
     // A whole family cited at once, in the two spellings that did not change.
     'A taxonomia declara `lease.*` e `graph_version.*`, que ninguém grava ainda.',
-    'O bundle mora em `factory-graphs/desenvolvimento-de-software`.',
+    'O bundle mora em `factory-graphs/software-development`.',
     'O corpo carrega `job_id` e `depends_on_job_id`, nunca `/trabalhos`… bem, veja abaixo.',
     // A longer flag whose stem is a retired one, and the retired one's English.
     'O comando aceita `--classes-file` e `--class`, nunca as duas juntas.',

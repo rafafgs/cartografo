@@ -63,11 +63,11 @@ const BUNDLES_DIR = path.join(ROOT, 'factory-graphs');
  *
  * The convention is `tests/no-portuguese-identifiers.test.mjs`'s: a carve-out
  * names its subject and its owner, because one with no named owner is how a
- * carve-out becomes permanent. t280 translated `desenvolvimento-de-software`
+ * carve-out becomes permanent. t280 translated `software-development`
  * first, deliberately — the smaller bundle, where the glossary and the
  * hash-recompute procedure got established at lower risk.
  *
- * **The list is empty, and that is the point.** `bets-assimetricas` was the one
+ * **The list is empty, and that is the point.** `asymmetric-bets` was the one
  * entry here, held for the second half of D24's series 1; t293 translated it and
  * lifted the skip, so this gate now reads every bundle the repository ships. A
  * new bundle that arrives half-translated does not get an entry — it gets
@@ -164,7 +164,7 @@ test('AT3 — every carve-out still names a bundle that exists', () => {
 test('AT3 — the gate really reads both bundles, neither of them skipped', () => {
   const inScope = bundlesInScope();
 
-  for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
+  for (const bundle of ['software-development', 'asymmetric-bets']) {
     assert.ok(
       inScope.includes(bundle),
       `"${bundle}" cannot be skipped: holding both translated bundles is what this gate exists for`,

@@ -1,7 +1,7 @@
 /**
  * The software factory bundle, crossed LIVE (t259, AT6).
  *
- * `factory-graphs/desenvolvimento-de-software` has been contract-proven
+ * `factory-graphs/software-development` has been contract-proven
  * since t176 — the graph is sound, every manifest validates, every pin closes —
  * and it had never been dispatched. The first thing that tried found that not
  * one of its five nodes could open a session: the manifests read
@@ -66,7 +66,7 @@ import { buildCommand } from '../../src/engine/command.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'desenvolvimento-de-software');
+const BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'software-development');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 /** The execution this crossing's telemetry lands in. */

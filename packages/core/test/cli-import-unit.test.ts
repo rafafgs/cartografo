@@ -96,7 +96,7 @@ function accepting(): (request: { path: string }) => FakeAnswer {
       : {
           status: 201,
           body: {
-            graph: { id: 42, class: 'desenvolvimento-de-software' },
+            graph: { id: 42, class: 'software-development' },
             graph_version: { id: 'sha256:abc' },
           },
         };
@@ -487,7 +487,7 @@ test('an invalid bundle never becomes a request at all', async (t) => {
 test('a class already registered comes back as class_already_registered', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 409,
-    body: { error: 'class_already_registered', message: 'a classe desenvolvimento-de-software já existe' },
+    body: { error: 'class_already_registered', message: 'a classe software-development já existe' },
   }));
   const directory = bundleCopy(t);
 
@@ -496,7 +496,7 @@ test('a class already registered comes back as class_already_registered', async 
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /class_already_registered — a classe desenvolvimento-de-software já existe/);
+  assert.match(run.stderr, /class_already_registered — a classe software-development já existe/);
 });
 
 test('a graph the control plane refuses is printed rule by rule', async (t) => {

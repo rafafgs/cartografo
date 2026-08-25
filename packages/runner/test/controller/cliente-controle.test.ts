@@ -455,7 +455,7 @@ test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', 
     id: 9,
     project_id: 3,
     execution_id: null,
-    class: 'desenvolvimento-de-software',
+    class: 'software-development',
     request: 'fechar a camada de intake',
     items: INTAKE_ITEMS,
     status: 'pending',
@@ -468,7 +468,7 @@ test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', 
   const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
 
   const criado = await cliente.criarIntake({
-    class: 'desenvolvimento-de-software',
+    class: 'software-development',
     request: 'fechar a camada de intake',
     items: INTAKE_ITEMS,
   });
@@ -478,7 +478,7 @@ test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', 
       url: `${URL_BASE}/v1/intake`,
       metodo: 'POST',
       corpo: {
-        class: 'desenvolvimento-de-software',
+        class: 'software-development',
         request: 'fechar a camada de intake',
         items: INTAKE_ITEMS,
       },

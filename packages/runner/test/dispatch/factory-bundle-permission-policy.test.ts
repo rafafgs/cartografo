@@ -2,7 +2,7 @@
  * Acceptance test for t271: what the software factory bundle DECLARES has to be
  * a policy a shipped adapter can actually open a session under.
  *
- * The first real crossing of `desenvolvimento-de-software` against a live
+ * The first real crossing of `software-development` against a live
  * repository (t109, `notas/2026-08-17-t109-game-feature.md`) died on the
  * `test` node without spending a single token: `alpha-test` declared
  * `network: {allowed: true, domains: [...]}`, and a per-domain allowlist is a
@@ -45,7 +45,7 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const SKILLS_DIR = path.join(
   REPO_ROOT,
   'factory-graphs',
-  'desenvolvimento-de-software',
+  'software-development',
   'skills',
 );
 
@@ -110,7 +110,7 @@ test('AT2 — no adapter refuses alpha-test for a domain-scoped network any more
  * granting the gate write access to the checkout it judges, or changing the
  * codex policy — and the ficha's FR5 keeps that policy untouched, correctly.
  *
- * It is not a regression and not new: `factory-graphs/bets-assimetricas`
+ * It is not a regression and not new: `factory-graphs/asymmetric-bets`
  * already ships `coletar-fundamentos` with exactly this pair, and every node of
  * both factory graphs runs on the default engine, which is claude-code.
  *

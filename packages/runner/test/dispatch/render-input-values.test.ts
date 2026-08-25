@@ -69,18 +69,18 @@ test('t267 — `properties` decides the key set when the schema declares one', a
 
   const declared = {
     type: 'object',
-    properties: { tese_triada: { type: 'object' }, carteira: { type: 'object' } },
-    required: ['tese_triada'],
+    properties: { triaged_thesis: { type: 'object' }, portfolio: { type: 'object' } },
+    required: ['triaged_thesis'],
     additionalProperties: false,
   };
 
   assert.deepEqual(
     selectInputValues(declared, {
-      tese_triada: { ativo: 'NVLR3' },
-      carteira: { posicoes_abertas: 7 },
-      ruido: 'nada que a skill declare',
+      triaged_thesis: { asset: 'NVLR3' },
+      portfolio: { open_positions: 7 },
+      noise: 'nothing the skill declares',
     }),
-    { tese_triada: { ativo: 'NVLR3' }, carteira: { posicoes_abertas: 7 } },
+    { triaged_thesis: { asset: 'NVLR3' }, portfolio: { open_positions: 7 } },
     '`properties` is the wider of the two declarations, so it wins over `required`',
   );
 });
@@ -101,15 +101,15 @@ test('t267 — a declared key the input does not carry is simply left out', asyn
 test('t267 — `required` is the key set when `properties` is absent or unusable', async () => {
   const { selectInputValues } = await loadModule();
 
-  const input = { nota: 'a nota do nó anterior', ruido: 'não declarado' };
+  const input = { nota: 'the note from the previous node', noise: 'not declared' };
 
   assert.deepEqual(
     selectInputValues({ type: 'object', required: ['nota'] }, input),
-    { nota: 'a nota do nó anterior' },
+    { nota: 'the note from the previous node' },
   );
   assert.deepEqual(
     selectInputValues({ properties: ['nota'], required: ['nota'] }, input),
-    { nota: 'a nota do nó anterior' },
+    { nota: 'the note from the previous node' },
     'a `properties` that is not an object is not a key set: the fallback takes over',
   );
 });
@@ -117,9 +117,9 @@ test('t267 — `required` is the key set when `properties` is absent or unusable
 test('t267 — with neither declared, the whole resolved input is shown', async () => {
   const { selectInputValues } = await loadModule();
 
-  const input = { tese_triada: { ativo: 'NVLR3' }, carteira: { posicoes_abertas: 7 } };
+  const input = { triaged_thesis: { asset: 'NVLR3' }, portfolio: { open_positions: 7 } };
 
-  for (const declared of [{}, null, undefined, 'nem schema é', { required: 'nota' }]) {
+  for (const declared of [{}, null, undefined, 'not even a schema', { required: 'nota' }]) {
     assert.deepEqual(
       selectInputValues(declared, input),
       input,
@@ -137,13 +137,13 @@ test('t267 — the block is the heading, the fenced JSON, and nothing else under
 
   assert.equal(INPUT_VALUES_CAP_BYTES, 65_536, 'the cap is 65.536 bytes (64 KB)');
 
-  const input = { nota: 'a nota do nó anterior' };
+  const input = { nota: 'the note from the previous node' };
   const lines = renderInputValues({ required: ['nota'] }, input);
 
-  assert.equal(lines[0], '### Valores de entrada');
+  assert.equal(lines[0], '### Input values');
   assert.equal(
     fencedText(lines),
-    JSON.stringify({ nota: 'a nota do nó anterior' }, null, 2),
+    JSON.stringify({ nota: 'the note from the previous node' }, null, 2),
     'pretty-printed with two spaces, the same shape every other fenced section uses',
   );
   assert.deepEqual(

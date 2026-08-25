@@ -28,7 +28,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const MODULE_PATH = 'src/dispatch/prompt.ts';
 
 /** The heading of the block that only exists when something was answered. */
-const ANSWERED_HEADING = '## O que você já perguntou, e o que responderam';
+const ANSWERED_HEADING = '## What you already asked, and what came back';
 
 let cache: typeof PromptModule | null = null;
 
@@ -53,7 +53,7 @@ async function loadPrompt(): Promise<typeof PromptModule> {
 /** The work every case here renders, with the fields the prompt reads. */
 const JOB = Object.freeze({
   id: 42,
-  title: 'Portar o grafo de referência',
+  title: 'Port the reference graph',
   current_node_id: 'desenvolvimento',
   blocked: false,
   execution_id: null,
@@ -74,9 +74,9 @@ function question(overrides: Partial<PromptModule.Question> = {}): PromptModule.
   return {
     id: 1,
     job_id: JOB.id,
-    question: 'Renumerar a migração para 0003?',
+    question: 'Renumber the migration to 0003?',
     status: 'respondida',
-    answer: 'Manter 0002',
+    answer: 'Keep 0002',
     answered_by: 'rafael',
     source: 'humano',
     ...overrides,
@@ -91,11 +91,11 @@ test('AT1 — with no events and no answers the prompt is only the base text', a
   assert.equal(
     prompt,
     [
-      '# Trabalho #42 — Portar o grafo de referência',
+      '# Job #42 — Port the reference graph',
       '',
-      'Nó atual: `desenvolvimento`.',
+      'Current node: `desenvolvimento`.',
       '',
-      'Faça o que este nó pede neste trabalho, no diretório em que você está.',
+      'Do what this node asks of this job, in the directory you are in.',
     ].join('\n'),
   );
   assert.ok(!prompt.includes(ANSWERED_HEADING));
@@ -111,7 +111,7 @@ test('AT2 — a question that is still open is not rendered', async () => {
   );
 
   assert.ok(!prompt.includes(ANSWERED_HEADING));
-  assert.ok(!prompt.includes('Renumerar a migração para 0003?'));
+  assert.ok(!prompt.includes('Renumber the migration to 0003?'));
 });
 
 test('AT3 — an answered question renders with its question and its answer', async () => {
@@ -120,9 +120,9 @@ test('AT3 — an answered question renders with its question and its answer', as
   const prompt = buildPrompt(JOB, [asked(1)], [question({ id: 1 })]);
 
   assert.ok(prompt.includes(ANSWERED_HEADING));
-  assert.ok(prompt.includes('Isto já foi decidido. Não pergunte de novo: siga a resposta.'));
-  assert.ok(prompt.includes('- **Você perguntou:** Renumerar a migração para 0003?'));
-  assert.ok(prompt.includes('  **rafael respondeu:** Manter 0002'));
+  assert.ok(prompt.includes('This is decided. Do not ask again: follow the answer.'));
+  assert.ok(prompt.includes('- **You asked:** Renumber the migration to 0003?'));
+  assert.ok(prompt.includes('  **rafael replied:** Keep 0002'));
 });
 
 test('AT4 — an automatic answer names itself, any other names who answered', async () => {
@@ -133,15 +133,15 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
     [asked(1)],
     [question({ id: 1, source: 'auto', answered_by: 'politica' })],
   );
-  assert.ok(automatic.includes('  **a resposta automática respondeu:** Manter 0002'));
-  assert.ok(!automatic.includes('politica respondeu'));
+  assert.ok(automatic.includes('  **the automatic answer replied:** Keep 0002'));
+  assert.ok(!automatic.includes('politica replied'));
 
   const human = buildPrompt(
     JOB,
     [asked(1)],
     [question({ id: 1, source: 'humano', answered_by: 'rafael' })],
   );
-  assert.ok(human.includes('  **rafael respondeu:** Manter 0002'));
+  assert.ok(human.includes('  **rafael replied:** Keep 0002'));
 
   // No `origem` and nobody named: the fallback is a person, unattributed —
   // never the automatic wording, which would claim a decision nobody took.
@@ -150,7 +150,7 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
     [asked(1)],
     [question({ id: 1, source: null, answered_by: null })],
   );
-  assert.ok(anonymous.includes('  **a pessoa respondeu:** Manter 0002'));
+  assert.ok(anonymous.includes('  **the person replied:** Keep 0002'));
 });
 
 test('AT5 — two answered questions render in the LOG order, not the projection order', async () => {
@@ -162,13 +162,13 @@ test('AT5 — two answered questions render in the LOG order, not the projection
     JOB,
     [asked(7), asked(9)],
     [
-      question({ id: 9, question: 'Segunda pergunta?', answer: 'Segunda resposta' }),
-      question({ id: 7, question: 'Primeira pergunta?', answer: 'Primeira resposta' }),
+      question({ id: 9, question: 'Second question?', answer: 'Second answer' }),
+      question({ id: 7, question: 'First question?', answer: 'First answer' }),
     ],
   );
 
-  assert.ok(prompt.indexOf('Primeira pergunta?') < prompt.indexOf('Segunda pergunta?'));
-  assert.ok(prompt.indexOf('Primeira resposta') < prompt.indexOf('Segunda resposta'));
+  assert.ok(prompt.indexOf('First question?') < prompt.indexOf('Second question?'));
+  assert.ok(prompt.indexOf('First answer') < prompt.indexOf('Second answer'));
 });
 
 test('AT6 — an event that is not `input_request.created` renders nothing', async () => {

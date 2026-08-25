@@ -285,8 +285,13 @@ const STOPWORDS: readonly string[] = Object.freeze([
  * `grafo-proposto`, `no_com_contrato`, `grafo_invalido` and
  * `intake-proposto.json` — need no entry here: none of them is a stopword, and
  * the machine-name masking below already blanks the snake and kebab shapes.
+ *
+ * Built from a list of strings rather than written as a regex literal: a
+ * literal is CODE, and `no-portuguese-identifiers.test.ts` — which does scan
+ * `test/` — reads these three as Portuguese identifiers there. Inside a string
+ * they are masked, the same way `src/dispatch/report.ts` spells `sessao`.
  */
-const PROTOCOL_TOKENS = /\b(?:sempre|para|sessao)\b/g;
+const PROTOCOL_TOKENS = new RegExp(`\\b(?:${['sempre', 'para', 'sessao'].join('|')})\\b`, 'g');
 
 /**
  * Shapes that are a machine name rather than a word of prose.

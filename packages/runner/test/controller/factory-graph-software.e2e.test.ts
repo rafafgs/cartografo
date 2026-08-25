@@ -158,7 +158,7 @@ function directoryWorktrees(root: string): WorktreeManager {
  */
 function reports(payload: Record<string, unknown>): string {
   return JSON.stringify([
-    { stream: 'stdout', text: 'Fiz o que o nó pedia.' },
+    { stream: 'stdout', text: 'I did what the node asked for.' },
     { stream: 'stdout', text: '```resultado' },
     { stream: 'stdout', text: JSON.stringify(payload) },
     { stream: 'stdout', text: '```' },
@@ -322,7 +322,7 @@ function benchRepository(root: string): {
  * fixture's and not the product's: the bundle declares `npm ci`, which is the
  * right answer for the repository this class describes and a guaranteed failure
  * in a scratch clone with no lockfile in it. What this command proves is what
- * the ficha claims — that something runs, in the bench, AFTER the fast-forward
+ * the ticket claims — that something runs, in the bench, AFTER the fast-forward
  * — and it proves it by reading a file that only exists once the merge landed.
  * That the bundle really declares the key is asserted separately, off the real
  * document.
@@ -356,8 +356,8 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
     'POST',
     '/v1/jobs',
     {
-      title: 'atravessar o grafo de fábrica de software de verdade',
-      body: 'O runner tem que despachar este grafo sem nenhum placeholder sobrando.',
+      title: 'cross the software factory graph for real',
+      body: 'The runner has to dispatch this graph with no placeholder left over.',
       entry_node_id: 'refine',
       execution_id: EXECUTION_ID,
       graph_version_id: version.id,
@@ -366,7 +366,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t259-fabrica', 'o que atravessa o bundle de software');
+  await client.registerRunner('runner-t259-factory', 'the one that crosses the software bundle');
 
   const bench = benchRepository(root);
 
@@ -393,7 +393,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
   let currentRecord = path.join(root, 'refine.json');
   const controller = new Controller({
     client,
-    runnerId: 'runner-t259-fabrica',
+    runnerId: 'runner-t259-factory',
     projectId: 1,
     runnerCap: 1,
     projectCap: 4,
@@ -404,7 +404,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
         urlBase: baseUrl,
         token,
         doFetch,
-        // The seam this ficha opened: the path of the bench and the commit the
+        // The seam this ticket opened: the path of the bench and the commit the
         // verification runs against are facts about THIS machine, and the
         // control plane could not hold either without lying (D1, t270).
         executorEnvironment: createExecutorEnvironmentResolver({
@@ -415,7 +415,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
         // ...and the half t273 added: the bench is not only READ on every
         // dispatch, it is MOVED — onto the commit an accepted report named,
         // before the work is allowed off the node that named it. Until this
-        // ficha the two nodes after `integrate` observed a checkout that had
+        // ticket the two nodes after `integrate` observed a checkout that had
         // stayed exactly where it was.
         advanceMainLine: createMainLineAdvancer({
           testBenchPath: bench.path,
@@ -460,7 +460,12 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
    * runner runs one yet (t176). So the "no placeholder survives" claim is made
    * where it is a claim: the text the manifest wrote.
    */
-  const bodyOf = (nodeId: string): string => toldTo(nodeId).split('## O contrato do nó')[0];
+  // The split marker is the heading `render-skill-instructions.ts` renders
+  // TODAY: it was `## O contrato do nó` until t309 renamed it, and a marker
+  // that matches nothing does not fail here — it silently returns the whole
+  // prompt, contract `checks` included, which is what made this read like a
+  // placeholder-resolution regression when it was a stale string.
+  const bodyOf = (nodeId: string): string => toldTo(nodeId).split('## The contract of node')[0];
 
   // --- 1. `refine` dispatches at all, which is the whole of the repair ------
   assert.ok(await controller.tick(), 'the entry node was picked up');
@@ -603,7 +608,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
   assert.deepEqual(
     calls.filter((call) => call.endsWith('/unblocks') || /^PATCH \/v1\/jobs\/\d+$/.test(call)),
     [],
-    'the two workarounds this ficha replaces are neither of them used here',
+    'the two workarounds this ticket replaces are neither of them used here',
   );
 });
 

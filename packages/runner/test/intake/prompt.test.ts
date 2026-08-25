@@ -33,8 +33,8 @@ const PROMPT_MODULE = 'src/intake/prompt.ts';
 
 /** The request in natural language, exactly as a person would type it. */
 const REQUEST = [
-  'Preciso fechar a camada de intake: uma rota que propoe a quebra, outra que',
-  'confirma, e a tela fica para depois.',
+  'I need to close the intake layer: one route that proposes the breakdown, another',
+  'that confirms it, and the screen can wait.',
 ].join('\n');
 
 const CLASS_NAME = 'software-development';
@@ -62,15 +62,15 @@ async function loadPrompt(): Promise<typeof PromptModule> {
 const RULES: ReadonlyArray<{ claim: string; tokens: readonly string[] }> = Object.freeze([
   {
     claim: '`ref` and `title` are the two required fields of an item',
-    tokens: ['`ref`', '`title`', 'obrigat'],
+    tokens: ['`ref`', '`title`', 'required'],
   },
   {
     claim: '`depends_on` cites only refs of the same batch',
-    tokens: ['`depends_on`', 'lote'],
+    tokens: ['`depends_on`', 'batch'],
   },
   {
     claim: 'an item never depends on itself and never closes a cycle',
-    tokens: ['si mesmo', 'ciclo'],
+    tokens: ['itself', 'cycle'],
   },
   {
     claim: '`acceptance_criteria` is written only when there are real criteria',
@@ -151,7 +151,7 @@ test('t175 — the contract teaches both tier values and when each applies', asy
   }
   assert.match(
     INTAKE_INSTRUCTIONS,
-    /opcional/i,
+    /optional/i,
     'the field has to be stated as optional — an item that omits it stays valid',
   );
 });

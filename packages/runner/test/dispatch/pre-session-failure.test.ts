@@ -83,9 +83,9 @@ test('AT1 — an unresolved placeholder names every path that did not resolve', 
   const { classifyPreSessionFailure } = await loadModule();
 
   const reason = classifyPreSessionFailure(
-    new UnresolvedPlaceholderError('publicar', 'coletar-fundamentos', [
-      'tese_triada.titulo',
-      'tese_triada.tese',
+    new UnresolvedPlaceholderError('publicar', 'collect-fundamentals', [
+      'triaged_thesis.title',
+      'triaged_thesis.hypothesis',
     ]),
     JOB,
   );
@@ -93,18 +93,18 @@ test('AT1 — an unresolved placeholder names every path that did not resolve', 
   // Every path and not just the first: whoever reads this is about to go and
   // assemble an input, and discovering the gaps one unblock at a time is a
   // round trip per field.
-  namesAll(reason, ['tese_triada.titulo', 'tese_triada.tese', 'publicar', 'coletar-fundamentos']);
+  namesAll(reason, ['triaged_thesis.title', 'triaged_thesis.hypothesis', 'publicar', 'collect-fundamentals']);
 });
 
 test('AT2 — a skill the registry never registered names the skill id', async () => {
   const { classifyPreSessionFailure } = await loadModule();
 
   const reason = classifyPreSessionFailure(
-    new SkillNotRegisteredError('publicar', 'skill-que-ninguem-registrou'),
+    new SkillNotRegisteredError('publicar', 'skill-nobody-registered'),
     JOB,
   );
 
-  namesAll(reason, ['skill-que-ninguem-registrou', 'publicar']);
+  namesAll(reason, ['skill-nobody-registered', 'publicar']);
 });
 
 test('AT3 — a pin mismatch names BOTH hashes, the declared and the registered', async () => {
@@ -243,16 +243,16 @@ test('t270 AT — a bench git could not read blocks, naming the command', async 
   const reason = classifyPreSessionFailure(
     new ExecutorEnvironmentError(
       'the reference of the test bench could not be read',
-      'git -C /srv/bancos/cartografo rev-parse main',
-      "fatal: not a git repository: '/srv/bancos/cartografo'",
+      'git -C /srv/benches/cartografo rev-parse main',
+      "fatal: not a git repository: '/srv/benches/cartografo'",
     ),
     JOB,
   );
 
-  namesAll(reason, ['git -C /srv/bancos/cartografo rev-parse main']);
+  namesAll(reason, ['git -C /srv/benches/cartografo rev-parse main']);
   assert.match(
     reason ?? '',
-    /desbloqueie/,
+    /unblock/,
     'the reason ends where every other one does: fix the configuration and unblock',
   );
 });

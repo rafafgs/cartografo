@@ -2,7 +2,7 @@
  * Acceptance tests for rendering a registered skill into a session (t161,
  * FR3–FR6).
  *
- * This is the half of the ficha that closes `skill-manifest.md`'s own "not
+ * This is the half of the ticket that closes `skill-manifest.md`'s own "not
  * implemented yet: render `instructions` into a session". Three things have to be
  * true at once for it to be worth anything:
  *
@@ -14,7 +14,7 @@
  *   so `permissions` stops being a document nobody reads.
  *
  * The AT12–AT18 block at the bottom is t204, and it closes the other half of the
- * same sentence: `{{input.<caminho>}}` used to reach the model as literal text,
+ * same sentence: `{{input.<path>}}` used to reach the model as literal text,
  * silently. Now it resolves against the node's input — or the render refuses,
  * before any session exists, which is the fail-closed rule the manifest format
  * decided long before there was an engine to obey it.
@@ -68,16 +68,16 @@ function registeredSkill(overrides: Record<string, unknown> = {}): Record<string
     version: '1.0.0',
     hash: SKILL_HASH,
     role: 'gate',
-    description: 'Confere o artefato da etapa anterior com evidência própria.',
+    description: 'Checks the artifact of the previous step with its own evidence.',
     input: { type: 'object', required: ['nota'] },
     output: { type: 'object', required: ['outcome'] },
-    preconditions: ['a etapa anterior deixou o artefato no diretório da sessão'],
+    preconditions: ['the previous step left the artifact in the session directory'],
     checks: [
       {
-        id: 'conferencia-com-evidencia',
+        id: 'check-with-evidence',
         type: 'agentic',
-        description: 'Portão agêntico confere com evidência própria.',
-        instruction: 'Leia o artefato e diga se ele atende ao pedido.',
+        description: 'An agentic gate checks with its own evidence.',
+        instruction: 'Read the artifact and say whether it meets the request.',
         required_evidence: ['saida.md'],
       },
     ],
@@ -85,7 +85,7 @@ function registeredSkill(overrides: Record<string, unknown> = {}): Record<string
       filesystem: { read: ['**'], write: [] },
       network: { allowed: true, domains: ['127.0.0.1'] },
     },
-    instructions: '# Conferir uma etapa\n\nJulgue com evidência sua, nunca com o relato de quem produziu.',
+    instructions: '# Check one step\n\nJudge with your own evidence, never with the report of whoever produced it.',
     origin: { type: 'native' },
     registrado_em: '2026-08-15T12:00:00.000Z',
     ...overrides,
@@ -100,7 +100,7 @@ function resolvedNode(edges: ResolveModule.GraphEdge[], hash = SKILL_HASH): Reso
       id: 'conferir',
       role: 'tester',
       node_type: 'gate',
-      description: 'Confere o artefato e roteia.',
+      description: 'Checks the artifact and routes.',
       skill_ref: { id: SKILL_ID, version: '1.0.0', hash },
       contract: {
         input_schema: { type: 'object', required: ['nota'] },
@@ -110,7 +110,7 @@ function resolvedNode(edges: ResolveModule.GraphEdge[], hash = SKILL_HASH): Reso
           properties: { outcome: { enum: ['aprovado', 'retrabalho'] } },
         },
         checks: [
-          { type: 'deterministic', command: 'test -s saida.md', description: 'O artefato existe.' },
+          { type: 'deterministic', command: 'test -s saida.md', description: 'The artifact exists.' },
         ],
       },
     },
@@ -156,7 +156,7 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   const text = rendered.instructions;
 
   // 1. the escalation protocol, verbatim: a session that does not know how to
-  // ask never asks, and this ficha is the first thing that dispatches sessions
+  // ask never asks, and this ticket is the first thing that dispatches sessions
   // WITHOUT the fixed literal that used to carry it.
   assert.ok(
     text.includes(ESCALATION_PROTOCOL),
@@ -165,9 +165,9 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   assert.ok(ESCALATION_PROTOCOL.includes('```input-request'), 'and it is the block, not a mention of it');
 
   // 2. the manifest itself.
-  assert.ok(text.includes('Confere o artefato da etapa anterior com evidência própria.'));
+  assert.ok(text.includes('Checks the artifact of the previous step with its own evidence.'));
   assert.ok(
-    text.includes('Julgue com evidência sua, nunca com o relato de quem produziu.'),
+    text.includes('Judge with your own evidence, never with the report of whoever produced it.'),
     'the skill instructions are rendered verbatim',
   );
   assert.ok(text.includes(SKILL_ID) && text.includes(SKILL_HASH), 'the session is told what it is pinned to');
@@ -181,7 +181,7 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   assert.ok(text.includes('test -s saida.md'), 'the node verifications are part of the contract');
 
   // 4. checks and permissions, for the session's own visibility.
-  assert.ok(text.includes('conferencia-com-evidencia'));
+  assert.ok(text.includes('check-with-evidence'));
   assert.ok(text.includes('required_evidence'));
   assert.ok(text.includes('"write"') && text.includes('"allowed"'));
 });
@@ -256,13 +256,13 @@ test('AT9 — the routing protocol is appended only when the node has more than 
   // node with an `output_schema` is now told to REPORT — the block is there for
   // all three, and only the gate is asked to name an edge inside it.
   assert.ok(
-    !single.instructions.includes('mais de uma saída'),
+    !single.instructions.includes('more than one way out'),
     'a node with one way out is deterministic: asking it to choose invents a decision',
   );
-  assert.ok(!none.instructions.includes('mais de uma saída'));
+  assert.ok(!none.instructions.includes('more than one way out'));
 
   assert.ok(gate.instructions.includes('```resultado'), 'a gate is told how to report its outcome');
-  assert.ok(gate.instructions.includes('mais de uma saída'));
+  assert.ok(gate.instructions.includes('more than one way out'));
   // The exact `condition` labels of THIS node, so the session is choosing from
   // the real edges and not from a vocabulary somebody remembered.
   assert.ok(gate.instructions.includes('aprovado'));
@@ -322,7 +322,7 @@ test('t259 AT5 — a single-edge node with an output_schema is told to report it
     'a work node with a contract to fulfil has to be told how to hand its result back',
   );
   assert.ok(
-    !text.includes('mais de uma saída'),
+    !text.includes('more than one way out'),
     'and it is never asked to choose an edge it does not have',
   );
 });
@@ -343,7 +343,7 @@ test('t259 AT5 — a node with more than one way out gets ONE merged block', asy
     1,
     'the routing label is a FIELD of the report, never a second block beside it',
   );
-  assert.ok(text.includes('mais de uma saída'), 'the gate is still told it decides');
+  assert.ok(text.includes('more than one way out'), 'the gate is still told it decides');
   assert.ok(text.includes('aprovado') && text.includes('retrabalho'), 'and with its real labels');
 });
 
@@ -491,10 +491,10 @@ test('t167 — a node with no policy renders exactly what it rendered before', a
 /* -------------------------------------------------------------------------- */
 /* t261 — the escalation paragraph renders LAST, and never opens the prompt    */
 /*                                                                            */
-/* Measured, not guessed (plantão, 2026-08-17): `claude --print` answers       */
-/* `stop_reason: "refusal"` with `stop_details.category:                       */
+/* Measured, not guessed (on-call session, 2026-08-17): `claude --print`        */
+/* answers `stop_reason: "refusal"` with `stop_details.category:                */
 /* "reasoning_extraction"` on the exact prompt this module rendered for the    */
-/* node `triagem`, 5/5. The bisection isolated it to POSITION: the same        */
+/* node `triage`, 5/5. The bisection isolated it to POSITION: the same         */
 /* paragraph moved to the end of the same prompt reaches `end_turn` 2/2, and a */
 /* softer rewording left at the top still refuses. A fenced JSON template that */
 /* OPENS a system prompt is what the safeguard classifier bites on.            */
@@ -511,7 +511,7 @@ test('t261 — the rendered instructions never open with the escalation block', 
       `a "${String(policy)}" node's prompt may not open with the fence: it is refused before it runs`,
     );
     assert.ok(
-      text.startsWith('# Nó `conferir` — skill'),
+      text.startsWith('# Node `conferir` — skill'),
       `a "${String(policy)}" node's prompt opens with the node header, and with nothing before it`,
     );
   }
@@ -568,7 +568,7 @@ test('t261 — the codex composition still does not open with the fence', async 
   const spec: SessionSpec = {
     workingDir: '/tmp/t261',
     instructions: rendered.instructions,
-    prompt: 'Faça o que o nó pede.',
+    prompt: 'Do what the node asks for.',
     timeoutSeconds: 60,
   };
   const composed = composeSingleArgument(spec);
@@ -617,7 +617,7 @@ async function renderBody(
   return rendered.instructions;
 }
 
-/** The one refusal this ficha adds, loaded and checked for existence first. */
+/** The one refusal this ticket adds, loaded and checked for existence first. */
 async function loadUnresolvedError(): Promise<typeof RenderModule.UnresolvedPlaceholderError> {
   const module = await loadModule();
   assert.equal(
@@ -663,14 +663,14 @@ test('AT12 — a path that resolves to a string substitutes the string verbatim'
   // escaping, because what is being injected is a manifest a human reviewed at
   // the import gate (D4). A renderer that escaped here would be silently
   // rewriting the reviewed text.
-  const title = 'Navelar Logística (NVLR3) — "reprecificação" & <venda do braço rodoviário>';
+  const title = 'Navelar Logistics (NVLR3) — "repricing" & <sale of the road haulage arm>';
   const text = await renderBody(
-    '**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})',
-    { tese_triada: { titulo: title, ativo: 'NVLR3' } },
+    '**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})',
+    { triaged_thesis: { title, asset: 'NVLR3' } },
   );
 
   assert.ok(
-    text.includes(`**Tese:** ${title} (NVLR3)`),
+    text.includes(`**Thesis:** ${title} (NVLR3)`),
     'the string goes in exactly as it came, with no escaping and no quoting',
   );
   assert.ok(!text.includes('{{'), 'and nothing that looks like a placeholder survives');
@@ -678,46 +678,46 @@ test('AT12 — a path that resolves to a string substitutes the string verbatim'
 
 test('AT13 — a path that resolves to any other JSON value substitutes its compact JSON', async () => {
   const scope = [
-    'termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam',
-    'contrato portuário: prazo, cláusula de reajuste e concentração de cliente',
+    'terms of the road haulage sale: price, form of payment and the liabilities that stay',
+    'port contract: term, price-revision clause and customer concentration',
   ];
 
   const text = await renderBody(
     [
-      'Frentes: {{input.tese_triada.escopo_de_pesquisa}}',
-      'Posições: {{input.carteira.posicoes_abertas}}',
-      'Descartada: {{input.tese_triada.descartada}}',
-      'Nota: {{input.tese_triada.nota}}',
-      'Carteira: {{input.carteira}}',
+      'Fronts: {{input.triaged_thesis.research_scope}}',
+      'Positions: {{input.portfolio.open_positions}}',
+      'Discarded: {{input.triaged_thesis.discarded}}',
+      'Note: {{input.triaged_thesis.note}}',
+      'Portfolio: {{input.portfolio}}',
     ].join('\n'),
     {
-      tese_triada: { escopo_de_pesquisa: scope, descartada: false, nota: null },
-      carteira: { posicoes_abertas: 7, exposicao_atual_pct: 62.5 },
+      triaged_thesis: { research_scope: scope, discarded: false, note: null },
+      portfolio: { open_positions: 7, current_exposure_pct: 62.5 },
     },
   );
 
   // `JSON.stringify` with no spacing argument IS the compact form, so comparing
   // against it is what proves no whitespace was added on the way in.
-  assert.ok(text.includes(`Frentes: ${JSON.stringify(scope)}`), text);
-  assert.ok(text.includes('Posições: 7'));
-  assert.ok(text.includes('Descartada: false'));
-  assert.ok(text.includes('Nota: null'), 'null is a value that resolved, never a path that did not');
-  assert.ok(text.includes('Carteira: {"posicoes_abertas":7,"exposicao_atual_pct":62.5}'), text);
+  assert.ok(text.includes(`Fronts: ${JSON.stringify(scope)}`), text);
+  assert.ok(text.includes('Positions: 7'));
+  assert.ok(text.includes('Discarded: false'));
+  assert.ok(text.includes('Note: null'), 'null is a value that resolved, never a path that did not');
+  assert.ok(text.includes('Portfolio: {"open_positions":7,"current_exposure_pct":62.5}'), text);
 });
 
 test('AT14 — a body with no `{{input.` token renders byte-for-byte what it always rendered', async () => {
   const literal = [
-    '# Conferir uma etapa',
+    '# Check one step',
     '',
-    'Julgue com evidência sua, nunca com o relato de quem produziu.',
+    'Judge with your own evidence, never with the report of whoever produced it.',
     '',
-    'Um `{{outro.formato}}` de chave dupla não é entrada de nó: passa reto.',
+    'A double-brace `{{other.format}}` is not a node input: it goes straight through.',
   ].join('\n');
 
   const empty = await renderBody(literal, {});
   const rich = await renderBody(literal, {
-    tese_triada: { titulo: 'nada que este corpo cite' },
-    outro: { formato: 'nem isto' },
+    triaged_thesis: { title: 'nothing this body quotes' },
+    other: { format: 'nor this' },
   });
 
   assert.ok(empty.includes(literal), 'the manifest body travels into the session unchanged');
@@ -729,47 +729,47 @@ test('AT14 — a body with no `{{input.` token renders byte-for-byte what it alw
 });
 
 test('AT15 — a path absent from the input refuses the render instead of leaking the token', async () => {
-  const refusal = await refusalOf('**Tese:** {{input.tese_triada.titulo}}', { tese_triada: {} });
+  const refusal = await refusalOf('**Thesis:** {{input.triaged_thesis.title}}', { triaged_thesis: {} });
 
   assert.equal(refusal.nodeId, 'conferir');
   assert.equal(refusal.skillId, SKILL_ID);
-  assert.deepEqual(refusal.paths, ['tese_triada.titulo']);
+  assert.deepEqual(refusal.paths, ['triaged_thesis.title']);
   assert.ok(refusal.message.includes('conferir'), refusal.message);
   assert.ok(refusal.message.includes(SKILL_ID), refusal.message);
-  assert.ok(refusal.message.includes('tese_triada.titulo'), refusal.message);
+  assert.ok(refusal.message.includes('triaged_thesis.title'), refusal.message);
 });
 
 test('AT16 — every unresolved path is listed on the one refusal, deduplicated and in order', async () => {
   const refusal = await refusalOf(
     [
-      '**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})',
+      '**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})',
       '',
-      'Frentes: {{input.escopo}}',
+      'Fronts: {{input.scope}}',
       '',
-      'Repetida de propósito: {{input.tese_triada.titulo}}',
+      'Repeated on purpose: {{input.triaged_thesis.title}}',
     ].join('\n'),
-    { tese_triada: { ativo: 'NVLR3' } },
+    { triaged_thesis: { asset: 'NVLR3' } },
   );
 
   assert.deepEqual(
     refusal.paths,
-    ['tese_triada.titulo', 'escopo'],
+    ['triaged_thesis.title', 'scope'],
     'first-occurrence order, one entry per path, and the resolvable one is not among them',
   );
 });
 
 test('AT17 — a path that walks through a value that is not an object is unresolved', async () => {
-  const throughText = await refusalOf('**Tese:** {{input.tese_triada.titulo}}', {
-    tese_triada: 'a tese como texto, e não como objeto',
+  const throughText = await refusalOf('**Thesis:** {{input.triaged_thesis.title}}', {
+    triaged_thesis: 'the thesis as text, and not as an object',
   });
-  assert.deepEqual(throughText.paths, ['tese_triada.titulo']);
+  assert.deepEqual(throughText.paths, ['triaged_thesis.title']);
 
-  const throughList = await refusalOf('**Primeira frente:** {{input.escopo.0}}', {
-    escopo: ['termos da venda do braço rodoviário'],
+  const throughList = await refusalOf('**First front:** {{input.scope.0}}', {
+    scope: ['terms of the road haulage sale'],
   });
   assert.deepEqual(
     throughList.paths,
-    ['escopo.0'],
+    ['scope.0'],
     'an array is not a plain object: indexing into one is not a path this format has',
   );
 });
@@ -888,7 +888,7 @@ test('AT18 — the asymmetric-bets manifests resolve against the crossing fixtur
     const manifest = factoryManifest('record-crossing');
     const input: Record<string, unknown> = {
       triaged_thesis: {
-        title: 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário',
+        title: 'Navelar Logistics (NVLR3) — repricing after the sale of the road haulage arm',
         asset: 'NVLR3',
       },
       traversal: {
@@ -983,12 +983,12 @@ test('t215 AT — the request renderSkillInstructions makes carries the version 
 /*                                                                            */
 /* Both halves of the same defect: a session was told what it would be checked */
 /* against, and it was the wrong thing. The node's `contract.output_schema`    */
-/* was rendered under "é contra ele que a sua saída vai ser conferida", while  */
+/* was rendered under "it is against it that your output is checked", while    */
 /* `/finish` validates against the SKILL's `output`                            */
 /* (`packages/core/src/repositories/session.ts:resolveOutputSchema`) — two     */
 /* different schemas by design (`docs/spec/graph.md`). And the input reached   */
 /* the model only through the placeholders a manifest author remembered to     */
-/* write, which is how `analise-assimetria` escalated on the second real bets  */
+/* write, which is how `analyze-asymmetry` escalated on the second real bets   */
 /* crossing over fields the projection was in fact carrying.                   */
 /* -------------------------------------------------------------------------- */
 
@@ -1022,13 +1022,13 @@ async function renderValues(
  * The input-values block alone, from its heading to the node contract.
  *
  * The right-hand bound is FR4's placement claim run rather than read: the block
- * goes right after the manifest body and before `## O contrato do nó`.
+ * goes right after the manifest body and before `## The contract of node`.
  */
 function inputValuesBlock(text: string): string {
-  const start = text.indexOf('### Valores de entrada');
-  assert.ok(start >= 0, 'the rendered text carries no "### Valores de entrada" heading');
+  const start = text.indexOf('### Input values');
+  assert.ok(start >= 0, 'the rendered text carries no "### Input values" heading');
   const rest = text.slice(start);
-  const end = rest.indexOf('\n## O contrato do nó');
+  const end = rest.indexOf('\n## The contract of node');
   assert.ok(end > 0, 'the input-values block has to sit before the node contract, and does not');
   return rest.slice(0, end);
 }
@@ -1045,11 +1045,11 @@ function section(text: string, heading: string): string {
 test('AT19 — the values the skill declares reach the session, not only the schema', async () => {
   const text = await renderValues(
     { type: 'object', required: ['x'], properties: { x: { type: 'string' } } },
-    { x: 'valor-do-no-anterior' },
+    { x: 'value-from-the-previous-node' },
   );
 
   assert.ok(
-    inputValuesBlock(text).includes('valor-do-no-anterior'),
+    inputValuesBlock(text).includes('value-from-the-previous-node'),
     'the value itself has to be in the block, not merely the shape it satisfies',
   );
 });
@@ -1058,25 +1058,25 @@ test('AT20 — only the keys the skill declares are shown', async () => {
   const block = inputValuesBlock(
     await renderValues(
       { type: 'object', required: ['x'], properties: { x: { type: 'string' } } },
-      { x: 'v', y: 'nao-declarado' },
+      { x: 'v', y: 'not-declared' },
     ),
   );
 
   assert.ok(block.includes('"x"') && block.includes('"v"'));
   assert.ok(
-    !block.includes('nao-declarado'),
+    !block.includes('not-declared'),
     'a key the manifest never declared is not this session\'s input: showing it invents a contract',
   );
 });
 
 test('AT21 — a skill declaring no shape at all gets the whole resolved input', async () => {
   const block = inputValuesBlock(
-    await renderValues({}, { tese_triada: { ativo: 'NVLR3' }, nota: 'sem schema nenhum' }),
+    await renderValues({}, { triaged_thesis: { asset: 'NVLR3' }, note: 'no schema at all' }),
   );
 
   assert.ok(block.includes('NVLR3'));
   assert.ok(
-    block.includes('sem schema nenhum'),
+    block.includes('no schema at all'),
     'with nothing declared there is no key set to restrict to, so everything is shown',
   );
 });
@@ -1108,7 +1108,7 @@ test('AT22 — an oversized input is cut at the cap, and the cut says so', async
     'and the block as a whole stays near the cap, marker included',
   );
 
-  const small = inputValuesBlock(await renderValues(declared, { x: 'cabe folgado' }));
+  const small = inputValuesBlock(await renderValues(declared, { x: 'fits with room to spare' }));
   assert.ok(
     !small.includes('bytes'),
     `a value under the cap carries no marker line at all: ${small}`,
@@ -1138,13 +1138,17 @@ test('AT23 — the skill\'s own `output` is rendered, as the thing /finish check
     'the manifest\'s own schema, key order untouched, is what the session has to satisfy',
   );
 
-  assert.ok(text.includes('### O que você tem que produzir'), 'under the heading that names it');
+  assert.ok(text.includes('### What you have to produce'), 'under the heading that names it');
 
   // FR6: after the permissions block, and before the report protocol that
   // closes the text for a node with a shape to fill. And the prose has to say
   // WHAT checks it, or the schema is one more document in a prompt full of them.
-  const permissions = text.indexOf('## As permissões desta sessão');
-  const heading = text.indexOf('### O que você tem que produzir');
+  // Anchored on the newline, and that is not decoration: the contract section
+  // above forward-references this heading in its prose, and in English the
+  // whole reference fits on one rendered line — in Portuguese the same sentence
+  // wrapped mid-heading, so a bare `indexOf` used to find the heading itself.
+  const permissions = text.indexOf('## The permissions of this session');
+  const heading = text.indexOf('\n### What you have to produce');
   assert.ok(heading > permissions, 'the validator section comes after the permissions block');
   assert.ok(heading < text.indexOf('```resultado'), 'and before the block it describes how to fill');
 
@@ -1155,7 +1159,7 @@ test('AT23 — the skill\'s own `output` is rendered, as the thing /finish check
 });
 
 test('AT24 — the node contract still renders, and no longer claims to be the validator', async () => {
-  const text = await renderValues({ required: ['nota'] }, { nota: 'uma nota' });
+  const text = await renderValues({ required: ['nota'] }, { nota: 'a note' });
 
   // Still there: it is the schema the routing vocabulary is keyed against, and
   // dropping it would cost the session the reason its edges are labelled the way
@@ -1165,13 +1169,13 @@ test('AT24 — the node contract still renders, and no longer claims to be the v
     'the node\'s own output_schema is documentation worth showing, and it stays shown',
   );
 
-  const contract = section(text, '## O contrato do nó');
+  const contract = section(text, '## The contract of node');
   assert.ok(
-    !contract.includes('é contra ele'),
+    !contract.includes('it is against it'),
     `the node contract section may not claim to be what the report is checked against: ${contract}`,
   );
   assert.ok(
-    !/conferid/.test(contract),
+    !/checked against/i.test(contract),
     `nothing in the node contract section may claim it verifies the report: ${contract}`,
   );
   assert.ok(

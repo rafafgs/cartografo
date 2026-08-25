@@ -72,7 +72,7 @@ function recorder(): { sent: Sent[]; call: ControlPlaneCall } {
  * A fake `call` that records every request and answers all of them the same.
  *
  * The third client of this file, and the first one whose ANSWER matters (t268):
- * every write before this ficha was told-and-forgotten, so `recorder` handing
+ * every write before this ticket was told-and-forgotten, so `recorder` handing
  * back `undefined` was the whole truth. The closure now reads a verdict off the
  * response it gets, and a body is the only way to pin what it does with one.
  */
@@ -137,13 +137,13 @@ test('AT2 — `blockWithNobodyToAsk` posts the reason it was given, as the syste
   const { blockWithNobodyToAsk } = await loadReport();
   const { sent, call } = recorder();
 
-  await blockWithNobodyToAsk(call, JOB, 'Este nó não tem a quem perguntar.');
+  await blockWithNobodyToAsk(call, JOB, 'This node has nobody to ask.');
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
   assert.equal(sent[0].method, 'POST');
   assert.deepEqual(sent[0].body, {
-    reason: 'Este nó não tem a quem perguntar.',
+    reason: 'This node has nobody to ask.',
     actor: { type: 'system', ref: 'runner' },
   });
 });
@@ -237,7 +237,7 @@ test('AT5 — with no result observed at all the question says so', async () => 
 
   await escalateRouting(call, JOB, 31, TWO_EDGES, null, 'always');
 
-  assert.ok(String(body(sent[0]).question).includes('nenhum'));
+  assert.ok(String(body(sent[0]).question).includes('none'));
 });
 
 test('AT6 — under `never` it blocks instead, and posts no question at all', async () => {
@@ -249,7 +249,7 @@ test('AT6 — under `never` it blocks instead, and posts no question at all', as
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
   assert.ok(!sent.some((request) => request.route === '/v1/input-requests'));
-  assert.ok(String(body(sent[0]).reason).includes('não tem a quem perguntar'));
+  assert.ok(String(body(sent[0]).reason).includes('has nobody to ask'));
 });
 
 /* -- the decision on top of them ------------------------------------------- */
@@ -258,7 +258,7 @@ test('AT7 — `advance` on a node with no way out writes nothing', async () => {
   const { advance } = await loadReport();
   const { sent, call } = recorder();
 
-  await advance(call, JOB, node([]), 31, 'qualquer coisa');
+  await advance(call, JOB, node([]), 31, 'anything at all');
 
   assert.equal(sent.length, 0);
 });
@@ -272,7 +272,7 @@ test('AT8 — `advance` on a single edge transitions whatever the session said',
     JOB,
     node([{ from: 'revisao', to: 'entrega', condition: 'sempre' }]),
     31,
-    'a sessão não escolheu nada',
+    'the session chose nothing',
   );
 
   assert.equal(sent.length, 1);
@@ -284,7 +284,7 @@ test('AT9 — `advance` on two edges takes the one the result names', async () =
   const { advance } = await loadReport();
   const { sent, call } = recorder();
 
-  const output = ['Conferi os critérios.', '```resultado', '{"resultado":"retrabalho"}', '```'].join(
+  const output = ['I checked the criteria.', '```resultado', '{"resultado":"retrabalho"}', '```'].join(
     '\n',
   );
   await advance(call, JOB, node(TWO_EDGES), 31, output);
@@ -309,7 +309,7 @@ test('AT11 — `advance` at a `never` node blocks rather than asking', async () 
   const { advance } = await loadReport();
   const { sent, call } = recorder();
 
-  await advance(call, JOB, node(TWO_EDGES, 'never'), 31, 'nada fenceado aqui');
+  await advance(call, JOB, node(TWO_EDGES, 'never'), 31, 'nothing fenced here');
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
@@ -320,7 +320,7 @@ test('AT11 — `advance` at a `never` node blocks rather than asking', async () 
 const DENIAL = Object.freeze({
   recurso: 'rede' as const,
   ferramenta: 'WebFetch',
-  motivo: 'a política desta sessão nega WebFetch',
+  motivo: 'the policy of this session denies WebFetch',
 });
 
 test('AT12 — a denial recorded before the session exists is queued, then flushed in order', async () => {
@@ -388,7 +388,7 @@ test('AT15 — `finishSession` sends the three absent fields as null, never omit
     call,
     31,
     { status: 'completed', exitCode: 0 },
-    'linha um\nlinha dois',
+    'line one\nline two',
   );
 
   assert.equal(verdict.failure, null);
@@ -399,7 +399,7 @@ test('AT15 — `finishSession` sends the three absent fields as null, never omit
   const posted = body(sent[0]);
   assert.equal(posted.status, TAXONOMY_STATUS.completed);
   assert.equal(posted.exit_code, 0);
-  assert.equal(posted.transcript, 'linha um\nlinha dois');
+  assert.equal(posted.transcript, 'line one\nline two');
 
   for (const field of ['timeout_reason', 'usage', 'models']) {
     assert.ok(field in posted, `\`${field}\` has to be SENT, not omitted`);
@@ -459,7 +459,7 @@ test('t259 AT4 — `finishSession` ships the structured report when there is one
   const { finishSession } = await loadReport();
   const { sent, call } = recorder();
 
-  const reported = { resultado: 'aprovado', outcome: 'pass', evidencia: 'li a saída inteira' };
+  const reported = { resultado: 'aprovado', outcome: 'pass', evidencia: 'I read the whole output' };
   await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto', reported);
 
   const posted = body(sent[0]);
@@ -496,11 +496,11 @@ test('AT18 — `postSessionQuestion` posts as the AGENT, with the node as its re
   const { sent, call } = recorder();
 
   await postSessionQuestion(call, JOB, 31, {
-    question: 'Renumerar a migração para 0003?',
-    context: 'A t101 corre em paralelo.',
-    options: ['Renumerar', 'Manter'],
-    recommendation: 'Manter 0002.',
-    default: 'Manter 0002',
+    question: 'Renumber the migration to 0003?',
+    context: 't101 runs in parallel.',
+    options: ['Renumber', 'Keep'],
+    recommendation: 'Keep 0002.',
+    default: 'Keep 0002',
   });
 
   assert.equal(sent.length, 1);
@@ -509,11 +509,11 @@ test('AT18 — `postSessionQuestion` posts as the AGENT, with the node as its re
   const posted = body(sent[0]);
   assert.equal(posted.job_id, JOB.id);
   assert.equal(posted.session_id, 31);
-  assert.equal(posted.question, 'Renumerar a migração para 0003?');
-  assert.equal(posted.context, 'A t101 corre em paralelo.');
-  assert.deepEqual(posted.options, ['Renumerar', 'Manter']);
-  assert.equal(posted.recommendation, 'Manter 0002.');
-  assert.equal(posted.default_answer, 'Manter 0002');
+  assert.equal(posted.question, 'Renumber the migration to 0003?');
+  assert.equal(posted.context, 't101 runs in parallel.');
+  assert.deepEqual(posted.options, ['Renumber', 'Keep']);
+  assert.equal(posted.recommendation, 'Keep 0002.');
+  assert.equal(posted.default_answer, 'Keep 0002');
   assert.equal(posted.auto_approvable, true);
   assert.deepEqual(posted.actor, { type: 'agent', ref: 'revisao' });
 });
@@ -677,7 +677,7 @@ test('t268 AT — `finishSession` reads the accepted verdict off the /finish res
   const { sent, call } = answering({ id: 31, status: 'completed', output_accepted: true });
 
   const verdict = await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto', {
-    nota: 'a etapa deixou saida.md pronto',
+    nota: 'the step left saida.md ready',
   });
 
   assert.equal(sent.length, 1);

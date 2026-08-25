@@ -53,7 +53,7 @@ async function loadPrompt(): Promise<typeof PromptModule> {
 }
 
 const DECLARATION =
-  'Quero um fluxo que transforma uma ideia de artigo em um rascunho revisado por um segundo leitor.';
+  'I want a flow that turns an article idea into a draft reviewed by a second reader.';
 
 const SKILLS = [
   {
@@ -61,23 +61,23 @@ const SKILLS = [
     version: '1.0.0',
     hash: `sha256:${'a'.repeat(64)}`,
     role: 'skill',
-    description: 'Escreve a nota a partir do tema declarado.',
+    description: 'Writes the note from the declared topic.',
     input: { type: 'object', required: ['tema'] },
     output: { type: 'object', required: ['texto'] },
-    checks: [{ type: 'deterministic', comando: 'test -s nota.md' }],
+    checks: [{ type: 'deterministic', command: 'test -s nota.md' }],
   },
   {
     id: 'cartografo/revisar-nota',
     version: '2.1.0',
     hash: `sha256:${'b'.repeat(64)}`,
-    role: 'portao',
-    description: 'Confere a nota contra o tema e encerra a travessia.',
+    role: 'gate',
+    description: 'Checks the note against the topic and closes the crossing.',
     input: { type: 'object', required: ['texto'] },
     output: { type: 'object', required: ['resultado'] },
     checks: [
       {
         type: 'agentic',
-        instruction: 'A nota responde ao tema declarado?',
+        instruction: 'Does the note answer the declared topic?',
         required_evidence: ['nota.md'],
       },
     ],
@@ -85,7 +85,7 @@ const SKILLS = [
 ];
 
 const SIMILAR = [
-  { classe: 'nota-curta', nome: 'Nota curta', descricao: 'Redigir e revisar uma nota.', score: 0.42 },
+  { classe: 'nota-curta', nome: 'Short note', descricao: 'Draft and review a note.', score: 0.42 },
 ];
 
 test('AT2 — the prompt carries the declaration and the class the user named', async () => {
@@ -127,7 +127,7 @@ test('AT2 — similarity suggestions appear when there are any, and nothing clai
 
   const withSuggestions = buildSynthesisPrompt(DECLARATION, 'artigo-revisado', SIMILAR, SKILLS);
   assert.ok(withSuggestions.includes('nota-curta'), 'the suggested class is named');
-  assert.ok(withSuggestions.includes('Redigir e revisar uma nota.'), 'with its description');
+  assert.ok(withSuggestions.includes('Draft and review a note.'), 'with its description');
 
   const without = buildSynthesisPrompt(DECLARATION, 'artigo-revisado', [], SKILLS);
   assert.ok(!without.includes('nota-curta'), 'no suggestion is invented when there is none');
@@ -143,7 +143,7 @@ test('AT2 — the prompt states the output contract: one `grafo-proposto` block'
   assert.ok(prompt.includes('skill_ref'), 'the nodes pin capabilities');
   assert.match(
     prompt,
-    /nunca invent|nunca escreva|não invent/i,
+    /never invent/i,
     'the pin is copied from the catalogue, never invented (D4)',
   );
 });
@@ -154,11 +154,9 @@ test('AT2 — an empty catalogue is stated, not silently rendered as nothing', a
   const prompt = buildSynthesisPrompt(DECLARATION, 'artigo-revisado', [], []);
 
   assert.ok(prompt.includes(DECLARATION));
-  // Built from a string and not a regex literal: what it matches is the
-  // prompt's Portuguese prose, which stays Portuguese (D18/FR3).
   assert.match(
     prompt,
-    new RegExp('registro (de skills )?(está )?vazio|nenhuma skill', 'i'),
+    /skill registry is empty|no registered skill/i,
     'an empty registry is said out loud, or the session composes from hallucination',
   );
 });
@@ -190,7 +188,7 @@ function verificationValidator(): ValidateFunction {
   return validate;
 }
 
-test('t138 — the hard rules say every node carries at least one verificação', async () => {
+test('t138 — the hard rules say every node carries at least one verification', async () => {
   const { SYNTHESIS_INSTRUCTIONS } = await loadPrompt();
 
   assert.ok(
@@ -199,7 +197,7 @@ test('t138 — the hard rules say every node carries at least one verificação'
   );
   assert.match(
     SYNTHESIS_INSTRUCTIONS,
-    new RegExp('pelo menos uma|ao menos uma|nunca vazia|nunca fica vazia', 'i'),
+    /at least one|never empty/i,
     'an empty `contract.checks` has to be forbidden out loud, not left to be inferred',
   );
   assert.ok(
@@ -214,7 +212,7 @@ test('t138 — the prompt states the rule and shows checks the real schema accep
 
   assert.match(
     buildSynthesisPrompt(DECLARATION, 'artigo-revisado', [], SKILLS),
-    new RegExp('checks[^\\n]*(pelo menos uma|ao menos uma|nunca vazia)', 'i'),
+    /checks[^\n]*(?:at least one|never empty)/i,
     'the output contract repeats the rule where it describes `contract`',
   );
 
@@ -242,7 +240,7 @@ test('t138 — the prompt states the rule and shows checks the real schema accep
   }
 });
 
-test('t138 — the prompt keeps the catalogue `checks` apart from `contrato.checks`', async () => {
+test('t138 — the prompt keeps the catalogue `checks` apart from `contract.checks`', async () => {
   const { buildSynthesisPrompt } = await loadPrompt();
   const validate = verificationValidator();
 
@@ -260,7 +258,7 @@ test('t138 — the prompt keeps the catalogue `checks` apart from `contrato.chec
   assert.ok(prompt.includes(JSON.stringify(SKILLS[1].checks)), 'the catalogue still prints it');
   assert.match(
     prompt,
-    new RegExp('(não|nunca) cop\\w+ os `checks`', 'i'),
+    /do NOT copy the `checks`/i,
     'a check of the catalogue is rewritten into the graph format, never pasted into it',
   );
 });

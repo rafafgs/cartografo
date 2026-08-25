@@ -92,7 +92,7 @@ export const RETIRED_ROWS = Object.freeze([
  * Same narrow case as `RETIRED_ROWS` above and the same reasoning: the note is
  * history and is not edited, so a file it names by a spelling the tree no longer
  * has is recorded HERE rather than rewritten there. There is one. t305 renamed
- * the graph-document family — `graph.json` to `graph.json`, `graph.schema.json`
+ * the graph-document family — `grafo.json` to `graph.json`, `grafo.schema.json`
  * to `graph.schema.json`, and the URN `$id` with them — which is the rename t282
  * and t306 both wrote down and deferred because it changes a contract, not just
  * a path.
@@ -104,7 +104,7 @@ export const RETIRED_ROWS = Object.freeze([
  * rather than a silent pass.
  */
 export const RENAMED_FILES = Object.freeze([
-  Object.freeze({ was: 'graph.json', is: 'graph.json', renamedBy: 't305' }),
+  Object.freeze({ was: 'grafo.json', is: 'graph.json', renamedBy: 't305' }),
 ]);
 
 /**

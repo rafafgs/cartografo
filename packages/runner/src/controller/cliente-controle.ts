@@ -93,7 +93,7 @@ export interface MetricaPorVersao {
  *
  * Só `nodes` e `edges` são nomeados: é o que o topógrafo lê para montar o
  * prompt. O resto do documento chega inteiro e passa direto — o formato é do
- * `schema/grafo.schema.json`, não deste cliente.
+ * `schema/graph.schema.json`, não deste cliente.
  */
 export interface SnapshotDeGrafo {
   nodes?: Array<{ id: string; [chave: string]: unknown }>;

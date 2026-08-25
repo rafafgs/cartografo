@@ -103,7 +103,7 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
  * anything can run.
  */
 const FACTORY_DIR = join(REPO_ROOT, 'factory-graphs/software-development');
-const GRAPH_PATH = join(FACTORY_DIR, 'grafo.json');
+const GRAPH_PATH = join(FACTORY_DIR, 'graph.json');
 const SKILLS_DIR = join(FACTORY_DIR, 'skills');
 
 const EXECUTION_ID = 161;

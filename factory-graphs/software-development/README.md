@@ -13,7 +13,7 @@ and the seed of the factory library.
 
 | File | What it is |
 |---|---|
-| [`grafo.json`](./grafo.json) | The graph document: five nodes, five edges, one pinned `skill_ref` per node. |
+| [`graph.json`](./graph.json) | The graph document: five nodes, five edges, one pinned `skill_ref` per node. |
 | [`skills/refine-ticket.json`](./skills/refine-ticket.json) | `work` — a raw request becomes an executable specification. |
 | [`skills/develop-ticket.json`](./skills/develop-ticket.json) | `work` — implementation in an isolated checkout, acceptance tests first. |
 | [`skills/integrate-branch.json`](./skills/integrate-branch.json) | `work` — a merge that reconciles both sides, with quality reverified on the merged tree. |
@@ -36,7 +36,7 @@ plumbing and do not become nodes, which is why `backlog`/`done` stay out too.
 There is no separate rejection edge: the only way back is the `test → develop`
 rework cycle.
 
-The `grafo.json` **starts from**
+The `graph.json` **starts from**
 [`schema/examples/graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json)
 — `t96`'s master example, read as a reference and **never modified**. Two places
 differ from it. Each node's `skill_ref`: in the example the hashes are
@@ -88,7 +88,7 @@ This bundle's acceptance tests live in
 
 `factory-graphs/<class>/` is the bundle's shape, named after the document's
 `problem_class` string (D8), and it is the same shape the atlas uses: one
-subdirectory per class, with `grafo.json` and the manifests its nodes pin. The
+subdirectory per class, with `graph.json` and the manifests its nodes pin. The
 layout, the publication step and the integrity check during a traversal are in
 [`docs/formats/atlas-bundle.md`](../../docs/formats/atlas-bundle.md) — v0, not
 frozen, by the rule of two consumers.
@@ -180,7 +180,7 @@ next.
    half of `t253` that has not been built yet (FR8) — whoever exercises the
    `test → develop` rework cycle brings it back when it exists.
 
-   The `grafo.json`'s top-level `project` carries the reference project's
+   The `graph.json`'s top-level `project` carries the reference project's
    configuration (this repository): without it the base graph cannot dispatch
    even the first node. By D13 a project-specific value lives in the variant — a
    variant of this class overrides that whole object, and that is how the same
@@ -226,7 +226,7 @@ something is genuinely stuck" section; and "never weaken a check to make it
 pass" is in step 4 of "## Reconciling", in `integrate-branch.json`. Compare with
 flowpilot's `development.py:105-109`, `integration.py:117-121` and
 `integration.py:107-110` (D17: behavioural reference, with no code dependency).
-Reading only `grafo.json`'s summary is not enough — the comparison is against the
+Reading only `graph.json`'s summary is not enough — the comparison is against the
 manifest.
 
 And one consequence worth spelling out: **escalating to a human is not an

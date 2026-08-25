@@ -47,7 +47,7 @@ export interface GraphMetadata {
   /**
    * The document's own metadata, NOT the API's.
    *
-   * `schema/grafo.schema.json` is a format of its own and no child of D20
+   * `schema/graph.schema.json` is a format of its own and no child of D20
    * renames it, so these two keys stay Portuguese while everything around them
    * went English in t226.
    */

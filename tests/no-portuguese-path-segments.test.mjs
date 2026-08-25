@@ -96,9 +96,22 @@
  * new name, the `$id` is `urn:cartografo:schema:graph:1.0.0`, and the stem is
  * here.
  *
- * `grafo` is safe as a substring in this tree, which is why it can be a stem at
- * all: it does not read inside `graph`, `graphs`, `factory-graphs` or
- * `paragraph`, and no tracked path outside the two exclusions below spells it.
+ * `grafo` is nearly safe as a substring, and the exception is the whole reason
+ * this gate now blanks one word before it reads a path. It does not read inside
+ * `graph`, `graphs`, `factory-graphs` or `paragraph` — but it reads inside
+ * `cartografo`, and `docs/o-que-e-o-cartografo.md`,
+ * `packages/core/bin/cartografo.mjs` and `packages/runner/bin/cartografo-runner.mjs`
+ * are three real paths in this tree.
+ *
+ * The brand name is not a near-miss to be exempted case by case: it is the FIRST
+ * of the three exceptions D24 itself allows, alongside marked verbatim
+ * quotations and the frozen migration file names. So it is blanked out of a path
+ * before the stems read it, the same move the prose gates make with a gloss or a
+ * code span — the word is spared, and nothing on either side of it is. A file
+ * called `cartografo-tela.mjs` still trips `tela`; a hypothetical
+ * `cartografo-grafo.json` still trips `grafo`. Blanked to a run of `#` rather
+ * than deleted, so that two neighbours never end up spliced into a match neither
+ * of them made.
  *
  * ## What is excluded, and why that is a boundary and not a hole
  *
@@ -175,9 +188,29 @@ export const RETIRED_STEMS = Object.freeze([
  */
 export const FROZEN_TREES = Object.freeze(['packages/core/migrations/', 'notes/']);
 
+/**
+ * The brand name, D24's first permanent exception, which happens to spell
+ * `grafo`.
+ */
+export const BRAND = 'cartografo';
+
 /** One component of a path, matched whole, that carries the given stem. */
 function componentCarrying(stem) {
   return new RegExp(`(^|/)[^/]*${stem}[^/]*(/|$)`);
+}
+
+/**
+ * One path with the brand name blanked out, ready for the stems to read.
+ *
+ * See the header. Blanked rather than dropped: a run of `#` keeps every other
+ * character where it was, so neither the component boundaries nor the letters
+ * around the brand can be spliced into a match they did not make.
+ *
+ * @param {string} relativePath Repo-relative path to read as a name.
+ * @returns {string} The same path, brand-free.
+ */
+export function withoutBrand(relativePath) {
+  return relativePath.replaceAll(BRAND, '#'.repeat(BRAND.length));
 }
 
 /**
@@ -215,7 +248,8 @@ export function offendersIn(paths) {
 
   return read
     .map((entry) => {
-      const stem = RETIRED_STEMS.find((candidate) => componentCarrying(candidate).test(entry));
+      const name = withoutBrand(entry);
+      const stem = RETIRED_STEMS.find((candidate) => componentCarrying(candidate).test(name));
       return stem === undefined ? null : `${entry}: retired stem "${stem}"`;
     })
     .filter((entry) => entry !== null);
@@ -319,12 +353,45 @@ test('AT2 — the sweep spares the names that replaced them', () => {
     'notes/2026-08-25-t305-closing-note.md',
     'docs/spec/graph.md',
     'scripts/validate-graph.mjs',
+    // the brand name, which spells `grafo` and is D24's own first exception
+    'packages/core/bin/cartografo.mjs',
+    'packages/runner/bin/cartografo-runner.mjs',
+    'docs/o-que-e-o-cartografo.md',
   ];
 
   assert.deepEqual(
     offendersIn(living),
     [],
     'the sweep bit on a name that is supposed to survive the rename',
+  );
+});
+
+test('AT2 — the brand name is spared, and nothing on either side of it is', () => {
+  assert.deepEqual(
+    offendersIn(['packages/core/bin/cartografo.mjs']),
+    [],
+    'the brand name is the first of the three exceptions D24 allows, and t305 gave ' +
+      'this gate a `grafo` stem that reads straight through the middle of it',
+  );
+
+  assert.deepEqual(
+    offendersIn(['packages/core/bin/cartografo-grafo.json']),
+    ['packages/core/bin/cartografo-grafo.json: retired stem "grafo"'],
+    'the blanking spares the brand and nothing wider: a retired name standing beside ' +
+      'it is read like any other',
+  );
+
+  assert.deepEqual(
+    offendersIn(['packages/cartografo-tela/bin/run.mjs']),
+    ['packages/cartografo-tela/bin/run.mjs: retired stem "tela"'],
+    'and it spares the brand for every stem, not just the one that made it necessary',
+  );
+
+  assert.equal(
+    withoutBrand('docs/o-que-e-o-cartografo.md'),
+    'docs/o-que-e-o-##########.md',
+    'the brand is blanked to a run of the same length, never deleted: deleting it ' +
+      'would splice its two neighbours into a match neither of them made',
   );
 });
 

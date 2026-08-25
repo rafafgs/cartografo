@@ -215,7 +215,7 @@ Every item is another ticket's declared scope, not an oversight:
   ticket "Skill & contract editing (API + diff UI)". Editing the node's own
   `contract`, yes — it is a field of the graph document, like `skill_ref`.
 - **A draggable canvas.** The graph document has no coordinate field
-  ([`schema/grafo.schema.json`](../../schema/grafo.schema.json)); inventing one is
+  ([`schema/graph.schema.json`](../../schema/graph.schema.json)); inventing one is
   a decision of its own, with a rendering dependency this package does not carry.
   What exists here is a structured, editable list — visual in the same sense the
   inbox is.

@@ -6,7 +6,7 @@
 The whole stack up to here executes graphs somebody wrote by hand. This layer is
 the first that **produces** one: it takes a problem in natural language, consults
 what already exists in the registry, and hands back a topology in the format of
-[`schema/grafo.schema.json`](../../schema/grafo.schema.json) for a person to
+[`schema/graph.schema.json`](../../schema/graph.schema.json) for a person to
 edit.
 
 Two boundaries organize the whole document, and they are better read before any
@@ -180,7 +180,7 @@ has already cost somebody an edit.
 ### The prompt is the format's only source
 
 `workingDir` is an empty temporary directory: the session **cannot open**
-[`schema/grafo.schema.json`](../../schema/grafo.schema.json). Every rule the
+[`schema/graph.schema.json`](../../schema/graph.schema.json). Every rule the
 `cartografo import` gate (§7) applies and the prompt does not state is a rule the
 session has no way of following — and the bill arrives as `grafo_invalido` after
 the person has already edited the draft.

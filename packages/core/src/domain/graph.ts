@@ -74,7 +74,7 @@ export interface GraphNode {
    *
    * Named here for the same reason `model` is, and typed `string` rather than
    * the closed union for the same reason too: what refuses a fourth value is
-   * `schema/grafo.schema.json`, on the way in, and this package reads snapshots
+   * `schema/graph.schema.json`, on the way in, and this package reads snapshots
    * that were already validated by it.
    */
   escalation_policy?: string;
@@ -111,7 +111,7 @@ export interface GraphHookDestination {
    *
    * That it is PRESENT, and that no raw `secret` sits beside it, is checked by
    * `validateStructure` since t256: the schema said so and nothing enforced it,
-   * because `POST /v1/graphs` compiles no ajv against `grafo.schema.json`.
+   * because `POST /v1/graphs` compiles no ajv against `graph.schema.json`.
    *
    * What is still deliberately NOT done here is RESOLVING it: that pass is pure
    * and DB-free, in byte-for-byte parity with `scripts/validate-graph.mjs`, and a
@@ -143,7 +143,7 @@ export interface GraphHook {
   [key: string]: unknown;
 }
 
-/** Graph document (the same format as `schema/grafo.schema.json`). */
+/** Graph document (the same format as `schema/graph.schema.json`). */
 export interface GraphDocument {
   problem_class: string;
   lineage: { type: string; base_class?: string; source_proposal_id?: string };
@@ -210,7 +210,7 @@ type PlainObject = Record<string, unknown>;
 /**
  * The document's own `required`, node's and edge's — exported so
  * `test/domain-manifest-fields.test.ts` can hold them against
- * `schema/grafo.schema.json` and fail the moment one side is renamed alone.
+ * `schema/graph.schema.json` and fail the moment one side is renamed alone.
  */
 export const REQUIRED_DOCUMENT_FIELDS = [
   'problem_class',
@@ -227,7 +227,7 @@ export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 export const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
 /**
- * What a hook may react to — `schema/grafo.schema.json`'s own closed enum.
+ * What a hook may react to — `schema/graph.schema.json`'s own closed enum.
  *
  * Written down here because the schema is not what refuses a third value:
  * `POST /v1/graphs` declares no ajv against it (draft 2020-12 against the

@@ -53,7 +53,7 @@ subcommands:
   up                     starts the control plane: database, migrations and HTTP.
                          It is the default — \`cartografo\` with no argument does this.
   import <path>          registers a graph as a new base lineage. <path> is a
-                         graph file or a bundle directory (with grafo.json and,
+                         graph file or a bundle directory (with graph.json and,
                          optionally, skills/ to check).
   export <class>         writes the current version of the class to a file, in
                          the same format import accepts back.
@@ -74,7 +74,7 @@ options:
                          default http://127.0.0.1:${DEFAULT_PORT})
   --token <token>        credential of the control plane (env ${ENV_TOKEN});
                          it is printed when the control plane first starts
-  --out <path>           (export) output file; default ./<class>.grafo.json
+  --out <path>           (export) output file; default ./<class>.graph.json
                          (scan-skill) draft file; default ./<id>.manifest.json
   --repo <repo>          (scan-skill) source repository, for origin.repo
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)

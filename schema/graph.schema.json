@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:cartografo:schema:grafo:1.0.0",
+  "$id": "urn:cartografo:schema:graph:1.0.0",
   "title": "Graph document (cartografo)",
   "description": "The format of the graph document: nodes with role/skill/contract, edges with a condition, class metadata (D8) and lineage (D13). This document is the complete snapshot of a graph version — the same content graph_version.snapshot stores in the database (D15) and that comes out as the minimal exportable bundle. Structural validation here is about SHAPE; the four soundness rules (reachable, terminates, edge_with_condition, node_with_contract) are semantic and live in scripts/validate-graph.mjs.",
   "type": "object",

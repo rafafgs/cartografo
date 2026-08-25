@@ -26,7 +26,7 @@ export interface ExportOptions {
   className: string;
   /** Base URL of the control plane. */
   url: string;
-  /** Output file; defaults to `./<class>.grafo.json`. */
+  /** Output file; defaults to `./<class>.graph.json`. */
   output?: string;
 }
 
@@ -88,7 +88,7 @@ export async function runExport(options: ExportOptions): Promise<number> {
     return 1;
   }
 
-  const destination = path.resolve(options.output ?? `${options.className}.grafo.json`);
+  const destination = path.resolve(options.output ?? `${options.className}.graph.json`);
   mkdirSync(path.dirname(destination), { recursive: true });
   writeFileSync(destination, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
 

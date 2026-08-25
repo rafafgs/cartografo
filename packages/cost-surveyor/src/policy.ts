@@ -12,7 +12,7 @@
  *   measured nodes, calling one of them an outlier is noise, not signal.
  *
  * **Why every candidate is advisory.** When this ticket ran, neither the graph
- * document (`schema/grafo.schema.json`, a node with `additionalProperties:
+ * document (`schema/graph.schema.json`, a node with `additionalProperties:
  * false`) nor the skill manifest had a field for cost or for model tier, and
  * opening either of them was out of it by acceptance criterion — the point to
  * prove was that a second surveyor fits the API that already exists, without

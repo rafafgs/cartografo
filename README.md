@@ -173,7 +173,7 @@ away:
 ```bash
 npx cartografo status                                   # server and registered projects
 npx cartografo status --json                            # the same, for a script
-npx cartografo export software-development              # writes ./software-development.grafo.json
+npx cartografo export software-development              # writes ./software-development.graph.json
 ```
 
 The file `export` writes is the same document `import` takes back: importing it

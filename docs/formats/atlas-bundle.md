@@ -39,7 +39,7 @@ per problem class**:
 ```
 atlas/
   software-development/
-    grafo.json
+    graph.json
     skills/
       desenvolver-ticket.json
       implantar-release.json
@@ -47,7 +47,7 @@ atlas/
       refinar-ticket.json
       testar-alpha.json
   asymmetric-bets/
-    grafo.json
+    graph.json
     skills/
       analisar-assimetria.json
       ...
@@ -62,7 +62,7 @@ Three rules, and nothing beyond them:
 2. **Every subdirectory is a bundle**, in the shape
    [`docs/spec/graph.md`](../spec/graph.md) and
    [`specs/formats/skill-manifest.md`](../../specs/formats/skill-manifest.md)
-   already define: one `grafo.json` and one `skills/` holding a manifest per
+   already define: one `graph.json` and one `skills/` holding a manifest per
    file, whose name is the skill's `id`.
 3. **There is no index file, catalogue or atlas manifest.** The directory is the
    index. An index would be a second place where the truth lives, and it would go
@@ -90,7 +90,7 @@ verifiable without trusting whoever published it:
 | What | Where it lives | What it proves |
 |---|---|---|
 | `graph_version.id` | computed in the control plane, the canonical hash of the whole document (`docs/spec/entities-versioning.md` §2) | that the map that went in is byte for byte the one that came out — reimporting has to reproduce the same id |
-| `skill_ref.hash` of every node | inside `grafo.json`, pinning the manifest's content (D4) | that the manifest beside it is the manifest the graph's author reviewed |
+| `skill_ref.hash` of every node | inside `graph.json`, pinning the manifest's content (D4) | that the manifest beside it is the manifest the graph's author reviewed |
 | `hash` of every manifest | inside `skills/*.json` itself | that the manifest was not edited without going past the pin |
 
 The manifest hash procedure is the format specification's: `sha256` of the
@@ -136,7 +136,7 @@ What the command does, in order:
 2. **Refuses whole.** A bundle that does not validate exits non-zero and writes
    **zero files** into the atlas. Half a map published with a broken pin is worse
    than no map: whoever imports it has no way of knowing it is half there.
-3. **Copies** `grafo.json` and everything under `skills/` to
+3. **Copies** `graph.json` and everything under `skills/` to
    `<atlas-dir>/<class>/`, creating the directory if needed.
 4. **Revalidates the copy** at the destination. What comes out of this script is
    a bundle that validates from its new place, or the script fails.
@@ -169,7 +169,7 @@ talks to no API at all. It lives in `scripts/`, beside the other validators.
 cartografo import <atlas>/<class>
 ```
 
-The importer reads `<class>/grafo.json` and — if a sibling `skills/` exists —
+The importer reads `<class>/graph.json` and — if a sibling `skills/` exists —
 verifies the whole bundle **before** any request; then it registers the manifests
 (`POST /v1/skills`, each one revalidated by the server) and only then sends the
 graph (`POST /v1/graphs`). A manifest the registry refuses aborts the import, and
@@ -209,7 +209,7 @@ published**, not that it is trustworthy.
   only starts to be worth it once the atlas has a contributor that is not this
   repository.
 - **An index, catalogue or atlas manifest** — see rule 3 of the layout.
-- **`cartografo export` in full-bundle mode** (`grafo.json` + `skills/`) for
+- **`cartografo export` in full-bundle mode** (`graph.json` + `skills/`) for
   graphs that exist only in the database (variants, non-factory classes). Today
   `export` writes the graph document, which is the minimal bundle; both factory
   maps already exist as files.

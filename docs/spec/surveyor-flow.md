@@ -284,7 +284,7 @@ Every item here is another ticket's declared scope, not an oversight:
   is the operator's decision, as [D21] asked.
 - **The learnable "policies" surface** (timeouts, concurrency, auto-answering):
   today there is no versioned artifact a proposal could address —
-  `schema/grafo.schema.json` has no policy field, and the runner's caps and TTLs
+  `schema/graph.schema.json` has no policy field, and the runner's caps and TTLs
   are per-request parameters
   ([`runner-and-controller.md` §5](runner-and-controller.md)).
 - **A second topografo** (cost, quality) and freezing the proposal format: the

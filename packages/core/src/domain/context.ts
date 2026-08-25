@@ -46,7 +46,7 @@ import { isObject } from '../util/is-object.ts';
  * read back out of `graph_version`, frozen when it was written, and this module
  * reads it without vouching for it — the same posture `resolve-node.ts` takes
  * on the runner's side of the same document. What is looked for inside is
- * `produces`, the bucket name of `schema/grafo.schema.json`'s `$defs.contract`;
+ * `produces`, the bucket name of `schema/graph.schema.json`'s `$defs.contract`;
  * absent means "merge at the top level of `input`", which is what every graph
  * written before the field does and what `asymmetric-bets` still wants, node
  * for node.

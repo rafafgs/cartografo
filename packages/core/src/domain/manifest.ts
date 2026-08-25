@@ -121,7 +121,7 @@ export function manifestHash(manifest: Record<string, unknown>): string {
  * The compiler, built once and reused.
  *
  * Draft 2020-12, which is what every schema in this repository declares
- * (`schema/grafo.schema.json`, `specs/events/schemas/*`, and the
+ * (`schema/graph.schema.json`, `specs/events/schemas/*`, and the
  * `input`/`output` of all twelve registered manifests).
  *
  * `strict: false` is not laziness: a registered manifest's `output` is a

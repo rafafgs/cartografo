@@ -11,7 +11,7 @@
 -- `premise_source` na ficha; desenvolvimento de software não precisa de nenhum
 -- deles. Uma coluna por campo seria uma migração por classe de problema, e é
 -- por isso que a DEFINIÇÃO mora no documento de grafo da classe
--- (`custom_fields`, schema/grafo.schema.json) e só o VALOR mora aqui.
+-- (`custom_fields`, schema/graph.schema.json) e só o VALOR mora aqui.
 --
 -- `fields` é JSON em coluna TEXT, como `criterios_de_aceite` ao lado e como
 -- `session.usage`, `input_request.options` e `intake_draft.items`: as chaves são

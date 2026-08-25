@@ -55,7 +55,7 @@ export interface ClockOptions {
   now?: () => string;
 }
 
-/** The two triggers a graph may declare (`schema/grafo.schema.json`). */
+/** The two triggers a graph may declare (`schema/graph.schema.json`). */
 export type HookTrigger = 'node_entered' | 'node_blocked';
 
 /** The only destination kind this ticket ships; `local_command` is a follow-up. */

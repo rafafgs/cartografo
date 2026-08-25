@@ -295,7 +295,7 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * outro", and the minimal example graph's own final node is a gate with a pin.
  *
  * The no-pin branch is defensive, not a supported document shape:
- * `schema/grafo.schema.json` makes `skill_ref` mandatory on every node and
+ * `schema/graph.schema.json` makes `skill_ref` mandatory on every node and
  * `node_with_contract` guards it at soundness, so nothing registered through
  * `POST /v1/graphs` reaches it. It exists for the same reason `resolveNode` and
  * `resolveOutputSchema` already treat the pin as optional on the TS side — a
@@ -1058,7 +1058,7 @@ export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
  * no version, a version that no longer resolves, a snapshot that declares
  * nothing. A fourth one is added here — a declared value that is not a positive
  * integer — for the reason the schema alone cannot cover it: `POST /v1/graphs`
- * compiles no ajv against `grafo.schema.json` (`domain/graph.ts:222-226`), so a
+ * compiles no ajv against `graph.schema.json` (`domain/graph.ts:222-226`), so a
  * `0` or a `"três"` can reach a snapshot. Falling back is the only safe
  * direction: a ceiling of zero would block every job on its first session, and a
  * ceiling of `NaN` would never block anything.

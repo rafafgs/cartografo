@@ -15,7 +15,7 @@ second consumer the rule of two consumers asked for
 
 | File | What it is |
 |---|---|
-| [`grafo.json`](./grafo.json) | The graph document: seven nodes, nine edges, one pinned `skill_ref` per node. |
+| [`graph.json`](./graph.json) | The graph document: seven nodes, nine edges, one pinned `skill_ref` per node. |
 | [`skills/triage-thesis.json`](./skills/triage-thesis.json) | `gate` — filters the idea before spending research on it. |
 | [`skills/collect-fundamentals.json`](./skills/collect-fundamentals.json) | `work` — gathers fundamentals from primary documents and separates fact, assumption and gap. |
 | [`skills/analyze-asymmetry.json`](./skills/analyze-asymmetry.json) | `work` — the downside floor, the upside target, scenarios fastened to assumptions. |
@@ -77,7 +77,7 @@ second consumer the rule of two consumers asked for
 (discard at the triage, death at the red team, human rejection) and one ends
 with an open position (human approval). There is no separate `archive` node: it
 is the same state-collapse criterion
-[graph 1](../software-development/grafo.json) used for the flowpilot
+[graph 1](../software-development/graph.json) used for the flowpilot
 queues, and it is what makes the **process metrics hold per crossing** — the
 discarded one and the dead one count as much as the approved one, which is
 exactly what D14 wants the topographer to learn.
@@ -133,7 +133,7 @@ somebody assembles by hand:
 
 The investor's criteria, their circle of competence and the state of the
 portfolio do **not** come from the work: they live in the top-level `project`
-object of [`grafo.json`](./grafo.json), which the input projection publishes at
+object of [`graph.json`](./graph.json), which the input projection publishes at
 `input.project` (`t253`,
 [`packages/core/src/domain/context.ts`](../../packages/core/src/domain/context.ts)).
 There are three keys, and the triage interpolates all three:
@@ -263,7 +263,7 @@ trap for whoever comes next.
    `UnresolvedPlaceholderError` before opening a session — failing closed on
    purpose, and exactly the repair `t259` had already made in bundle 1.
    Today the manifest reads `input.job.title`, `input.asset`, `input.job.body`
-   and `input.project.triage_criteria`, `grafo.json` gained the `project` that
+   and `input.project.triage_criteria`, `graph.json` gained the `project` that
    feeds those paths and the class field `asset`, and the crossing
    `triage` → `collect-fundamentals` runs live with a real runner and a real
    control plane in
@@ -290,7 +290,7 @@ trap for whoever comes next.
    contract matching (`docs/spec/graph.md` §6.1) now refuses exactly that at
    import. It was closed as a DECLARATION, not by weakening the check: `capital`
    moved under `input.project`, beside where `portfolio` already lives, and the
-   `project` of `grafo.json` carries the snapshot that feeds it — the same
+   `project` of `graph.json` carries the snapshot that feeds it — the same
    still-picture posture, and the same "keeping it current is editing the
    document" caveat. The manifest went to `1.1.0` with a new content hash, and
    the node's pin followed (D4, D22).

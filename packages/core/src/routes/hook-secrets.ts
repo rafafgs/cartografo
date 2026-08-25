@@ -55,7 +55,7 @@ interface NameParam {
  * Two constraints meet at exactly this pattern, which is why it is one rule and
  * not two: the name is a path segment, so it has to round-trip through a URL
  * without encoding, and it is what `secret_ref` is constrained to in
- * `schema/grafo.schema.json`. A name the document could carry but the route
+ * `schema/graph.schema.json`. A name the document could carry but the route
  * could not address would be a trap discovered at delivery time.
  */
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;

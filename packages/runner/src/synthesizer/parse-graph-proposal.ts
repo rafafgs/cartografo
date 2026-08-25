@@ -30,7 +30,7 @@
  */
 
 /**
- * A proposed graph document, in the shape of `schema/grafo.schema.json`.
+ * A proposed graph document, in the shape of `schema/graph.schema.json`.
  *
  * Deliberately untyped past "it is an object": this module's contract is that
  * the payload parsed and is a document, not that it is a *valid* one. Naming

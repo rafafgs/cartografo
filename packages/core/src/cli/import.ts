@@ -5,7 +5,7 @@
  *
  * - **a file** — the graph document directly, with no ceremony. It is what
  *   `export` produces, and it is what closes the round trip.
- * - **a bundle directory** — reads `<dir>/grafo.json` and, if there is a sibling
+ * - **a bundle directory** — reads `<dir>/graph.json` and, if there is a sibling
  *   `skills/`, checks the bundle BEFORE touching the network. A bundle with a
  *   broken pin never becomes a request: a pinned skill is an injection vector
  *   (D4), and a graph whose `skill_ref` does not match the manifest next to it
@@ -32,7 +32,7 @@
  * pin depends on (required fields, shape of `id`/`version`/`hash`, `role` in the
  * enum, and the recalculated hash matching the declared one), not the whole
  * schema. The reason is the same one that made `domain/graph.ts` port the graph
- * rules instead of loading `schema/grafo.schema.json`: `specs/` is
+ * rules instead of loading `schema/graph.schema.json`: `specs/` is
  * outside the package's publishable tree (`files` in `package.json`), and the
  * core cannot depend at runtime on a file `npm pack` does not carry along. Full
  * conformance against
@@ -129,8 +129,8 @@ function checkManifest(manifest: unknown, file: string): string[] {
  * wrong, like the reference validator: whoever is fixing a bundle needs every
  * problem, not the first one.
  *
- * @param directory Bundle directory (with `grafo.json` and `skills/`).
- * @param document Graph document already read from `<directory>/grafo.json`.
+ * @param directory Bundle directory (with `graph.json` and `skills/`).
+ * @param document Graph document already read from `<directory>/graph.json`.
  * @returns Problems found; empty when the bundle checks out.
  */
 export function verifyBundle(directory: string, document: unknown): BundleProblem[] {
@@ -348,7 +348,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
     throw new UsageError(`path not found: "${options.path}"`);
   }
 
-  const graphPath = isDirectory ? path.join(target, 'grafo.json') : target;
+  const graphPath = isDirectory ? path.join(target, 'graph.json') : target;
   const document = readJson(graphPath);
 
   let hasSkills = false;

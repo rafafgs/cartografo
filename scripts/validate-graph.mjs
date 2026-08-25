@@ -19,7 +19,7 @@
  * that is wrong, not the first error.
  *
  * Zero dependencies: only Node built-ins. Full SHAPE validation against
- * `schema/grafo.schema.json` (via ajv or equivalent) arrives with the control
+ * `schema/graph.schema.json` (via ajv or equivalent) arrives with the control
  * plane's TypeScript scaffold — here the validator covers what it takes to
  * prove the fixtures.
  *
@@ -82,7 +82,7 @@ const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
 /**
- * What a hook may react to — `schema/grafo.schema.json`'s own closed enum.
+ * What a hook may react to — `schema/graph.schema.json`'s own closed enum.
  *
  * Written down here because the schema is not what refuses a third value:
  * `POST /v1/graphs` declares no ajv against it (draft 2020-12 against the

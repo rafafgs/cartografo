@@ -1,7 +1,7 @@
 # Specification: the graph document
 
-**Format version:** 1.0.0 · **Schema:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json)
-(JSON Schema draft 2020-12, `$id: urn:cartografo:schema:grafo:1.0.0`)
+**Format version:** 1.0.0 · **Schema:** [`schema/graph.schema.json`](../../schema/graph.schema.json)
+(JSON Schema draft 2020-12, `$id: urn:cartografo:schema:graph:1.0.0`)
 **Reference validator:** [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs)
 
 The graph is **data, not code** (D15). This document specifies the format of that
@@ -870,7 +870,7 @@ What the format assumes of the rest of the system:
 Multi-graph and multi-file packaging — the atlas's layout, the publication step,
 the integrity check across the crossing — is in
 [`docs/formats/atlas-bundle.md`](../formats/atlas-bundle.md), which treats one
-directory per class (`grafo.json` plus the manifests the nodes pin) and keeps the
+directory per class (`graph.json` plus the manifests the nodes pin) and keeps the
 verification on the two hashes that already exist: the graph version's `id` and
 each node's `skill_ref.hash`. Here it ends at: one graph, one file,
 self-contained.

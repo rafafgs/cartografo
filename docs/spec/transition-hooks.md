@@ -3,7 +3,7 @@
 **API version:** `v1` · **Migrations:**
 [`0016_gancho`](../../packages/core/migrations/0016_gancho.sql),
 [`0018_segredo_gancho`](../../packages/core/migrations/0018_segredo_gancho.sql)
-**Format:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
+**Format:** [`schema/graph.schema.json`](../../schema/graph.schema.json) ·
 **Tickets:** t169, t194
 
 This document is the contract for whoever writes the graph **and** for whoever
@@ -316,7 +316,7 @@ up the tick or touches the write path.
 ## 7. Validation: what is refused, and where
 
 SHAPE validation belongs to
-[`grafo.schema.json`](../../schema/grafo.schema.json) — a missing required field,
+[`graph.schema.json`](../../schema/graph.schema.json) — a missing required field,
 a `trigger` outside the vocabulary, an unknown `destination.type`, a `url` that
 is not an absolute `http(s)` one, a `secret_ref` outside the charset
 `^[a-z0-9][a-z0-9_-]*$` (and a leftover `secret`, which is how a document in the

@@ -113,7 +113,7 @@ recalibrated without touching the design.
 This is the lens's hard point, and it is a consequence, not a preference.
 
 Neither the graph document
-([`grafo.schema.json`](../../schema/grafo.schema.json), whose node is
+([`graph.schema.json`](../../schema/graph.schema.json), whose node is
 `additionalProperties: false`) nor the
 [skill manifest](../../specs/formats/skill-manifest.schema.json) has a
 cost, budget or model-tier field today. A cost policy **has nowhere to land** in

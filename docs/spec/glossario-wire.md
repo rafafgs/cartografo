@@ -107,7 +107,7 @@ and masks exactly what this document maps — the value on the wire.
   glossary reuses that name instead of inventing a second one. That is the case
   of `/v1/jobs` (`packages/core/src/server.ts`), which makes `trabalho` become
   `job` and not `task`; of `node_type: work, gate`
-  (`schema/grafo.schema.json`), which makes `papel: fazer, portao` become
+  (`schema/graph.schema.json`), which makes `papel: fazer, portao` become
   `role: work, gate`; and of `aresta: from, to`
   (`packages/core/src/domain/operations.ts`), which makes `de`/`para` become
   `from`/`to`.

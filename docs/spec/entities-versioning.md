@@ -292,7 +292,7 @@ the script lives outside the package's publishable tree, so the duplication is
 deliberate — and watched.
 
 There is no Fastify/ajv schema declared against
-[`schema/grafo.schema.json`](../../schema/grafo.schema.json): the schema is draft
+[`schema/graph.schema.json`](../../schema/graph.schema.json): the schema is draft
 2020-12 and the ajv that ships with Fastify v5 is configured for draft-07.
 Reconfiguring the compiler is possible and waits for somebody to need complete
 shape validation at the HTTP edge.
@@ -361,7 +361,7 @@ gives a version with no proposal behind it.
 The field's type diverges on purpose between the database and the document:
 `graph.origin_proposal_id` is `INTEGER REFERENCES proposal(id)`, and
 `linhagem.origem_proposta_id` is a `string` in
-[`grafo.schema.json`](../../schema/grafo.schema.json) — designed to accommodate
+[`graph.schema.json`](../../schema/graph.schema.json) — designed to accommodate
 an id from outside, like an imported atlas's. The integer stays in the database
 and becomes `String(id)` in the document. Without an `origem_proposta_id`, the
 key is **omitted** from the document, never `null`, the way `base` already does

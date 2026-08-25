@@ -1,7 +1,7 @@
 /**
  * Factory bundle validator (t105).
  *
- * A bundle is a directory with a `grafo.json` and a `skills/` directory of
+ * A bundle is a directory with a `graph.json` and a `skills/` directory of
  * manifests. This module checks the three things that make it a sound bundle
  * rather than a handful of JSON files in the same place:
  *
@@ -339,7 +339,7 @@ function readJson(filePath) {
  * validator: the caller needs the whole list of what is wrong, not the first
  * error.
  *
- * @param {string} bundleDir Directory with `grafo.json` and `skills/`.
+ * @param {string} bundleDir Directory with `graph.json` and `skills/`.
  * @returns {{valid: boolean, bundle: string, errors: Array<{code: string, message: string}>,
  *            graph: object|null, manifests: Array<object>, pins: Array<object>}}
  */
@@ -349,11 +349,11 @@ export function validateBundle(bundleDir) {
   const annotate = (code, message) => report.errors.push({ code, message });
 
   let doc = null;
-  const graphPath = path.join(bundle, 'grafo.json');
+  const graphPath = path.join(bundle, 'graph.json');
   try {
     doc = readJson(graphPath);
   } catch (error) {
-    annotate('grafo_ilegivel', `could not read grafo.json — ${error.message}`);
+    annotate('grafo_ilegivel', `could not read graph.json — ${error.message}`);
   }
 
   if (doc !== null) {

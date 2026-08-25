@@ -62,7 +62,7 @@ import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
  *
  * `lineage_type` carries the schema's own word, `base` or `variant` — the
  * `CHECK` D20's fifth child (t235) rewrote. The DOCUMENT's `lineage.type` is a
- * different vocabulary and is NOT this one: `schema/grafo.schema.json` says
+ * different vocabulary and is NOT this one: `schema/graph.schema.json` says
  * `variante`, because a format key and a format value are outside D20 (D18's
  * carve-out), and `routes/graphs.ts` keeps writing that word into the snapshot
  * it forks.

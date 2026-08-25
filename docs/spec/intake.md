@@ -69,7 +69,7 @@ comes back as `missing_required_field`, because `title` is the required one.
 The criteria intake writes are **preliminary**. What really produces them is
 factory graph 1's `refinar` node, whose contract takes `{ticket_id, pedido}` and
 returns `{especificacao, criterios_de_aceite, ...}`
-([`factory-graphs/software-development/grafo.json`](../../factory-graphs/software-development/grafo.json)).
+([`factory-graphs/software-development/graph.json`](../../factory-graphs/software-development/graph.json)).
 Demanding a complete acceptance criterion on the way in would be asking intake to
 do the graph's work.
 

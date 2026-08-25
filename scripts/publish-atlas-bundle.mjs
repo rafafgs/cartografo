@@ -36,7 +36,7 @@
  * Zero dependencies: only Node built-ins and the reference validator, the same
  * constraint `validate-factory-bundle.mjs` carries.
  *
- * The names this file reads (`problem_class`, `grafo.json`, `skills/`) belong to
+ * The names this file reads (`problem_class`, `graph.json`, `skills/`) belong to
  * the graph-bundle and skill-manifest formats: this module publishes that
  * format, it does not own it. The KEY moved to English with t178; the file and
  * directory names did not, and are the downstream slice's to rename.
@@ -50,7 +50,7 @@ import { validateBundle } from './validate-factory-bundle.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The graph document of a bundle. */
-const GRAPH_FILE = 'grafo.json';
+const GRAPH_FILE = 'graph.json';
 
 /** The manifest directory of a bundle. */
 const SKILLS_DIR = 'skills';
@@ -59,7 +59,7 @@ const SKILLS_DIR = 'skills';
  * A class that is safe as a single directory name.
  *
  * The format only requires `problem_class` to be a non-empty string
- * (`schema/grafo.schema.json`), and this script turns that string into a path.
+ * (`schema/graph.schema.json`), and this script turns that string into a path.
  * Anything with a separator, a drive letter or a `..` in it would publish
  * outside the atlas, so it is refused here instead of being sanitized: a class
  * whose name is not a directory name is a bundle problem, not a copy problem.
@@ -97,7 +97,7 @@ function copyInto(from, to) {
  * reference validator does: whoever is fixing a bundle needs every problem, not
  * the first one.
  *
- * @param {string} bundleDir Directory with `grafo.json` and `skills/`.
+ * @param {string} bundleDir Directory with `graph.json` and `skills/`.
  * @param {string} atlasDir Atlas checkout; created when it does not exist.
  * @returns {{published: boolean, bundle: string, atlas: string, target: string|null,
  *            name: string|null, written: string[], removed: string[],

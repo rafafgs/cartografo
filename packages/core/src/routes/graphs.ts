@@ -2,12 +2,12 @@
  * Graph and graph-version routes (t101, FR5/FR6).
  *
  * `POST /graphs` is the path that turns a graph into DATA: the very same
- * `grafo.json` of the factory bundle goes in raw, passes the validation gate and
+ * `graph.json` of the factory bundle goes in raw, passes the validation gate and
  * becomes a lineage plus a first version. It is D16's "graph living as data in
  * the database (not as code)" criterion.
  *
  * The body is the pure graph document, with no envelope. There is no Fastify/ajv
- * schema declared against `schema/grafo.schema.json`: the t96 schema is draft
+ * schema declared against `schema/graph.schema.json`: the t96 schema is draft
  * 2020-12 and the ajv shipped with Fastify v5 is configured for draft-07.
  * Instead of reconfiguring the compiler, the gate is the
  * `validateStructure`/`validateSoundness` pair called in the handler — which is
@@ -20,7 +20,7 @@
  * other route's body under a different validator — a blast radius out of all
  * proportion to documenting one endpoint, and one no route needs, since
  * `validateGraph` below already enforces the real contract. So the body stays
- * open and `POST /graphs` NAMES `schema/grafo.schema.json` in its own
+ * open and `POST /graphs` NAMES `schema/graph.schema.json` in its own
  * `schema.description`, where a reader of the public document (not of this file)
  * finds it. Reopening it means enforcing the schema for real, which is a decision
  * with its own ticket and its own analysis of every other route.
@@ -107,8 +107,8 @@ const ID_PARAM_SCHEMA = {
  * repository would look.
  */
 const GRAPH_DOCUMENT_DESCRIPTION =
-  'The body is the pure graph document, with no envelope — the same `grafo.json` of the factory bundle. ' +
-  'Its real contract is `schema/grafo.schema.json` (`$id: urn:cartografo:schema:grafo:1.0.0`), which a client has to read separately: ' +
+  'The body is the pure graph document, with no envelope — the same `graph.json` of the factory bundle. ' +
+  'Its real contract is `schema/graph.schema.json` (`$id: urn:cartografo:schema:graph:1.0.0`), which a client has to read separately: ' +
   'that schema is JSON Schema draft 2020-12 and the validator wired into this API compiles draft-07, so the body is declared here as a plain object and judged by the server\'s own structure/soundness gate instead.';
 
 /**
@@ -272,7 +272,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
 
   const lineage = isObject(raw.lineage) ? raw.lineage : {};
   if (lineage.type !== 'base') {
-    // `lineage.type` is the DOCUMENT's field (`schema/grafo.schema.json`), so
+    // `lineage.type` is the DOCUMENT's field (`schema/graph.schema.json`), so
     // what it carries is echoed back untranslated — it is what the caller sent,
     // and a mapper here would report a value nobody wrote.
     return refusal(
@@ -512,14 +512,14 @@ async function fork(
   const document: GraphDocument = {
     ...source.snapshot,
     lineage: {
-      // The DOCUMENT's vocabulary, not the column's: `schema/grafo.schema.json`
+      // The DOCUMENT's vocabulary, not the column's: `schema/graph.schema.json`
       // says `variante`, and a format value is outside D20 (D18's carve-out).
       // `graph.lineage_type` says `variant` and is written by `forkVariant`.
       type: 'variante',
       base_class: base.class,
       // Absent, not null: the same elision `base` already does with the two
       // fields the schema forbids it. The column is INTEGER and the document
-      // field is a string (`schema/grafo.schema.json`) — hence the `String`.
+      // field is a string (`schema/graph.schema.json`) — hence the `String`.
       ...(originProposalId === null ? {} : { source_proposal_id: String(originProposalId) }),
     },
   };

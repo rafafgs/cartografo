@@ -170,7 +170,7 @@ produces exactly the same version, because the id of a version is the canonical
 hash of the document. One caveat worth knowing: the skills' INSTRUCTIONS do not
 travel in that file — it carries the pin (id, version and hash) that identifies
 each one. Whoever wants to take the instructions along takes the map's folder,
-with `grafo.json` and `skills/` side by side, which is the format the factory maps
+with `graph.json` and `skills/` side by side, which is the format the factory maps
 use and which `import` also accepts.
 
 Improving a step's instructions is not a dead end: the versions of a skill coexist

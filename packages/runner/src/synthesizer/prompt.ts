@@ -29,7 +29,7 @@
  *
  * Every rule of the format that `cartografo import` enforces has to be stated
  * here, and "has to" is literal: the session's `workingDir` is an empty
- * temporary directory, so it cannot open `schema/grafo.schema.json` and read the
+ * temporary directory, so it cannot open `schema/graph.schema.json` and read the
  * format for itself. A rule that lives only in the schema is a rule the session
  * cannot follow. That is how t138 was found — a draft that obeyed every word of
  * this text still came back `grafo_invalido` / `soundness no_com_contrato`,
@@ -75,7 +75,7 @@ export type VerificationExample = Readonly<Record<string, unknown>>;
  * is NOT a graph document's check. They disagree on
  * `required_evidence`, which is a non-empty list of the artifacts the
  * verdict has to cite in `specs/formats/skill-manifest.schema.json`
- * and the literal `true` in `schema/grafo.schema.json`. Tell a session "every
+ * and the literal `true` in `schema/graph.schema.json`. Tell a session "every
  * node needs a check" with only manifest-shaped checks in front of it and it
  * copies one across, which trades the failure t138 reported for a different one
  * at the same gate.
@@ -225,7 +225,7 @@ export function buildSynthesisPrompt(
     '{ ... documento de grafo ... }',
     '```',
     '',
-    'O documento é um JSON no formato de `schema/grafo.schema.json`, com as oito',
+    'O documento é um JSON no formato de `schema/graph.schema.json`, com as oito',
     'chaves obrigatórias e nada além delas:',
     '',
     `- \`problem_class\`: ${JSON.stringify(className)};`,

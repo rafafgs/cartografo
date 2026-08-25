@@ -3781,9 +3781,9 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         { type: "system", ref: "runner" },
         "the wiring raised this block, not the session and not a person",
       );
-      const motivo = String(blocks[0].reason);
-      assert.ok(motivo.includes("implementar"), motivo);
-      assert.ok(motivo.includes(ESCALATION.question), motivo);
+      const reason = String(blocks[0].reason);
+      assert.ok(reason.includes("implementar"), reason);
+      assert.ok(reason.includes(ESCALATION.question), reason);
 
       assert.deepEqual(
         await questionsOf(job.id),
@@ -3800,7 +3800,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         token,
       );
       assert.equal(after.blocked, true, "the work stops all the same");
-      assert.equal(after.block_reason, motivo);
+      assert.equal(after.block_reason, reason);
       assert.equal(after.current_node_id, "implementar", "and it never advanced past the node that got stuck");
     },
   );
@@ -3919,9 +3919,9 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
 
       const blocks = posted(calls, `/v1/jobs/${job.id}/blocks`);
       assert.equal(blocks.length, 1);
-      const motivo = String(blocks[0].reason);
-      assert.ok(motivo.includes("conferir"), motivo);
-      assert.ok(motivo.includes("escala"), motivo);
+      const reason = String(blocks[0].reason);
+      assert.ok(reason.includes("conferir"), reason);
+      assert.ok(reason.includes("escala"), reason);
 
       assert.deepEqual(await questionsOf(job.id), []);
       const after = await api<Work>(

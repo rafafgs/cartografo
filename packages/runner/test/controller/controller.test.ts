@@ -515,14 +515,14 @@ function refusingClient(
   return { client, asked: () => asked };
 }
 
-for (const motivo of ['runner_cap', 'project_cap'] as const) {
-  test(`t208 — tick() stops asking after a \`${motivo}\` refusal, even with candidates left`, async () => {
+for (const reason of ['runner_cap', 'project_cap'] as const) {
+  test(`t208 — tick() stops asking after a \`${reason}\` refusal, even with candidates left`, async () => {
     const { Controller } = await loadController();
 
     // Three released candidates and a ceiling that is already full: every one of
     // them would come back with this same answer, so the two POSTs after the
     // first are round trips spent learning something the first one said.
-    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, reason: motivo }]);
+    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, reason }]);
 
     const controller = new Controller({
       ...BASE_OPTIONS,
@@ -536,7 +536,7 @@ for (const motivo of ['runner_cap', 'project_cap'] as const) {
     assert.deepEqual(
       asked(),
       [1],
-      `"${motivo}" is about this runner's or this project's capacity, not about job 1: ` +
+      `"${reason}" is about this runner's or this project's capacity, not about job 1: ` +
         'the tick has nothing left to ask for',
     );
   });

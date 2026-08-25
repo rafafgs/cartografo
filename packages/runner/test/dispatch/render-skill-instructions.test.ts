@@ -1073,14 +1073,14 @@ test('AT22 — an oversized input is cut at the cap, and the cut says so', async
   const { INPUT_VALUES_CAP_BYTES } = await loadInputValues();
 
   const declared = { type: 'object', properties: { x: { type: 'string' } } };
-  const big = { x: 'a'.repeat(20_000) };
+  const big = { x: 'a'.repeat(80_000) };
   const originalBytes = Buffer.byteLength(JSON.stringify(big, null, 2), 'utf8');
-  assert.equal(originalBytes, 20_013, 'the fixture has to be over the cap by a known amount');
+  assert.equal(originalBytes, 80_013, 'the fixture has to be over the cap by a known amount');
 
   const block = inputValuesBlock(await renderValues(declared, big));
 
   assert.ok(
-    block.includes('16.384') && block.includes('20.013'),
+    block.includes('65.536') && block.includes('80.013'),
     `the marker names both the bytes shown and the bytes there were: ${block.slice(-400)}`,
   );
   assert.ok(
@@ -1088,7 +1088,7 @@ test('AT22 — an oversized input is cut at the cap, and the cut says so', async
     'and points at where the whole object still lives',
   );
   assert.ok(
-    !block.includes('a'.repeat(20_000)),
+    !block.includes('a'.repeat(80_000)),
     'the whole value must not be in the prompt: that is what the cap is for',
   );
   assert.ok(

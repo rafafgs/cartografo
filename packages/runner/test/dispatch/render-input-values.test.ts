@@ -135,7 +135,7 @@ test('t267 — with neither declared, the whole resolved input is shown', async 
 test('t267 — the block is the heading, the fenced JSON, and nothing else under the cap', async () => {
   const { renderInputValues, INPUT_VALUES_CAP_BYTES } = await loadModule();
 
-  assert.equal(INPUT_VALUES_CAP_BYTES, 16_384, 'the cap is 16 KB, in bytes');
+  assert.equal(INPUT_VALUES_CAP_BYTES, 65_536, 'the cap is 65.536 bytes (64 KB)');
 
   const input = { nota: 'a nota do nó anterior' };
   const lines = renderInputValues({ required: ['nota'] }, input);
@@ -153,15 +153,42 @@ test('t267 — the block is the heading, the fenced JSON, and nothing else under
   );
 });
 
+/**
+ * The floor under the cap, and the only permanent artifact of t298's calibration.
+ *
+ * The number is not a preference: it is the largest input-values block a real
+ * traversal has carried — the `red-team` node of `bets-assimetricas`, at 39.092
+ * bytes, in the third real bets run (`notas/2026-08-18-third-bets-run.md`, hole
+ * 1). At the 16 KB cap that block lost `premissas` and `assimetria`, both
+ * `required` by the skill reading them, and the session escalated over an
+ * environment limit instead of proceeding.
+ *
+ * So the assertion is a one-way ratchet rather than an equality: raising the cap
+ * is somebody's measurement, lowering it under this number is re-opening a human
+ * gate production has already paid for once.
+ */
+test('t298 — the cap never regresses under the bets bundle\'s confirmed real maximum', async () => {
+  const { INPUT_VALUES_CAP_BYTES } = await loadModule();
+
+  const BETS_REAL_MAXIMUM_BYTES = 39_092;
+
+  assert.ok(
+    INPUT_VALUES_CAP_BYTES >= BETS_REAL_MAXIMUM_BYTES,
+    `the cap (${INPUT_VALUES_CAP_BYTES}) is under the largest block a real traversal ` +
+      `carried (${BETS_REAL_MAXIMUM_BYTES}, notas/2026-08-18-third-bets-run.md): the ` +
+      'red team would lose required keys again and escalate over the cut',
+  );
+});
+
 test('t267 — over the cap the JSON is cut to the cap and the marker names both sizes', async () => {
   const { renderInputValues, INPUT_VALUES_CAP_BYTES } = await loadModule();
 
   // All ASCII on purpose: the cut lands exactly on the cap, so the byte count
   // in the marker is arithmetic rather than an approximation.
-  const input = { x: 'a'.repeat(20_000) };
+  const input = { x: 'a'.repeat(80_000) };
   const whole = JSON.stringify(input, null, 2);
   const originalBytes = Buffer.byteLength(whole, 'utf8');
-  assert.equal(originalBytes, 20_013, 'the fixture has to be over the cap, and by a known amount');
+  assert.equal(originalBytes, 80_013, 'the fixture has to be over the cap, and by a known amount');
 
   const lines = renderInputValues({ properties: { x: { type: 'string' } } }, input);
   const shown = fencedText(lines);
@@ -175,8 +202,8 @@ test('t267 — over the cap the JSON is cut to the cap and the marker names both
 
   const marker = afterFence(lines);
   assert.equal(marker.length, 1, 'one marker line, immediately after the closing fence');
-  assert.ok(marker[0].includes('16.384'), `the marker names what is shown: ${marker[0]}`);
-  assert.ok(marker[0].includes('20.013'), `and what the object really weighed: ${marker[0]}`);
+  assert.ok(marker[0].includes('65.536'), `the marker names what is shown: ${marker[0]}`);
+  assert.ok(marker[0].includes('80.013'), `and what the object really weighed: ${marker[0]}`);
   assert.ok(
     marker[0].includes('GET /v1/jobs/:id/context'),
     `and where the whole object still lives: ${marker[0]}`,
@@ -189,7 +216,7 @@ test('t267 — the cut walks backward off a continuation byte, never through a r
   // `{\n  "xy": "` is 11 bytes, and every `é` after it is 2 — so the cap lands
   // on an ODD offset inside the run, which is the middle of a character. The
   // fix costs one byte; not walking back prints a `U+FFFD` no node produced.
-  const input = { xy: 'é'.repeat(12_000) };
+  const input = { xy: 'é'.repeat(40_000) };
   const whole = JSON.stringify(input, null, 2);
   assert.equal(whole.indexOf('é'), 11, 'the fixture puts the run at an odd byte offset');
   assert.ok(Buffer.byteLength(whole, 'utf8') > INPUT_VALUES_CAP_BYTES);
@@ -209,7 +236,7 @@ test('t267 — the cut walks backward off a continuation byte, never through a r
   const marker = afterFence(renderInputValues({}, input));
   assert.equal(marker.length, 1);
   assert.ok(
-    marker[0].includes('16.383'),
+    marker[0].includes('65.535'),
     `the marker reports what is really shown, not the cap it aimed at: ${marker[0]}`,
   );
 });

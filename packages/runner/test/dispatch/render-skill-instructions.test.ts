@@ -1120,8 +1120,8 @@ test('AT23 — the skill\'s own `output` is rendered, as the thing /finish check
 
   const output = {
     type: 'object',
-    required: ['outcome', 'motivo'],
-    properties: { outcome: { enum: ['aprovado', 'retrabalho'] }, motivo: { type: 'string' } },
+    required: ['outcome', 'reason'],
+    properties: { outcome: { enum: ['aprovado', 'retrabalho'] }, reason: { type: 'string' } },
     additionalProperties: false,
   };
 

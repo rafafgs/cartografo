@@ -29,7 +29,7 @@ import {
 } from './cli-support.ts';
 
 const FACTORY_CLASS = 'software-development';
-const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
+const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'graph.json');
 const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'examples', 'graph-invalid-unreachable-node.json');
 
 /** The fixture that declares hooks, and the class it registers as (t194). */
@@ -163,9 +163,9 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     );
   });
 
-  const exportedFile = path.join(base, 'saida.grafo.json');
+  const exportedFile = path.join(base, 'saida.graph.json');
 
-  await t.test('exporting returns the same document as the source grafo.json', async () => {
+  await t.test('exporting returns the same document as the source graph.json', async () => {
     const result = await runCli([
       'export',
       FACTORY_CLASS,
@@ -252,7 +252,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   manifest.hash = contentHash(manifest);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-  const graphPath = path.join(bundle, 'grafo.json');
+  const graphPath = path.join(bundle, 'graph.json');
   const document = JSON.parse(readFileSync(graphPath, 'utf8')) as Record<string, unknown>;
   let repinned = 0;
   for (const node of document.nodes as Record<string, unknown>[]) {
@@ -292,7 +292,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
  * carries only the name, and the written file is grepped for the value.
  *
  * The atlas path needs no test of its own precisely because it copies this file
- * without reading it — a guarantee about `saida.grafo.json` is a guarantee about
+ * without reading it — a guarantee about `saida.graph.json` is a guarantee about
  * every artifact built out of it.
  */
 test('t194 — `cartografo export` writes the reference and never the secret', { timeout: 180_000 }, async (t) => {
@@ -329,7 +329,7 @@ test('t194 — `cartografo export` writes the reference and never the secret', {
   });
   assert.equal(imported.code, 0, `stdout:\n${imported.stdout}\nstderr:\n${imported.stderr}`);
 
-  const exportedFile = path.join(base, 'ganchos.grafo.json');
+  const exportedFile = path.join(base, 'ganchos.graph.json');
   const exported = await runCli(
     ['export', HOOKS_CLASS, '--out', exportedFile, '--url', controlPlane.url],
     { token: controlPlane.token },

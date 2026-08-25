@@ -41,7 +41,7 @@ function block(payload: string): string {
   return ['```grafo-proposto', payload, '```'].join('\n');
 }
 
-/** A graph document, in the shape of `schema/grafo.schema.json`. */
+/** A graph document, in the shape of `schema/graph.schema.json`. */
 function graph(className: string): Record<string, unknown> {
   return {
     problem_class: className,

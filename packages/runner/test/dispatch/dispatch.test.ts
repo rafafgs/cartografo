@@ -2653,7 +2653,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
 function traversalGraph(className: string): Record<string, unknown> {
   const document = JSON.parse(
     readFileSync(
-      path.join(PACKAGE_ROOT, "test", "fixtures", "grafo-travessia.json"),
+      path.join(PACKAGE_ROOT, "test", "fixtures", "graph-traversal.json"),
       "utf8",
     ),
   ) as Record<string, unknown>;

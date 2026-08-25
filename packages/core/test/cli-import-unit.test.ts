@@ -43,14 +43,14 @@ import { capture, startFakeControlPlane, type FakeAnswer } from './cli-unit-supp
 
 /** The graph document of factory bundle 1, read fresh. */
 function graphOf(directory: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(path.join(directory, 'grafo.json'), 'utf8')) as Record<
+  return JSON.parse(readFileSync(path.join(directory, 'graph.json'), 'utf8')) as Record<
     string,
     unknown
   >;
 }
 
 function writeGraph(directory: string, document: unknown): void {
-  writeFileSync(path.join(directory, 'grafo.json'), `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+  writeFileSync(path.join(directory, 'graph.json'), `${JSON.stringify(document, null, 2)}\n`, 'utf8');
 }
 
 function manifestOf(directory: string, file: string): Record<string, unknown> {
@@ -260,13 +260,13 @@ test('a path that does not exist never becomes a request', async (t) => {
   const plane = await startFakeControlPlane(t, accepting());
 
   await assert.rejects(
-    capture(() => runImport({ path: '/nao/existe/grafo.json', url: plane.url })),
+    capture(() => runImport({ path: '/nao/existe/graph.json', url: plane.url })),
     UsageError,
   );
   assert.deepEqual(plane.requests, []);
 });
 
-test('a bundle directory with no grafo.json says so instead of failing on a read', async (t) => {
+test('a bundle directory with no graph.json says so instead of failing on a read', async (t) => {
   const plane = await startFakeControlPlane(t, accepting());
   const area = temporaryArea(t, 'cartografo-t212-import-');
 
@@ -276,10 +276,34 @@ test('a bundle directory with no grafo.json says so instead of failing on a read
   );
 });
 
+test('a bundle directory that still carries the legacy grafo.json is not a bundle', async (t) => {
+  // t305 renamed the convention. The old name is not a fallback and must not
+  // become one: a directory holding `grafo.json` alone is a directory holding an
+  // unrecognised file, and the importer has to say the name it looked for rather
+  // than silently reading the one it found. `--path <file>` is still how anybody
+  // imports a graph document by whatever name it carries.
+  const plane = await startFakeControlPlane(t, accepting());
+  const area = temporaryArea(t, 'cartografo-t305-import-');
+  writeFileSync(
+    path.join(area, 'grafo.json'),
+    `${JSON.stringify(graphOf(FACTORY_BUNDLE), null, 2)}\n`,
+    'utf8',
+  );
+
+  await assert.rejects(
+    capture(() => runImport({ path: area, url: plane.url })),
+    (error: unknown) =>
+      error instanceof UsageError &&
+      /could not read/.test(error.message) &&
+      error.message.includes('graph.json'),
+  );
+  assert.deepEqual(plane.requests, []);
+});
+
 test('a file that is not valid JSON says where it broke', async (t) => {
   const plane = await startFakeControlPlane(t, accepting());
   const area = temporaryArea(t, 'cartografo-t212-import-');
-  const file = path.join(area, 'grafo.json');
+  const file = path.join(area, 'graph.json');
   writeFileSync(file, '{ "nodes": [', 'utf8');
 
   await assert.rejects(
@@ -294,7 +318,7 @@ test('a graph file goes straight to the control plane, with no registry step', a
   const directory = bundleCopy(t);
 
   const run = await capture(() =>
-    runImport({ path: path.join(directory, 'grafo.json'), url: plane.url }),
+    runImport({ path: path.join(directory, 'graph.json'), url: plane.url }),
   );
 
   assert.equal(run.code, 0);
@@ -492,7 +516,7 @@ test('a class already registered comes back as class_already_registered', async 
   const directory = bundleCopy(t);
 
   const run = await capture(() =>
-    runImport({ path: path.join(directory, 'grafo.json'), url: plane.url }),
+    runImport({ path: path.join(directory, 'graph.json'), url: plane.url }),
   );
 
   assert.equal(run.code, 1);
@@ -510,7 +534,7 @@ test('a graph the control plane refuses is printed rule by rule', async (t) => {
   const directory = bundleCopy(t);
 
   const run = await capture(() =>
-    runImport({ path: path.join(directory, 'grafo.json'), url: plane.url }),
+    runImport({ path: path.join(directory, 'graph.json'), url: plane.url }),
   );
 
   assert.equal(run.code, 1);
@@ -524,7 +548,7 @@ test('a 422 with nothing to list is still a refusal, not a crash', async (t) => 
   const directory = bundleCopy(t);
 
   const run = await capture(() =>
-    runImport({ path: path.join(directory, 'grafo.json'), url: plane.url }),
+    runImport({ path: path.join(directory, 'graph.json'), url: plane.url }),
   );
 
   assert.equal(run.code, 1);
@@ -533,7 +557,7 @@ test('a 422 with nothing to list is still a refusal, not a crash', async (t) => 
 
 test('any other refusal of the graph is printed with what came with it', async (t) => {
   const directory = bundleCopy(t);
-  const graphPath = path.join(directory, 'grafo.json');
+  const graphPath = path.join(directory, 'graph.json');
 
   const detailed = await startFakeControlPlane(t, () => ({
     status: 503,

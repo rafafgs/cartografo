@@ -149,7 +149,7 @@ async function registerBundle(ctx: TestContext, testCase: FinalNodeCase): Promis
     ctx,
     'POST',
     '/v1/graphs',
-    bundleFile(testCase.bundle, 'grafo.json'),
+    bundleFile(testCase.bundle, 'graph.json'),
   );
   assert.equal(graph.status, 201, `POST /v1/graphs returned ${graph.status}`);
   return graph.body.graph_version.id;

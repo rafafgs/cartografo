@@ -112,7 +112,7 @@ test('a subcommand missing what it cannot work without is refused before any req
 test('what is left over on the command line is refused instead of ignored', async () => {
   const lines: [string[], RegExp][] = [
     [['status', 'sobrando'], /status does not understand: "sobrando"/],
-    [['import', 'grafo.json', 'sobrando'], /import does not understand: "sobrando"/],
+    [['import', 'graph.json', 'sobrando'], /import does not understand: "sobrando"/],
     [['export', 'classe', 'sobrando', 'mais'], /export does not understand: "sobrando", "mais"/],
     [['register-skill', '--job', '7', 'sobrando'], /register-skill does not understand: "sobrando"/],
   ];

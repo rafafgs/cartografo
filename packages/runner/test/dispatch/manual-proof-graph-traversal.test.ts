@@ -40,7 +40,7 @@ const GRAPH_PATH = path.join(
   REPO_ROOT,
   'factory-graphs',
   'software-development',
-  'grafo.json',
+  'graph.json',
 );
 
 function read(file: string): string {

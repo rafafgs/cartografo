@@ -171,7 +171,7 @@ function reports(payload: Record<string, unknown>): string {
  * Read and never retyped: `input.project` IS this object, and a copy in the
  * test would keep passing the day the bundle's own config moved.
  */
-const PROJECT = bundleFile('grafo.json').project as Record<string, unknown>;
+const PROJECT = bundleFile('graph.json').project as Record<string, unknown>;
 
 /** What the fake `refine` session hands back — `refine-ticket`'s `output`. */
 const ESPECIFICACAO = '## Goal\n\nMake the real traversal happen, end to end.';
@@ -346,7 +346,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
     token,
     'POST',
     '/v1/graphs',
-    bundleFile('grafo.json'),
+    bundleFile('graph.json'),
     201,
   );
 
@@ -610,7 +610,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
 /**
  * Every `project.<key>` this file spells is a key the bundle still has (t294).
  *
- * t280 rewrote the `project` block of `grafo.json` into English, and the three
+ * t280 rewrote the `project` block of `graph.json` into English, and the three
  * sweeps that keep D24 closed are all blind to what it left behind here.
  * `no-portuguese-wire.test.ts` and `no-portuguese-identifiers.test.ts` MASK
  * comments on purpose — prose about a name is documentation and not the name,
@@ -624,7 +624,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
  * So this case reads its own source, comments included, and checks the one
  * thing that makes such a mention true: that the document still publishes the
  * key. It is not a Portuguese sweep. A key renamed in any future direction, or
- * dropped, goes red here the same way — the gate is `grafo.json`, not a word
+ * dropped, goes red here the same way — the gate is `graph.json`, not a word
  * bank, and it costs nothing to keep because `PROJECT` is already read off the
  * committed bundle for the crossing above.
  *

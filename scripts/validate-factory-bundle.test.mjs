@@ -55,7 +55,7 @@ function bundleCopy() {
  * @returns {string} The same directory, for chaining into `validateBundle`.
  */
 function editGraph(bundle, id, mutate) {
-  const target = path.join(bundle, 'grafo.json');
+  const target = path.join(bundle, 'graph.json');
   const doc = JSON.parse(readFileSync(target, 'utf8'));
   const found = doc.nodes.find((candidate) => candidate.id === id);
   assert.ok(found, `the bundle no longer has a node "${id}"`);

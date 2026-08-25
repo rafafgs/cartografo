@@ -319,7 +319,7 @@ test('AC1 — the page produces the same version the API would, through the same
 /**
  * The base graph with two edges between the same two nodes.
  *
- * Sound, and always was: nothing in `grafo.schema.json` or in the four
+ * Sound, and always was: nothing in `graph.schema.json` or in the four
  * soundness rules forbids two transitions between the same pair — they are two
  * different outcomes of the same step, which is exactly what a gate produces.
  */

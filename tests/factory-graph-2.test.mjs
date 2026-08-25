@@ -56,10 +56,10 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'asymmetric-bets');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
-const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
+const GRAPH_PATH = path.join(BUNDLE_DIR, 'graph.json');
 const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
-const GRAPH_SCHEMA_PATH = path.join(ROOT, 'schema', 'grafo.schema.json');
+const GRAPH_SCHEMA_PATH = path.join(ROOT, 'schema', 'graph.schema.json');
 const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
   'specs',
@@ -217,7 +217,7 @@ function linesWith(text, fragments) {
     .filter((line) => fragments.every((fragment) => line.includes(fragment)));
 }
 
-test("AT1 — grafo.json passes validarEstrutura, validarSoundness and t96's schema", async () => {
+test("AT1 — graph.json passes validarEstrutura, validarSoundness and t96's schema", async () => {
   const { validarEstrutura, validarSoundness } = await graphValidator();
   const { validateAgainstSchema } = await bundleValidator();
   const doc = readJson(GRAPH_PATH);
@@ -227,7 +227,7 @@ test("AT1 — grafo.json passes validarEstrutura, validarSoundness and t96's sch
   assert.deepEqual(validarSoundness(doc).violations, []);
   assert.equal(validarSoundness(doc).valid, true);
 
-  // The bundle does not validate shape against `schema/grafo.schema.json` —
+  // The bundle does not validate shape against `schema/graph.schema.json` —
   // only structure and soundness. This document is new content, so the shape is
   // checked here.
   assert.deepEqual(validateAgainstSchema(doc, readJson(GRAPH_SCHEMA_PATH)), []);

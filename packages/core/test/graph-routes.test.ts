@@ -1,7 +1,7 @@
 /**
  * Graph route acceptance tests (t101, FR5/FR6).
  *
- * The central test is AT6: the `grafo.json` of factory bundle 1 (t105) goes in
+ * The central test is AT6: the `graph.json` of factory bundle 1 (t105) goes in
  * through the API **with no editing at all**. It is the integration proof of
  * D16's "graph living as data in the database" criterion — a synthetic fixture
  * would not prove that.
@@ -41,7 +41,7 @@ const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
   'software-development',
-  'grafo.json',
+  'graph.json',
 );
 
 /** Minimal test context used by the helpers in this file. */

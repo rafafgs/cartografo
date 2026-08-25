@@ -905,7 +905,7 @@ test('t262 AT-5 — a final node with no skill_ref at all is concluído on arriv
   ).graph_id;
 
   // Inserted through the repository, bypassing `POST /v1/graphs` on purpose:
-  // `schema/grafo.schema.json` makes `skill_ref` mandatory on every node, so no
+  // `schema/graph.schema.json` makes `skill_ref` mandatory on every node, so no
   // document that passes the registration gate can ever reach this branch. It
   // exists for the malformed or pre-existing snapshot, the same way
   // `resolveOutputSchema` and the runner's `resolveNode` already degrade instead

@@ -939,7 +939,7 @@ test('t180 — a lease of another runner is refused in English, quoting both ids
 /* header requires, and the route already knew both sides.                     */
 /*                                                                            */
 /* The graph is the minimal example, whose final node PINS a skill — every     */
-/* node of a registrable document does, because `schema/grafo.schema.json`     */
+/* node of a registrable document does, because `schema/graph.schema.json`     */
 /* makes `skill_ref` mandatory. So the pinned step is run and reported FIRST   */
 /* (t262), which leaves the transition as the fact that completes the job,     */
 /* with its own lease still held: the exact ordering the defect needs.         */

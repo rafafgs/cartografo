@@ -56,7 +56,7 @@ import { manifestHash } from '../scripts/validate-factory-bundle.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The note under gate, and the bundle whose numbers it claims to record. */
-export const CLOSING_NOTE = path.join('notas', '2026-08-24-t280-closing-note.md');
+export const CLOSING_NOTE = path.join('notes', '2026-08-24-t280-closing-note.md');
 
 /** The bundle the note describes, relative to the repository root. */
 export const BUNDLE = path.join('factory-graphs', 'software-development');
@@ -85,6 +85,37 @@ export const BUNDLE = path.join('factory-graphs', 'software-development');
 export const RETIRED_ROWS = Object.freeze([
   Object.freeze({ identifier: 'desenvolvimento-de-software', retiredBy: 't306' }),
 ]);
+
+/**
+ * Files of the bundle a LATER ticket renamed, mapped from the note to the tree.
+ *
+ * Same narrow case as `RETIRED_ROWS` above and the same reasoning: the note is
+ * history and is not edited, so a file it names by a spelling the tree no longer
+ * has is recorded HERE rather than rewritten there. There is one. t305 renamed
+ * the graph-document family — `graph.json` to `graph.json`, `graph.schema.json`
+ * to `graph.schema.json`, and the URN `$id` with them — which is the rename t282
+ * and t306 both wrote down and deferred because it changes a contract, not just
+ * a path.
+ *
+ * This is a translation of names, not a suppression: every row the note writes
+ * is still read, still resolved and still checked, against the file the name now
+ * points at. The day the mapping stops naming a real pair, AT1 says so — its
+ * `bundleFiles()` comparison is total, so a stale entry produces a set mismatch
+ * rather than a silent pass.
+ */
+export const RENAMED_FILES = Object.freeze([
+  Object.freeze({ was: 'graph.json', is: 'graph.json', renamedBy: 't305' }),
+]);
+
+/**
+ * The name a file the note spells carries in the tree today.
+ *
+ * @param {string} named A file name as the closing note writes it.
+ * @returns {string} The bundle-relative name that file has now.
+ */
+function liveName(named) {
+  return RENAMED_FILES.find((entry) => entry.was === named)?.is ?? named;
+}
 
 /** The sweep whose docblock cites the note; the citation has to resolve. */
 export const CITING_GATE = path.join('tests', 'no-portuguese-factory-bundles.test.mjs');
@@ -174,7 +205,7 @@ function tableUnder(note, heading) {
  * @returns {Map<string, {id: string, version: string, hash: string}>} The pins.
  */
 function graphPins() {
-  const graph = JSON.parse(read(path.join(BUNDLE, 'grafo.json')));
+  const graph = JSON.parse(read(path.join(BUNDLE, 'graph.json')));
   return new Map(
     graph.nodes
       .filter((node) => node.skill_ref !== undefined)
@@ -188,13 +219,14 @@ test('AT1 — the note records a before and an after line count for every file o
   assert.deepEqual(header, ['File', 'Old name', 'Before', 'After']);
 
   assert.deepEqual(
-    rows.map((row) => row[0]).sort(),
+    rows.map((row) => liveName(row[0])).sort(),
     bundleFiles(),
     'the note covers a different set of files than the bundle holds: the bundle moved ' +
       'past t280, so record the new counts in a note of your own and repoint CLOSING_NOTE',
   );
 
-  for (const [file, oldName, before, after] of rows) {
+  for (const [named, oldName, before, after] of rows) {
+    const file = liveName(named);
     assert.match(before, /^\d+$/, `${file}: "before" is not a line count`);
     assert.ok(Number(before) > 0, `${file}: "before" is zero`);
 
@@ -248,7 +280,7 @@ test('AT2 — the note records the full id/version/hash table, and the new side 
     assert.deepEqual(
       pins.get(node),
       { id: newId, version: newVersion, hash: newHash },
-      `${node}: the note's new side is not what grafo.json pins`,
+      `${node}: the note's new side is not what graph.json pins`,
     );
 
     assert.notEqual(oldId, newId, `${node}: the note records no rename`);
@@ -267,7 +299,9 @@ test('AT3 — the note names what resisted translation, and every name is really
   for (const [identifier, where, why] of rows) {
     assert.ok(why.length > 0, `${identifier}: no reason recorded`);
 
-    const files = where.split(',').map((cell) => cell.trim().replace(/^`|`$/g, ''));
+    const files = where
+      .split(',')
+      .map((cell) => liveName(cell.trim().replace(/^`|`$/g, '')));
     assert.ok(files.length > 0, `${identifier}: no file named`);
 
     const retired = RETIRED_ROWS.find((entry) => entry.identifier === identifier);
@@ -291,6 +325,22 @@ test('AT3 — the note names what resisted translation, and every name is really
         `${identifier}: the note says it survives in ${file}, and it does not`,
       );
     }
+  }
+});
+
+test('AT3 — every renamed file names a pair the bundle really has (t305)', () => {
+  for (const entry of RENAMED_FILES) {
+    assert.equal(
+      existsSync(path.join(ROOT, BUNDLE, entry.was)),
+      false,
+      `RENAMED_FILES says ${entry.renamedBy} renamed "${entry.was}" and it is still in the ` +
+        'bundle: either the rename is half-done or the entry is stale',
+    );
+
+    assert.ok(
+      existsSync(path.join(ROOT, BUNDLE, entry.is)),
+      `RENAMED_FILES maps "${entry.was}" onto "${entry.is}", which the bundle does not have`,
+    );
   }
 });
 

@@ -155,7 +155,7 @@ function reports(payload: Record<string, unknown>): string {
  * Read and never retyped: `input.project` IS this object, and a copy in the
  * test would keep passing the day the bundle's own config moved.
  */
-const PROJECT = bundleFile('grafo.json').project as Record<string, unknown>;
+const PROJECT = bundleFile('graph.json').project as Record<string, unknown>;
 
 /** The asset, which is a class field of this graph and not part of the job. */
 const ASSET = 'NVLR3';
@@ -243,7 +243,7 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
     token,
     'POST',
     '/v1/graphs',
-    bundleFile('grafo.json'),
+    bundleFile('graph.json'),
     201,
   );
 
@@ -446,7 +446,7 @@ test('t270 — triage → record-monitoring closes the bets traversal on its own
     token,
     'POST',
     '/v1/graphs',
-    bundleFile('grafo.json'),
+    bundleFile('graph.json'),
     201,
   );
 
@@ -770,7 +770,7 @@ async function startCrossing(
     token,
     'POST',
     '/v1/graphs',
-    bundleFile('grafo.json'),
+    bundleFile('graph.json'),
     201,
   );
 

@@ -41,7 +41,7 @@
  *   PARAMETER, and masking it would hide exactly what FR2 renames.
  * - **Object literals typed by an imported domain/repository type**, keys and
  *   values alike. A `const document: GraphDocument = {…}` is the graph document
- *   format (`schema/grafo.schema.json`), which is nobody's surface in D20, and
+ *   format (`schema/graph.schema.json`), which is nobody's surface in D20, and
  *   its `lineage.type: 'variante'` is that format's value and not this API's.
  *
  * The validation report used to be masked here too, as another surface's
@@ -304,7 +304,7 @@ function maskLowerLayerArguments(source: string, names: readonly string[]): stri
  *
  * Keys AND values, unlike a call argument: this is a whole foreign document, and
  * `lineage: { type: 'variante' }` inside a `GraphDocument` is that format's
- * value — `schema/grafo.schema.json`, which no D20 child renames.
+ * value — `schema/graph.schema.json`, which no D20 child renames.
  */
 function maskLowerLayerLiterals(source: string, names: readonly string[]): string {
   let out = source;

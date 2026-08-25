@@ -38,7 +38,7 @@
  *
  * AT6 and AT7 read the file RAW, and deliberately: what they look for is a
  * citation, and this repository writes a cited filename as a code span
- * (`` [`notas/x.md`](notas/x.md) ``). Blanking spans first would blank the very
+ * (`` [`notes/x.md`](notes/x.md) ``). Blanking spans first would blank the very
  * token being searched for.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
@@ -70,20 +70,20 @@ export const RETIRED_CLAIMS = Object.freeze(['pre-prototype', 'idea on the recor
 export const TRAVERSALS = Object.freeze([
   Object.freeze({
     what: 'the software graph',
-    note: 'notas/2026-08-18-game-feature-2.md',
+    note: 'notes/2026-08-18-game-feature-2.md',
     citation: '2026-08-18-game-feature-2.md',
     graph: /software graph/i,
   }),
   Object.freeze({
     what: 'the asymmetric-bets graph',
-    note: 'notas/2026-08-18-third-bets-run.md',
+    note: 'notes/2026-08-18-third-bets-run.md',
     citation: '2026-08-18-third-bets-run.md',
     graph: /bets graph/i,
   }),
 ]);
 
 /** The note that records what the learning loop did NOT reach. */
-export const LEARNING_NOTE = 'notas/2026-08-18-n3-round.md';
+export const LEARNING_NOTE = 'notes/2026-08-18-n3-round.md';
 
 /** Ways of saying a traversal ran with nobody driving it. The notes' own words. */
 const UNATTENDED = /\bno operator\b|\bwith nobody\b|\bon (its|their) own\b|\bunattended\b/i;

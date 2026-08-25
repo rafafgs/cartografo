@@ -251,7 +251,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     token,
     'POST',
     '/v1/graphs',
-    fixture('grafo-travessia.json'),
+    fixture('graph-traversal.json'),
     201,
   );
 
@@ -470,7 +470,7 @@ test('t259 — what a node produced reaches the next node through the real proje
     token,
     'POST',
     '/v1/graphs',
-    fixture('grafo-travessia.json'),
+    fixture('graph-traversal.json'),
     201,
   );
 

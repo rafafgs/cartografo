@@ -6,7 +6,7 @@
  * prose (`packages/core/test/no-portuguese-glossary-prose.test.ts`), t299 the
  * documents a stranger reads before the code
  * (`tests/no-portuguese-reader-documents.test.mjs`). What neither reached is the
- * internal record — `specs/`, `notas/`, `schema/` — and what none of
+ * internal record — `specs/`, `notes/`, `schema/` — and what none of
  * the three reached at all is the one thing a reader sees before opening
  * anything: the FILE NAMES.
  *
@@ -84,7 +84,7 @@ import { DIACRITIC, GLOSS, STOPWORD, blank } from '../scripts/no-portuguese-pros
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The directories walked whole, each as a repo-relative prefix. */
-export const TREES = Object.freeze(['docs/', 'notas/', 'schema/', 'specs/']);
+export const TREES = Object.freeze(['docs/', 'notes/', 'schema/', 'specs/']);
 
 /** The two documents at the root that belong to the tree without living in it. */
 export const ROOT_DOCUMENTS = Object.freeze(['README.md', 'DECISIONS.md']);
@@ -102,7 +102,7 @@ export const ROOT_DOCUMENTS = Object.freeze(['README.md', 'DECISIONS.md']);
 export const CONTENT_NOT_SWEPT = 'docs/spec/glossario-wire.md';
 
 /**
- * The one path segment that stays Portuguese, with the reason it stays for good.
+ * The path segments that stay Portuguese. There are none, and that is the point.
  *
  * This list had five entries and an owning ticket. Four of them —
  * `especificacoes`, `eventos`, `formatos`, `exemplos` — were placeholders for
@@ -111,31 +111,30 @@ export const CONTENT_NOT_SWEPT = 'docs/spec/glossario-wire.md';
  * four directories are now `specs/`, `events/`, `formats/` and `examples/`, and
  * the entries are gone rather than rewritten.
  *
- * **`notas` is different, and it is not waiting for anybody.** No ticket of this
- * series ever proposed renaming the folder — t300 translated its CONTENTS and
- * left the name alone, and t282's declared scope named four directories and did
- * not name this one. So the entry stops claiming an owner: it is a standing
- * exception, and the honest thing is to say so rather than leave a ticket number
- * on it that shipped long ago. A carve-out whose owner has already delivered is
- * a TODO nobody is coming back for.
+ * **The fifth was `notas`, and t305 is the ticket that lifted it.** Read the diff
+ * that empties this list as a correction, not as a permanent exception deleted
+ * behind somebody's back. t282 left the entry standing because renaming the
+ * folder was outside its declared scope, and t306 — landing while t305 sat in
+ * the backlog, with no way to know a ticket already existed to contest the
+ * framing — recorded that "not in this ticket" as "standing exception" in good
+ * faith, in this docblock and in a test of its own below. The founder's ruling on
+ * t305 is that the framing was his own mistake: D24's allowed exceptions are the
+ * brand name `cartografo`, marked verbatim quotations, and the frozen migration
+ * file names, and `notas` was never any of the three. So t306's two assertions
+ * are not wrong, they are out of date, and t305 is the ticket that reopens them
+ * — the folder is `notes/` now and this list is empty.
  *
- * **What this list is, honestly.** `notas` trips neither of the two signals — it
- * carries no diacritic and is not a function word — so deleting the entry would
- * not turn this gate red on its own. Its teeth are the assertion below that the
- * entry still names a segment the tree really has, plus the sibling gate
- * `tests/no-portuguese-path-segments.test.mjs`, which t282 added to read the
- * WHOLE tracked tree against the five stems D24 retired. Between them, a
- * Portuguese directory reappearing anywhere has somewhere to be caught.
+ * **What an empty list means for this gate's teeth.** Nothing, in either
+ * direction. `notas` tripped neither of the two signals — it carries no
+ * diacritic and is not a function word — so the entry never suppressed a real
+ * finding and removing it never creates one. The teeth are elsewhere and always
+ * were: the sweep itself, and the sibling gate
+ * `tests/no-portuguese-path-segments.test.mjs`, which reads the WHOLE tracked
+ * tree against the stems D24 retired and carries `notas` among them since t305.
+ * What this list is for now is the next entry: an addition to it has to name a
+ * segment that is REALLY permanent under D24's own three-item list, and say so.
  */
-export const ALLOWED_SEGMENTS = Object.freeze([
-  Object.freeze({
-    segment: 'notas',
-    reason:
-      'The working notes. A standing exception, owned by no ticket: the folder name was ' +
-      'never in the declared rename scope of t282 or of any sibling, and the English ' +
-      'closing notes of the whole D24 series already live under it.',
-  }),
-]);
+export const ALLOWED_SEGMENTS = Object.freeze([]);
 
 /** An opening or closing code fence, and the run of backticks that makes it. */
 const FENCE = /^\s*(`{3,})/;
@@ -286,7 +285,7 @@ export function contentOffendersIn(relativePath, contents) {
  *
  * Read off `git ls-files` rather than off the filesystem, and the difference
  * matters here: a translation ticket leaves renamed files behind in a dirty
- * checkout, and a build artefact or an editor backup under `notas/` is not part
+ * checkout, and a build artefact or an editor backup under `notes/` is not part
  * of the tree this gate is making a claim about. The same reading
  * `tests/decisions-rename-integrity.test.mjs` uses.
  *
@@ -377,23 +376,25 @@ test('AT2 — the walk really reaches all four trees and both root documents', (
 test('AT3 — every carve-out names a reason and a segment that exists', () => {
   const segments = new Set(documentsInScope().flatMap((entry) => entry.split('/')));
 
-  assert.ok(ALLOWED_SEGMENTS.length > 0, 'the carve-out list is the FR10 record; it is not empty');
-
   for (const entry of ALLOWED_SEGMENTS) {
     assert.ok(entry.reason.length > 20, `"${entry.segment}" has no reason worth reading`);
 
     // What used to be here was `reason.includes(OWNER_TICKET)` — every carve-out
     // had to name the ticket that would remove it, so that none of them could go
     // permanent by neglect. t282 IS that ticket, and it removed the four entries
-    // that were waiting on it. Demanding a ticket number from the one entry left
-    // would now mean demanding a promise nobody intends to keep, so the claim
-    // moves: a standing exception has to SAY it is standing.
+    // that were waiting on it. t306 then rewrote the claim for the one entry
+    // left: a standing exception has to SAY it is standing. t305 emptied the
+    // list, and the claim is kept for whoever adds the next entry — it has to
+    // name one of the three exceptions D24 really allows (the brand name, a
+    // marked verbatim quotation, a frozen migration file name) and declare
+    // itself permanent, because "not in this ticket" is what `notas` was and it
+    // took two more tickets to undo.
     assert.match(
       entry.reason,
       /standing exception/,
-      `"${entry.segment}" is the last carve-out and it must declare itself permanent; ` +
-        'a carve-out that quietly waits for a ticket that already shipped is a TODO ' +
-        'nobody is coming back for',
+      `"${entry.segment}" must declare itself permanent under D24's own three ` +
+        'exceptions; a carve-out that quietly waits for a ticket is a TODO nobody ' +
+        'is coming back for',
     );
 
     assert.ok(
@@ -404,27 +405,35 @@ test('AT3 — every carve-out names a reason and a segment that exists', () => {
   }
 });
 
-test('AT3 — the carve-out is down to the one segment that is permanent (t282)', () => {
-  assert.equal(
-    ALLOWED_SEGMENTS.length,
-    1,
-    'four of the five carve-outs were pending on t282, which renamed their segments; ' +
-      'a carve-out for a segment the tree no longer has is a hole nobody is watching',
+test('AT3 — the carve-out is empty, because D24 allows none of it here (t305)', () => {
+  // This replaces t306's `ALLOWED_SEGMENTS.length === 1` / `[0].segment === 'notas'`
+  // pair. Those two assertions were recorded in good faith — t306 had no way to
+  // know t305 existed to contest the "permanent" label — and they are reopened
+  // rather than deleted: see the ALLOWED_SEGMENTS docblock for the founder's
+  // ruling. The claim that replaces them is the stronger one, and it is the one
+  // D24 actually makes about a document tree: not "one segment is Portuguese
+  // forever", but "none is".
+  assert.deepEqual(
+    ALLOWED_SEGMENTS,
+    [],
+    'the four carve-outs pending on t282 went with its renames and the fifth — `notas` — ' +
+      'went with t305: D24 allows the brand name, a marked verbatim quotation and the ' +
+      'frozen migration file names, and a directory of working notes is none of the three',
   );
 
   assert.equal(
-    ALLOWED_SEGMENTS[0].segment,
-    'notas',
-    'the one entry that survives t282 is `notas`, and it survives because no ticket ' +
-      'of this series ever proposed renaming the folder — only translating its contents',
+    documentsInScope().some((entry) => entry.split('/').includes('notas')),
+    false,
+    'the tree still has a `notas` segment, so emptying the list dropped a real carve-out ' +
+      'instead of retiring a dead one',
   );
 });
 
 test('AT4 — the sweep bites on a reintroduced Portuguese name', () => {
   assert.deepEqual(
-    segmentOffendersIn('notas/2026-08-14-execucao-não-feita.md'),
+    segmentOffendersIn('notes/2026-08-14-execucao-não-feita.md'),
     [
-      'notas/2026-08-14-execucao-não-feita.md: path segment ' +
+      'notes/2026-08-14-execucao-não-feita.md: path segment ' +
         '"2026-08-14-execucao-não-feita.md": diacritic "ã"',
     ],
     'a diacritic in a file name has to be seen',
@@ -437,23 +446,24 @@ test('AT4 — the sweep bites on a reintroduced Portuguese name', () => {
   );
 
   assert.deepEqual(
-    segmentOffendersIn('notas/2026-08-25-t300-closing-note.md'),
+    segmentOffendersIn('notes/2026-08-25-t300-closing-note.md'),
     [],
-    'the one carved-out segment must not be reported; that is what the list is for',
+    'an English name trips neither signal, and since t305 nothing is spared by an ' +
+      'allowlist either: this passes on its own merits',
   );
 
   assert.deepEqual(
-    segmentOffendersIn('notas/execução/nota.md'),
-    ['notas/execução/nota.md: path segment "execução": diacritic "ç"'],
-    'the carve-out spares the segment it names and nothing else in the path: it is a ' +
-      'segment filter, not a prefix that switches the sweep off below it',
+    segmentOffendersIn('notes/execução/nota.md'),
+    ['notes/execução/nota.md: path segment "execução": diacritic "ç"'],
+    'every segment of every path is read: with the carve-out list empty there is no ' +
+      'prefix anywhere that switches the sweep off below it',
   );
 });
 
 test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
   assert.deepEqual(
-    contentOffendersIn('notas/note.md', 'A execução não termina.\nAnd this line is English.\n'),
-    ['notas/note.md:1: diacritic "ç" — A execução não termina.'],
+    contentOffendersIn('notes/note.md', 'A execução não termina.\nAnd this line is English.\n'),
+    ['notes/note.md:1: diacritic "ç" — A execução não termina.'],
     'a Portuguese sentence in a note has to be seen, and only the line that carries it',
   );
 
@@ -464,13 +474,13 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
   );
 
   assert.deepEqual(
-    contentOffendersIn('notas/note.md', 'The frozen key is `condicao`, and `não` is data.\n'),
+    contentOffendersIn('notes/note.md', 'The frozen key is `condicao`, and `não` is data.\n'),
     [],
     'a backtick span is quoted vocabulary, not a word of the sentence',
   );
 
   assert.deepEqual(
-    contentOffendersIn('notas/note.md', 'Rendered (literally "ausência tem nome") in §3.\n'),
+    contentOffendersIn('notes/note.md', 'Rendered (literally "ausência tem nome") in §3.\n'),
     [],
     'the gloss is the one span where the original is supposed to survive',
   );

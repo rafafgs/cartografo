@@ -146,7 +146,7 @@ test('the export writes the snapshot and nothing around it', async (t) => {
   const plane = await startFakeControlPlane(t, healthy());
   const area = temporaryArea(t, 'cartografo-t212-export-');
   // A directory that does not exist yet: the command owes the path it was given.
-  const output = path.join(area, 'pasta', 'nova', 'desenvolvimento.grafo.json');
+  const output = path.join(area, 'pasta', 'nova', 'desenvolvimento.graph.json');
 
   const run = await capture(() =>
     runExport({ className: 'desenvolvimento', url: plane.url, output }),
@@ -179,5 +179,5 @@ test('without --out the file is named after the class, where the command was run
   const run = await capture(() => runExport({ className: 'desenvolvimento', url: plane.url }));
 
   assert.equal(run.code, 0);
-  assert.equal(existsSync(path.join(area, 'desenvolvimento.grafo.json')), true);
+  assert.equal(existsSync(path.join(area, 'desenvolvimento.graph.json')), true);
 });

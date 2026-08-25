@@ -260,7 +260,7 @@ test('t234 — every operation example of the spec is the operation the policy e
 
     // The keys are §3's since t228. The VALUE of `field` is the half t228 left
     // behind: `CHANGEABLE_FIELDS` never held `descricao`, and the node's field
-    // has been `description` since t178 — in `schema/grafo.schema.json` and in
+    // has been `description` since t178 — in `schema/graph.schema.json` and in
     // `SnapshotNode` alike. A reader copying this block verbatim into a
     // `POST /v1/proposals` body gets `field_not_changeable` back.
     assert.deepEqual(Object.keys(example).sort(), Object.keys(emitted).sort());

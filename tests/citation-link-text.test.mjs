@@ -6,7 +6,7 @@
  * repointed every citation of them. Repointing a citation is two edits, not
  * one: the target inside `(...)` and the name a human reads inside `[...]`.
  * Thirteen sites got both; one got only the first. `docs/spec/surveyor-flow.md`
- * ended up carrying `` [`extensao-e-qualidade.md`](../../notas/2026-08-14-extension-and-quality.md) ``
+ * ended up carrying `` [`extensao-e-qualidade.md`](../../notes/2026-08-14-extension-and-quality.md) ``
  * — an href pointing at the real file under a display text spelling a file that
  * no longer exists anywhere in the tree.
  *
@@ -30,7 +30,7 @@
  *
  * - `` [`§3 of entities-versioning.md`](entities-versioning.md) `` — a sibling
  *   cited by name alone.
- * - `` [`notas/2026-08-14-extension-and-quality.md`](../../notas/2026-08-14-extension-and-quality.md) ``
+ * - `` [`notes/2026-08-14-extension-and-quality.md`](../../notes/2026-08-14-extension-and-quality.md) ``
  *   — the same file cited from two directories down, where the display text
  *   carries the directory a reader needs and the target carries the `../..` a
  *   filesystem needs.
@@ -81,7 +81,7 @@ const LINK = /\[((?:[^[\]]|\[[^\]]*\])*)\]\(([^()\s]+)\)/g;
 const MARKDOWN_NAME = /[A-Za-z0-9._/-]+\.md/g;
 
 /** The note whose citation the alpha-test round found stale. */
-export const RENAMED_NOTE = 'notas/2026-08-14-extension-and-quality.md';
+export const RENAMED_NOTE = 'notes/2026-08-14-extension-and-quality.md';
 
 /** The document that carried the stale display text. */
 export const REPAIRED_DOCUMENT = 'docs/spec/surveyor-flow.md';

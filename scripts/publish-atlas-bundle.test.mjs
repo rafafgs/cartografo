@@ -129,7 +129,7 @@ test('AT2 — publishing copies the bundle byte for byte under <atlas>/<classe>/
   assert.equal(result.status, 0, `publishing a valid bundle has to exit 0:\n${result.stderr}`);
 
   const published = path.join(atlas, CLASS_ONE);
-  assert.ok(existsSync(path.join(published, 'grafo.json')), 'the graph document is published');
+  assert.ok(existsSync(path.join(published, 'graph.json')), 'the graph document is published');
 
   const source = bundleFiles(BUNDLE_ONE);
   const copy = snapshot(published);

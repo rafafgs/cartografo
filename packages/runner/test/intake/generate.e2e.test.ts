@@ -61,7 +61,7 @@ const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
   'software-development',
-  'grafo.json',
+  'graph.json',
 );
 
 const CLASS_NAME = 'software-development';

@@ -161,7 +161,7 @@ function fakeClient(classes: ClientModule.ClassEntry[]): ClientModule.ControlPla
   };
 }
 
-/** A graph document, in the shape of `schema/grafo.schema.json`. */
+/** A graph document, in the shape of `schema/graph.schema.json`. */
 function proposedGraph(className: string): Record<string, unknown> {
   return {
     problem_class: className,

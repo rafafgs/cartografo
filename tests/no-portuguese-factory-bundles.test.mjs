@@ -35,7 +35,7 @@
  * neither, and that is deliberate: those are cross-package projection keys that
  * this ticket cannot rename on its own — all fourteen of them are listed, with
  * their publisher, in t280's closing note
- * (`notas/2026-08-24-t280-closing-note.md`) — and a gate that flagged them would
+ * (`notes/2026-08-24-t280-closing-note.md`) — and a gate that flagged them would
  * be red for a reason no bundle edit could fix.
  *
  * ## The gloss exception

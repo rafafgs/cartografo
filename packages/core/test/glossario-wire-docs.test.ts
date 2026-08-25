@@ -439,7 +439,7 @@ test('FR2 — the link sweep tells a renamed schema from one that is really ther
     'and the same link, pointing at the file that really exists, has to pass',
   );
   assert.deepEqual(
-    deadSchemaLinks('[o formato](../../schema/grafo.schema.json)', directory),
+    deadSchemaLinks('[o formato](../../schema/graph.schema.json)', directory),
     [],
     'a schema outside the event directory is another document’s business',
   );

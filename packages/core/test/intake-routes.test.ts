@@ -8,7 +8,7 @@
  * `trabalho` rows on the graph.
  *
  * The batch runs against the class registered from factory bundle 1
- * (`factory-graphs/software-development/grafo.json`), with no editing:
+ * (`factory-graphs/software-development/graph.json`), with no editing:
  * a synthetic graph would not prove that the jobs are born on the entry node of
  * the version that really holds today.
  *
@@ -50,7 +50,7 @@ const FACTORY_GRAPH = path.join(
   REPO_ROOT,
   'factory-graphs',
   'software-development',
-  'grafo.json',
+  'graph.json',
 );
 
 /** Artifacts this ticket creates; every test requires them by name. */

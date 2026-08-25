@@ -4,7 +4,7 @@
  * `packages/core/src/domain/{manifest,graph}.ts` is a hand-written port of two
  * JSON Schemas that live outside this package —
  * `specs/formats/skill-manifest.schema.json` and
- * `schema/grafo.schema.json`. Nothing compiles the port against the schema, so
+ * `schema/graph.schema.json`. Nothing compiles the port against the schema, so
  * until this file existed the only thing keeping the two in step was that
  * whoever edited one remembered the other. That is exactly the failure mode a
  * key rename produces: a field renamed in the schema and not in the port passes
@@ -45,7 +45,7 @@ const MANIFEST_SCHEMA_PATH = path.join(
   'formats',
   'skill-manifest.schema.json',
 );
-const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'grafo.schema.json');
+const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'graph.schema.json');
 
 interface JsonSchema {
   required?: string[];

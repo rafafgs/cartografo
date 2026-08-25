@@ -2,7 +2,7 @@
  * Acceptance tests of t96 — the graph document format.
  *
  * They cover the ticket's three artifacts: the JSON Schema
- * (`schema/grafo.schema.json`), the reference validator
+ * (`schema/graph.schema.json`), the reference validator
  * (`scripts/validate-graph.mjs`) and the six fixtures in `schema/examples/`.
  * Zero dependencies: only `node:test`, `node:assert`, `node:fs` and `node:path`
  * (FR9).
@@ -23,7 +23,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const SCHEMA_PATH = path.join(ROOT, 'schema', 'grafo.schema.json');
+const SCHEMA_PATH = path.join(ROOT, 'schema', 'graph.schema.json');
 const VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
 const EXAMPLES_DIR = path.join(ROOT, 'schema', 'examples');
 
@@ -91,6 +91,14 @@ test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the eigh
   assert.equal(typeof schema.$id, 'string');
   assert.ok(schema.$id.length > 0, '$id has to be a non-empty string');
   assert.ok(schema.$id.includes('1.0.0'), '$id has to version the schema (1.0.0)');
+  // t305 renamed the last Portuguese word out of the URN. The version does NOT
+  // move with it: the shape is untouched, so this is an identifier rename and a
+  // bump would claim a format change that never happened.
+  assert.equal(
+    schema.$id,
+    'urn:cartografo:schema:graph:1.0.0',
+    'the graph document schema is `graph`, not `grafo`, and still 1.0.0',
+  );
 
   assert.equal(typeof schema.properties, 'object');
   for (const key of TOP_LEVEL_KEYS) {
@@ -665,7 +673,7 @@ test('t253 — project is an optional top-level object, and both bundles still v
   // bundle standing for it, and it is asserted where it is still a claim about
   // the FORMAT: a document that declares none has to keep validating.
   for (const bundle of ['software-development', 'asymmetric-bets']) {
-    const graph = readJson(path.join(ROOT, 'factory-graphs', bundle, 'grafo.json'));
+    const graph = readJson(path.join(ROOT, 'factory-graphs', bundle, 'graph.json'));
     assert.deepEqual(validateAgainstSchema(graph, schema), [], `${bundle}: shape`);
     assert.ok(
       typeof graph.project === 'object' && graph.project !== null,

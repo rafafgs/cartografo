@@ -377,7 +377,7 @@ test('t169 — a duplicate hook id is a structure error, and the valid fixture h
 /**
  * t256 — the hook's own vocabulary, enforced where the schema cannot reach it.
  *
- * `POST /v1/graphs` declares no ajv schema against `schema/grafo.schema.json`
+ * `POST /v1/graphs` declares no ajv schema against `schema/graph.schema.json`
  * (`routes/graphs.ts`: the schema is draft 2020-12 and the ajv Fastify ships is
  * draft-07), so this pair of validators is the ONLY gate a document really
  * passes. Until this ticket the loop below checked that `trigger` and

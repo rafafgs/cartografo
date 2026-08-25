@@ -277,7 +277,7 @@ test('t200 AT2 — POST /v1/graphs names the real graph contract in its descript
   const ctx = await startControlPlane(t);
   const document = await fetchDocument(ctx.url);
 
-  // FR3: the body schema stays `{type: 'object'}` because `schema/grafo.schema.json`
+  // FR3: the body schema stays `{type: 'object'}` because `schema/graph.schema.json`
   // is draft 2020-12 and the ajv Fastify compiles with is draft-07, and swapping the
   // app's whole schema compiler for one route is a decision far bigger than this
   // document. What a client cannot guess from an open body is WHERE the real
@@ -285,11 +285,11 @@ test('t200 AT2 — POST /v1/graphs names the real graph contract in its descript
   // comment, where a reader of the document never gets to it.
   const description = operationAt(document, 'post', '/v1/graphs').description ?? '';
   assert.ok(
-    description.includes('schema/grafo.schema.json'),
+    description.includes('schema/graph.schema.json'),
     `POST /v1/graphs does not name the graph schema file: ${description}`,
   );
   assert.ok(
-    description.includes('urn:cartografo:schema:grafo:1.0.0'),
+    description.includes('urn:cartografo:schema:graph:1.0.0'),
     `POST /v1/graphs does not name the graph schema $id: ${description}`,
   );
 });

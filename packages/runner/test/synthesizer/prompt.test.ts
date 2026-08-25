@@ -14,7 +14,7 @@
  *
  * The t138 block at the bottom adds the rule the alpha round caught missing:
  * `contrato.checks` carries at least one check. The session runs in an
- * empty temp directory and never sees `schema/grafo.schema.json`, so a rule the
+ * empty temp directory and never sees `schema/graph.schema.json`, so a rule the
  * prompt does not state is a rule the session cannot follow — and the draft it
  * writes is refused by `cartografo import` after a person has already edited it.
  */
@@ -36,7 +36,7 @@ import type * as PromptModule from '../../src/synthesizer/prompt.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'grafo.schema.json');
+const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'graph.schema.json');
 const MODULE_PATH = 'src/synthesizer/prompt.ts';
 
 let cache: typeof PromptModule | null = null;
@@ -169,7 +169,7 @@ test('AT2 — an empty catalogue is stated, not silently rendered as nothing', a
 
 /**
  * A validator for ONE `contrato.checks` entry, compiled from the real
- * `schema/grafo.schema.json`.
+ * `schema/graph.schema.json`.
  *
  * Reaching for the file instead of restating the rule here is the whole point.
  * The prompt teaches a format the session cannot open — `workingDir` is an empty
@@ -186,7 +186,7 @@ function verificationValidator(): ValidateFunction {
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
   ajv.addSchema(schema);
   const validate = ajv.getSchema(`${schema.$id}#/$defs/check`);
-  assert.ok(validate, 'schema/grafo.schema.json no longer defines $defs/check');
+  assert.ok(validate, 'schema/graph.schema.json no longer defines $defs/check');
   return validate;
 }
 

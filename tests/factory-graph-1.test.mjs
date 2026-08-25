@@ -36,7 +36,7 @@ import test from 'node:test';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE_DIR = path.join(ROOT, 'factory-graphs', 'software-development');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
-const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
+const GRAPH_PATH = path.join(BUNDLE_DIR, 'graph.json');
 const README_PATH = path.join(BUNDLE_DIR, 'README.md');
 const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-graph.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
@@ -149,7 +149,7 @@ function runCli(directory) {
   });
 }
 
-test('AT1 — grafo.json passes validarEstrutura and validarSoundness', async () => {
+test('AT1 — graph.json passes validarEstrutura and validarSoundness', async () => {
   const { validarEstrutura, validarSoundness } = await graphValidator();
   const doc = readJson(GRAPH_PATH);
 
@@ -385,7 +385,7 @@ function checkById(file, id) {
 /** The graph node with this id, asserted present. */
 function nodeById(id) {
   const found = readJson(GRAPH_PATH).nodes.find((item) => item.id === id);
-  assert.ok(found, `grafo.json has to keep the "${id}" node`);
+  assert.ok(found, `graph.json has to keep the "${id}" node`);
   return found;
 }
 

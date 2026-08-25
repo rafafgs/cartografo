@@ -40,7 +40,7 @@ async function loadCustomFields(): Promise<typeof CustomFieldsModule> {
   return moduleCache;
 }
 
-/** What `factory-graphs/asymmetric-bets/grafo.json` declares (FR2). */
+/** What `factory-graphs/asymmetric-bets/graph.json` declares (FR2). */
 const DECLARATIONS: CustomFieldsModule.CustomFieldDefinition[] = [
   { name: 'premise_source', type: 'string', required_at: 'triagem' },
   { name: 'downside', type: 'number', required_at: null },

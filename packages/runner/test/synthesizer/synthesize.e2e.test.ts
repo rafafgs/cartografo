@@ -92,7 +92,7 @@ function scratch(t: TestHook, label: string): string {
   return dir;
 }
 
-/** A graph document, in the shape of `schema/grafo.schema.json`. */
+/** A graph document, in the shape of `schema/graph.schema.json`. */
 function proposedGraph(): Record<string, unknown> {
   const pin = { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'a'.repeat(64)}` };
   const contract = {

@@ -22,8 +22,8 @@
  *
  * ## The contents
  *
- * Two readings, chosen by extension, because the two file shapes hide
- * Portuguese in opposite places:
+ * Three readings, chosen by extension, because the file shapes hide Portuguese
+ * in different places:
  *
  * - **`.md`** — fenced blocks and backtick spans are blanked before the scan,
  *   the cut t299 established. Those are where frozen wire vocabulary lives
@@ -40,11 +40,26 @@
  *   escape hatch JSON does not have; a whole-string hostname is unambiguously
  *   data, and only the whole string counts — a hostname inside a sentence is
  *   still read.
+ * - **`.mjs`** — read raw as well, and for the JSON reason: source has no fence
+ *   to hide behind either, and the frozen wire vocabulary it spells (`nos`,
+ *   `condicao`, `versao`, `no_inicial`) carries neither a diacritic nor a
+ *   stopword. What is deliberately NOT carried over is the markdown cut. A
+ *   backtick span in source is usually a template literal, and the template
+ *   literals of `especificacoes/eventos/tests/schemas.test.mjs` are where its
+ *   per-schema test titles are BUILT — blank those and the sweep goes green over
+ *   the very lines that opened t301. The gloss is still honoured: it is D24's
+ *   escape hatch in every reading, not markdown's alone. The cost of having no
+ *   other one is that a bare URL in a comment trips `com`; a whole-string
+ *   hostname is spared only where JSON's carve-out reaches it.
  *
- * `.mjs` files under these trees are read by neither: identifier positions in
- * source are `tests/no-portuguese-identifiers.test.mjs`'s dimension, and a gate
- * that scanned a reducer's string literals as prose would be answering a
- * question that already has an owner.
+ * The third reading is t301's, and what it replaced was an argument with a hole
+ * in it. That argument said `.mjs` belonged to
+ * `tests/no-portuguese-identifiers.test.mjs` and to nothing else — but that gate
+ * reads the root `tests/` directory and only it, so no gate at all was reading
+ * source under these trees, and identifiers were never the dimension anyway.
+ * Eighty lines of Portuguese comments and a dozen Portuguese test titles sat in
+ * `schemas.test.mjs` through every green run of this one. A comment is prose,
+ * and prose is what this gate is for.
  *
  * ## What overlaps, and why it is kept
  *
@@ -199,6 +214,7 @@ export function linesToScan(relativePath, contents) {
 
   const extension = path.extname(relativePath);
   if (extension === '.md') return proseOf(contents);
+  if (extension === '.mjs') return contents.split('\n').map((line) => line.replace(GLOSS, ''));
   if (extension === '.json' || extension === '.jsonl') {
     return contents
       .split('\n')
@@ -351,6 +367,21 @@ test('AT2 — the walk really reaches all four trees and both root documents', (
     read.length >= 35,
     `only ${String(read.length)} documents are content-read; the extension dispatch is wrong`,
   );
+
+  const sources = documents.filter((entry) => entry.endsWith('.mjs'));
+
+  assert.ok(
+    sources.length >= 5,
+    `only ${String(sources.length)} sources are walked; the tree has more .mjs than that`,
+  );
+
+  for (const source of sources) {
+    assert.notEqual(
+      linesToScan(source, ''),
+      null,
+      `${source} is not content-read; the .mjs reading t301 added is gone`,
+    );
+  }
 });
 
 test('AT3 — every carve-out names a reason, its owner, and a segment that exists', () => {
@@ -441,8 +472,35 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
   );
 
   assert.deepEqual(
-    contentOffendersIn('especificacoes/eventos/reducers/reconstruct-state.mjs', 'const não = 1;\n'),
+    contentOffendersIn(
+      'especificacoes/eventos/tests/schemas.test.mjs',
+      '// Qualquer divergência entre um schema e a tabela é um erro do schema.\n',
+    ),
+    [
+      'especificacoes/eventos/tests/schemas.test.mjs:1: diacritic "ê" — ' +
+        '// Qualquer divergência entre um schema e a tabela é um erro do schema.',
+    ],
+    'a Portuguese comment in source is prose; t301 is the ticket that says so',
+  );
+
+  assert.deepEqual(
+    contentOffendersIn(
+      'especificacoes/eventos/tests/schemas.test.mjs',
+      'test(`${file} é JSON válido`, () => {});\n',
+    ),
+    [
+      'especificacoes/eventos/tests/schemas.test.mjs:1: diacritic "é" — ' +
+        'test(`${file} é JSON válido`, () => {});',
+    ],
+    'a test title built in a template literal is read; blanking spans would hide it',
+  );
+
+  assert.deepEqual(
+    contentOffendersIn(
+      'especificacoes/eventos/reducers/reconstruct-state.mjs',
+      '// Rendered (literally "ausência tem nome") in the projection.\n',
+    ),
     [],
-    'a .mjs source is the identifier sweep\'s dimension, not this one\'s',
+    'the gloss is the escape hatch of every reading, source included',
   );
 });

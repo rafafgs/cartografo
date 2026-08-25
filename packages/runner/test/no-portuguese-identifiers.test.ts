@@ -3,18 +3,13 @@
  *
  * Same sweep `packages/core/test/no-portuguese-identifiers.test.ts` runs since
  * t127, pointed at this package and extended with the vocabulary this package
- * carries. It walks `src/`, `test/` and `scripts/`, masks out everything the
- * ticket deliberately leaves in Portuguese, and then asserts that none of the
- * pre-rename tokens survives in an identifier position.
+ * carries. It walks `src/`, `test/` and `scripts/` WHOLE — since t304 there is
+ * no excluded file left — masks out everything the ticket deliberately leaves
+ * in Portuguese, and then asserts that none of the pre-rename tokens survives
+ * in an identifier position.
  *
- * What gets masked, and why — these are the FR1/FR2 exceptions, not loopholes:
+ * What gets masked, and why — these are the FR2 exceptions, not loopholes:
  *
- * - **The API-client files.** `src/controller/cliente-controle.ts` and its test
- *   are excluded whole (FR1): t127 converged the eight lines it had to and the
- *   rest is a follow-up ticket. Because other modules still call that client by
- *   its current spelling, its exported symbol names are allowlisted wherever
- *   they are referenced — renaming them at the call sites is exactly the
- *   behaviour-neutral churn FR1 forbids.
  * - **String and template literals.** This is where the wire values and the two
  *   prompt constants live. None of it is code, so none of it translates (FR2,
  *   FR3). Much of what used to sit here has since gone English on its own
@@ -40,62 +35,6 @@ import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SCANNED_DIRS = ['src', 'test', 'scripts'];
-
-/**
- * The two files FR1 excludes, as paths relative to the package root.
- *
- * A whole-file exception, not a "lines t127 already touched" note: the ticket's
- * own acceptance criterion only reads as non-vacuous this way.
- */
-const EXCLUDED_FILES = Object.freeze([
-  'src/controller/cliente-controle.ts',
-  'test/controller/cliente-controle.test.ts',
-]);
-
-/**
- * Every exported symbol of the excluded client that some other module names.
- *
- * Blanked before the scan so a legitimate reference — `new ClienteControle(…)`,
- * `client.listarTrabalhosLiberados()`, `catch (e) { e instanceof
- * ErroDoControlPlane }` — is not read as a Portuguese identifier of ours. The
- * list is the client's public surface, not a general escape hatch: a local
- * declaration that happens to reuse one of these names would slip through, and
- * this package declares none.
- */
-const CLIENT_SYMBOLS = Object.freeze([
-  'ClienteControle',
-  'ErroDoControlPlane',
-  'Trabalho',
-  'Evento',
-  'MetricaPorVersao',
-  'SnapshotDeGrafo',
-  'VersaoDeGrafo',
-  'EntradaDeProposta',
-  'Proposta',
-  'Runner',
-  'StatusDeLease',
-  'MotivoDeExpiracao',
-  'MotivoDeRecusa',
-  'Lease',
-  'PedidoDeLease',
-  'RespostaDeConcessao',
-  'OpcoesDoCliente',
-  'registrarRunner',
-  'listarTrabalhosLiberados',
-  'pedirLease',
-  'heartbeat',
-  'liberar',
-  'listarEventosDaExecucao',
-  'metricasPorVersao',
-  'buscarVersaoDeGrafo',
-  'criarProposta',
-  'buscarProposta',
-  'fecharResultadoDeProposta',
-  // t144 — the one write the intake generation command adds, and its two types.
-  'criarIntake',
-  'EntradaDeIntake',
-  'Rascunho',
-]);
 
 /**
  * Pre-rename tokens of `packages/core`'s glossary plus this package's own.
@@ -347,18 +286,6 @@ function maskKeyAndMemberPositions(text: string, token: string): string {
     .replace(new RegExp(`(^|[{,(\\s])${token}\\s*\\??\\s*:`, 'gm'), (span) => blank(span));
 }
 
-/** Blanks every reference to a symbol the excluded API client exports (FR1). */
-function maskClientSymbols(text: string): string {
-  let masked = text;
-  for (const symbol of CLIENT_SYMBOLS) {
-    masked = masked.replace(
-      new RegExp(`(?<![A-Za-z0-9_$])${symbol}(?![A-Za-z0-9_$])`, 'g'),
-      (span) => blank(span),
-    );
-  }
-  return masked;
-}
-
 /** Every scanned file, as a path relative to `packages/runner`. */
 function scannedFiles(): string[] {
   const found: string[] = [];
@@ -370,9 +297,7 @@ function scannedFiles(): string[] {
         continue;
       }
       if (!/\.(ts|mjs|js)$/.test(entry)) continue;
-      const relative = path.relative(PACKAGE_ROOT, child);
-      if (EXCLUDED_FILES.includes(relative)) continue;
-      found.push(relative);
+      found.push(path.relative(PACKAGE_ROOT, child));
     }
   };
   for (const dir of SCANNED_DIRS) walk(path.join(PACKAGE_ROOT, dir));
@@ -381,7 +306,7 @@ function scannedFiles(): string[] {
 
 /** Every forbidden-token hit in one source text, as `line — token` pairs. */
 export function hitsInSource(source: string): Array<{ line: number; token: string }> {
-  const masked = maskClientSymbols(maskLiteralsAndCommentQuotes(source));
+  const masked = maskLiteralsAndCommentQuotes(source);
   const hits: Array<{ line: number; token: string }> = [];
 
   masked.split('\n').forEach((rawLine, index) => {
@@ -420,9 +345,6 @@ export function hitsInSource(source: string): Array<{ line: number; token: strin
 test('AC1 — no Portuguese identifier survives in packages/runner/{src,test,scripts}', () => {
   const files = scannedFiles();
   assert.ok(files.length > 20, `the sweep found only ${files.length} files; it is not walking the tree`);
-  for (const excluded of EXCLUDED_FILES) {
-    assert.ok(!files.includes(excluded), `${excluded} is excluded by FR1 and must not be scanned`);
-  }
 
   const hits = files.flatMap((relative) =>
     hitsInSource(readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8')).map(

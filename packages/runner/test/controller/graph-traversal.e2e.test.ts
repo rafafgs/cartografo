@@ -169,7 +169,7 @@ const QUIET = JSON.stringify([
 ]);
 
 /**
- * `travessia-conferir`'s own `outcome` vocabulary, per routing label.
+ * `check-crossing`'s own `outcome` vocabulary, per routing label.
  *
  * Two words for one concept, and both are load-bearing: the EDGES of this graph
  * are labelled `aprovado`/`retrabalho`, while the registered manifest's `output`
@@ -243,8 +243,8 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   });
 
   // --- the world the traversal needs, all of it through the public API -------
-  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-fazer.json'), 201);
-  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-conferir.json'), 201);
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-do-crossing.json'), 201);
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-check-crossing.json'), 201);
 
   const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     baseUrl,
@@ -462,8 +462,8 @@ test('t259 — what a node produced reaches the next node through the real proje
     rmSync(root, { recursive: true, force: true });
   });
 
-  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-fazer.json'), 201);
-  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-conferir.json'), 201);
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-do-crossing.json'), 201);
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-check-crossing.json'), 201);
 
   const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     baseUrl,

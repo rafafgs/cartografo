@@ -82,7 +82,7 @@ import type {
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const GRAPH_FIXTURE = path.join(REPO_ROOT, 'schema', 'examples', 'graph-valid-two-engines.json');
-const SKILL_FIXTURE = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-travessia-fazer.json');
+const SKILL_FIXTURE = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-do-crossing.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 /** The manifest this file registers, read fresh so a caller may edit its copy. */

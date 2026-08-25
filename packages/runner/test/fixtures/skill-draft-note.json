@@ -1,17 +1,17 @@
 {
-  "id": "travessia-fazer",
+  "id": "draft-note",
   "version": "1.0.0",
-  "hash": "sha256:fcf5f11345aa82a2ba823734881114f0e7d4d4908d369de123b353d70440dffb",
+  "hash": "sha256:572adcb6f5c03f6c571c07441702b4a89e9976fb2280f44701dab50a5fb20690",
   "role": "work",
-  "description": "Produz o artefato que a etapa pede e escreve o que fez, para a etapa seguinte.",
+  "description": "Writes a short note in `nota.md`, and nothing beyond that.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "pedido"
+      "tema"
     ],
     "properties": {
-      "pedido": {
+      "tema": {
         "type": "string",
         "minLength": 1
       }
@@ -21,24 +21,24 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "nota"
+      "texto"
     ],
     "properties": {
-      "nota": {
+      "texto": {
         "type": "string",
         "minLength": 1
       }
     }
   },
   "preconditions": [
-    "o diretório da sessão existe e é onde o artefato vai ser escrito"
+    "the session directory exists and is where `nota.md` is going to be written"
   ],
   "checks": [
     {
-      "id": "artefato-existe",
+      "id": "note-exists",
       "type": "deterministic",
-      "description": "O artefato que esta etapa promete existe e não está vazio.",
-      "command": "test -s saida.md",
+      "description": "The note exists and is not empty.",
+      "command": "test -s nota.md",
       "timeout_s": 60
     }
   ],
@@ -55,7 +55,7 @@
       "allowed": false
     }
   },
-  "instructions": "# Fazer uma etapa da travessia\n\nFaça o que a etapa pede, no diretório em que você está, e nada além disso.\nNão commite, não crie branch e não rode git.\n\nEscreva o que você fez em `saida.md`, em uma frase — é o que a etapa\nseguinte lê.",
+  "instructions": "# Draft a short note\n\nWrite the file `nota.md` in the current directory, with 3 to 5 lines about the\ntopic the work asks for.\n\nDo not create any other file. Do not commit, do not create a branch, do not run git.",
   "origin": {
     "type": "native"
   }

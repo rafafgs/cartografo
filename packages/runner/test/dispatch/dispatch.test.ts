@@ -1152,7 +1152,7 @@ function twoEngineGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
-    // `pedido` is what `skill-travessia-fazer` requires at the top of `input`,
+    // `pedido` is what `do-crossing` requires at the top of `input`,
     // and a class field is exactly how the projection publishes such a scalar
     // (t168, t253). Declared since t278, which refuses at import a node whose
     // pinned skill requires a key the class never declared.
@@ -1273,8 +1273,8 @@ async function jobBeforeVersion(
 }
 
 /** The two skill manifests this file registers, read from disk. */
-const WORK_SKILL = "skill-travessia-fazer.json";
-const GATE_SKILL = "skill-travessia-conferir.json";
+const WORK_SKILL = "skill-do-crossing.json";
+const GATE_SKILL = "skill-check-crossing.json";
 
 /** A registered skill, in the recut these tests read. */
 interface RegisteredSkill {
@@ -2663,7 +2663,7 @@ function traversalGraph(className: string): Record<string, unknown> {
 /**
  * The input the traversal fixture's gate needs, handed over through the seam.
  *
- * `travessia-conferir` reads `{{input.producao.nota}}` since t259 — the bucket
+ * `check-crossing` reads `{{input.producao.nota}}` since t259 — the bucket
  * `implementar` declares in `contract.produces` — because that fixture is what
  * proves the projection live (`test/controller/graph-traversal.e2e.test.ts`).
  * A job created directly ON the gate has no previous session to have produced
@@ -2676,7 +2676,7 @@ const gateInput = (): Promise<Record<string, unknown>> =>
   Promise.resolve({ producao: { nota: GATE_NOTA } });
 
 /**
- * `travessia-conferir`'s own `outcome` vocabulary, per routing label (t268).
+ * `check-crossing`'s own `outcome` vocabulary, per routing label (t268).
  *
  * Two different words for one concept, and both are load-bearing here: the EDGE
  * labels of the fixture graph are `aprovado`/`retrabalho` (plus `escala`, which
@@ -2694,7 +2694,7 @@ const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
  * The lines a fake gate session prints when it chooses an edge by name.
  *
  * The block carries the routing label AND the two fields the pinned
- * `travessia-conferir` manifest's `output` schema requires (t268). Until that
+ * `check-crossing` manifest's `output` schema requires (t268). Until that
  * ficha the schema refusal was silently swallowed, so `{resultado}` alone was
  * enough; now a report the control plane refuses stops the job on its node, and
  * every case below is about something else — label routing, an unroutable
@@ -3982,7 +3982,7 @@ function modelGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
-    // `pedido` is what `skill-travessia-fazer` requires at the top of `input`,
+    // `pedido` is what `do-crossing` requires at the top of `input`,
     // and a class field is exactly how the projection publishes such a scalar
     // (t168, t253). Declared since t278, which refuses at import a node whose
     // pinned skill requires a key the class never declared.
@@ -5200,7 +5200,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
  * `linesWithResult` above says which EDGE a gate took; this one carries no
  * label at all, which is what a `work` node with a single way out — or with
  * none — reports (`parse-node-result.ts`). The payload is the smallest object
- * `skill-travessia-fazer.json`'s `output` accepts, because the whole point of
+ * `skill-do-crossing.json`'s `output` accepts, because the whole point of
  * the case below is a report that SURVIVES the registered schema: one that does
  * not is stored as `null` and would leave the job forever unfinished.
  */
@@ -5772,7 +5772,7 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       const job = await jobOn("implementar", "travessia-t268-unica", 2681);
       const { doFetch, calls } = spyOn();
 
-      // `travessia-fazer` requires `{nota: string}`, and this session reports a
+      // `do-crossing` requires `{nota: string}`, and this session reports a
       // routing label and nothing else — which is exactly what a node with one
       // way out has no use for. The edge is unconditional, so the old dispatch
       // took it without ever asking whether the report survived.
@@ -6328,7 +6328,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
  * (`notes/2026-08-17-t109-game-feature.md`, gap 3).
  *
  * The trigger is the SHAPE of the report and never a node or skill id (FR2), so
- * these cases run against the same `travessia-fazer` fixture every other
+ * these cases run against the same `do-crossing` fixture every other
  * dispatch test uses: what makes one of them advance a bench is that its report
  * carries the field, and nothing else.
  *

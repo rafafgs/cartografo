@@ -4,22 +4,22 @@
     "type": "base"
   },
   "metadata": {
-    "name": "Travessia automática — três nós",
-    "description": "O menor grafo que exercita as três decisões de avanço de nó da t161: saída única (implementar → conferir), portão com duas saídas rotuladas (conferir → publicar | implementar) e nó final sem saída nenhuma (publicar). O ciclo de retrabalho é deliberado: é o que prova que uma travessia volta atrás sem operador.",
+    "name": "Automatic crossing — three nodes",
+    "description": "The smallest graph that exercises t161's three node-advance decisions: a single exit (implementar → conferir), a gate with two labelled exits (conferir → publicar | implementar) and a final node with no exit at all (publicar). The rework cycle is deliberate: it is what proves a crossing can go back without an operator.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-15",
-    "source": "fixture da t161"
+    "source": "t161 fixture"
   },
   "nodes": [
     {
       "id": "implementar",
       "role": "desenvolvedor",
       "node_type": "work",
-      "description": "Produz o artefato da travessia.",
+      "description": "Produces the artifact of the crossing.",
       "skill_ref": {
-        "id": "travessia-fazer",
+        "id": "do-crossing",
         "version": "1.0.0",
-        "hash": "sha256:fcf5f11345aa82a2ba823734881114f0e7d4d4908d369de123b353d70440dffb"
+        "hash": "sha256:4482112308fcfc64cd4754934f6886603ee113254e9ecf4576c34a676a8296b2"
       },
       "contract": {
         "input_schema": {
@@ -41,7 +41,7 @@
           {
             "type": "deterministic",
             "command": "test -s saida.md",
-            "description": "O artefato existe e não está vazio."
+            "description": "The artifact exists and is not empty."
           }
         ]
       }
@@ -50,11 +50,11 @@
       "id": "conferir",
       "role": "tester",
       "node_type": "gate",
-      "description": "Confere o artefato e roteia: aprovado publica, retrabalho volta para implementar.",
+      "description": "Checks the artifact and routes: `aprovado` publishes, `retrabalho` goes back to implementar.",
       "skill_ref": {
-        "id": "travessia-conferir",
+        "id": "check-crossing",
         "version": "1.0.0",
-        "hash": "sha256:a26c224025323ee4efd18d90c79f48bf64ebf3799f499303206f2088fe2659e3"
+        "hash": "sha256:7fff14269033a3ad7569ac0e78e767a457acd28ae2a7fa9c8f628bb4d8608497"
       },
       "contract": {
         "input_schema": {
@@ -81,9 +81,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "O artefato atende ao que a etapa anterior prometeu? Anexe o trecho que você leu.",
+            "instruction": "Does the artifact meet what the previous step promised? Attach the excerpt you read.",
             "required_evidence": true,
-            "description": "Portão agêntico confere com evidência própria."
+            "description": "An agentic gate checks with its own evidence."
           }
         ]
       }
@@ -92,11 +92,11 @@
       "id": "publicar",
       "role": "deployer",
       "node_type": "work",
-      "description": "Publica o que foi aprovado e encerra a travessia.",
+      "description": "Publishes what was approved and closes the crossing.",
       "skill_ref": {
-        "id": "travessia-fazer",
+        "id": "do-crossing",
         "version": "1.0.0",
-        "hash": "sha256:fcf5f11345aa82a2ba823734881114f0e7d4d4908d369de123b353d70440dffb"
+        "hash": "sha256:4482112308fcfc64cd4754934f6886603ee113254e9ecf4576c34a676a8296b2"
       },
       "contract": {
         "input_schema": {
@@ -117,7 +117,7 @@
           {
             "type": "deterministic",
             "command": "test -s saida.md",
-            "description": "O artefato publicado existe."
+            "description": "The published artifact exists."
           }
         ]
       }
@@ -128,19 +128,19 @@
       "from": "implementar",
       "to": "conferir",
       "condition": "sempre",
-      "description": "Saída única: o que foi implementado sempre vai para conferência."
+      "description": "A single exit: whatever was implemented always goes to checking."
     },
     {
       "from": "conferir",
       "to": "publicar",
       "condition": "aprovado",
-      "description": "O portão aprovou: segue para publicação."
+      "description": "The gate approved: on to publishing."
     },
     {
       "from": "conferir",
       "to": "implementar",
       "condition": "retrabalho",
-      "description": "O portão reprovou: volta para implementação. É o ciclo de retrabalho."
+      "description": "The gate rejected: back to implementation. This is the rework cycle."
     }
   ],
   "initial_node": "implementar",
@@ -150,7 +150,7 @@
       "name": "pedido",
       "type": "string",
       "required_at": null,
-      "description": "O que a travessia foi pedida para fazer. Campo de classe porque é assim que `travessia-fazer` o lê: escalar plano no topo de `input`, ao lado de `input.job` (t168, t253) — e sem a declaração nenhum nó tem como recebê-lo (t278)."
+      "description": "What the crossing was asked to do. A class field because that is how `do-crossing` reads it: a flat scalar at the top of `input`, beside `input.job` (t168, t253) — and with no declaration no node has any way of receiving it (t278)."
     }
   ]
 }

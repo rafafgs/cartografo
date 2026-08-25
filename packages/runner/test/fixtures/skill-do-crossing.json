@@ -1,0 +1,62 @@
+{
+  "id": "do-crossing",
+  "version": "1.0.0",
+  "hash": "sha256:4482112308fcfc64cd4754934f6886603ee113254e9ecf4576c34a676a8296b2",
+  "role": "work",
+  "description": "Produces the artifact the step asks for and writes down what it did, for the next step.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "pedido"
+    ],
+    "properties": {
+      "pedido": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "nota"
+    ],
+    "properties": {
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "the session directory exists and is where the artifact is going to be written"
+  ],
+  "checks": [
+    {
+      "id": "artifact-exists",
+      "type": "deterministic",
+      "description": "The artifact this step promises exists and is not empty.",
+      "command": "test -s saida.md",
+      "timeout_s": 60
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Do one step of the crossing\n\nDo what the step asks for, in the directory you are in, and nothing beyond that.\nDo not commit, do not create a branch and do not run git.\n\nWrite what you did in `saida.md`, in one sentence — it is what the next step\nreads.",
+  "origin": {
+    "type": "native"
+  }
+}

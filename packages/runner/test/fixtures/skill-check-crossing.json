@@ -1,0 +1,81 @@
+{
+  "id": "check-crossing",
+  "version": "1.0.0",
+  "hash": "sha256:7fff14269033a3ad7569ac0e78e767a457acd28ae2a7fa9c8f628bb4d8608497",
+  "role": "gate",
+  "description": "Checks the previous step's artifact with its own evidence and routes the crossing.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "producao"
+    ],
+    "properties": {
+      "producao": {
+        "type": "object",
+        "description": "the bucket the `implementar` node declares in `contract.produces`; it is where the previous step's structured output lands in the input projection (t253)",
+        "required": [
+          "nota"
+        ],
+        "properties": {
+          "nota": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "evidencia"
+    ],
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "required in every skill whose role is `gate`; the edge the executor takes comes from the result the NODE's contract declares."
+      },
+      "evidencia": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "the previous step left the artifact in the session directory"
+  ],
+  "checks": [
+    {
+      "id": "check-with-evidence",
+      "type": "agentic",
+      "description": "An agentic gate checks with its own evidence, never with the report of whoever produced it.",
+      "instruction": "Read the previous step's artifact and say whether it meets what was asked for. Attach the excerpt you read.",
+      "required_evidence": [
+        "saida.md"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Check one step of the crossing\n\nThe previous step reported: {{input.producao.nota}}\n\nRead what the previous step produced and judge it with your own evidence: the\nreport of whoever produced it does not count as proof.\n\nYou write no file at all. Your output is the verdict.",
+  "origin": {
+    "type": "native"
+  }
+}

@@ -157,7 +157,7 @@ const VERBATIM_QUOTATIONS: ReadonlyArray<{ file: string; line: number; reason: s
     {
       file: 'scripts/spike-surveyor-flow.mjs',
       line: 124,
-      reason: 'quotes the instruction of `test/fixtures/skill-redigir-nota.json`, which t309 does not translate',
+      reason: 'quotes the instruction of `test/fixtures/skill-draft-note.json`, which t309 does not translate',
     },
     {
       file: 'scripts/spike-surveyor-flow.mjs',

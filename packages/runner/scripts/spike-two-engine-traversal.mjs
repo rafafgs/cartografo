@@ -116,8 +116,8 @@ const CODEX_BINARY_OVERRIDE = process.env.CODEX_BINARY_PATH?.trim();
  * declared, which is the whole claim under proof.
  */
 const NODES = [
-  { id: 'redigir', engine: DEFAULT_ENGINE, file: 'nota.md', skill: 'skill-redigir-nota.json' },
-  { id: 'conferir', engine: 'codex', file: 'parecer.md', skill: 'skill-revisar-nota.json' },
+  { id: 'redigir', engine: DEFAULT_ENGINE, file: 'nota.md', skill: 'skill-draft-note.json' },
+  { id: 'conferir', engine: 'codex', file: 'parecer.md', skill: 'skill-review-note.json' },
 ];
 
 const log = (message) => console.log(`[spike] ${message}`);

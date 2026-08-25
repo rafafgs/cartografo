@@ -1,9 +1,9 @@
 {
-  "id": "revisar-nota",
+  "id": "review-note",
   "version": "1.0.0",
-  "hash": "sha256:91c7d00ddc153450f20b15fb2990628a20ae96b277d4289a46df860bbb2a2869",
+  "hash": "sha256:84d9aab75f09d4223c7a39c32e517b8d290cf99b1499d2225b2b8f850625e694",
   "role": "gate",
-  "description": "Lê `nota.md` e escreve o parecer em `parecer.md`, com a linha que o sustenta.",
+  "description": "Reads `nota.md` and writes the verdict in `parecer.md`, with the line that supports it.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -32,7 +32,7 @@
           "fail",
           "escalate_human"
         ],
-        "description": "obrigatório em toda skill de papel portao; a aresta que o executor toma vem do resultado que o contrato do NÓ declara."
+        "description": "required in every skill whose role is `gate`; the edge the executor takes comes from the result the NODE's contract declares."
       },
       "evidencia": {
         "type": "string",
@@ -41,14 +41,14 @@
     }
   },
   "preconditions": [
-    "`nota.md` existe no diretório da sessão"
+    "`nota.md` exists in the session directory"
   ],
   "checks": [
     {
-      "id": "parecer-com-evidencia",
+      "id": "verdict-with-evidence",
       "type": "agentic",
-      "description": "O parecer cita a linha da nota que o sustenta, e não o relato de quem escreveu.",
-      "instruction": "O parecer nomeia a linha de `nota.md` que sustenta o veredito?",
+      "description": "The verdict quotes the line of the note that supports it, and not the report of whoever wrote it.",
+      "instruction": "Does the verdict name the line of `nota.md` that supports it?",
       "required_evidence": [
         "parecer.md",
         "nota.md"
@@ -68,7 +68,7 @@
       "allowed": false
     }
   },
-  "instructions": "# Conferir uma nota curta\n\nLeia `nota.md` no diretório atual e escreva `parecer.md` com o veredito\n(passou ou falhou) e a linha de `nota.md` que sustenta o veredito.\n\nNão crie nenhum outro arquivo. Não commite, não crie branch, não rode git.",
+  "instructions": "# Check a short note\n\nRead `nota.md` in the current directory and write `parecer.md` with the verdict\n(passed or failed) and the line of `nota.md` that supports it.\n\nDo not create any other file. Do not commit, do not create a branch, do not run git.",
   "origin": {
     "type": "native"
   }

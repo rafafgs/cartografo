@@ -67,7 +67,7 @@ const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/examples/graph-valid-minimal.json'
 const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 
 /** The manifest each node of the minimal graph runs, by node id (t161). */
-const NODE_SKILLS = { redigir: 'skill-redigir-nota.json', revisar: 'skill-revisar-nota.json' };
+const NODE_SKILLS = { redigir: 'skill-draft-note.json', revisar: 'skill-review-note.json' };
 
 const EXECUTION_ID = 110;
 const TIMEOUT_SECONDS = 300;

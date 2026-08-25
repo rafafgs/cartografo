@@ -58,7 +58,7 @@ async function loadClient(): Promise<typeof ClientModule> {
   )) as typeof ClientModule;
 }
 
-const SKILL_ID = 'travessia-conferir';
+const SKILL_ID = 'check-crossing';
 const SKILL_HASH = `sha256:${'a'.repeat(64)}`;
 
 /** The manifest the registry gives back, in the recut this module reads. */
@@ -953,7 +953,7 @@ test('AT18 — the asymmetric-bets manifests resolve against the crossing fixtur
 test('t215 AT — skillRoute names the pinned version, not just the id', async () => {
   const { skillRoute } = await loadModule();
 
-  assert.equal(skillRoute('travessia-fazer', '1.2.3'), '/v1/skills/travessia-fazer?version=1.2.3');
+  assert.equal(skillRoute('do-crossing', '1.2.3'), '/v1/skills/do-crossing?version=1.2.3');
   assert.equal(
     skillRoute('a/b', '1.0.0'),
     '/v1/skills/a%2Fb?version=1.0.0',

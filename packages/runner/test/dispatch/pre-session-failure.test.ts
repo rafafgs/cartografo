@@ -113,13 +113,13 @@ test('AT3 — a pin mismatch names BOTH hashes, the declared and the registered'
   const declared = `sha256:${'a'.repeat(64)}`;
   const registered = `sha256:${'f'.repeat(64)}`;
   const reason = classifyPreSessionFailure(
-    new SkillPinMismatchError('publicar', 'travessia-fazer', declared, registered),
+    new SkillPinMismatchError('publicar', 'do-crossing', declared, registered),
     JOB,
   );
 
   // Which of the two moved is not the machine's to guess (D4), so a human needs
   // both sides of the comparison to decide.
-  namesAll(reason, [declared, registered, 'travessia-fazer']);
+  namesAll(reason, [declared, registered, 'do-crossing']);
 });
 
 test('AT4 — an engine with no route names the engine and the node that asked for it', async () => {

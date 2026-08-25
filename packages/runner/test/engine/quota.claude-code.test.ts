@@ -119,7 +119,7 @@ interface Reported {
  * @param lines The `FAKE_ENGINE_LINES` payload.
  * @param exitCode What the fake engine exits with — `1` for the measured
  *   refusal, and the reason a quota is indistinguishable from a crash without
- *   the field this ficha reads.
+ *   the field this ticket reads.
  * @returns The three arguments of `onFinished`.
  */
 async function runSession(
@@ -150,7 +150,7 @@ async function runSession(
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status, code, detail) {
         announce({ status, exitCode: code, detail });

@@ -452,7 +452,7 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
   await yieldEventLoop();
   assert.equal(beats.length, 1, 'the first window beats');
 
-  // The window the ficha is about: the beat armed above has not come back, and
+  // The window the ticket is about: the beat armed above has not come back, and
   // the next one is already due. Piling a second call on top of it is how a
   // stalled control plane collects one in-flight request per interval, forever.
   t.mock.timers.tick(1_000);
@@ -591,7 +591,7 @@ test('t252 — a blocked candidate is skipped and the NEXT one runs in the same 
     dispatch: async (jobId: number) => {
       dispatched.push(jobId);
       return jobId === 1
-        ? { blocked: true, reason: 'o nó pede um engine que este runner não tem' }
+        ? { blocked: true, reason: 'the node asks for an engine this runner does not have' }
         : { blocked: false };
     },
   });
@@ -621,7 +621,7 @@ test('t252 — a tick whose only candidate blocks itself returns null', async ()
   const controller = new Controller({
     ...BASE_OPTIONS,
     client,
-    dispatch: async () => ({ blocked: true, reason: 'a skill fixada não está no registro' }),
+    dispatch: async () => ({ blocked: true, reason: 'the pinned skill is not in the registry' }),
   });
 
   // Same answer as "no candidate yielded a lease": the pass won nothing. What

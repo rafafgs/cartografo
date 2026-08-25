@@ -26,7 +26,7 @@
  * | `workspace-write` | `false`          | allowed | blocked |
  * | `workspace-write` | `true`           | allowed | allowed |
  *
- * Row two is the one that decides this ficha: the override has NO effect under
+ * Row two is the one that decides this ticket: the override has NO effect under
  * `read-only`, which is why closed writes with an open network are refused
  * rather than approximated.
  */
@@ -210,7 +210,7 @@ test('the derrubar-tese policy — no writes, no network — reaches the engine 
     // `factory-graphs/asymmetric-bets/skills/red-team-thesis.json` — the skill
     // this test still calls by the name t280 retired, `derrubar-tese` — declares
     // exactly this: `filesystem.write: []` and `network.allowed: false`. It is
-    // the acceptance criterion of the ficha made concrete — a real factory
+    // the acceptance criterion of the ticket made concrete — a real factory
     // skill dispatched to a `codex` node.
     await newAdapter().startSession(
       specFor(scenario, {

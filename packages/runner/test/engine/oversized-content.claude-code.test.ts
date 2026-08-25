@@ -112,7 +112,7 @@ async function openSession(spec: Partial<SessionSpec> = {}): Promise<LiveSession
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status, exitCode) {
         announce({ status, exitCode });
@@ -175,7 +175,7 @@ test('t203 AT — the oversized instructions go to a 0600 file and the prompt to
     assert.equal(record.stdin, OVERSIZED_PROMPT, 'the prompt did not reach the process on stdin');
     assert.ok(
       !record.argv.join('\n').includes(OVERSIZED_INSTRUCTIONS),
-      'the instructions are still in the argv, which is the ceiling this ficha exists to dodge',
+      'the instructions are still in the argv, which is the ceiling this ticket exists to dodge',
     );
 
     assert.equal(

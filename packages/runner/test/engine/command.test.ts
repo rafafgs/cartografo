@@ -26,7 +26,7 @@ import {
 } from '../../src/engine/command.ts';
 import type { SessionSpec } from '../../src/engine/types.ts';
 
-const INSTRUCTIONS = 'Você é o nó "fazer". Implemente o ticket com testes primeiro.';
+const INSTRUCTIONS = 'You are node "fazer". Implement the ticket with tests first.';
 const PROMPT = 'Ticket #104: EngineAdapter do Claude Code.';
 
 const spec = (extra: Partial<SessionSpec> = {}): SessionSpec => ({
@@ -457,7 +457,7 @@ test('t175 — standard and absent both produce byte-identical argv to no modelT
 });
 
 test('t175 — a node that pinned its own model wins over the tier, and --model still goes once', () => {
-  // The precedence the two fichas together create, and it only has one honest
+  // The precedence the two tickets together create, and it only has one honest
   // answer: `spec.model` is what the GRAPH declared for this node (t166), and a
   // triage heuristic does not get to overrule a decision somebody wrote down.
   // Getting this wrong is not a preference — two `--model` flags in one argv is

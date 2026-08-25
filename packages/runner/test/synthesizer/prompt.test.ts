@@ -6,7 +6,7 @@
  * the edit is the entire gate), and a contract that can only be read by opening
  * a session is a contract nobody reviews.
  *
- * Four things have to be in it, and each one is a requirement of the ficha:
+ * Four things have to be in it, and each one is a requirement of the ticket:
  * the declaration as the user wrote it, the class name the user chose (D8 — the
  * command never invents one), the skill catalogue in enough detail to compose
  * nodes from it, and the similarity suggestions when there are any. Plus the

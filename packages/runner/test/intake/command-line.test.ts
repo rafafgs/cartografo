@@ -30,7 +30,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const COMMAND_LINE_MODULE = 'src/intake/command-line.ts';
 
 /** The request in natural language: one positional argument, quoted. */
-const REQUEST = 'Fechar a camada de intake com portao humano.';
+const REQUEST = 'Close the intake layer with a human gate.';
 
 /** An environment with nothing in it: every parse here declares what it reads. */
 const EMPTY_ENV: NodeJS.ProcessEnv = {};
@@ -228,7 +228,7 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
   await createClient(options, recordingFetch(seen, 201, { draft: { id: 1 } })).createIntake({
     class: 'nota-curta',
     request: REQUEST,
-    items: [{ ref: 'a', title: 'Uma' }],
+    items: [{ ref: 'a', title: 'One' }],
   });
   assert.equal(seen.length, 2);
   assert.equal(seen[1].url, 'http://127.0.0.1:9999/v1/intake');

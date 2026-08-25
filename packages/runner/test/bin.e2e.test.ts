@@ -102,7 +102,7 @@ function initRepo(base: string): string {
   git('init', '--quiet');
   git('config', 'user.email', 'fixture@cartografo.local');
   git('config', 'user.name', 'Fixture t193');
-  writeFileSync(path.join(repoRoot, 'README.md'), '# Repositório de fixture da t193\n');
+  writeFileSync(path.join(repoRoot, 'README.md'), '# t193 fixture repository\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
 
@@ -261,7 +261,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
         token,
         'POST',
         '/v1/jobs',
-        { title: 'trabalho com sessão viva', entry_node_id: 'fazer', execution_id: 193016 },
+        { title: 'work with a live session', entry_node_id: 'fazer', execution_id: 193016 },
         201,
       );
       t.after(async () => {

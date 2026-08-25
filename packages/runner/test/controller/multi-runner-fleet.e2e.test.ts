@@ -215,7 +215,7 @@ async function call<T>(
 async function pair(cp: RunningControlPlane, id: string): Promise<string> {
   const paired = await call<{ token: string | null }>(cp, 'POST', '/v1/runners', cp.bootstrapToken, {
     id,
-    name: `máquina ${id}`,
+    name: `machine ${id}`,
   });
   assert.equal(paired.status, 201, `pairing ${id} over ${cp.urlBase} failed`);
   const token = paired.body.token ?? '';
@@ -229,7 +229,7 @@ async function seedJobs(cp: RunningControlPlane, howMany: number): Promise<numbe
   for (let index = 0; index < howMany; index += 1) {
     const job = await call<{ id: number }>(cp, 'POST', '/v1/jobs', cp.bootstrapToken, {
       project_id: PROJECT_ID,
-      title: `trabalho disputado #${index + 1}`,
+      title: `contested work #${index + 1}`,
       entry_node_id: 'implementar',
     });
     assert.equal(job.status, 201);

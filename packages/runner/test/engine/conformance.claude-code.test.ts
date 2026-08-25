@@ -92,7 +92,7 @@ test('capabilities declares only what has a consumer', () => {
 /* t172 — the terminal frame's token accounting and the models that ran.      */
 /*                                                                            */
 /* The fixtures below are NOT invented: `usage` and `modelUsage` are copied    */
-/* from a real `claude 2.1.233` run (FR12, evidence in the ficha), extra keys  */
+/* from a real `claude 2.1.233` run (FR12, evidence in the ticket), extra keys  */
 /* and all. Those extras are the whole point of the shape — the CLI reports    */
 /* nine keys where the taxonomy's `uso` contract accepts exactly four and      */
 /* closes `additionalProperties`, so an adapter that passed the object through */
@@ -224,7 +224,7 @@ async function runFakeSession(
       },
       {
         onOutput() {
-          /* the lines themselves are C6's business, not this ficha's */
+          /* the lines themselves are C6's business, not this ticket's */
         },
         onFinished(status, exitCode, detail) {
           announce({ status, exitCode, detail });

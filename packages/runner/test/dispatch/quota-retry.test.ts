@@ -228,7 +228,7 @@ test('t296 FR7 — a declared ladder overrides the default, and a nonsense one d
 
   // The same posture `resolvePreSessionFailureCeiling` has: what is not a usable
   // policy is "no override", never "no wait at all". An empty ladder read
-  // literally would re-lease immediately, which is the loop this ficha closes.
+  // literally would re-lease immediately, which is the loop this ticket closes.
   for (const nonsense of [[], [0], [-1], [Number.NaN]] as const) {
     const tracker = new QuotaCooldownTracker(nonsense);
     tracker.recordQuotaFailure(JOB_ID, undefined, NOW);

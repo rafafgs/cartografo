@@ -65,7 +65,7 @@ async function runOneSession(
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status) {
         announce(status);

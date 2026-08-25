@@ -9,7 +9,7 @@
  * back out. Nineteen tests did exactly that, and they still do — that suite is
  * what proves the orchestration. What it cannot do is pin one call's BODY
  * cheaply, which is why `finish` shipped `usage: null` hardcoded for eleven
- * fichas with nobody the wiser (t172).
+ * tickets with nobody the wiser (t172).
  *
  * Here each function takes its client as a parameter, so a fake `call` that
  * records what it was handed is the whole harness: no server, no engine, no

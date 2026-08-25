@@ -108,7 +108,7 @@ test('t239 AT4 — the command line of measure-executions takes one metric and a
   assert.equal(run.options.url, 'http://127.0.0.1:4317');
   assert.equal(run.options.token, undefined);
 
-  // The three refusals of the ficha, each with a message that names what is
+  // The three refusals of the ticket, each with a message that names what is
   // missing rather than reprinting the usage and leaving it at that.
   const noExecution = parseMeasureArguments(['agent_ms:redigir'], {});
   assert.ok(noExecution.kind === 'usage');

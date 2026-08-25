@@ -4,7 +4,7 @@
  *
  * `integrar-branch`'s own manifest promises it — the session never runs the
  * final merge, and it is the EXECUTOR that re-verifies and moves the main line
- * — and until this ficha nobody kept it: the t109 game run reported
+ * — and until this ticket nobody kept it: the t109 game run reported
  * `merge_commit ae41796`, the bench's `main` stayed where it was, and a person
  * typed `git merge --ff-only ticket-1` by hand before `testar` could open
  * (`notes/2026-08-17-t109-game-feature.md`, gap 3).
@@ -70,7 +70,7 @@ function identify(repoRoot: string): void {
 interface Scratch {
   /** Where the work is cut from and where the integrated commit was born. */
   repoRoot: string;
-  /** The shared checkout the gate nodes observe — what this ficha advances. */
+  /** The shared checkout the gate nodes observe — what this ticket advances. */
   benchPath: string;
   /** Where the bench's `main` starts, so "it did not move" can be asserted. */
   base: string;

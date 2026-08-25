@@ -4,7 +4,7 @@
  * t124 closed `/v1/*` behind a bearer token and gave every caller a way to
  * present one — every caller except this one. The surveyor is a command a
  * person types (`src/surveyor/cli.mjs`), it reads three routes and writes one,
- * and until this ficha it built its client with no token and offered no flag or
+ * and until this ticket it built its client with no token and offered no flag or
  * environment variable to supply one: the command was unconditionally denied,
  * with the generic `GET … respondeu 401` of the HTTP client as its whole
  * explanation.

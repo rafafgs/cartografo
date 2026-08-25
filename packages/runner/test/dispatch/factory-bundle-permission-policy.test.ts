@@ -8,7 +8,7 @@
  * `network: {allowed: true, domains: [...]}`, and a per-domain allowlist is a
  * policy neither shipped adapter can express, so `startSession` refused it up
  * front with `permission policy unsupported: …`. That refusal is correct and is
- * not what this ficha changes — a session that quietly enforced less than what
+ * not what this ticket changes — a session that quietly enforced less than what
  * was declared is the one outcome a permission system may never produce
  * (`src/engine/permission-policy.ts`). What was wrong was the manifest.
  *
@@ -96,19 +96,19 @@ test('AT2 — no adapter refuses alpha-test for a domain-scoped network any more
 });
 
 /**
- * The codex half of the ficha's goal, pinned at what is actually true rather
- * than at what the ficha assumed.
+ * The codex half of the ticket's goal, pinned at what is actually true rather
+ * than at what the ticket assumed.
  *
- * The ficha asked for "no refusal on either adapter" reading only the network
+ * The ticket asked for "no refusal on either adapter" reading only the network
  * axis. There is a second one: `alpha-test` declares `filesystem.write: []`
  * (it judges a shared test bench and must leave it exactly as it found it), and
  * codex measured that NO sandbox tier combines closed writes with an open
  * network — `network_access` only exists inside `workspace-write`
  * (`src/engine/codex-permission-policy.ts`, the measured table). So this
- * manifest still cannot open on codex, for a reason this ficha did not
+ * manifest still cannot open on codex, for a reason this ticket did not
  * introduce and cannot fix within its scope: closing it would take either
  * granting the gate write access to the checkout it judges, or changing the
- * codex policy — and the ficha's FR5 keeps that policy untouched, correctly.
+ * codex policy — and the ticket's FR5 keeps that policy untouched, correctly.
  *
  * It is not a regression and not new: `factory-graphs/asymmetric-bets`
  * already ships `coletar-fundamentos` with exactly this pair, and every node of
@@ -126,7 +126,7 @@ test('AT3 — codex still refuses alpha-test, and only for the closed-write gap'
     resolveCodexPermissions(permissions).refusals,
     [CLOSED_WRITE_OPEN_NETWORK_REASON],
     'the only thing left between this manifest and a codex session is the measured gap the ' +
-      'codex policy documents — not the domain allowlist this ficha removed',
+      'codex policy documents — not the domain allowlist this ticket removed',
   );
 });
 

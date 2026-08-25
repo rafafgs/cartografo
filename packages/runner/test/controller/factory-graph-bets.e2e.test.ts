@@ -380,7 +380,7 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
 /*                                                                            */
 /* `triage` has two ways out and `discard` is the cheap one: it goes          */
 /* straight to `record-monitoring`, which is the only final node of the   */
-/* graph and the one node that reads the traversal itself. Before this ficha   */
+/* graph and the one node that reads the traversal itself. Before this ticket   */
 /* that node could not open a session at all — `registrar-travessia` named     */
 /* `{{input.nos_executados}}` and `{{input.data_de_registro}}`, nothing        */
 /* produced either, and `UnresolvedPlaceholderError` stopped the dispatch      */

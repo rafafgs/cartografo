@@ -187,7 +187,7 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
     'POST',
     '/v1/jobs',
     {
-      title: 'travessia com gargalo',
+      title: 'a crossing with a bottleneck',
       entry_node_id: 'redigir',
       execution_id: EXECUTION_WITH_SIGNAL,
       graph_version_id: versionId,
@@ -268,7 +268,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
     'POST',
     '/v1/jobs',
     {
-      title: 'travessia sem sinal',
+      title: 'a crossing with no signal',
       entry_node_id: 'redigir',
       execution_id: FLAT_EXECUTION,
       graph_version_id: version.id,
@@ -354,14 +354,14 @@ const VALID_OPERATIONS = [
     type: 'change_node_field',
     node_id: 'revisar',
     field: 'description',
-    from: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    to: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+    from: 'Checks the note against the declared topic and closes the crossing.',
+    to: 'Checks the note against the declared topic, with a three-item checklist.',
     inverse: {
       type: 'change_node_field',
       node_id: 'revisar',
       field: 'description',
-      from: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-      to: 'Confere a nota contra o tema declarado e encerra a travessia.',
+      from: 'Checks the note against the declared topic, with a three-item checklist.',
+      to: 'Checks the note against the declared topic and closes the crossing.',
     },
   },
 ];
@@ -403,7 +403,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   assert.deepEqual(
     scenario.calls.filter((call) => call.includes('/aplicar')),
     [],
-    'a surveyor proposal only ever reaches "pendente" (README, princípio 5)',
+    'a surveyor proposal only ever reaches "pending" (README, principle 5)',
   );
 
   const { proposals } = await api<{ proposals: Proposal[] }>(
@@ -547,14 +547,14 @@ test('t228 — the old `operacoes` wrapper and the old operation keys are both r
             tipo: 'alterar_campo_no',
             no_id: 'revisar',
             campo: 'description',
-            de: 'antes',
-            para: 'depois',
+            de: 'before',
+            para: 'after',
             inversa: {
               tipo: 'alterar_campo_no',
               no_id: 'revisar',
               campo: 'description',
-              de: 'depois',
-              para: 'antes',
+              de: 'after',
+              para: 'before',
             },
           },
         ],

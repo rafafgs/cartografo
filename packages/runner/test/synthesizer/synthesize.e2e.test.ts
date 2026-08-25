@@ -54,7 +54,7 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 const CLIENT_MODULE = 'src/synthesizer/control-plane-client.ts';
 const SYNTHESIS_MODULE = 'src/synthesizer/synthesize.ts';
 
-const DECLARATION = 'Quero um fluxo que redige e revisa uma nota curta sobre um tema declarado.';
+const DECLARATION = 'I want a flow that drafts and reviews a short note about a declared topic.';
 const CLASS_NAME = 'artigo-revisado';
 
 interface TestHook {
@@ -136,7 +136,7 @@ function frameEmittingAdapter(answer: string): ClaudeCodeAdapter {
 /** The whole answer of the session, fence included, before it is framed. */
 function answerWithBlock(document: Record<string, unknown>): string {
   return [
-    'Compus a partir do catálogo registrado.',
+    'I composed it out of the registered catalogue.',
     '```grafo-proposto',
     JSON.stringify(document, null, 2),
     '```',

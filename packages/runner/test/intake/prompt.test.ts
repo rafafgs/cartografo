@@ -3,7 +3,7 @@
  *
  * A pure function tested on its own, for the reason
  * `test/synthesizer/prompt.test.ts` already records about its own subject: this
- * text IS the contract of the ficha. The session runs in an empty temporary
+ * text IS the contract of the ticket. The session runs in an empty temporary
  * directory, so it cannot open `packages/core/src/domain/intake.ts` and read the
  * item format for itself — every rule `validateItems` enforces and the prompt
  * does not state is a rule the session has no way to follow, and the bill
@@ -180,7 +180,7 @@ test('AT1 — the session is told it writes the file and nothing else', async ()
   const { INTAKE_INSTRUCTIONS } = await loadPrompt();
 
   // The same posture as the surveyor's session (`src/surveyor/proposal.ts`): no
-  // URL, no credential, no write anywhere else. The only POST of this ficha is
+  // URL, no credential, no write anywhere else. The only POST of this ticket is
   // the orchestrator's.
   assert.match(INTAKE_INSTRUCTIONS, /API/i, 'the instructions have to close the API door out loud');
 });

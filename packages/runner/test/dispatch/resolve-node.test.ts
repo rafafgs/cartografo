@@ -3,7 +3,7 @@
  *
  * One fetch of the graph version per dispatch, and everything the rest of the
  * dispatch needs to know about the node comes out of it: which node the work is
- * standing on, and which edges leave it. Until this ficha the same fetch existed
+ * standing on, and which edges leave it. Until this ticket the same fetch existed
  * inside `resolveEngine` and read exactly one field off the node — a second
  * consumer would have been a second `GET`, and two reads of the same snapshot in
  * one dispatch is how the engine that ran and the edge that was taken end up

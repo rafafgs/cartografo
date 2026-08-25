@@ -22,7 +22,7 @@
  *
  * The claim that matters most is the last one: the draft this command lands is
  * the SAME draft a hand-written one is, so t122's human gate closes over it
- * unchanged. If that were not true, this ficha would have built a second intake.
+ * unchanged. If that were not true, this ticket would have built a second intake.
  *
  * t254 added the one spawn this file was missing: the SUCCESS path. AT5a/AT5b
  * calls `generateIntakeDraft` in process, and the three spawns below all return
@@ -65,7 +65,7 @@ const FACTORY_GRAPH = path.join(
 );
 
 const CLASS_NAME = 'software-development';
-const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num portao humano.';
+const REQUEST = 'Close the intake layer: propose the breakdown and confirm it at a human gate.';
 
 /** Two items, one depending on the other — the shape a real batch has. */
 const ITEMS: ReadonlyArray<Record<string, unknown>> = Object.freeze([
@@ -287,7 +287,7 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
   );
 
   // (b) t122's human gate closes over it exactly as it does over a hand-written
-  // draft — this ficha added no second confirmation path.
+  // draft — this ticket added no second confirmation path.
   const confirmed = await api<{ draft: Draft; jobs: Job[] }>(
     plane,
     'POST',

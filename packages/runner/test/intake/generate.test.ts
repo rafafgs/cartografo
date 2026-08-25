@@ -1,7 +1,7 @@
 /**
  * Acceptance tests for the intake generation run (t144, AT3).
  *
- * Four claims, and each one is a boundary of the shape this ficha borrowed from
+ * Four claims, and each one is a boundary of the shape this ticket borrowed from
  * the surveyor (t110) rather than from the synthesizer (t115):
  *
  * 1. a class that names no registered lineage is refused BEFORE any session
@@ -52,7 +52,7 @@ const PROMPT_MODULE = 'src/intake/prompt.ts';
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 const CLASS_NAME = 'software-development';
-const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num portao humano.';
+const REQUEST = 'Close the intake layer: propose the breakdown and confirm it at a human gate.';
 
 /** What the session wrote, and what the control plane has to receive untouched. */
 const ITEMS: ReadonlyArray<Record<string, unknown>> = Object.freeze([
@@ -254,7 +254,7 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
   const triaged: ReadonlyArray<Record<string, unknown>> = Object.freeze([
     { ref: 'renomear', title: 'Renomear a coluna', tier: 'trivial' },
     { ref: 'feature', title: 'A feature inteira', tier: 'standard' },
-    { ref: 'sem-triagem', title: 'Ninguem triou esta' },
+    { ref: 'untriaged', title: 'Nobody triaged this one' },
   ]);
 
   const client = new RecordingClient();
@@ -339,7 +339,7 @@ test('AT3d — a missing, unreadable or empty answer posts nothing', async (t) =
     { label: 'sem-arquivo', env: {}, code: 'missing_output' },
     {
       label: 'json-torto',
-      env: engineWriting(OUTPUT_FILE, '{"items": [ isto nao e json'),
+      env: engineWriting(OUTPUT_FILE, '{"items": [ this is not json'),
       code: 'invalid_output',
     },
     {

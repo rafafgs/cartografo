@@ -424,7 +424,7 @@ test('t179 AT2 — --worktrees-root inside --working-dir is refused; a sibling i
 /* -------------------------------------------------------------------------- */
 /* t193 — a stop that is always bounded.                                      */
 /*                                                                            */
-/* Until this ficha the two stop signals were registered with `process.once`,  */
+/* Until this ticket the two stop signals were registered with `process.once`,  */
 /* and the first of them only stopped the loop from SCHEDULING: a dispatch     */
 /* already in flight was awaited to completion — up to an hour — and a second  */
 /* signal found no listener at all, so the process died under Node's default   */

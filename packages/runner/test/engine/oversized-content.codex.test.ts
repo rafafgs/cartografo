@@ -94,7 +94,7 @@ async function openSession(spec: Partial<SessionSpec> = {}): Promise<LiveSession
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status, exitCode) {
         announce({ status, exitCode });
@@ -147,7 +147,7 @@ test('t203 AT — the whole composed argument reaches the process on stdin', asy
     );
     assert.ok(
       !record.argv.join('\n').includes(OVERSIZED_INSTRUCTIONS),
-      'the content is still in the argv, which is the ceiling this ficha exists to dodge',
+      'the content is still in the argv, which is the ceiling this ticket exists to dodge',
     );
     assert.deepEqual(
       Object.keys(record.files),
@@ -160,7 +160,7 @@ test('t203 AT — the whole composed argument reaches the process on stdin', asy
 });
 
 test('t203 AT — a session under the limit keeps stdin closed', async () => {
-  // Invariant 6 as it stood before this ficha, and it stands: below the limit
+  // Invariant 6 as it stood before this ticket, and it stands: below the limit
   // nothing is written and nothing is piped, so the `<stdin>` block this
   // engine appends when both channels carry content cannot happen.
   const session = await openSession({

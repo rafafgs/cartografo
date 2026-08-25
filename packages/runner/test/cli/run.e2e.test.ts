@@ -377,7 +377,7 @@ function fakeEngineFactory(
 
 /** What the fake session prints: a quiet run, with nothing to ask. */
 const QUIET_LINES = JSON.stringify([
-  { stream: 'stdout', text: 'Fiz o que o nó pedia; nada a perguntar.' },
+  { stream: 'stdout', text: 'I did what the node asked for; nothing to ask.' },
 ]);
 
 /** A runner running in this process, and the handle that stops it. */
@@ -455,14 +455,14 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         role: 'arquivista',
         node_type: 'work',
         engine: 'codex',
-        description: 'Encerra a travessia. Existe para que `conferir` não seja o nó final.',
+        description: 'Closes the crossing. It exists so that `conferir` is not the final node.',
         skill_ref: { id: skill.id, version: skill.version, hash: skill.hash },
         contract: pinned[0].contract,
       },
     ],
     edges: [
       ...(fixture.edges as unknown[]),
-      { from: CODEX_NODE, to: 'arquivar', condition: 'sempre', description: 'Saída única.' },
+      { from: CODEX_NODE, to: 'arquivar', condition: 'sempre', description: 'A single exit.' },
     ],
     final_nodes: ['arquivar'],
     // Same reason the pins are rewired above: with a REAL manifest underneath,
@@ -561,7 +561,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { title: 'trabalho que o runner empacotado despacha', entry_node_id: DEFAULT_NODE, execution_id: 1629 },
+      { title: 'work the packaged runner dispatches', entry_node_id: DEFAULT_NODE, execution_id: 1629 },
       201,
     );
 
@@ -621,7 +621,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       'POST',
       '/v1/jobs',
       {
-        title: 'trabalho num nó que declara codex',
+        title: 'work on a node that declares codex',
         entry_node_id: CODEX_NODE,
         execution_id: 16210,
         graph_version_id: version.id,
@@ -713,7 +713,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       'POST',
       '/v1/jobs',
       {
-        title: 'trabalho que pede um engine que este runner não tem',
+        title: 'work that asks for an engine this runner does not have',
         entry_node_id: CODEX_NODE,
         execution_id: 16211,
         graph_version_id: version.id,
@@ -752,8 +752,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     // ...and it left BEFORE anything was spent, which is the whole point of
     // classifying pre-session: no session was ever opened for that execution.
-    // Structural on purpose — it says what `Nenhuma sessão foi aberta` says in
-    // the reason, without pinning the Portuguese sentence that says it.
+    // Structural on purpose — it says what `no session was opened` says in the
+    // reason, without pinning the exact sentence that says it.
     const { sessions: poisonSessions } = await api<{ sessions: Session[] }>(
       plane,
       'GET',
@@ -781,7 +781,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { title: 'trabalho que este runner sabe despachar', entry_node_id: DEFAULT_NODE, execution_id: 16212 },
+      { title: 'work this runner knows how to dispatch', entry_node_id: DEFAULT_NODE, execution_id: 16212 },
       201,
     );
 
@@ -887,7 +887,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { title: 'trabalho com sessão demorada', entry_node_id: DEFAULT_NODE, execution_id: 16213 },
+      { title: 'work with a slow session', entry_node_id: DEFAULT_NODE, execution_id: 16213 },
       201,
     );
 
@@ -978,7 +978,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { title: 'trabalho que prova o isolamento do worktree', entry_node_id: DEFAULT_NODE, execution_id: 17_901 },
+      { title: 'work that proves the worktree isolation', entry_node_id: DEFAULT_NODE, execution_id: 17_901 },
       201,
     );
 
@@ -1064,7 +1064,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     /** The text the pinned version carries, straight off the registered fixture. */
     const pinnedText = skillFixture().instructions as string;
-    const newerText = `${pinnedText}\n\nE, desde a 1.1.0, escreva também o que NÃO fez.`;
+    const newerText = `${pinnedText}\n\nAnd, since 1.1.0, write down what you did NOT do too.`;
 
     /** Runs one job to completion and gives back what the engine received. */
     const dispatch = async (label: string, executionId: number): Promise<string> => {
@@ -1092,7 +1092,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         'POST',
         '/v1/jobs',
         {
-          title: `travessia que prova o pino da skill (${label})`,
+          title: `crossing that proves the skill pin (${label})`,
           entry_node_id: DEFAULT_NODE,
           execution_id: executionId,
           graph_version_id: version.id,
@@ -1123,7 +1123,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       return [...received.argv, ...Object.values(received.files)].join('\n');
     };
 
-    const before = await dispatch('antes', 21_501);
+    const before = await dispatch('before', 21_501);
     assert.ok(
       before.includes(pinnedText),
       'the first dispatch did not carry the pinned version\'s instructions at all',
@@ -1147,7 +1147,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     assert.equal(registered.version, '1.1.0');
     assert.notEqual(registered.hash, skill.hash, 'the new version has to carry different content');
 
-    const after = await dispatch('depois', 21_502);
+    const after = await dispatch('after', 21_502);
     assert.ok(
       after.includes(pinnedText),
       'a node pinned to 1.0.0 stopped receiving 1.0.0 once 1.1.0 was registered',

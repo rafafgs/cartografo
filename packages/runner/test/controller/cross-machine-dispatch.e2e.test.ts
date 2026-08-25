@@ -184,7 +184,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
 
   const job = await call<{ id: number }>(urlBase, 'POST', '/v1/jobs', bootstrapToken, {
     project_id: PROJECT_ID,
-    title: 'trabalho despachado de outra máquina',
+    title: 'work dispatched from another machine',
     entry_node_id: 'implementar',
   });
   assert.equal(job.status, 201);
@@ -192,7 +192,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   // The credential is scoped, and this is the cheapest possible proof of it on
   // the very connection the cycle is about to run over.
   const refused = await call<{ error?: string }>(urlBase, 'POST', '/v1/jobs', token, {
-    title: 'trabalho que um runner não cria',
+    title: 'work a runner does not create',
     entry_node_id: 'implementar',
   });
   assert.equal(refused.status, 403);

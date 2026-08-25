@@ -31,7 +31,7 @@ import {
 } from '../../src/engine/codex-command.ts';
 import { composeSingleArgument, type SessionSpec } from '../../src/engine/types.ts';
 
-const INSTRUCTIONS = 'Você é o nó "fazer". Implemente o ticket com testes primeiro.';
+const INSTRUCTIONS = 'You are node "fazer". Implement the ticket with tests first.';
 const PROMPT = 'Ticket #119: segundo EngineAdapter.';
 
 const spec = (extra: Partial<SessionSpec> = {}): SessionSpec => ({

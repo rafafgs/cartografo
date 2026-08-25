@@ -6,7 +6,7 @@
  * `spec.workingDir`" (`docs/formats/engine-adapter.md:490-493`, invariant 7).
  * `workingDir` is the ENTIRE write scope of a session, so whoever produces that
  * string decides whether two concurrent sessions can step on each other. Until
- * this ficha every dispatch produced the SAME string, and the first real
+ * this ticket every dispatch produced the SAME string, and the first real
  * dogfood run paid for it: "the session works in the shared checkout; the
  * OPERATOR itself became a concurrent writer"
  * (`notes/2026-08-15-first-execution.md`, gap #6).
@@ -156,10 +156,10 @@ test('AT2 — two jobs get two trees, and neither can see what the other wrote',
   assert.equal(first.branch, 'ticket-160');
   assert.equal(second.branch, 'ticket-161');
 
-  writeFileSync(path.join(first.path, 'rascunho.md'), 'trabalho em voo da sessão 160\n');
+  writeFileSync(path.join(first.path, 'draft.md'), 'in-flight work of session 160\n');
   assert.ok(
-    !existsSync(path.join(second.path, 'rascunho.md')),
-    'one session can see the in-flight state of the other: the isolation this ficha exists for is gone',
+    !existsSync(path.join(second.path, 'draft.md')),
+    'one session can see the in-flight state of the other: the isolation this ticket exists for is gone',
   );
 });
 
@@ -176,8 +176,8 @@ test('AT3 — a retry of the same job gets a new directory on the same branch, w
 
   // What the first session committed is what the second one continues from —
   // the whole reason a retry keeps the branch instead of minting another.
-  const subject = 'trabalho da primeira sessão';
-  writeFileSync(path.join(first.path, 'nota.md'), 'o que a primeira sessão fez\n');
+  const subject = 'work of the first session';
+  writeFileSync(path.join(first.path, 'nota.md'), 'what the first session did\n');
   git(first.path, 'add', '.');
   git(first.path, 'commit', '--quiet', '-m', subject);
 
@@ -219,14 +219,14 @@ test('AT5 — release that keeps leaves everything exactly as the session left i
   const manager = new GitWorktreeManager({ repoRoot, worktreesRoot });
 
   const worktree = await manager.acquire(160);
-  writeFileSync(path.join(worktree.path, 'diagnostico.md'), 'o que a sessão deixou para trás\n');
+  writeFileSync(path.join(worktree.path, 'diagnostic.md'), 'what the session left behind\n');
 
   const outcome = await manager.release(worktree, { keep: true });
 
   assert.deepEqual(outcome, { kept: true }, 'an explicit keep has to report itself as a keep');
   assert.equal(
-    readFileSync(path.join(worktree.path, 'diagnostico.md'), 'utf8'),
-    'o que a sessão deixou para trás\n',
+    readFileSync(path.join(worktree.path, 'diagnostic.md'), 'utf8'),
+    'what the session left behind\n',
     'a kept worktree is what a human diagnoses a failed session from',
   );
   assert.ok(
@@ -247,7 +247,7 @@ test('AT8 — a dirty tree is NOT removed by a release that asked for it (t207-B
   // branch's history no matter what happens to this directory" — is exactly
   // what an uncommitted file falsifies. A session that finished `completed`
   // without committing has its whole output here and nowhere else.
-  writeFileSync(path.join(worktree.path, 'trabalho-nao-commitado.md'), 'o que a sessão fez\n');
+  writeFileSync(path.join(worktree.path, 'uncommitted-work.md'), 'what the session did\n');
 
   const outcome = await manager.release(worktree, { keep: false });
 
@@ -257,9 +257,9 @@ test('AT8 — a dirty tree is NOT removed by a release that asked for it (t207-B
     'a dirty tree must report that it was kept: the caller is what turns this into a block',
   );
   assert.equal(
-    readFileSync(path.join(worktree.path, 'trabalho-nao-commitado.md'), 'utf8'),
-    'o que a sessão fez\n',
-    'the uncommitted work was discarded — the loss this ficha exists to prevent',
+    readFileSync(path.join(worktree.path, 'uncommitted-work.md'), 'utf8'),
+    'what the session did\n',
+    'the uncommitted work was discarded — the loss this ticket exists to prevent',
   );
   assert.ok(
     registeredWorktrees(repoRoot).includes(name),
@@ -279,7 +279,7 @@ test('AT9 — a clean tree is removed by a release that asked for it, and says s
   // job. AT4's behaviour, unchanged, now with the answer checked too.
   writeFileSync(path.join(worktree.path, 'saida.md'), 'o artefato, commitado\n');
   git(worktree.path, 'add', '.');
-  git(worktree.path, 'commit', '--quiet', '-m', 'trabalho da sessão');
+  git(worktree.path, 'commit', '--quiet', '-m', 'work of the session');
 
   const outcome = await manager.release(worktree, { keep: false });
 

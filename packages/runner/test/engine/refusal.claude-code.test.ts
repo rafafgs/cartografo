@@ -2,7 +2,7 @@
  * What the `ClaudeCodeAdapter` reports when the ENGINE refused to answer
  * (t265, AT1).
  *
- * t198's first real traversal of the bets bundle put a thesis through `triagem`
+ * t198's first real traversal of the bets bundle put a thesis through `triage`
  * and got four refused sessions in a row before a fifth one worked:
  * `stop_reason: "refusal"`, `stop_details.category: "reasoning_extraction"`,
  * exit 1, zero output tokens
@@ -45,7 +45,7 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 /** Ceiling on one session of the fake engine, which normally ends in milliseconds. */
 const DEADLINE_MS = 15_000;
 
-/** The category the plantão's bisection measured on the real refusal. */
+/** The category the on-call session's bisection measured on the real refusal. */
 const CATEGORY = 'reasoning_extraction';
 
 /** One terminal `result` frame, as a line of the fake engine's stream. */
@@ -76,7 +76,7 @@ interface Reported {
  * @param lines The `FAKE_ENGINE_LINES` payload.
  * @param exitCode What the fake engine exits with — `1` for every refusal
  *   measured so far, and the reason a refusal is indistinguishable from a crash
- *   without the two keys this ficha reads.
+ *   without the two keys this ticket reads.
  * @returns The three arguments of `onFinished`.
  */
 async function runSession(
@@ -107,7 +107,7 @@ async function runSession(
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status, code, detail) {
         announce({ status, exitCode: code, detail });

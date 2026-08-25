@@ -170,7 +170,7 @@ async function seedBottleneck(plane: ControlPlane, versionId: string): Promise<v
     'POST',
     '/v1/jobs',
     {
-      title: 'travessia com gargalo',
+      title: 'a crossing with a bottleneck',
       entry_node_id: 'redigir',
       execution_id: EXECUTION_ID,
       graph_version_id: versionId,
@@ -227,14 +227,14 @@ const VALID_OPERATIONS = [
     type: 'change_node_field',
     node_id: 'revisar',
     field: 'description',
-    from: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    to: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+    from: 'Checks the note against the declared topic and closes the crossing.',
+    to: 'Checks the note against the declared topic, with a three-item checklist.',
     inverse: {
       type: 'change_node_field',
       node_id: 'revisar',
       field: 'description',
-      from: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-      to: 'Confere a nota contra o tema declarado e encerra a travessia.',
+      from: 'Checks the note against the declared topic, with a three-item checklist.',
+      to: 'Checks the note against the declared topic and closes the crossing.',
     },
   },
 ];
@@ -296,7 +296,7 @@ test('t254 — the spawned surveyor reports the graph and version it really prop
   // asserting about a run that failed quietly.
   const { proposals } = await api<{ proposals: Proposal[] }>(plane, 'GET', '/v1/proposals');
   assert.equal(proposals.length, 1, `exactly one proposal was posted: ${JSON.stringify(proposals)}`);
-  assert.equal(proposals[0].status, 'pending', 'and it only ever reaches pending (README, princípio 5)');
+  assert.equal(proposals[0].status, 'pending', 'and it only ever reaches pending (README, principle 5)');
   assert.equal(proposals[0].graph_id, version.graph_id);
   assert.equal(proposals[0].target_version, version.id);
 

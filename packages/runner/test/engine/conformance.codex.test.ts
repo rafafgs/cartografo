@@ -77,6 +77,6 @@ test('capabilities declares only what has a consumer in v0', () => {
   // IS false, through the document's own normalizer. t173 lit `hasResume` up
   // for the `claude-code` adapter and left this one alone on purpose —
   // `codex exec resume` is a subcommand, not a flag, so it is a different
-  // mechanism and a ficha of its own.
+  // mechanism and a ticket of its own.
   assert.equal(resolveCapabilities(declared).hasResume, false);
 });

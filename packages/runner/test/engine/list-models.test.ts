@@ -7,7 +7,7 @@
  *
  * The last one is not a formality — it is the honest gap the ticket wrote down.
  * Neither `claude --help` nor `codex --help` exposes a subcommand or a flag that
- * LISTS models (both were run for this ficha; both only SET one), so the
+ * LISTS models (both were run for this ticket; both only SET one), so the
  * CLI-query branch of `listModels()` has no consumer in v0 and both adapters
  * resolve to their static catalog, always. An entry that claimed `origin: 'cli'`
  * would be an adapter lying about where it got the list, which is exactly the

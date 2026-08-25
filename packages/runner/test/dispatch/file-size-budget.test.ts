@@ -20,7 +20,7 @@
  * documentation when it was measured (582 comment lines out of 930), and the
  * files here are written that way on purpose. The budget is worth having anyway,
  * for the reason t202 gave it: a module nobody can hold in their head is a module
- * every ficha edits, and every ficha editing the same file is the conflict
+ * every ticket edits, and every ticket editing the same file is the conflict
  * surface this project schedules around. Splitting it moves the prose too —
  * each piece carries the part of the argument that belongs to it.
  *

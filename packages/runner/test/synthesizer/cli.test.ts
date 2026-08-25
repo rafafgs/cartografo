@@ -54,7 +54,7 @@ function runCli(args: string[]): { status: number | null; stdout: string; stderr
 }
 
 test('AT5 — a missing --class exits 2 without touching anything', () => {
-  const result = runCli(['uma declaração de problema em linguagem natural']);
+  const result = runCli(['a problem declaration in natural language']);
 
   assert.equal(result.status, 2, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stderr, /--class/, 'the message names the flag that is missing');
@@ -82,11 +82,11 @@ test('AT5 — --help prints the flow and the mandatory next step by hand', () =>
 test('AT5 — --out overrides the default draft path', async () => {
   const { parseArguments } = await loadSynthesis();
 
-  const byDefault = parseArguments(['uma declaração', '--class', 'artigo-revisado']);
+  const byDefault = parseArguments(['a declaration', '--class', 'artigo-revisado']);
   assert.equal(byDefault.kind, 'run');
   assert.ok(byDefault.kind === 'run');
   assert.equal(byDefault.options.className, 'artigo-revisado');
-  assert.equal(byDefault.options.declaration, 'uma declaração');
+  assert.equal(byDefault.options.declaration, 'a declaration');
   assert.equal(
     byDefault.options.outputPath,
     undefined,
@@ -94,14 +94,14 @@ test('AT5 — --out overrides the default draft path', async () => {
   );
 
   const overridden = parseArguments([
-    'uma declaração',
+    'a declaration',
     '--class',
     'artigo-revisado',
     '--out',
-    '/tmp/outro-lugar.json',
+    '/tmp/somewhere-else.json',
   ]);
   assert.ok(overridden.kind === 'run');
-  assert.equal(overridden.options.outputPath, '/tmp/outro-lugar.json');
+  assert.equal(overridden.options.outputPath, '/tmp/somewhere-else.json');
 });
 
 test('AT5 — the default draft path is <classe>.grafo.rascunho.json in the current directory', async () => {
@@ -131,7 +131,7 @@ test('t148 — --token is read into the run options', async () => {
   const { parseArguments } = await loadSynthesis();
 
   const parsed = parseArguments(
-    ['uma declaração', '--class', 'artigo-revisado', '--token', 'ct_abc'],
+    ['a declaration', '--class', 'artigo-revisado', '--token', 'ct_abc'],
     EMPTY_ENV,
   );
 
@@ -142,24 +142,24 @@ test('t148 — --token is read into the run options', async () => {
 test('t148 — CARTOGRAFO_TOKEN is the fallback, and --token wins over it', async () => {
   const { parseArguments } = await loadSynthesis();
 
-  const fromEnv = parseArguments(['uma declaração', '--class', 'artigo-revisado'], {
+  const fromEnv = parseArguments(['a declaration', '--class', 'artigo-revisado'], {
     CARTOGRAFO_TOKEN: 'ct_do_ambiente',
   });
   assert.ok(fromEnv.kind === 'run');
   assert.equal(fromEnv.options.token, 'ct_do_ambiente');
 
   const both = parseArguments(
-    ['uma declaração', '--class', 'artigo-revisado', '--token', 'ct_da_linha'],
+    ['a declaration', '--class', 'artigo-revisado', '--token', 'ct_from_the_line'],
     { CARTOGRAFO_TOKEN: 'ct_do_ambiente' },
   );
   assert.ok(both.kind === 'run');
   assert.equal(
     both.options.token,
-    'ct_da_linha',
+    'ct_from_the_line',
     'the same precedence the surveyor and the cost lens already use',
   );
 
-  const neither = parseArguments(['uma declaração', '--class', 'artigo-revisado'], EMPTY_ENV);
+  const neither = parseArguments(['a declaration', '--class', 'artigo-revisado'], EMPTY_ENV);
   assert.ok(neither.kind === 'run');
   assert.equal(
     neither.options.token,
@@ -180,7 +180,7 @@ test('AT5 — --url and --timeout are optional and parsed when given', async () 
   const { parseArguments } = await loadSynthesis();
 
   const parsed = parseArguments([
-    'uma declaração',
+    'a declaration',
     '--class',
     'artigo-revisado',
     '--url',
@@ -219,7 +219,7 @@ test('t180 — --help is English, and still names the Portuguese flags and the d
 test('t180 — the usage refusals are English', async () => {
   const { parseArguments } = await loadSynthesis();
 
-  const noClass = parseArguments(['uma declaração'], {});
+  const noClass = parseArguments(['a declaration'], {});
   assert.ok(noClass.kind === 'usage');
   assert.equal(
     noClass.message,
@@ -230,7 +230,7 @@ test('t180 — the usage refusals are English', async () => {
   assert.ok(noDeclaration.kind === 'usage');
   assert.equal(noDeclaration.message, 'the problem declaration is missing (first argument)');
 
-  const dangling = parseArguments(['uma declaração', '--class', '--url'], {});
+  const dangling = parseArguments(['a declaration', '--class', '--url'], {});
   assert.ok(dangling.kind === 'usage');
   assert.equal(dangling.message, 'option --class needs a value');
 });
@@ -247,7 +247,7 @@ test('t180 — the usage refusals are English', async () => {
 test('t230 — --classe and --saida are not aliases of --class and --out', async () => {
   const { parseArguments, HELP } = await loadSynthesis();
 
-  const oldClass = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], {});
+  const oldClass = parseArguments(['a declaration', '--classe', 'artigo-revisado'], {});
   assert.ok(oldClass.kind === 'usage');
   assert.equal(
     oldClass.message,
@@ -255,7 +255,7 @@ test('t230 — --classe and --saida are not aliases of --class and --out', async
   );
 
   const oldOut = parseArguments(
-    ['uma declaração', '--class', 'artigo-revisado', '--saida', '/tmp/outro-lugar.json'],
+    ['a declaration', '--class', 'artigo-revisado', '--saida', '/tmp/somewhere-else.json'],
     {},
   );
   assert.ok(oldOut.kind === 'run');
@@ -273,7 +273,7 @@ test('t180 — a missing `claude` CLI says so in English', () => {
   // that goes missing is the engine the probe looks for.
   const result = spawnSync(
     process.execPath,
-    ['--import', 'tsx', CLI_PATH, 'uma declaração', '--class', 'classe-nova'],
+    ['--import', 'tsx', CLI_PATH, 'a declaration', '--class', 'new-class'],
     { cwd: PACKAGE_ROOT, encoding: 'utf8', env: { ...process.env, PATH: '' } },
   );
 

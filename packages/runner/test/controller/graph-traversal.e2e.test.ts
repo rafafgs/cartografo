@@ -2,7 +2,7 @@
  * End-to-end acceptance test of a WHOLE traversal with no operator in it
  * (t161, AT-e2e).
  *
- * This is the ficha's central claim, and the only test in the repository that
+ * This is the ticket's central claim, and the only test in the repository that
  * can make it: `POST /v1/jobs` plus a running controller is enough to cross a
  * graph. Everything is real except the engine — a real control plane as a child
  * process (the pattern of `dispatch-and-lease.e2e.test.ts`), a real
@@ -16,7 +16,7 @@
  *
  * What the test asserts it never does is as important as what it does: it calls
  * `POST /v1/jobs/:id/transitions` ZERO times. Every movement below is the
- * dispatch's. Before this ficha the first dogfood run had an operator making
+ * dispatch's. Before this ticket the first dogfood run had an operator making
  * exactly those calls by hand
  * (`notes/2026-08-15-first-execution.md`, gap #1).
  *
@@ -92,7 +92,7 @@ async function loadModule<T>(relative: string): Promise<T> {
 /**
  * Every call THIS TEST makes to the control plane, as a route string.
  *
- * The ledger is the assertion: the claim of this ficha is that a traversal
+ * The ledger is the assertion: the claim of this ticket is that a traversal
  * needs no operator, and the test is standing in for the operator. A
  * `/transitions` in here would be the test crossing the graph by hand, which is
  * exactly what the first dogfood run did.
@@ -149,7 +149,7 @@ function directoryWorktrees(root: string): WorktreeModule.WorktreeManager {
 }
 
 /** The `nota` every fake `implementar` session below reports. */
-const NOTA = 'escrevi saida.md com o resumo da etapa';
+const NOTA = 'I wrote saida.md with the summary of the step';
 
 /**
  * The lines a fake session prints when it just works and asks nothing.
@@ -157,12 +157,12 @@ const NOTA = 'escrevi saida.md com o resumo da etapa';
  * It closes with the block its node's `output_schema` declares since t259: a
  * `work` node is TOLD to report its result that way now
  * (`render-skill-instructions.ts`), and the report is what the next node's
- * `input` projection is built out of. Before that ficha nothing in the runner
+ * `input` projection is built out of. Before that ticket nothing in the runner
  * turned a session's own result into an object, so this constant was bare prose
  * and the node downstream had nothing to read.
  */
 const QUIET = JSON.stringify([
-  { stream: 'stdout', text: 'Fiz o que o nó pedia; nada a perguntar.' },
+  { stream: 'stdout', text: 'I did what the node asked for; nothing to ask.' },
   { stream: 'stdout', text: '```resultado' },
   { stream: 'stdout', text: JSON.stringify({ nota: NOTA }) },
   { stream: 'stdout', text: '```' },
@@ -195,14 +195,14 @@ const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
  */
 function verdict(result: string): string {
   return JSON.stringify([
-    { stream: 'stdout', text: 'Conferi o artefato com evidência própria.' },
+    { stream: 'stdout', text: 'I checked the artifact with my own evidence.' },
     { stream: 'stdout', text: '```resultado' },
     {
       stream: 'stdout',
       text: JSON.stringify({
         resultado: result,
         outcome: GATE_OUTCOME[result] ?? 'escalate_human',
-        evidencia: 'li saida.md do começo ao fim',
+        evidencia: 'I read saida.md from start to finish',
       }),
     },
     { stream: 'stdout', text: '```' },
@@ -211,14 +211,14 @@ function verdict(result: string): string {
 
 /** ...and the lines it prints when it needs a person before it can decide. */
 const ASKS = JSON.stringify([
-  { stream: 'stdout', text: 'Uma coisa não está decidida, então eu pergunto:' },
+  { stream: 'stdout', text: 'One thing is not decided, so I am asking:' },
   { stream: 'stdout', text: '```input-request' },
   {
     stream: 'stdout',
     text: JSON.stringify({
-      question: 'O critério de aceite 3 vale para o caminho de erro?',
-      context: 'A especificação só cita o caminho feliz.',
-      options: ['Vale para os dois', 'Só para o feliz'],
+      question: 'Does acceptance criterion 3 hold for the error path?',
+      context: 'The specification only mentions the happy path.',
+      options: ['It holds for both', 'Only for the happy one'],
       recommendation: 'Vale para os dois.',
       default: 'Vale para os dois',
     }),
@@ -261,7 +261,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'POST',
     '/v1/jobs',
     {
-      title: 'travessia inteira sem operador no meio',
+      title: 'a whole crossing with no operator in the middle',
       entry_node_id: 'implementar',
       execution_id: EXECUTION_ID,
       graph_version_id: version.id,
@@ -270,7 +270,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t161', 'o que atravessa sozinho');
+  await client.registerRunner('runner-t161', 'the one that crosses on its own');
 
   // The fake engine is configured per DISPATCH (`envOverrides` is fixed on the
   // spec), so what a session says is decided by swapping the dispatch between
@@ -394,7 +394,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   assert.deepEqual(
     released.map((candidate) => candidate.id),
     [],
-    'a work that arrived may never be dispatched again — that loop is gap 3 of this ficha',
+    'a work that arrived may never be dispatched again — that loop is gap 3 of this ticket',
   );
   assert.equal(
     await controller.tick(),
@@ -480,7 +480,7 @@ test('t259 — what a node produced reaches the next node through the real proje
     'POST',
     '/v1/jobs',
     {
-      title: 'a saída de um nó é a entrada do seguinte',
+      title: 'the output of one node is the input of the next',
       entry_node_id: 'implementar',
       execution_id: PROJECTION_EXECUTION_ID,
       graph_version_id: version.id,
@@ -489,7 +489,7 @@ test('t259 — what a node produced reaches the next node through the real proje
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t259', 'o que atravessa lendo o que ficou para trás');
+  await client.registerRunner('runner-t259', 'the one that crosses reading what was left behind');
 
   const worktrees = directoryWorktrees(root);
   let currentLines = QUIET;

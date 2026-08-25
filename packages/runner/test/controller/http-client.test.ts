@@ -7,7 +7,7 @@
  * status is read before the body is decoded, so a proxy answering 502 with an
  * HTML page becomes the caller's own error carrying that page, never a raw
  * `SyntaxError` that lost both the status and the text. The second is the one
- * this ficha adds: a control plane that accepts the connection and then says
+ * this ticket adds: a control plane that accepts the connection and then says
  * nothing has to become a rejection on a deadline — a request with no deadline
  * is a runner that hangs on its tick, its shutdown, or both.
  *

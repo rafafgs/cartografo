@@ -498,7 +498,7 @@ test('AT4 — a refused write carries the status, like every other call of this 
     () =>
       client.createIntake({
         class: 'nao-registrada',
-        request: 'qualquer coisa',
+        request: 'anything at all',
         items: INTAKE_ITEMS,
       }),
     (error: unknown) => {
@@ -649,14 +649,14 @@ const PROPOSAL_INPUT = {
       type: 'change_node_field',
       node_id: 'revisar',
       field: 'description',
-      from: 'antes',
-      to: 'depois',
+      from: 'before',
+      to: 'after',
       inverse: {
         type: 'change_node_field',
         node_id: 'revisar',
         field: 'description',
-        from: 'depois',
-        to: 'antes',
+        from: 'after',
+        to: 'before',
       },
     },
   ],

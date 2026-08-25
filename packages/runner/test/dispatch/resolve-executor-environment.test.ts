@@ -6,7 +6,7 @@
  * bench (`banco_de_testes.caminho`) and the commit the verification is made
  * against (`referencia.commit`). Neither can live in the control plane's
  * database — a filesystem path and a live `HEAD` are not versioned graph data
- * (D1) — and until this ficha neither had any source at all, so `testar` and
+ * (D1) — and until this ticket neither had any source at all, so `testar` and
  * `implantar` failed closed on `UnresolvedPlaceholderError`. The t109 game run
  * worked around it by stuffing all four into the graph's static `project`, and
  * wrote down that this was a stopgap.
@@ -157,7 +157,7 @@ test('t270 AT — ponta_do_principal is read live, on every call', async (t) => 
   const before = (first.referencia as Record<string, unknown>).commit;
   assert.equal(before, git(repoRoot, 'rev-parse', 'main'));
 
-  const advanced = commit(repoRoot, 'a linha principal andou');
+  const advanced = commit(repoRoot, 'the main line moved');
 
   const second = await resolve(readEnvironment);
   assert.equal(

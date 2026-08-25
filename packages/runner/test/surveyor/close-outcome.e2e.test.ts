@@ -130,14 +130,14 @@ const VALID_OPERATIONS = [
     type: 'change_node_field',
     node_id: 'revisar',
     field: 'description',
-    from: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    to: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+    from: 'Checks the note against the declared topic and closes the crossing.',
+    to: 'Checks the note against the declared topic, with a three-item checklist.',
     inverse: {
       type: 'change_node_field',
       node_id: 'revisar',
       field: 'description',
-      from: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-      to: 'Confere a nota contra o tema declarado e encerra a travessia.',
+      from: 'Checks the note against the declared topic, with a three-item checklist.',
+      to: 'Checks the note against the declared topic and closes the crossing.',
     },
   },
 ];
@@ -155,7 +155,7 @@ interface AppliedFixture {
  * Takes one proposal all the way through the human gate, on a fresh graph.
  *
  * Three calls and not one, deliberately: approving and applying are two separate
- * acts (README, princípio 5), and a fixture that collapsed them would be proving
+ * acts (README, principle 5), and a fixture that collapsed them would be proving
  * the cycle against a shortcut the API does not have.
  *
  * @param plane Where to write it.
@@ -226,7 +226,7 @@ async function seedRound(plane: ControlPlane, versionId: string): Promise<void> 
     'POST',
     '/v1/jobs',
     {
-      title: 'rodada seguinte à proposta',
+      title: 'the round after the proposal',
       entry_node_id: 'redigir',
       execution_id: EXECUTION_ID,
       graph_version_id: versionId,

@@ -15,7 +15,7 @@
  *
  * The engine is real (`ClaudeCodeAdapter` driving `test/fixtures/fake-engine.mjs`,
  * the same seam the conformance kit uses); only the control plane is faked,
- * because what this ficha proves is the runner's behaviour, not the routes of
+ * because what this ticket proves is the runner's behaviour, not the routes of
  * t101/t117 — which have their own suites.
  */
 
@@ -120,10 +120,10 @@ const SKILLS: ClientModule.RegisteredSkill[] = [
     version: '1.0.0',
     hash: `sha256:${'a'.repeat(64)}`,
     role: 'skill',
-    description: 'Escreve a nota a partir do tema declarado.',
+    description: 'Writes the note from the declared topic.',
     input: { type: 'object' },
     output: { type: 'object' },
-    checks: [{ type: 'deterministic', comando: 'test -s nota.md' }],
+    checks: [{ type: 'deterministic', command: 'test -s nota.md' }],
   },
 ];
 
@@ -133,13 +133,13 @@ const EXISTING_VERSION: ClientModule.GraphVersion = {
   snapshot: {
     metadata: {
       nome: 'Nota curta',
-      description: 'Redigir e revisar uma nota curta sobre um tema declarado.',
+      description: 'Draft and review a short note about a declared topic.',
       schema_version: '1.0.0',
     },
   },
 };
 
-/** The control plane, faked at the three reads this ficha consumes. */
+/** The control plane, faked at the three reads this ticket consumes. */
 function fakeClient(classes: ClientModule.ClassEntry[]): ClientModule.ControlPlaneReader & {
   calls: string[];
 } {
@@ -189,7 +189,7 @@ function proposedGraph(className: string): Record<string, unknown> {
   };
 }
 
-const DECLARATION = 'Quero um fluxo que redige e revisa uma nota curta sobre um tema declarado.';
+const DECLARATION = 'I want a flow that drafts and reviews a short note about a declared topic.';
 
 /**
  * One line of what a REAL `ClaudeCodeAdapter` session prints (t148).
@@ -374,7 +374,7 @@ test('t148 — a frame with no block prints the decoded prose, not the raw frame
   const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   const adapter = new CountingAdapter(
     fakeAdapter([
-      resultFrame('Li o catálogo e não consegui compor uma topologia com o que existe.'),
+      resultFrame('I read the catalogue and could not compose a topology out of what exists.'),
     ]),
   );
   const dir = scratch(t, 'quadro-sem-bloco');
@@ -395,12 +395,12 @@ test('t148 — a frame with no block prints the decoded prose, not the raw frame
   const printed = err.join('');
   assert.match(
     printed,
-    /não consegui compor uma topologia/,
+    /could not compose a topology/,
     'the person reads what the session said, in the words it said them',
   );
   assert.ok(
     !printed.includes('"subtype"'),
-    'a raw frame under "saída bruta da sessão" is unreadable exactly when it matters',
+    'a raw frame under "the session raw output" is unreadable exactly when it matters',
   );
 });
 

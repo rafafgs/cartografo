@@ -134,7 +134,7 @@ test('AT3 — a closing fence inside the JSON does not truncate the block', asyn
   // a graph quotes fenced examples of graphs.
   const document = graph('nota-curta');
   const nodes = document.nodes as Record<string, unknown>[];
-  nodes[0].description = 'Escreve a nota. Exemplo de saída:\n```json\n{"texto": "..."}\n```\nE só.';
+  nodes[0].description = 'Writes the note. Example output:\n```json\n{"texto": "..."}\n```\nAnd that is all.';
 
   assert.deepEqual(parseGraphProposal(block(JSON.stringify(document))), document);
 });

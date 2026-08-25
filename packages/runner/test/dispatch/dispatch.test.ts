@@ -255,10 +255,10 @@ async function api<T>(
 /** The lines the fake session prints when it needs the founder. */
 function linesWithBlock(): string {
   return JSON.stringify([
-    { stream: "stdout", text: "Li a ficha e os arquivos que ela nomeia." },
+    { stream: "stdout", text: "Li a ticket e os arquivos que ela nomeia." },
     {
       stream: "stdout",
-      text: "Uma coisa a ficha não resolve, então eu pergunto:",
+      text: "Uma coisa a ticket não resolve, então eu pergunto:",
     },
     { stream: "stdout", text: "```input-request" },
     { stream: "stdout", text: JSON.stringify(ESCALATION) },
@@ -365,7 +365,7 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "POST",
     "/v1/jobs",
     {
-      title: "ficha que escala",
+      title: "ticket que escala",
       entry_node_id: "implementar",
       execution_id: 7,
     },
@@ -626,7 +626,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
     "POST",
     "/v1/jobs",
     {
-      title: "ficha com skill de terceiro",
+      title: "ticket com skill de terceiro",
       entry_node_id: "implementar",
       execution_id: 9,
     },
@@ -727,7 +727,7 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     "POST",
     "/v1/jobs",
     {
-      title: "a ficha cuja saída precisa sobreviver ao processo",
+      title: "a ticket cuja saída precisa sobreviver ao processo",
       entry_node_id: "implementar",
       execution_id: 11,
     },
@@ -935,7 +935,7 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
     "POST",
     "/v1/jobs",
     {
-      title: "ficha despachada contra um control plane autenticado",
+      title: "ticket despachada contra um control plane autenticado",
       entry_node_id: "implementar",
       execution_id: 147,
     },
@@ -1008,7 +1008,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     "POST",
     "/v1/jobs",
     {
-      title: "ficha despachada com credencial",
+      title: "ticket despachada com credencial",
       entry_node_id: "implementar",
       execution_id: 147,
     },
@@ -1333,7 +1333,7 @@ async function registerSkill(
  * Booting a real server per test is what the rest of this file does, and at
  * three more boots it stopped being free: the extra parallel load made the
  * conformance kit's C4 — which sleeps a fixed settle before reading the fake
- * engine's sidecar — miss its window and fail in a file this ficha never
+ * engine's sidecar — miss its window and fail in a file this ticket never
  * touched. One boot for three tests keeps the suite's cost where it was.
  *
  * Nothing is shared BETWEEN the subtests except the server: each registers its
@@ -1378,7 +1378,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cujo nó declara codex",
+          title: "ticket cujo nó declara codex",
           entry_node_id: "revisar",
           execution_id: 141,
           graph_version_id: versionId,
@@ -1479,7 +1479,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ficha sem grafo",
+          title: "ticket sem grafo",
           entry_node_id: "implementar",
           execution_id: 1410,
         },
@@ -1510,7 +1510,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cujo nó não declara engine",
+          title: "ticket cujo nó não declara engine",
           entry_node_id: "implementar",
           execution_id: 1411,
           graph_version_id: versionId,
@@ -1579,7 +1579,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cujo nó pede um engine que ninguém registrou",
+          title: "ticket cujo nó pede um engine que ninguém registrou",
           entry_node_id: "revisar",
           execution_id: 1412,
           graph_version_id: versionId,
@@ -1620,7 +1620,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         },
       });
 
-      // It RESOLVES since t252, and that is the whole ficha: an engine with no
+      // It RESOLVES since t252, and that is the whole ticket: an engine with no
       // route reproduces identically on every retry, so throwing it put the same
       // job back at the head of the same queue every two seconds, forever, with
       // nothing a human could see.
@@ -1793,7 +1793,7 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     "POST",
     "/v1/jobs",
     {
-      title: "ficha cujo POST /v1/sessions cai com o engine já de pé",
+      title: "ticket cujo POST /v1/sessions cai com o engine já de pé",
       entry_node_id: "implementar",
       execution_id: 148,
     },
@@ -1908,7 +1908,7 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
     "POST",
     "/v1/jobs",
     {
-      title: "ficha que pergunta e cujo fechamento de sessão cai",
+      title: "ticket que pergunta e cujo fechamento de sessão cai",
       entry_node_id: "implementar",
       execution_id: 1481,
     },
@@ -2024,7 +2024,7 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
     "POST",
     "/v1/jobs",
     {
-      title: "ficha que roda no worktree que o runner criou",
+      title: "ticket que roda no worktree que o runner criou",
       entry_node_id: "implementar",
       execution_id: 160,
     },
@@ -2090,7 +2090,7 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
     "POST",
     "/v1/jobs",
     {
-      title: "ficha cujo worktree não pôde ser criado",
+      title: "ticket cujo worktree não pôde ser criado",
       entry_node_id: "implementar",
       execution_id: 1601,
     },
@@ -2219,7 +2219,7 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
   const cases = [
     // `asked` is the `keep` the dispatch passes — `outcome.status !==
     // "completed"`, unchanged by t207-B. `kept` is what the manager answers,
-    // and the two only differ on the row this ficha added.
+    // and the two only differ on the row this ticket added.
     {
       status: "completed",
       dirty: false,
@@ -2284,7 +2284,7 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
           "POST",
           "/v1/jobs",
           {
-            title: `ficha cuja sessão termina como ${label}`,
+            title: `ticket cuja sessão termina como ${label}`,
             entry_node_id: "implementar",
             execution_id: executionId,
             graph_version_id: versionId,
@@ -2476,7 +2476,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
       "POST",
       "/v1/jobs",
       {
-        title: "ficha com orçamento de silêncio",
+        title: "ticket com orçamento de silêncio",
         entry_node_id: "implementar",
         execution_id: executionId,
       },
@@ -2648,7 +2648,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
  *
  * A class per case: `POST /v1/graphs` keys the lineage by `problem_class`, and two
  * subtests registering the same base class collide with each other rather than
- * with anything this ficha is about.
+ * with anything this ticket is about.
  */
 function traversalGraph(className: string): Record<string, unknown> {
   const document = JSON.parse(
@@ -2695,7 +2695,7 @@ const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
  *
  * The block carries the routing label AND the two fields the pinned
  * `check-crossing` manifest's `output` schema requires (t268). Until that
- * ficha the schema refusal was silently swallowed, so `{resultado}` alone was
+ * ticket the schema refusal was silently swallowed, so `{resultado}` alone was
  * enough; now a report the control plane refuses stops the job on its node, and
  * every case below is about something else — label routing, an unroutable
  * label, permissions, a `never` node — so all of them need a report that is
@@ -2778,7 +2778,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num nó com skill registrada",
+          title: "ticket num nó com skill registrada",
           entry_node_id: "publicar",
           execution_id: 1612,
           graph_version_id: versionId,
@@ -2791,7 +2791,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha sem grafo nenhum",
+          title: "ticket sem grafo nenhum",
           entry_node_id: "publicar",
           execution_id: 1612,
         },
@@ -2845,7 +2845,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         !withGraph.includes(
           "Trabalhe no diretório atual e faça o que o trabalho pede.",
         ),
-        "the fixed literal is what this ficha replaces, not something it appends to",
+        "the fixed literal is what this ticket replaces, not something it appends to",
       );
       assert.ok(
         withGraph.includes("```input-request"),
@@ -2854,7 +2854,7 @@ test("t161 — the node's skill drives the session, and the session advances the
 
       assert.ok(
         withoutGraph.includes(DEFAULT_INSTRUCTIONS),
-        "a work with no graph is dispatched exactly as it was before this ficha",
+        "a work with no graph is dispatched exactly as it was before this ticket",
       );
     },
   );
@@ -2897,7 +2897,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cujo nó aponta para uma skill adulterada",
+          title: "ticket cujo nó aponta para uma skill adulterada",
           entry_node_id: "publicar",
           execution_id: 1613,
           graph_version_id: versionId,
@@ -3011,7 +3011,7 @@ test("t161 — the node's skill drives the session, and the session advances the
           ),
         },
         {
-          title: "ficha cujo nó fixa uma skill que ninguém registrou",
+          title: "ticket cujo nó fixa uma skill que ninguém registrou",
           entry_node_id: "publicar",
           execution_id: 2521,
         },
@@ -3084,7 +3084,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha apontando para uma versão de grafo que ninguém registrou",
+          title: "ticket apontando para uma versão de grafo que ninguém registrou",
           entry_node_id: "publicar",
           execution_id: 2522,
           graph_version_id: dangling,
@@ -3162,7 +3162,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cujo control plane teve um soluço",
+          title: "ticket cujo control plane teve um soluço",
           entry_node_id: "publicar",
           execution_id: 2523,
           graph_version_id: versionId,
@@ -3171,7 +3171,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         token,
       );
 
-      // The boundary of the whole ficha, from the other side: a 503 is the
+      // The boundary of the whole ticket, from the other side: a 503 is the
       // control plane having a bad day, it does NOT reproduce on every retry,
       // and blocking a work over it would need a human to undo a hiccup.
       const calls: { method: string; route: string }[] = [];
@@ -3251,7 +3251,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num nó de saída única",
+          title: "ticket num nó de saída única",
           entry_node_id: "implementar",
           execution_id: 1614,
           graph_version_id: versionId,
@@ -3322,7 +3322,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num portão que reprova",
+          title: "ticket num portão que reprova",
           entry_node_id: "conferir",
           execution_id: 1615,
           graph_version_id: versionId,
@@ -3392,7 +3392,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num portão que não sabe rotear",
+          title: "ticket num portão que não sabe rotear",
           entry_node_id: "conferir",
           execution_id: 1616,
           graph_version_id: versionId,
@@ -3473,7 +3473,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cuja sessão pergunta",
+          title: "ticket cuja sessão pergunta",
           entry_node_id: "implementar",
           execution_id: 1617,
           graph_version_id: versionId,
@@ -3538,7 +3538,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cuja transição o control plane recusa",
+          title: "ticket cuja transição o control plane recusa",
           entry_node_id: "implementar",
           execution_id: 1618,
           graph_version_id: versionId,
@@ -3549,7 +3549,7 @@ test("t161 — the node's skill drives the session, and the session advances the
 
       // Everything real except the one write under test: an unrecorded
       // transition is the job silently stuck with nobody able to tell, which is
-      // the single failure mode this whole ficha exists to close.
+      // the single failure mode this whole ticket exists to close.
       const doFetch: typeof fetch = async (input, init) => {
         if (String(input).endsWith("/transitions")) return serverError();
         return fetch(input, init);
@@ -3623,7 +3623,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num portão que não pode escrever",
+          title: "ticket num portão que não pode escrever",
           entry_node_id: "conferir",
           execution_id: 1619,
           graph_version_id: versionId,
@@ -3748,7 +3748,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num nó que não tem a quem perguntar",
+          title: "ticket num nó que não tem a quem perguntar",
           entry_node_id: "implementar",
           execution_id: 1671,
           graph_version_id: versionId,
@@ -3817,7 +3817,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       });
 
       // The DEFAULT case, spelled out: the node declares the policy every graph
-      // written before this ficha has implicitly.
+      // written before this ticket has implicitly.
       const versionId = await registerGraph(
         baseUrl,
         token,
@@ -3828,7 +3828,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num nó que pergunta como sempre perguntou",
+          title: "ticket num nó que pergunta como sempre perguntou",
           entry_node_id: "implementar",
           execution_id: 1672,
           graph_version_id: versionId,
@@ -3849,7 +3849,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       })(job.id);
 
       const asked = posted(calls, "/v1/input-requests");
-      assert.equal(asked.length, 1, "the cycle t106 built has to be untouched by this ficha");
+      assert.equal(asked.length, 1, "the cycle t106 built has to be untouched by this ticket");
       assert.equal(asked[0].question, ESCALATION.question);
       assert.deepEqual(
         posted(calls, `/v1/jobs/${job.id}/blocks`),
@@ -3884,7 +3884,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          title: "ficha num portão que não sabe rotear e não tem a quem perguntar",
+          title: "ticket num portão que não sabe rotear e não tem a quem perguntar",
           entry_node_id: "conferir",
           execution_id: 1673,
           graph_version_id: versionId,
@@ -3945,7 +3945,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
  *
  * Separate from `node()` above on purpose: that one is the t141 routing
  * fixture and its two callers care about engines, not models. Growing its
- * signature would make every routing test read as if it were about this ficha.
+ * signature would make every routing test read as if it were about this ticket.
  */
 function modelNode(
   id: string,
@@ -4098,7 +4098,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1660,
-        title: "ficha cujo nó declara model",
+        title: "ticket cujo nó declara model",
       });
 
       assert.equal(spec.model, "claude-haiku-4-5");
@@ -4117,7 +4117,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1661,
-        title: "ficha cujo nó não declara model",
+        title: "ticket cujo nó não declara model",
       });
 
       // `undefined`, never a hardcoded fallback: "absence has a name" for every
@@ -4143,7 +4143,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const spec = await dispatchOn(t, {
         versionId,
         executionId: 1662,
-        title: "ficha cujo nó declara model em branco",
+        title: "ticket cujo nó declara model em branco",
       });
 
       assert.equal(
@@ -4163,7 +4163,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
         modelGraph("selecao-de-modelo-proposta", {}),
       );
 
-      // The whole point of the ficha, end to end: `model` is graph DATA, so
+      // The whole point of the ticket, end to end: `model` is graph DATA, so
       // changing it is a proposal — apply → soundness → new version → pointer
       // (D15) — and not a runner flag somebody edits on the machine.
       // `null` and not `undefined` on the before-side: JSON has no `undefined`,
@@ -4215,7 +4215,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const after = await dispatchOn(t, {
         versionId: applied.graph_version.id,
         executionId: 1663,
-        title: "ficha sob a versão que a proposta escreveu",
+        title: "ticket sob a versão que a proposta escreveu",
       });
       assert.equal(after.model, "claude-haiku-4-5");
 
@@ -4225,7 +4225,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const before = await dispatchOn(t, {
         versionId,
         executionId: 1664,
-        title: "ficha que ficou na versão anterior",
+        title: "ticket que ficou na versão anterior",
       });
       assert.equal(before.model, undefined);
     },
@@ -4238,7 +4238,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
  * The `/finish` body of one dispatch whose adapter ended however the case says.
  *
  * The stub is {@link recordingAdapter}, unchanged and shared with t163, for the
- * reason that ficha already recorded: what is under test is not the parsing (the
+ * reason that ticket already recorded: what is under test is not the parsing (the
  * conformance suite owns that, against the real frame shape) but what the
  * DISPATCH does with a detail it was handed. A fake engine would prove the two
  * halves at once and locate neither when one breaks.
@@ -4266,7 +4266,7 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       "POST",
       "/v1/jobs",
       {
-        title: "ficha que reporta uso e modelo",
+        title: "ticket que reporta uso e modelo",
         entry_node_id: "implementar",
         execution_id: executionId,
       },
@@ -4372,7 +4372,7 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
  * node resolved to.
  *
  * The spec and not the argv, for the same reason the t166 block above gives:
- * what this ficha claims here is that the DISPATCH carries the job's tier onto
+ * what this ticket claims here is that the DISPATCH carries the job's tier onto
  * the session it opens, and `command.test.ts` / `codex-command.test.ts` already
  * own the other half — that a spec carrying a tier becomes the right flag, or
  * deliberately no flag at all. Asserting the argv here would prove two halves
@@ -4451,7 +4451,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
     const spec = await dispatchWithTier(t, {
       versionId,
       executionId: 1750,
-      title: "ficha triada como trivial",
+      title: "ticket triada como trivial",
       tier: "trivial",
     });
 
@@ -4468,7 +4468,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
     const spec = await dispatchWithTier(t, {
       versionId,
       executionId: 1751,
-      title: "ficha triada como standard",
+      title: "ticket triada como standard",
       tier: "standard",
     });
 
@@ -4487,7 +4487,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const spec = await dispatchWithTier(t, {
         versionId,
         executionId: 1752,
-        title: "ficha que ninguém triou",
+        title: "ticket que ninguém triou",
         tier: null,
       });
 
@@ -4514,7 +4514,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const spec = await dispatchWithTier(t, {
         versionId,
         executionId: 1753,
-        title: "ficha trivial num nó que fixou modelo",
+        title: "ticket trivial num nó que fixou modelo",
         tier: "trivial",
       });
 
@@ -4636,7 +4636,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         token,
         placeholderGraph("travessia-t204-at19", manifest),
         {
-          title: "ficha num nó cuja skill tem placeholder",
+          title: "ticket num nó cuja skill tem placeholder",
           entry_node_id: "publicar",
           execution_id: 2041,
         },
@@ -4708,7 +4708,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         token,
         placeholderGraph("travessia-t204-at20", manifest),
         {
-          title: "ficha cuja entrada ninguém monta",
+          title: "ticket cuja entrada ninguém monta",
           entry_node_id: "publicar",
           execution_id: 2042,
         },
@@ -4724,7 +4724,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
       };
 
       // No `resolveInput`: production wiring, which resolves `{}` — the honest
-      // state until the node-input-assembly ficha exists.
+      // state until the node-input-assembly ticket exists.
       const dispatch = createClaudeCodeDispatch({
         urlBase: baseUrl,
         token,
@@ -4868,7 +4868,7 @@ test("t193 — a non-JSON error body is an ControlPlaneClientError, never a raw 
 /**
  * The seam t204 left open, wired (t259, FR1).
  *
- * `resolveInput` defaulted to `{}` for four fichas — honestly, because nothing
+ * `resolveInput` defaulted to `{}` for four tickets — honestly, because nothing
  * assembled a node's input. t253 built that assembly and published it at
  * `GET /v1/jobs/:id/context`; what was missing was this one call. The three
  * cases below are the whole contract of the default: it asks that route through
@@ -4922,7 +4922,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
       "POST",
       "/v1/jobs",
       {
-        title: "ficha num nó cuja skill lê o que o nó anterior produziu",
+        title: "ticket num nó cuja skill lê o que o nó anterior produziu",
         entry_node_id: "conferir",
         execution_id: executionId,
         graph_version_id: versionId,
@@ -5101,7 +5101,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
       "POST",
       "/v1/jobs",
       {
-        title: "ficha cujo nó lê o que só a máquina do executor sabe",
+        title: "ticket cujo nó lê o que só a máquina do executor sabe",
         entry_node_id: "conferir",
         execution_id: executionId,
         graph_version_id: versionId,
@@ -5251,7 +5251,7 @@ test("t265 — an engine refusal blocks the work instead of failing the dispatch
     "POST",
     "/v1/jobs",
     {
-      title: "ficha cuja sessão o engine recusou",
+      title: "ticket cuja sessão o engine recusou",
       entry_node_id: "implementar",
       execution_id: 265,
     },
@@ -5389,7 +5389,7 @@ test("t296 — a quota refusal blocks nothing and is not retried while it cools 
     "POST",
     "/v1/jobs",
     {
-      title: "ficha cuja conta bateu no limite da sessão",
+      title: "ticket cuja conta bateu no limite da sessão",
       entry_node_id: "implementar",
       execution_id: 296,
     },
@@ -5543,7 +5543,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
     "POST",
     "/v1/jobs",
     {
-      title: "ficha que ainda tem o último nó para rodar",
+      title: "ticket que ainda tem o último nó para rodar",
       entry_node_id: "implementar",
       execution_id: 262,
       graph_version_id: versionId,
@@ -5601,7 +5601,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
     "standing on the last node is not having run it: `revisar` pins a skill (t262)",
   );
 
-  // ...and that is the whole defect this ficha closes: the candidate list drops
+  // ...and that is the whole defect this ticket closes: the candidate list drops
   // a `completed` job before the runner ever sees it, so the last node's skill
   // used to get no session at all.
   assert.deepEqual(
@@ -5721,7 +5721,7 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       "POST",
       "/v1/jobs",
       {
-        title: `ficha cujo relato o schema da skill recusa (${nodeId})`,
+        title: `ticket cujo relato o schema da skill recusa (${nodeId})`,
         entry_node_id: nodeId,
         execution_id: executionId,
         graph_version_id: versionId,
@@ -5915,7 +5915,7 @@ test("t272 — a permission policy the adapter cannot enforce blocks the work on
     "POST",
     "/v1/jobs",
     {
-      title: "ficha do jogo, no nó testar-alpha",
+      title: "ticket do jogo, no nó testar-alpha",
       entry_node_id: "testar-alpha",
       execution_id: 2721,
     },
@@ -6069,7 +6069,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
   /**
    * A `fetch` that answers the graph-version read with 500 while it is armed,
    * and delegates everything else — including the job read itself, which happens
-   * OUTSIDE the window this ficha classifies.
+   * OUTSIDE the window this ticket classifies.
    *
    * `arm` is what lets one instance's counter be observed across a recovery: the
    * dispatch closure holds the streak, so proving the reset needs the SAME
@@ -6136,7 +6136,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cuja leitura de versão de grafo teve um soluço",
+          title: "ticket cuja leitura de versão de grafo teve um soluço",
           entry_node_id: "publicar",
           execution_id: 2722,
           graph_version_id: versionId,
@@ -6230,7 +6230,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
         "POST",
         "/v1/jobs",
         {
-          title: "ficha cuja leitura de versão de grafo nunca voltou",
+          title: "ticket cuja leitura de versão de grafo nunca voltou",
           entry_node_id: "publicar",
           execution_id: 2723,
           graph_version_id: versionId,
@@ -6322,7 +6322,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
  * (t273, AT3).
  *
  * `integrar-branch`'s instructions promise that the executor — and not the
- * session — advances the main line, and until this ficha nobody kept that
+ * session — advances the main line, and until this ticket nobody kept that
  * promise: the t109 game run left the bench on the old commit and a person
  * typed `git merge --ff-only ticket-1` by hand before `testar` could open
  * (`notes/2026-08-17-t109-game-feature.md`, gap 3).
@@ -6391,7 +6391,7 @@ test("t273 — the bench is advanced before the transition, and a bench that ref
 
       // One list for both facts, because the ORDER is the claim: a bench
       // advanced after the transition would let `testar` open against a stale
-      // checkout, which is the whole gap this ficha closes.
+      // checkout, which is the whole gap this ticket closes.
       const order: string[] = [];
       const asked: string[] = [];
       const doFetch: typeof fetch = async (input, init) => {

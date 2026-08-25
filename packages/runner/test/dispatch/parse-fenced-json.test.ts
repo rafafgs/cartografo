@@ -48,7 +48,7 @@ function readPayload(output: string, fence: string = FENCE): Record<string, unkn
 
 test('a well-formed block yields the payload the fence carries', () => {
   const output = [
-    'Rodei a suíte e caminhei os critérios de aceite.',
+    'I ran the suite and walked the acceptance criteria.',
     block(JSON.stringify({ resultado: 'aprovado', evidencia: '12 passing' })),
   ].join('\n');
 
@@ -59,7 +59,7 @@ test('a payload that quotes a fenced block of its own is read whole', () => {
   // The reason the extent comes from the JSON and never from a search for the
   // next ```: a gate pastes the output of a command into its evidence, and a
   // naive scan cuts the block in half right there.
-  const evidence = 'A suíte imprimiu:\n```\n1 failing\n```\ne foi só isso.';
+  const evidence = 'The suite printed:\n```\n1 failing\n```\nand that was all of it.';
   const output = block(JSON.stringify({ resultado: 'retrabalho', evidencia: evidence }));
 
   assert.deepEqual(readPayload(output), { resultado: 'retrabalho', evidencia: evidence });
@@ -86,7 +86,7 @@ test('a fence quoted inside a payload is not read as a second block', () => {
 test('an escaped quote inside a string does not close the value early', () => {
   // Without escape handling the string ends at the `\"`, the `}` right after it
   // closes the object, and what gets parsed is a truncated fragment.
-  const evidence = 'ele disse "pronto}" e parou';
+  const evidence = 'it said "done}" and stopped';
   const output = block(JSON.stringify({ resultado: 'aprovado', evidencia: evidence }));
 
   assert.equal(output.includes('\\"'), true, 'the fixture has to carry a real escaped quote');
@@ -116,7 +116,7 @@ test('an unterminated block yields null instead of throwing', () => {
 });
 
 test('a fence with the right name and no JSON behind it yields null', () => {
-  assert.equal(readPayload(block('não consegui decidir')), null);
+  assert.equal(readPayload(block('I could not decide')), null);
   assert.equal(readPayload(block('')), null);
   assert.equal(readPayload('```' + FENCE), null, 'a fence with nothing after it at all');
 });
@@ -131,9 +131,9 @@ test('a payload that is not an object is not a block', () => {
 
 test('with two valid blocks, the last one wins', () => {
   const output = [
-    'primeira leitura:',
+    'first reading:',
     block(JSON.stringify({ resultado: 'aprovado' })),
-    'depois reli a evidência:',
+    'then I read the evidence again:',
     block(JSON.stringify({ resultado: 'retrabalho' })),
   ].join('\n');
 
@@ -142,7 +142,7 @@ test('with two valid blocks, the last one wins', () => {
 
 test('a malformed block never shadows a valid one, in either order', () => {
   const valid = block(JSON.stringify({ resultado: 'aprovado' }));
-  const broken = block('{"resultado": quebrado');
+  const broken = block('{"resultado": broken');
 
   assert.deepEqual(readPayload([broken, valid].join('\n')), { resultado: 'aprovado' });
   assert.deepEqual(
@@ -157,7 +157,7 @@ test('a payload build refuses does not supersede one it accepted', () => {
   // caller cannot act on is not a block, so it may not overwrite an earlier one.
   const output = [
     block(JSON.stringify({ resultado: 'aprovado' })),
-    block(JSON.stringify({ evidencia: 'sem resultado nenhum' })),
+    block(JSON.stringify({ evidencia: 'no result at all' })),
   ].join('\n');
 
   const found = parseFencedJson(output, FENCE, (payload) => {
@@ -199,11 +199,11 @@ test('the whitespace between the fence and the value belongs to the model', () =
 
 test('no block at all yields null', () => {
   assert.equal(readPayload(''), null);
-  assert.equal(readPayload('Terminei o nó e não escolhi aresta nenhuma.'), null);
+  assert.equal(readPayload('I finished the node and chose no edge at all.'), null);
 });
 
 test('findValueEnd delimits the value, and answers null when it never closes', () => {
-  const text = 'antes {"a": {"b": "}"}} depois';
+  const text = 'before {"a": {"b": "}"}} after';
   const start = text.indexOf('{');
 
   const end = findValueEnd(text, start);

@@ -45,8 +45,8 @@ test('a well-formed block yields the observed result', async () => {
   const { parseNodeResult } = await loadParser();
 
   const output = [
-    'Rodei a suíte e caminhei os critérios de aceite.',
-    'Dois deles falharam, então este trabalho volta para desenvolvimento:',
+    'I ran the suite and walked the acceptance criteria.',
+    'Two of them failed, so this work goes back to development:',
     block(JSON.stringify({ resultado: 'retrabalho' })),
   ].join('\n');
 
@@ -57,7 +57,7 @@ test('no block at all yields null', async () => {
   const { parseNodeResult } = await loadParser();
 
   assert.equal(parseNodeResult(''), null);
-  assert.equal(parseNodeResult('Terminei o nó e não escolhi aresta nenhuma.'), null);
+  assert.equal(parseNodeResult('I finished the node and chose no edge at all.'), null);
   assert.equal(
     parseNodeResult('```json\n{"resultado":"aprovado"}\n```'),
     null,
@@ -86,9 +86,9 @@ test('with more than one block, the last one wins', async () => {
   const { parseNodeResult } = await loadParser();
 
   const output = [
-    'A primeira leitura me deu isto:',
+    'The first reading gave me this:',
     block(JSON.stringify({ resultado: 'aprovado' })),
-    'depois eu reli a evidência e o veredito mudou:',
+    'then I read the evidence again and the verdict changed:',
     block(JSON.stringify({ resultado: 'retrabalho' })),
   ].join('\n');
 
@@ -115,7 +115,7 @@ test('a payload carrying its own fence does not truncate the block', async () =>
   // The reason the extent comes from the JSON and never from a search for the
   // closing fence — inherited whole from the escalation parser, which is the
   // point of sharing one scanner.
-  const evidence = 'A suíte imprimiu:\n```\n1 failing\n```\ne foi só isso.';
+  const evidence = 'The suite printed:\n```\n1 failing\n```\nand that was all of it.';
   const output = block(JSON.stringify({ resultado: 'retrabalho', evidencia: evidence }));
 
   assert.deepEqual(parseNodeResult(output), { resultado: 'retrabalho', evidencia: evidence });
@@ -139,7 +139,7 @@ test('t259 — the whole payload of the block comes back, not just the label', a
   const payload = {
     resultado: 'aprovado',
     outcome: 'pass',
-    vereditos: [{ ref: 'AT1', veredito: 'passou', evidencia: 'rodei e li a saída' }],
+    verdicts: [{ ref: 'AT1', verdict: 'passed', evidencia: 'I ran it and read the output' }],
   };
 
   assert.deepEqual(parseNodeResult(block(JSON.stringify(payload))), payload);
@@ -153,7 +153,7 @@ test('t259 — a block with no label at all is a report, and it comes back whole
   // `{branch, commits, …}` and nothing else. Read as "not a block", as this
   // parser read it until t259, its report reached `/finish` as nothing at all
   // and the node after it had no input to resolve against.
-  const payload = { branch: 'ticket-259', commits: ['abc1234'], nota: 'fiz o combinado' };
+  const payload = { branch: 'ticket-259', commits: ['abc1234'], nota: 'I did what was agreed' };
 
   assert.deepEqual(parseNodeResult(block(JSON.stringify(payload))), payload);
 });
@@ -166,7 +166,7 @@ test('t259 — a label that is not a usable string still refuses the whole block
   // rest of its payload as a report would store an object nobody can trust
   // beside a routing decision that can never be taken.
   assert.equal(
-    parseNodeResult(block(JSON.stringify({ resultado: 42, evidencia: 'li tudo' }))),
+    parseNodeResult(block(JSON.stringify({ resultado: 42, evidencia: 'I read it all' }))),
     null,
     'the result is a label, and a number is not one',
   );

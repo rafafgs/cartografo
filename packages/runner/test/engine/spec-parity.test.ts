@@ -213,7 +213,7 @@ test('t175 — modelTier is an OPTIONAL member of SessionSpec, on both sides', (
 });
 
 test('t175 — the growth list of the document names the tier', () => {
-  // The document's "Ajustes feitos na revisão" section is where a frozen-at-v1
+  // The document's "Adjustments made in review" section is where a frozen-at-v1
   // format records what grew after the freeze. `silenceSeconds` (t163),
   // `SessionSpec.model` (t166) and `resumeFrom` (t173) are all logged there, and
   // an addition that skips it is an undocumented change to a published format.

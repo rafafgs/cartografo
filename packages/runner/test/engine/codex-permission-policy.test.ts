@@ -2,7 +2,7 @@
  * Acceptance tests for the permission policy of the `codex` adapter (t195).
  *
  * The table here IS the specification, exactly as `permission-policy.test.ts`
- * is for the first adapter: one row per combination the ficha enumerates, each
+ * is for the first adapter: one row per combination the ticket enumerates, each
  * with its outcome and — where the policy cannot be expressed by the engine —
  * the exact refusal text. The text matters twice over: it is what a person
  * reads when a session is refused, and `codex-adapter.ts` quotes it verbatim
@@ -46,7 +46,7 @@ async function loadPolicy(): Promise<typeof CodexPolicyModule> {
   return cache;
 }
 
-/** The refusal texts, verbatim from the ficha (FR3/FR4). */
+/** The refusal texts, verbatim from the ticket (FR3/FR4). */
 const NARROW_WRITE_TEXT =
   'write scope narrower than the whole workspace is not supported by the codex adapter — ' +
   'declare `escrita: []` or `escrita: ["**"]`';

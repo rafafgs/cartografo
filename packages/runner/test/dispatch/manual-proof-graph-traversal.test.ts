@@ -1,7 +1,7 @@
 /**
- * Static sweep over the ficha's manual proof (t161, TDD exception).
+ * Static sweep over the ticket's manual proof (t161, TDD exception).
  *
- * `scripts/spike-graph-traversal.mjs` is the half of this ficha the suite cannot
+ * `scripts/spike-graph-traversal.mjs` is the half of this ticket the suite cannot
  * run: it needs an authenticated `claude` binary and spends real quota, which is
  * exactly why it is not a CI test (`docs/formats/engine-adapter.md`). What a
  * sweep CAN prove is the set of invariants that make it a proof rather than a
@@ -11,7 +11,7 @@
  * that registers its own inline fixture proves the fixture, not the product.
  *
  * The same device `test/surveyor/manual-proof-credentials.test.ts` already uses,
- * pointed at this ficha's script.
+ * pointed at this ticket's script.
  *
  * English per D18; the fixture paths stay as they are on disk.
  */
@@ -127,7 +127,7 @@ test('AT22 — the proof registers the committed factory graph and its committed
 test('AT23 — the proof never posts a transition of its own', () => {
   const source = read(SPIKE_PATH);
 
-  // The whole claim of the ficha, checked where it is cheapest to check: a
+  // The whole claim of the ticket, checked where it is cheapest to check: a
   // manual proof that crosses the graph by calling `/transitions` itself proves
   // the operator, not the runner.
   const posted = source.match(/['"`][^'"`]*\/transitions['"`]/g) ?? [];

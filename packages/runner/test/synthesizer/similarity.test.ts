@@ -47,8 +47,8 @@ test('AT1 — normalizeText behaves exactly like the core it was ported from', a
   assert.equal(normalizeText('  Unifico O Trio, de tabelas?!  '), 'unifico o trio de tabelas');
 
   assert.equal(
-    normalizeText('Renumerar   a\n migração  para 0003?'),
-    'renumerar a migração para 0003',
+    normalizeText('Renumber   the\n migration  to 0003?'),
+    'renumber the migration to 0003',
     'the accent SURVIVES: normalizing is not interpreting',
   );
   assert.equal(normalizeText(''), '');
@@ -64,18 +64,18 @@ test('AT1 — similarity is 1 on identical, 0 on disjoint and in between on part
   );
 
   assert.equal(
-    similarity('Renumerar a migração para 0003?', 'Qual engine adapter usar no despacho?'),
+    similarity('Renumber the migration to 0003?', 'Which engine adapter runs a dispatch?'),
     0,
     'with no token in common the score is zero — not some small number',
   );
 
-  const partial = similarity('renumerar a migração para 0003', 'renumerar a migração para 0004');
+  const partial = similarity('renumber the migration to 0003', 'renumber the migration to 0004');
   assert.ok(partial > 0 && partial < 1, `expected 0 < score < 1, got ${partial}`);
 
   for (const pair of [
     ['', ''],
     ['a de no', 'a de no'],
-    ['tudo diferente aqui', ''],
+    ['everything different here', ''],
   ] as const) {
     const score = similarity(pair[0], pair[1]);
     assert.ok(score >= 0 && score <= 1, `score outside [0, 1]: ${score}`);
@@ -85,8 +85,8 @@ test('AT1 — similarity is 1 on identical, 0 on disjoint and in between on part
 test('AT1 — the port is symmetric and blind to word order, like the original', async () => {
   const { similarity } = await loadSimilarity();
 
-  const a = 'desenvolvimento de software com portão de revisão';
-  const b = 'portão de revisão com desenvolvimento de software';
+  const a = 'software development with a review gate';
+  const b = 'a review gate with software development';
 
   assert.equal(similarity(a, b), similarity(b, a), 'symmetric: (a, b) is (b, a)');
   assert.equal(similarity(a, b), 1, 'the same vocabulary in another order is the same set');

@@ -91,7 +91,7 @@ function fetchWithSeededQueue(): typeof fetch {
           jobs: [
             {
               id: JOB_ID,
-              title: 'trabalho disputado',
+              title: 'contested work',
               current_node_id: 'implementar',
               blocked: false,
               // Derived by the control plane and read by the client since t161:

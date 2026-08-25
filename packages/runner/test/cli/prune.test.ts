@@ -2,7 +2,7 @@
  * Acceptance tests of `cartografo-runner prune` (t207-C).
  *
  * `session-worktree.ts` names this command in its own header — "Kept trees...
- * accumulate until a human or a later ficha prunes them — this module only
+ * accumulate until a human or a later ticket prunes them — this module only
  * decides that they are kept, never how they eventually go away" — and since
  * t207-B there is one more way for a tree to be kept, so the pile grows faster
  * than it used to.
@@ -119,9 +119,9 @@ function fixture(t: TestHook, label: string): Fixture {
       const target = path.join(worktreesRoot, `ticket-${jobId}-${serial.toString(16).padStart(8, '0')}`);
       git(repoRoot, 'worktree', 'add', '--force', '-b', `ticket-${jobId}`, target, 'HEAD');
       if (extraCommit) {
-        writeFileSync(path.join(target, 'trabalho.md'), 'commit que ninguém mergeou\n');
+        writeFileSync(path.join(target, 'work.md'), 'a commit nobody merged\n');
         git(target, 'add', '.');
-        git(target, 'commit', '--quiet', '-m', `trabalho do ticket ${jobId}`);
+        git(target, 'commit', '--quiet', '-m', `work of job ${jobId}`);
       }
       return target;
     },
@@ -167,7 +167,7 @@ function controlPlane(jobs: Record<number, JobAnswer>): {
     return new Response(
       JSON.stringify({
         id: Number(match?.[1] ?? 0),
-        title: 'ficha de fixture',
+        title: 'ticket de fixture',
         current_node_id: 'implementar',
         blocked: answer.blocked,
         completed: answer.completed,
@@ -387,10 +387,10 @@ test('AT5 — a directory this command does not recognize is reported and left a
   // never heard of the directory.
   const stranger = path.join(worktreesRoot, 'anotacoes-do-operador');
   mkdirSync(stranger);
-  writeFileSync(path.join(stranger, 'nota.md'), 'nada a ver com sessão nenhuma\n');
+  writeFileSync(path.join(stranger, 'nota.md'), 'nothing to do with any session\n');
   const impostor = path.join(worktreesRoot, 'ticket-99-deadbeef');
   mkdirSync(impostor);
-  writeFileSync(path.join(impostor, 'nota.md'), 'parece uma worktree e não é\n');
+  writeFileSync(path.join(impostor, 'nota.md'), 'it looks like a worktree and is not\n');
 
   const plane = controlPlane({ 1: { blocked: false, completed: true } });
 
@@ -472,7 +472,7 @@ test('AT8 — `prune` is a subcommand of the runner binary, and every other line
 
   // The router has to reach the prune module rather than choking on a bare
   // positional — `readOptions` refuses "a flag nobody declared, a stray
-  // positional", and `prune` is neither once this ficha lands.
+  // positional", and `prune` is neither once this ticket lands.
   const err = collector();
   let code = await runRunnerCli(
     ['prune'],

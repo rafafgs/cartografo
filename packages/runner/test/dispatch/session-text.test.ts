@@ -12,7 +12,7 @@
  * - `decodeClaudeCodeSessionText` is a relocation (FR6), so its cases are the
  *   ones the inline `sessionText` already covered, moved here whole.
  * - `decodeCodexSessionText` is new, and the frame that carries Codex's
- *   assistant text was unmeasured anywhere in this repo before this ficha. The
+ *   assistant text was unmeasured anywhere in this repo before this ticket. The
  *   two fixtures below are transcripts of real `codex exec --json` runs, one
  *   without a credential (status frames only) and one with (the escalation),
  *   captured for FR9. Neither carries a credential value: the engine never
@@ -43,8 +43,8 @@ function transcript(name: string): string[] {
 // --- AT1: the Claude Code decoder, case for case with the inline original ----
 
 test('AT1 — the result frame carries the whole last answer', () => {
-  const frame = JSON.stringify({ type: 'result', result: 'Terminei o trabalho.' });
-  assert.equal(decodeClaudeCodeSessionText([frame]), 'Terminei o trabalho.');
+  const frame = JSON.stringify({ type: 'result', result: 'I finished the work.' });
+  assert.equal(decodeClaudeCodeSessionText([frame]), 'I finished the work.');
 });
 
 test('AT1 — the text blocks of an assistant message are decoded back to text', () => {
@@ -75,8 +75,8 @@ test('AT1 — a frame whose content has no text block is dropped, not fed as pro
 });
 
 test('AT1 — a line that is not a frame passes through raw', () => {
-  const lines = ['isto não é JSON', '{quebrado', ''];
-  assert.equal(decodeClaudeCodeSessionText(lines), 'isto não é JSON\n{quebrado\n');
+  const lines = ['this is not JSON', '{broken', ''];
+  assert.equal(decodeClaudeCodeSessionText(lines), 'this is not JSON\n{broken\n');
 });
 
 test('AT1 — the escaped block of a real frame comes back parseable', () => {
@@ -141,7 +141,7 @@ test('t148 — a fenced `grafo-proposto` block inside a frame comes back fenced'
   // The synthesizer's own consumer, at the decoder level: `parseGraphProposal`
   // matches real backticks and real newlines, and a frame carries neither until
   // this step runs.
-  const answer = 'Composto do catálogo:\n```grafo-proposto\n{\n  "classe": "x"\n}\n```';
+  const answer = 'Composed out of the catalogue:\n```grafo-proposto\n{\n  "classe": "x"\n}\n```';
   const frame = JSON.stringify({ type: 'result', subtype: 'success', result: answer });
 
   assert.ok(!frame.includes('\n'), 'a frame is ONE line: the newlines arrive escaped');
@@ -189,7 +189,7 @@ test('AT2 — an agent_message is the frame that carries text; other items are d
   // it is not something the model said.
   const said = JSON.stringify({
     type: 'item.completed',
-    item: { id: 'item_0', type: 'agent_message', text: 'Arquivo criado.' },
+    item: { id: 'item_0', type: 'agent_message', text: 'File created.' },
   });
   const did = JSON.stringify({
     type: 'item.completed',
@@ -201,5 +201,5 @@ test('AT2 — an agent_message is the frame that carries text; other items are d
     },
   });
 
-  assert.equal(decodeCodexSessionText([said, did]), 'Arquivo criado.');
+  assert.equal(decodeCodexSessionText([said, did]), 'File created.');
 });

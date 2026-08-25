@@ -7,17 +7,17 @@
  * t124 it also needs a credential — it boots a real control plane and then
  * speaks `/v1` at it eight times — and it had none, so the proof died on its
  * first call with a 401 nobody would understand. A proof script that cannot run
- * is worse than no proof script: it is a green checkbox in a ficha's evidence
+ * is worse than no proof script: it is a green checkbox in a ticket's evidence
  * section pointing at a command that fails.
  *
  * A static sweep and not an execution, on purpose: running it needs the binary,
  * an account and about three minutes, which is exactly why it is not a CI test
  * (`docs/formats/engine-adapter.md`). What a sweep CAN prove is the invariant
- * this ficha exists for — that no call in that script reaches the control plane
+ * this ticket exists for — that no call in that script reaches the control plane
  * anonymously — and it is the same device `no-privileged-access.test.ts` uses
  * to keep the runner off the database.
  *
- * The last test is the doc claim itself. The bug this ficha reports is not only
+ * The last test is the doc claim itself. The bug this ticket reports is not only
  * that the command had no token: it is that the spec asserted it did. A
  * document that describes a flag nobody implemented is a trap for the next
  * person, so the claim is now something a test holds up.
@@ -74,7 +74,7 @@ test('AT9 — no call in the manual proof reaches the control plane anonymously'
 
   // One place in the whole script may call the global `fetch`: the wrapper that
   // arms the request with the token. Any second one is a route that goes out
-  // bare, which is precisely the defect this ficha reports.
+  // bare, which is precisely the defect this ticket reports.
   const bare = source.match(/(?<![\w.$])fetch\(/g) ?? [];
   assert.equal(
     bare.length,

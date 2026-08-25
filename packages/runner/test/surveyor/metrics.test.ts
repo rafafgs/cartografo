@@ -21,7 +21,7 @@
  * English per D18. The payload keys of the ranking went English with t264
  * (`docs/spec/glossario-wire.md` §5.6), which is what the assertions below
  * spell; `gargalo` is the module's own result key and is identifier debt of
- * another ficha, not a wire name.
+ * another ticket, not a wire name.
  */
 
 import assert from 'node:assert/strict';

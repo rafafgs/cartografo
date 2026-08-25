@@ -2,7 +2,7 @@
  * What the `ClaudeCodeAdapter` still holds after a session ends (t207-A).
  *
  * A long-lived runner dispatches hundreds of jobs through ONE adapter object.
- * Until this ficha every one of them left a full `Session` behind in the
+ * Until this ticket every one of them left a full `Session` behind in the
  * adapter's map — the `ChildProcess`, the caller's `SessionListener` (which in
  * the real dispatch closes over the whole transcript buffer,
  * `dispatch.ts`'s `lines: string[]`), the timers, the leftovers —
@@ -10,8 +10,8 @@
  * map only ever grew.
  *
  * What makes this non-trivial is that the entry cannot simply be deleted:
- * invariant 3 of the FROZEN contract says "getStatus só devolve status terminal
- * depois que onFinished correu" (`docs/formats/engine-adapter.md:778`), and
+ * invariant 3 of the FROZEN contract says "`getStatus` only returns a terminal
+ * status after `onFinished` has run" (`docs/formats/engine-adapter.md:844`), and
  * four cases of the conformance kit (C1, C3, C8, C9) call `getStatus` AFTER the
  * end and expect the terminal status rather than an `UnknownSessionError`. So
  * what is dropped is the heavy state; what survives is a string per id.
@@ -80,7 +80,7 @@ async function runOneSession(
     },
     {
       onOutput() {
-        /* the lines are C6's business, not this ficha's */
+        /* the lines are C6's business, not this ticket's */
       },
       onFinished(status) {
         announce(status);

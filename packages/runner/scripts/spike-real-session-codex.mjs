@@ -89,8 +89,8 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCHEMAS_DIR = join(REPO_ROOT, 'specs/events/schemas');
 const MANIFEST = join(REPO_ROOT, 'specs/formats/examples/skill-manifest.develop.json');
 
-const REQUESTED_FILE = 'PROVA-T119.md';
-const PHRASE = 'sessao real do EngineAdapter do Codex';
+const REQUESTED_FILE = 'PROOF-T119.md';
+const PHRASE = 'real session of the Codex EngineAdapter';
 const TIMEOUT_SECONDS = 300;
 
 /** The real binary, when it is not on the PATH under the plain name. */
@@ -150,7 +150,7 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t119');
-  writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t119\n');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t119 manual proof\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
   return { root, repo };
@@ -219,9 +219,9 @@ async function main() {
   log(`workingDir: ${repo}`);
 
   const prompt =
-    `Crie no diretório atual um arquivo chamado ${REQUESTED_FILE} contendo exatamente ` +
-    `uma linha com o texto: ${PHRASE}\n` +
-    'Não faça mais nada além disso, e não commite.';
+    `Create a file called ${REQUESTED_FILE} in the current directory, containing ` +
+    `exactly one line with the text: ${PHRASE}\n` +
+    'Do nothing beyond that, and do not commit.';
 
   const spec = {
     workingDir: repo,

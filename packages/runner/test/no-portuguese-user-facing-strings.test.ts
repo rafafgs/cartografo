@@ -154,6 +154,16 @@ const VERBATIM_QUOTATIONS: ReadonlyArray<{ file: string; line: number; reason: s
       line: 11,
       reason: 'the same quotation, continued',
     },
+    {
+      file: 'scripts/spike-surveyor-flow.mjs',
+      line: 124,
+      reason: 'quotes the instruction of `test/fixtures/skill-redigir-nota.json`, which t309 does not translate',
+    },
+    {
+      file: 'scripts/spike-surveyor-flow.mjs',
+      line: 125,
+      reason: 'the same quotation, continued; it goes English when the fixture does, and this pin says so',
+    },
   ]);
 
 /** Any of these in a message means the sentence around it is Portuguese. */

@@ -194,10 +194,10 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t161');
-  writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t161\n');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t161 manual proof\n');
   writeFileSync(
     join(repo, 'Makefile'),
-    'check:\n\t@test -s soma.js && node -e "const s=require(\'./soma.js\'); if (s(2,3)!==5) process.exit(1)"\nsmoke: check\n',
+    'check:\n\t@test -s sum.js && node -e "const s=require(\'./sum.js\'); if (s(2,3)!==5) process.exit(1)"\nsmoke: check\n',
   );
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
@@ -289,7 +289,7 @@ async function main() {
     log(`graph "${graph.id}" registered at version ${version.id}`);
 
     const client = new ControlPlaneClient({ urlBase: url, token: operatorToken });
-    await client.registerRunner(RUNNER_ID, 'a prova manual da travessia automática');
+    await client.registerRunner(RUNNER_ID, 'the manual proof of the automatic traversal');
 
     const engines = {
       [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText },
@@ -325,7 +325,7 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        title: 'ficha cujo nó aponta para uma skill adulterada',
+        title: 'a ticket whose node points at a tampered skill',
         entry_node_id: document.initial_node,
         execution_id: EXECUTION_ID + 1,
         graph_version_id: doctored.grafo_versao.id,
@@ -347,7 +347,7 @@ async function main() {
       die(`the refusal opened ${poisonSessions.sessoes.length} session(s); it must open none`);
     }
     log(`tamper refused: ${refusal.message}`);
-    await api(url, 'POST', `/v1/jobs/${poison.id}/blocks`, { reason: 'ficha envenenada, fora da fila' });
+    await api(url, 'POST', `/v1/jobs/${poison.id}/blocks`, { reason: 'poisoned ticket, out of the queue' });
 
     // --- 4. the real job, and then hands off ----------------------------------
     const job = await api(
@@ -355,16 +355,17 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        title: 'somar dois números',
+        title: 'add two numbers',
         corpo: [
-          'Crie `soma.js` na raiz do repositório, exportando via CommonJS uma função',
-          '`soma(a, b)` que devolve a soma dos dois argumentos.',
+          'Create `sum.js` at the root of the repository, exporting via CommonJS a',
+          'function `sum(a, b)` that returns the sum of its two arguments.',
           '',
-          'É tudo. Não crie nenhum outro arquivo, não instale nada, não configure nada.',
+          'That is all. Do not create any other file, do not install anything, do not',
+          'configure anything.',
         ].join('\n'),
         acceptance_criteria: [
-          '`soma.js` existe na raiz e exporta uma função de dois argumentos',
-          '`make check` passa',
+          '`sum.js` exists at the root and exports a function of two arguments',
+          '`make check` passes',
         ],
         entry_node_id: document.initial_node,
         execution_id: EXECUTION_ID,
@@ -403,7 +404,7 @@ async function main() {
         const pending = questions.find((question) => question.job_id === job.id);
         if (pending === undefined) die(`job ${job.id} is blocked with no pending question`);
 
-        const answer = pending.default_answer ?? pending.recommendation ?? 'Siga com o caminho mais simples.';
+        const answer = pending.default_answer ?? pending.recommendation ?? 'Go with the simplest path.';
         log(`node "${current.no_atual}" asked: ${pending.question}`);
         await api(url, 'PATCH', `/v1/input-requests/${pending.id}/answer`, {
           answer: answer,

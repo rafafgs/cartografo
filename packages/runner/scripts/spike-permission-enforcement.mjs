@@ -70,7 +70,7 @@ function createWorkdir(name) {
   const root = mkdtempSync(join(tmpdir(), `cartografo-t125-${name}-`));
   const workdir = join(root, 'workdir');
   mkdirSync(workdir);
-  writeFileSync(join(workdir, 'LEIA.md'), '# Diretório descartável da prova manual da t125\n');
+  writeFileSync(join(workdir, 'README.md'), '# Disposable directory of the t125 manual proof\n');
   return workdir;
 }
 
@@ -146,8 +146,8 @@ async function main() {
       await adapter.startSession(
         {
           workingDir: workdir,
-          instructions: 'Você é a prova manual da t125.',
-          prompt: 'Não faça nada.',
+          instructions: 'You are the t125 manual proof.',
+          prompt: 'Do nothing.',
           timeoutSeconds: TIMEOUT_SECONDS,
           permissions: refused.permissions,
         },
@@ -169,18 +169,19 @@ async function main() {
   const networkSpec = {
     workingDir: networkDir,
     instructions:
-      'Você é a prova manual da t125 do cartografo. Faça exatamente o que o prompt pede e ' +
-      'relate o que aconteceu, inclusive falhas — relatar a falha É o trabalho.',
+      'You are the t125 manual proof of cartografo. Do exactly what the prompt asks and ' +
+      'report what happened, failures included — reporting the failure IS the work.',
     prompt: [
-      'Faça, nesta ordem, e escreva o resultado de cada passo no arquivo RESULTADO.md do',
-      'diretório em que você está (o diretório atual, não invente outro caminho):',
+      'Do the following, in this order, and write the result of each step to the file',
+      'RESULT.md in the directory you are in (the current directory, do not invent',
+      'another path):',
       '',
-      '1. Tente usar a ferramenta WebFetch para buscar https://example.com. Anote o que houve.',
-      '2. Rode `curl -sS -m 10 https://example.com` no shell. Anote o que houve.',
-      '3. Rode `node -e "fetch(\'https://example.com\').then(r => console.log(r.status))"`.',
-      '   Anote o que houve.',
+      '1. Try to use the WebFetch tool to fetch https://example.com. Note what happened.',
+      '2. Run `curl -sS -m 10 https://example.com` in the shell. Note what happened.',
+      '3. Run `node -e "fetch(\'https://example.com\').then(r => console.log(r.status))"`.',
+      '   Note what happened.',
       '',
-      'Não tente contornar nenhuma recusa: o objetivo é medir o que é bloqueado.',
+      'Do not try to work around any refusal: the point is to measure what is blocked.',
     ].join('\n'),
     timeoutSeconds: TIMEOUT_SECONDS,
     permissions: { filesystem: { write: ['**'] }, network: { allowed: false } },
@@ -198,10 +199,10 @@ async function main() {
   const writeDir = createWorkdir('write');
   const writeSpec = {
     workingDir: writeDir,
-    instructions: 'Você é a prova manual da t125 do cartografo.',
+    instructions: 'You are the t125 manual proof of cartografo.',
     prompt:
-      'Crie no diretório atual um arquivo chamado PROVA-ESCRITA.md com uma linha qualquer. ' +
-      'Se não conseguir, diga por quê e pare — não tente outro caminho.',
+      'Create a file called WRITE-PROOF.md in the current directory, with any one line in ' +
+      'it. If you cannot, say why and stop — do not try another path.',
     timeoutSeconds: TIMEOUT_SECONDS,
     permissions: { filesystem: { write: [] }, network: { allowed: true } },
   };
@@ -210,9 +211,9 @@ async function main() {
   log(`empty write scope: ${JSON.stringify(write.outcome)}`);
 
   // --- the evidence ---------------------------------------------------------
-  const networkReport = join(networkDir, 'RESULTADO.md');
+  const networkReport = join(networkDir, 'RESULT.md');
   const networkText = existsSync(networkReport) ? readFileSync(networkReport, 'utf8') : '';
-  const wroteFile = existsSync(join(writeDir, 'PROVA-ESCRITA.md'));
+  const wroteFile = existsSync(join(writeDir, 'WRITE-PROOF.md'));
 
   console.log('\n===== evidence =====');
   console.log(`CLI:              ${probe.version}`);
@@ -224,7 +225,7 @@ async function main() {
   console.log(`  tools invoked:  ${[...write.invoked].join(', ') || '<none>'}`);
   console.log(`  denials seen:   ${JSON.stringify(write.denials)}`);
   console.log(`  file created:   ${wroteFile}`);
-  console.log(`RESULTADO.md:\n${networkText || '  <the session wrote nothing>'}`);
+  console.log(`RESULT.md:\n${networkText || '  <the session wrote nothing>'}`);
 
   // --- the hard checks ------------------------------------------------------
   for (const [label, session, permissions] of [
@@ -254,7 +255,7 @@ async function main() {
     );
   }
   console.log(
-    '\nRead RESULTADO.md above: step 1 (WebFetch) has to be "the tool does not exist" and step 2\n' +
+    '\nRead RESULT.md above: step 1 (WebFetch) has to be "the tool does not exist" and step 2\n' +
       '(curl) a refusal. Step 3 is the residual gap — if `node -e "fetch(...)"` got through, that\n' +
       'is `Bash` reaching the network by a path no pattern names. Note both in the PR.',
   );

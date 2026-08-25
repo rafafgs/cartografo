@@ -50,8 +50,8 @@ import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 
-const PHRASE = 'ciclo de escalacao humana da t106, ponta a ponta';
-const CHOSEN_NAME = 'PROVA-T106.md';
+const PHRASE = 'the t106 human escalation cycle, end to end';
+const CHOSEN_NAME = 'PROOF-T106.md';
 const TIMEOUT_SECONDS = 300;
 const DEADLINE_MS = 60_000;
 
@@ -65,20 +65,21 @@ const DEADLINE_MS = 60_000;
 const INSTRUCTIONS = [
   DEFAULT_INSTRUCTIONS,
   '',
-  '## Regra deste nó',
+  '## The rule of this node',
   '',
-  'Você precisa criar UM arquivo markdown no diretório atual, contendo exatamente',
-  `uma linha com o texto: ${PHRASE}`,
+  'You have to create ONE markdown file in the current directory, containing',
+  `exactly one line with the text: ${PHRASE}`,
   '',
-  'O NOME do arquivo não é decisão sua.',
+  'The NAME of the file is not your call.',
   '',
-  '- Se o nome ainda não estiver escrito neste prompt, NÃO crie nada e NÃO chute:',
-  '  pergunte qual deve ser o nome, com o bloco input-request, e pare.',
-  '- Se o nome já estiver escrito neste prompt (numa pergunta já respondida),',
-  '  crie o arquivo com exatamente aquele nome, escreva a linha, e não pergunte',
-  '  mais nada.',
+  '- If the name is not written in this prompt yet, do NOT create anything and do',
+  '  NOT guess: ask what the name should be, with the input-request block, and',
+  '  stop.',
+  '- If the name IS already written in this prompt (in a question that was',
+  '  answered), create the file with exactly that name, write the line, and ask',
+  '  nothing further.',
   '',
-  'Não commite, não crie nenhum outro arquivo.',
+  'Do not commit, and do not create any other file.',
 ].join('\n');
 
 const log = (message) => console.log(`[spike] ${message}`);
@@ -126,7 +127,7 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t106');
-  writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t106\n');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t106 manual proof\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
   return { root, repo };
@@ -212,7 +213,7 @@ async function main() {
     await client.registerRunner('spike-t106', 'the manual proof of human escalation');
 
     const work = await api('POST', '/v1/jobs', {
-      title: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',
+      title: 'Create the t106 proof file, with the name the person chooses',
       entry_node_id: 'implementar',
       execution_id: 106,
     });
@@ -265,7 +266,7 @@ async function main() {
 
     // --- 2. a human answers ---------------------------------------------------
     const answered = await api('PATCH', `/v1/input-requests/${question.id}/answer`, {
-      answer: `Use o nome ${CHOSEN_NAME}`,
+      answer: `Use the name ${CHOSEN_NAME}`,
       answered_by: 'spike-t106',
     });
     log(`answer recorded: ${answered.resposta} (origem ${answered.origem})`);

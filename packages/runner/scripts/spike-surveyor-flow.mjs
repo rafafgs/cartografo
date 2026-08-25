@@ -152,7 +152,7 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t110');
-  writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t110\n');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t110 manual proof\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
   return { root, repo };
@@ -261,7 +261,7 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        title: 'nota curta sobre o topógrafo de fluxo',
+        title: 'a short note about the flow topographer',
         entry_node_id: 'redigir',
         execution_id: EXECUTION_ID,
         graph_version_id: version.id,
@@ -286,7 +286,7 @@ async function main() {
 
     // --- 3. the work waits for a person (real wait time) ----------------------
     await api(url, 'POST', `/v1/jobs/${job.id}/blocks`, {
-      reason: 'aguardando o operador liberar a revisão',
+      reason: 'waiting for the operator to release the review',
     });
     log(`work blocked; waiting ${BLOCK_MS}ms of real clock`);
     await delay(BLOCK_MS);

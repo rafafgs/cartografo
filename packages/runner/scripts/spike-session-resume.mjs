@@ -46,14 +46,14 @@ const TIMEOUT_SECONDS = 180;
  * previous run of this very script sitting in the same `~/.claude` history, and
  * the proof would be measuring the wrong memory.
  */
-const MARKER = `MARCADOR-${randomUUID().slice(0, 8).toUpperCase()}`;
+const MARKER = `MARKER-${randomUUID().slice(0, 8).toUpperCase()}`;
 
 /** What the session answers when it does not have the earlier turn. */
-const NO_CONTEXT = 'SEM-CONTEXTO';
+const NO_CONTEXT = 'NO-CONTEXT';
 
 const INSTRUCTIONS =
-  'Você é um nó de teste do cartografo. Responda de forma curta e literal, ' +
-  'sem explicações e sem usar ferramenta nenhuma.';
+  'You are a test node of cartografo. Answer briefly and literally, with no ' +
+  'explanation and without using any tool.';
 
 const log = (message) => console.log(`[spike] ${message}`);
 
@@ -67,7 +67,7 @@ function createWorkdir(name) {
   const root = mkdtempSync(join(tmpdir(), `cartografo-t173-${name}-`));
   const workdir = join(root, 'workdir');
   mkdirSync(workdir);
-  writeFileSync(join(workdir, 'LEIA.md'), '# Diretório descartável da prova manual da t173\n');
+  writeFileSync(join(workdir, 'README.md'), '# Disposable directory of the t173 manual proof\n');
   return workdir;
 }
 
@@ -150,8 +150,8 @@ async function main() {
     workingDir: original,
     instructions: INSTRUCTIONS,
     prompt:
-      `Guarde este marcador para o próximo turno: ${MARKER}. ` +
-      'Responda apenas com a palavra: guardado.',
+      `Keep this marker for the next turn: ${MARKER}. ` +
+      'Answer with the single word: kept.',
     timeoutSeconds: TIMEOUT_SECONDS,
   });
 
@@ -160,9 +160,9 @@ async function main() {
 
   // The question, asked without ever naming the answer.
   const question =
-    'Qual foi o marcador que eu pedi para você guardar no turno anterior? ' +
-    `Responda apenas com o marcador, sem mais nada. Se você não tem esse turno ` +
-    `no seu contexto, responda exatamente: ${NO_CONTEXT}`;
+    'What was the marker I asked you to keep in the previous turn? ' +
+    `Answer with the marker alone, and nothing else. If you do not have that ` +
+    `turn in your context, answer exactly: ${NO_CONTEXT}`;
 
   if (question.includes(MARKER)) die('the question leaks the marker — the proof would be measuring itself');
 

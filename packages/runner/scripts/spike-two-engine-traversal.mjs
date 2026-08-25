@@ -206,7 +206,7 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t141');
-  writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t141\n');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t141 manual proof\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
   return { root, repo };
@@ -330,14 +330,14 @@ async function main() {
 
     // --- 2. one work, on the graph, at the first node -------------------------
     const client = new ControlPlaneClient({ urlBase: url, token: operatorToken });
-    await client.registerRunner(RUNNER_ID, 'a prova manual do roteamento por nó');
+    await client.registerRunner(RUNNER_ID, 'the manual proof of per-node routing');
 
     const job = await api(
       url,
       'POST',
       '/v1/jobs',
       {
-        title: 'travessia de dois engines num grafo só',
+        title: 'a two-engine crossing on a single graph',
         entry_node_id: NODES[0].id,
         execution_id: EXECUTION_ID,
         graph_version_id: version.id,

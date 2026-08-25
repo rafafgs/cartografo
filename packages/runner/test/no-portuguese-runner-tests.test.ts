@@ -322,7 +322,7 @@ const STOPWORDS: readonly string[] = Object.freeze([
   'inicial',
   // t321: the bare word a scratch name is, when the name is one word long
   //
-  // AT5 below reads the Portuguese hiding INSIDE a machine name, and cannot
+  // AT6 below reads the Portuguese hiding INSIDE a machine name, and cannot
   // read a name that is not one: a directory called `principal`, a branch
   // called `experimento`, a job title `colisao`, a filler argv `sobra`, a
   // branch template `tese-${jobId}` whose `-` is followed by an interpolation
@@ -561,9 +561,131 @@ const WIRE_MIRRORS: ReadonlyArray<{ file: string; line: number; reason: string }
 ]);
 
 /**
+ * A name the wire RETIRED, or never carried at all.
+ *
+ * AT4's class is a live wire word borrowed as prose. This one is its mirror
+ * image, and strictly worse: a name that LOOKS like the wire and is not, so a
+ * reader who trusts it goes looking for a field no route has. All four sweeps
+ * above are blind to every one of these — none carries an accent (AT1), none
+ * is on a stopword list and three of them are `snake_case`, which
+ * {@link MACHINE_NAMES} blanks before AT2 ever reads the line (AT2), no mask
+ * hides them (AT3), and none is a word `src/` still spells (AT4).
+ *
+ * The damage is not cosmetic, and `bin.e2e.test.ts` is the proof. It posted
+ * `teto_runner`/`teto_projeto` to `POST /v1/leases`, which has required
+ * `runner_cap`/`project_cap` since t226 (`packages/core/src/routes/leases.ts`),
+ * so the call meant to prove the runner had paired answered `400 invalid_body`
+ * — and the assertion under it read `notEqual(status, 404)`, which a 400
+ * satisfies. Three lines on, `doesNotMatch(body, /runner_desconhecido/)`
+ * refused an error code the same ticket retired, and therefore refused
+ * nothing. The case stayed green for exactly as long as the pairing it claimed
+ * to prove was broken.
+ *
+ * The other two are the same shape with nothing masking them. `registrado_em`
+ * on a skill fixture is a key `GET /v1/skills/:id` has spelled `registered_at`
+ * since t290 (`packages/core/src/repositories/skill.ts:122`), and
+ * `source: 'humano'` is not a translation of anything at all:
+ * `input_request.source` is a closed enum of `user` and `auto`, and `humano`
+ * was never one of the two.
+ *
+ * ## What was measured and deliberately left out
+ *
+ * `erro` is not on this list, and the next reader should know it was measured
+ * rather than missed: ten lines across eight files build a fake control-plane
+ * error body under that key, where every real refusal envelope says `error`
+ * (`packages/core/src/routes/common.ts:191`). That is one class and one
+ * ticket, and folding it in would have turned a sweep of five names into a
+ * rename of eight files.
+ *
+ * `origem` is out for the opposite reason. It is still a LIVE key of the
+ * engine-model projection (`packages/core/src/repositories/engine-models.ts:21`),
+ * so no token sweep can tell the live use from the dead one — which is the
+ * boundary of this whole instrument. The single line that used it for what the
+ * input request calls `source` is corrected where it stands, with no entry
+ * here.
+ *
+ * Built from a list of strings and not written as a regex literal, for the same
+ * reason {@link PROTOCOL_TOKENS}, {@link MASKED_TOKENS} and {@link WIRE_WORDS}
+ * are: a literal is CODE, and `no-portuguese-identifiers.test.ts` scans this
+ * directory.
+ */
+const WIRE_FICTIONS = new RegExp(
+  `\\b(?:${['teto_runner', 'teto_projeto', 'registrado_em', 'runner_desconhecido', 'humano'].join('|')})\\b`,
+  'i',
+);
+
+/**
+ * Every line allowed to spell a fiction, and why it is allowed.
+ *
+ * One case, and it is the only shape that can survive this sweep honestly: a
+ * test that REFUSES the retired spelling has to name what it refuses. Every
+ * other occurrence the reproduction found was a fixture claiming to depict a
+ * wire, and a fixture that depicts a wire nobody speaks is not evidence.
+ */
+const FICTION_PINS: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
+  {
+    file: 'cli/index.test.ts',
+    line: 604,
+    reason: 'asserts the retired spelling is ABSENT from the usage text; a refusal has to name what it refuses',
+  },
+]);
+
+/**
+ * What each fiction was replaced by, and the file whose word is final on it.
+ *
+ * This is the other half of the sweep, and t319 wrote down why it has to
+ * exist: a claim a reader cannot check is how an exception outlives its
+ * reason. AT5 bans five names on the grounds that no source emits them, and
+ * that ground is itself checkable — so it is checked, per name, against the
+ * file that owns the field. The day core brings one of these spellings back,
+ * this fails and names the ban to lift instead of leaving five tests refusing
+ * a live wire.
+ *
+ * Paths are from the repository root, because two of the three authorities
+ * are core's and one of them is a migration.
+ */
+const REPLACEMENTS: ReadonlyArray<{
+  fiction: string;
+  live: RegExp;
+  file: string;
+  authority: string;
+}> = Object.freeze([
+  {
+    fiction: 'teto_runner',
+    live: /'runner_cap'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the required body fields of POST /v1/leases',
+  },
+  {
+    fiction: 'teto_projeto',
+    live: /'project_cap'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the required body fields of POST /v1/leases',
+  },
+  {
+    fiction: 'runner_desconhecido',
+    live: /'unknown_runner'/,
+    file: 'packages/core/src/routes/leases.ts',
+    authority: 'the 404 an unpaired runner gets from the same route',
+  },
+  {
+    fiction: 'registrado_em',
+    live: /^ {2}registered_at: string;$/m,
+    file: 'packages/core/src/repositories/skill.ts',
+    authority: 'the column GET /v1/skills/:id projects',
+  },
+  {
+    fiction: 'humano',
+    live: /CHECK \(source IN \('user','auto'\)\)/,
+    file: 'packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql',
+    authority: "the CHECK that closes input_request.source to two values, neither of them this one",
+  },
+]);
+
+/**
  * The spans {@link MACHINE_NAMES} blanks that a PERSON, not the wire, names.
  *
- * AT5's class, and it is a hole the two masks cut between them rather than a
+ * AT6's class, and it is a hole the two masks cut between them rather than a
  * word any list was missing. {@link MACHINE_NAMES} blanks a kebab span whole,
  * which is what keeps `nota-curta` and `grafo-proposto` out of AT2's report;
  * the price is that everything inside such a span is invisible too, and a
@@ -573,13 +695,15 @@ const WIRE_MIRRORS: ReadonlyArray<{ file: string; line: number; reason: string }
  * `um-no-que-ninguem-declarou` were all in this tree the day t312 declared it
  * English, and no sweep could see one of them: they carry no accent, so AT1 is
  * blind; they are masked, so AT2 is; they spell none of the four masked tokens,
- * so AT3 is; and no `src/` interface declares any of these words, so AT4 has no
- * alibi to check them against (t321).
+ * so AT3 is; no `src/` interface declares any of these words, so AT4 has no
+ * alibi to check them against; and every one of them is a name a PERSON
+ * invented rather than one the wire retired, so AT5 has nothing to match
+ * (t321).
  *
  * The snake_case shape is the one deliberately left out. `banco_de_testes`,
  * `metrica_esperada`, `no_com_contrato`, `contexto_falha`, `ponta_do_principal`
  * and `custo_por_travessia` are wire keys frozen by earlier decisions, and
- * snake_case is how this repository spells the wire. So AT5 reads the shapes a
+ * snake_case is how this repository spells the wire. So AT6 reads the shapes a
  * test invents — kebab, dotted, and the flags a person types — and leaves the
  * wire's own shape to {@link PROTOCOL_TOKENS} and the guards that own it.
  */
@@ -595,7 +719,7 @@ const SCRATCH_SPANS: readonly RegExp[] = Object.freeze([
  * The Portuguese a scratch name is built from, segment by segment.
  *
  * Closed and measured, like every other list here: each word was counted in a
- * name this ticket renamed. Two groups, and the second is the reason AT5 is a
+ * name this ticket renamed. Two groups, and the second is the reason AT6 is a
  * segment pass and not another whole-line one — `sem`, `nao`, `que`, `ninguem`,
  * `um` and `ja` are unreadable as a line-wide pattern and unambiguous as a
  * kebab segment, because no English identifier of this tree has a segment
@@ -686,7 +810,7 @@ export function scratchNamesIn(text: string): string[] {
   return [...found].sort();
 }
 
-/** The lines of one file whose machine names carry Portuguese, as AT5 reports them. */
+/** The lines of one file whose machine names carry Portuguese, as AT6 reports them. */
 function scratchHitsInFile(relative: string): string[] {
   const source = readFileSync(path.join(TEST_ROOT, relative), 'utf8');
   return source.split('\n').flatMap((text, index) => {
@@ -1031,22 +1155,168 @@ test('t320 — AT4 reads what the other three sweeps have no way of seeing', () 
   }
 });
 
-test('t321 — AT5: a scratch name reads in English, segment by segment', () => {
-  const hits = scannedFiles().flatMap((file) => scratchHitsInFile(file));
+test('t323 — AT5: a name the wire retired is spelled only where a test refuses it', () => {
+  const pinned = new Set(FICTION_PINS.map((entry) => `${entry.file}:${entry.line}`));
+  const hits = scannedFiles()
+    .flatMap((file) => linesSpelling(file, WIRE_FICTIONS))
+    .filter((hit) => !pinned.has(`${hit.file}:${hit.line}`))
+    .map((hit) => `${hit.file}:${hit.line} — ${hit.text}`);
 
-  assert.deepEqual(hits, [], `Portuguese inside a machine name (t321, AT5):\n${hits.join('\n')}`);
+  assert.deepEqual(hits, [], `a fixture spelling a wire nobody speaks (t323, AT5):\n${hits.join('\n')}`);
 });
 
-test('t321 — AT5 reads inside the masks, which is the only reason it exists', () => {
+test('t323 — every fiction pin still lands on a line that spells one', () => {
+  for (const entry of FICTION_PINS) {
+    const lines = readFileSync(path.join(TEST_ROOT, entry.file), 'utf8').split('\n');
+    assert.ok(
+      WIRE_FICTIONS.test(lines[entry.line - 1] ?? ''),
+      `${entry.file}:${entry.line} no longer spells a retired name; drop the pin (${entry.reason})`,
+    );
+  }
+});
+
+test('t323 — every fiction is dead in the source, and the name that took its place is alive', () => {
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+  for (const entry of REPLACEMENTS) {
+    const source = readFileSync(path.join(repoRoot, entry.file), 'utf8');
+    assert.match(
+      source,
+      entry.live,
+      `${entry.file} no longer carries ${entry.authority}; AT5 is banning \`${entry.fiction}\` on a claim that stopped being true`,
+    );
+    assert.ok(
+      !new RegExp(`\\b${entry.fiction}\\b`).test(source),
+      `${entry.file} spells \`${entry.fiction}\` again; the wire came back and AT5 has to let it through`,
+    );
+  }
+});
+
+test('t323 — AT5 reads what the other four sweeps have no way of seeing', () => {
+  // The seven lines the reproduction measured, verbatim. Two body fields of a
+  // lease request, the error code the assertion under them refuses, one key of
+  // a skill fixture, two `source` values that were never in the enum, and one
+  // fake 404 body that fabricates both a key and a code.
+  //
+  // Each asserts the premise first. AT1 needs an accent and there is none; AT2
+  // needs the word on a closed list, and the three `snake_case` names are
+  // blanked as machine names before it ever looks; AT3 needs a mask to be
+  // hiding the word and no mask touches these; AT4 needs the word to be a name
+  // `src/` still spells, which is the exact opposite of what these are.
+  for (const text of [
+    '        teto_runner: 1,',
+    '        teto_projeto: 1,',
+    '    assert.doesNotMatch(body, /runner_desconhecido/);',
+    "    registrado_em: '2026-08-15T12:00:00.000Z',",
+    "    source: 'humano',",
+    "    [question({ id: 1, source: 'humano', answered_by: 'rafael' })],",
+    "  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { erro: 'runner_desconhecido' } }));",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.ok(WIRE_FICTIONS.test(text), `AT5 missed a name the wire never carried: ${text}`);
+  }
+
+  // And what they became: the name the wire really has, in every one of them.
+  for (const text of [
+    '        runner_cap: 1,',
+    '        project_cap: 1,',
+    '    assert.doesNotMatch(body, /unknown_runner/);',
+    "    registered_at: '2026-08-15T12:00:00.000Z',",
+    "    source: 'user',",
+    "    [question({ id: 1, source: 'user', answered_by: 'rafael' })],",
+    "  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { error: 'unknown_runner' } }));",
+  ]) {
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 fires on a live name: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t323 — the pairing probe asserts a grant, and not merely a non-404', () => {
+  // The half of this defect no token sweep can reach. The body fields could be
+  // spelled right and the case would still prove nothing, because
+  // `notEqual(status, 404)` is satisfied by the `400 invalid_body` that the
+  // wrong spelling produced — which is precisely how the break stayed green.
+  // A lease request that names the right fields for a paired runner is a 201,
+  // and only that number distinguishes a pairing from a malformed request.
+  const source = readFileSync(path.join(TEST_ROOT, 'bin.e2e.test.ts'), 'utf8');
+
+  assert.match(
+    source,
+    /assert\.equal\(\s*response\.status,\s*201,/,
+    'AT14 no longer asserts the grant; a probe that accepts any non-404 measures nothing',
+  );
+  assert.doesNotMatch(
+    source,
+    /assert\.notEqual\(\s*response\.status,\s*404/,
+    'the masking assertion is back: a 400 passes it, and so does every other refusal',
+  );
+});
+
+test('t323 — the answered-question fixture carries values the projection really has', () => {
+  // AT5 cannot reach this, and the reason is worth writing down: `respondida`
+  // and `pendente` are ALIVE in `src/` — six comments across three packages
+  // still describe an input request that way — so a token sweep would be
+  // demanding a rename this ticket was not opened to make. What CAN be checked
+  // is narrower and stronger: the two closed sets this one fixture draws from,
+  // read out of the files that close them, against every value it declares.
+  //
+  // The fixture had `status: 'respondida'` two lines above the `source` the
+  // reproduction named, and `status: 'pendente'` in the case that proves an
+  // open question is not rendered. Both are what the column held before t235,
+  // and neither is what `GET /v1/input-requests` has answered since.
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+  const core = readFileSync(
+    path.join(repoRoot, 'packages', 'core', 'src', 'repositories', 'input-request.ts'),
+    'utf8',
+  );
+  const migration = readFileSync(
+    path.join(repoRoot, 'packages', 'core', 'migrations', '0003_trabalho_sessao_evento_pergunta.sql'),
+    'utf8',
+  );
+
+  const declared = (source: string, pattern: RegExp): string[] => {
+    const listed = pattern.exec(source)?.[1];
+    assert.ok(listed !== undefined, `the closed set is no longer where this test reads it: ${String(pattern)}`);
+    return [...listed.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  };
+
+  const statuses = declared(core, /INPUT_REQUEST_STATUSES: readonly string\[\] = Object\.freeze\(\[([^\]]*)\]\)/);
+  const sources = declared(migration, /CHECK \(source IN \(([^)]*)\)\)/);
+  assert.deepEqual(statuses, ['pending', 'answered'], 'the status set moved; re-read the fixture against it');
+  assert.deepEqual(sources, ['user', 'auto'], 'the source set moved; re-read the fixture against it');
+
+  const fixture = readFileSync(path.join(TEST_ROOT, 'dispatch', 'prompt.test.ts'), 'utf8');
+  const values = (field: string): string[] =>
+    [...fixture.matchAll(new RegExp(`\\b${field}: '([^']*)'`, 'g'))].map((match) => match[1]);
+
+  assert.ok(values('status').length > 0, 'the fixture no longer declares a status; this test reads nothing');
+  for (const value of values('status')) {
+    assert.ok(statuses.includes(value), `prompt.test.ts declares a status no input request ever had: ${value}`);
+  }
+  for (const value of values('source')) {
+    assert.ok(sources.includes(value), `prompt.test.ts declares a source the column's CHECK refuses: ${value}`);
+  }
+});
+
+test('t321 — AT6: a scratch name reads in English, segment by segment', () => {
+  const hits = scannedFiles().flatMap((file) => scratchHitsInFile(file));
+
+  assert.deepEqual(hits, [], `Portuguese inside a machine name (t321, AT6):\n${hits.join('\n')}`);
+});
+
+test('t321 — AT6 reads inside the masks, which is the only reason it exists', () => {
   // One line per shape the reproduction measured: a fixture file name, a
   // problem class, a temp prefix, a scratch directory, a case label, a node id.
   //
-  // Each asserts the premise first, against all four older sweeps. AT1 needs an
+  // Each asserts the premise first, against all five older sweeps. AT1 needs an
   // accent and there is none. AT2 would have the word — `sem`, `que`, `arquivo`
   // and `portao` are on its own list — but {@link MACHINE_NAMES} blanks the
-  // span before it reads the line. AT3 needs one of four masked tokens and AT4
-  // a `src/` interface to check against, and neither is here. AT5 is the only
-  // sweep that can flag them.
+  // span before it reads the line. AT3 needs one of four masked tokens, AT4 a
+  // `src/` interface to check against, and AT5 a name the wire once carried and
+  // retired — and none of the three is here. AT6 is the only sweep that can
+  // flag them.
   for (const text of [
     '  const record = path.join(workDir, "despacho-com-negacao.json");',
     '        twoEngineGraph("roteamento-por-no-at3", "codex"),',
@@ -1063,10 +1333,11 @@ test('t321 — AT5 reads inside the masks, which is the only reason it exists', 
     assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
     assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
     assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
-    assert.ok(scratchNamesIn(text).length > 0, `AT5 missed a Portuguese scratch name: ${text}`);
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 would have caught this one: ${text}`);
+    assert.ok(scratchNamesIn(text).length > 0, `AT6 missed a Portuguese scratch name: ${text}`);
   }
 
-  // And the English they became: no segment left for AT5 to find.
+  // And the English they became: no segment left for AT6 to find.
   for (const text of [
     '  const record = path.join(workDir, "dispatch-with-denial.json");',
     '        twoEngineGraph("routing-by-node-at3", "codex"),',
@@ -1079,15 +1350,15 @@ test('t321 — AT5 reads inside the masks, which is the only reason it exists', 
     "    { current_node_id: 'node-nobody-declared', graph_version_id: VERSION_ID },",
     "  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-not-a-repo-'));",
   ]) {
-    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on English: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT6 fires on English: ${text}`);
     assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
   }
 });
 
-test('t321 — AT5 leaves the wire shape alone, and the ids the repo shares', () => {
+test('t321 — AT6 leaves the wire shape alone, and the ids the repo shares', () => {
   // The snake_case keys earlier tickets froze, and the illustrative ids the
   // bundles, the schema examples and three other packages all spell the same
-  // way. Renaming half of either is worse than leaving both alone, so AT5 has
+  // way. Renaming half of either is worse than leaving both alone, so AT6 has
   // to stay quiet on every one of these.
   for (const text of [
     "    (first.banco_de_testes as Record<string, unknown>).caminho,",
@@ -1102,12 +1373,12 @@ test('t321 — AT5 leaves the wire shape alone, and the ids the repo shares', ()
     '  const bareRecord = path.join(workDir, "no-graph.json");',
     "test('AT5 — an absent install command is a no-op, and the merge alone succeeds', async (t) => {",
   ]) {
-    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on a name the repo keeps: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT6 fires on a name the repo keeps: ${text}`);
   }
 });
 
 test('t321 — AT2 bites on a scratch name that is one bare word', () => {
-  // The five shapes AT5 cannot reach: a name with no separator in it, and one
+  // The five shapes AT6 cannot reach: a name with no separator in it, and one
   // whose separator is followed by an interpolation rather than by a segment.
   // AT2 is the sweep that can see them, and only because of the fifth group.
   for (const text of [
@@ -1121,7 +1392,8 @@ test('t321 — AT2 bites on a scratch name that is one bare word', () => {
     assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
     assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
     assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
-    assert.deepEqual(scratchNamesIn(text), [], `AT5 would have caught this one: ${text}`);
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 would have caught this one: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT6 would have caught this one: ${text}`);
     assert.ok(offendersIn(text).length > 0, `AT2 missed a one-word scratch name: ${text}`);
   }
 });
@@ -1136,6 +1408,6 @@ test('t321 — AT2 stays quiet on the English those six lines became', () => {
     '      return Promise.resolve({ path: dir, branch: `thesis-${String(jobId)}` });',
   ]) {
     assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
-    assert.deepEqual(scratchNamesIn(text), [], `AT5 fires on English: ${text}`);
+    assert.deepEqual(scratchNamesIn(text), [], `AT6 fires on English: ${text}`);
   }
 });

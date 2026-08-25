@@ -75,10 +75,10 @@ function question(overrides: Partial<PromptModule.Question> = {}): PromptModule.
     id: 1,
     job_id: JOB.id,
     question: 'Renumber the migration to 0003?',
-    status: 'respondida',
+    status: 'answered',
     answer: 'Keep 0002',
     answered_by: 'rafael',
-    source: 'humano',
+    source: 'user',
     ...overrides,
   };
 }
@@ -107,7 +107,7 @@ test('AT2 — a question that is still open is not rendered', async () => {
   const prompt = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, answer: null, answered_by: null, status: 'pendente' })],
+    [question({ id: 1, answer: null, answered_by: null, status: 'pending' })],
   );
 
   assert.ok(!prompt.includes(ANSWERED_HEADING));
@@ -139,11 +139,11 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
   const human = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, source: 'humano', answered_by: 'rafael' })],
+    [question({ id: 1, source: 'user', answered_by: 'rafael' })],
   );
   assert.ok(human.includes('  **rafael replied:** Keep 0002'));
 
-  // No `origem` and nobody named: the fallback is a person, unattributed —
+  // No `source` and nobody named: the fallback is a person, unattributed —
   // never the automatic wording, which would claim a decision nobody took.
   const anonymous = buildPrompt(
     JOB,

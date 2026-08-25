@@ -33,6 +33,16 @@
  * The BEFORE side is checked only for shape. It is a claim about commit
  * `526dec9^`, which no working tree can confirm and no future edit can falsify.
  *
+ * That advice covers a RETRANSLATION and nothing else, which t306 found out the
+ * hard way: it renamed the bundle directory and its `problem_class` and touched
+ * not one skill, so there was no new note to write — AT2 below demands an old id,
+ * an old version and an old hash that all differ from the new ones, and a rename
+ * of the folder produces none of the three. What it did produce was one row of
+ * `## What resisted translation` that stopped being true. `RETIRED_ROWS` below is
+ * where that goes, and it is the narrow case: a row the note was right about on
+ * the day it was written, retired later by a named ticket, still checked — from
+ * the other side.
+ *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
 
@@ -50,6 +60,31 @@ export const CLOSING_NOTE = path.join('notas', '2026-08-24-t280-closing-note.md'
 
 /** The bundle the note describes, relative to the repository root. */
 export const BUNDLE = path.join('factory-graphs', 'software-development');
+
+/**
+ * Rows of the note whose identifier a LATER ticket retired, with that ticket.
+ *
+ * The note is history and is not edited (see the header), so a row that was true
+ * on the day it was written and is not true now has to be recorded HERE. There
+ * is one, and it is not a surprise: the row itself named its own successor —
+ * "the `problem_class` and the directory name. Folder-and-package scope,
+ * explicitly t282's and explicitly out of t280's". t282 renamed everything else
+ * under `factory-graphs/` and wrote the two bundle directories down for one more
+ * ticket; t306 is that ticket, and
+ * `factory-graphs/desenvolvimento-de-software` is `factory-graphs/software-development`
+ * now, `problem_class` and all.
+ *
+ * An entry does not skip the row — it INVERTS it. AT3 below asserts that a
+ * retired identifier survives in none of the files the note names, which is the
+ * same claim read from the other side and fails just as loudly: the day somebody
+ * puts the old spelling back, this entry reds instead of going quietly blind.
+ * Same discipline as `tests/no-portuguese-path-segments.test.mjs`'s
+ * `FROZEN_TREES` and `tests/no-portuguese-document-tree.test.mjs`'s
+ * `ALLOWED_SEGMENTS`: a carve-out names its subject, its owner, and keeps teeth.
+ */
+export const RETIRED_ROWS = Object.freeze([
+  Object.freeze({ identifier: 'desenvolvimento-de-software', retiredBy: 't306' }),
+]);
 
 /** The sweep whose docblock cites the note; the citation has to resolve. */
 export const CITING_GATE = path.join('tests', 'no-portuguese-factory-bundles.test.mjs');
@@ -235,14 +270,40 @@ test('AT3 — the note names what resisted translation, and every name is really
     const files = where.split(',').map((cell) => cell.trim().replace(/^`|`$/g, ''));
     assert.ok(files.length > 0, `${identifier}: no file named`);
 
+    const retired = RETIRED_ROWS.find((entry) => entry.identifier === identifier);
+
     for (const file of files) {
       const inBundle = path.join(BUNDLE, file);
       assert.ok(existsSync(path.join(ROOT, inBundle)), `${identifier}: ${file} does not exist`);
+
+      if (retired !== undefined) {
+        assert.equal(
+          read(inBundle).includes(identifier),
+          false,
+          `${identifier}: RETIRED_ROWS says ${retired.retiredBy} retired this name and ` +
+            `${file} still spells it; either the rename is half-done or the entry is stale`,
+        );
+        continue;
+      }
+
       assert.ok(
         read(inBundle).includes(identifier),
         `${identifier}: the note says it survives in ${file}, and it does not`,
       );
     }
+  }
+});
+
+test('AT3 — every retired row still names a row the note really has', () => {
+  const [, ...rows] = tableUnder(read(CLOSING_NOTE), '## What resisted translation');
+  const named = rows.map((row) => row[0]);
+
+  for (const entry of RETIRED_ROWS) {
+    assert.ok(
+      named.includes(entry.identifier),
+      `RETIRED_ROWS names "${entry.identifier}", which is not a row of the note any more: ` +
+        'a carve-out that outlives its subject is a hole nobody is watching',
+    );
   }
 });
 

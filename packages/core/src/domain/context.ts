@@ -48,7 +48,7 @@ import { isObject } from '../util/is-object.ts';
  * on the runner's side of the same document. What is looked for inside is
  * `produces`, the bucket name of `schema/grafo.schema.json`'s `$defs.contract`;
  * absent means "merge at the top level of `input`", which is what every graph
- * written before the field does and what `bets-assimetricas` still wants, node
+ * written before the field does and what `asymmetric-bets` still wants, node
  * for node.
  */
 export interface ProjectedNode {
@@ -105,7 +105,7 @@ export interface ProjectedOutput {
 /**
  * One answered escalation, in the shape the manifests declare.
  *
- * `id` is a STRING because that is what `bets-assimetricas` requires of it
+ * `id` is a STRING because that is what `asymmetric-bets` requires of it
  * (`triage-thesis`, `collect-fundamentals`, `escalate-decision` all pin
  * `{"type": "string", "minLength": 1}`), and the software bundle asks for no
  * `id` at all — so one shape serves both.

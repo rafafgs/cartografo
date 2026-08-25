@@ -69,7 +69,7 @@ comes back as `missing_required_field`, because `title` is the required one.
 The criteria intake writes are **preliminary**. What really produces them is
 factory graph 1's `refinar` node, whose contract takes `{ticket_id, pedido}` and
 returns `{especificacao, criterios_de_aceite, ...}`
-([`factory-graphs/desenvolvimento-de-software/grafo.json`](../../factory-graphs/desenvolvimento-de-software/grafo.json)).
+([`factory-graphs/software-development/grafo.json`](../../factory-graphs/software-development/grafo.json)).
 Demanding a complete acceptance criterion on the way in would be asking intake to
 do the graph's work.
 
@@ -287,9 +287,9 @@ trabalhos criados: {"migracao":1,"dominio":2,"rotas":3}
 nós de entrada: refinar, refinar, refinar
 graph_version_id dos trabalhos: sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f
 
-=== GET /v1/graphs/desenvolvimento-de-software/versions (ANTES e DEPOIS) ===
+=== GET /v1/graphs/software-development/versions (ANTES e DEPOIS) ===
 {"versions":[{"id":"sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f",
-              "graph_id":"desenvolvimento-de-software","parent_version":null,
+              "graph_id":"software-development","parent_version":null,
               "source":"manual","proposal_id":null,
               "created_at":"2026-08-17T11:12:37.705Z"}]}
 

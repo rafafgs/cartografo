@@ -9,7 +9,7 @@ applies the two already settled — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
 ([`specs/formats/skill-manifest.md`](../../specs/formats/skill-manifest.md),
 `t97`) — to a problem class that is not software. It is the direct pair of
-[factory graph 1](../desenvolvimento-de-software/README.md) (`t105`), and the
+[factory graph 1](../software-development/README.md) (`t105`), and the
 second consumer the rule of two consumers asked for
 (`docs/spec/graph.md:172`) before the edge format could grow.
 
@@ -77,7 +77,7 @@ second consumer the rule of two consumers asked for
 (discard at the triage, death at the red team, human rejection) and one ends
 with an open position (human approval). There is no separate `archive` node: it
 is the same state-collapse criterion
-[graph 1](../desenvolvimento-de-software/grafo.json) used for the flowpilot
+[graph 1](../software-development/grafo.json) used for the flowpilot
 queues, and it is what makes the **process metrics hold per crossing** — the
 discarded one and the dead one count as much as the approved one, which is
 exactly what D14 wants the topographer to learn.
@@ -189,7 +189,7 @@ the shape of the atlas, one subdirectory per class, specified in
 frozen). Publishing this map into an atlas is copying it there once validated:
 
 ```sh
-node scripts/publish-atlas-bundle.mjs factory-graphs/bets-assimetricas ../atlas
+node scripts/publish-atlas-bundle.mjs factory-graphs/asymmetric-bets ../atlas
 ```
 
 The two factory maps live in the same atlas without touching each other — it is

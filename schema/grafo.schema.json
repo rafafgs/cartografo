@@ -20,7 +20,7 @@
       "type": "string",
       "minLength": 1,
       "description": "The identity of the problem class, named by the user (D8). The root of the graph's versioning and the unit the telemetry aggregates by.",
-      "examples": ["desenvolvimento-de-software", "bets-assimetricas"]
+      "examples": ["software-development", "asymmetric-bets"]
     },
     "lineage": {
       "$ref": "#/$defs/lineage"

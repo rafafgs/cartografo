@@ -38,7 +38,7 @@ per problem class**:
 
 ```
 atlas/
-  desenvolvimento-de-software/
+  software-development/
     grafo.json
     skills/
       desenvolver-ticket.json
@@ -46,7 +46,7 @@ atlas/
       integrar-branch.json
       refinar-ticket.json
       testar-alpha.json
-  bets-assimetricas/
+  asymmetric-bets/
     grafo.json
     skills/
       analisar-assimetria.json
@@ -74,8 +74,8 @@ That is why `factory-graphs/<class>/` in this repository and
 interchangeable inputs to the same command:
 
 ```sh
-cartografo import factory-graphs/desenvolvimento-de-software   # from here
-cartografo import ../atlas/desenvolvimento-de-software            # from the atlas
+cartografo import factory-graphs/software-development   # from here
+cartografo import ../atlas/software-development         # from the atlas
 ```
 
 An atlas may carry files that are not a bundle — `README.md`, a licence, a CI

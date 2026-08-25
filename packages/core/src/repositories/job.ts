@@ -427,7 +427,7 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
 /**
  * The job's own walk through the graph, derived from the log (t270).
  *
- * `registrar-travessia` — the final node of `bets-assimetricas` — asks which
+ * `registrar-travessia` — the final node of `asymmetric-bets` — asks which
  * nodes this crossing executed and when it arrived where it stands, and until
  * this ficha nothing answered: `buildNodeInput` assembles the ticket, the
  * class's config, the `produces` buckets and the answered escalations, and the

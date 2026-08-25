@@ -24,7 +24,7 @@ on purpose (see §7).
 
 ```json
 {
-  "classe": "desenvolvimento-de-software",
+  "classe": "software-development",
   "linhagem": { "tipo": "base" },
   "metadata": { "nome": "...", "versao_schema": "1.0.0" },
   "nos": [ /* ... */ ],
@@ -495,7 +495,7 @@ Two consequences worth writing down:
 
 - **Absence has a name.** A node with no `produces` merges at the top of `input`,
   which is what both factory graphs already did because the field did not exist.
-  That is why it is optional and breaks no graph — `bets-assimetricas` still
+  That is why it is optional and breaks no graph — `asymmetric-bets` still
   resolves node by node without declaring a single bucket.
 - **On a key collision the last writer wins**, in traversal order (the session's
   `finalizada_em`). The order is the one that happened, not the one the query
@@ -618,7 +618,7 @@ same class are comparable; of different classes, not.
 { "tipo": "base" }
 ```
 ```json
-{ "tipo": "variante", "base_classe": "desenvolvimento-de-software",
+{ "tipo": "variante", "base_classe": "software-development",
   "origem_proposta_id": "prop-2026-08-31-004" }
 ```
 

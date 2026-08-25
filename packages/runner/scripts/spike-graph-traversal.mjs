@@ -50,7 +50,7 @@
  * produce. The claude-code adapter can express "all writing or none" and "the
  * network open or closed", and nothing in between.
  *
- * When this ficha landed, `factory-graphs/desenvolvimento-de-software` had
+ * When this ficha landed, `factory-graphs/software-development` had
  * exactly one manifest the adapter could not honour: `testar-alpha` declared
  * `network: {allowed: true, domains: [...]}`, a per-domain allowlist that would
  * take an egress proxy. It no longer does. The product decision this comment
@@ -93,7 +93,7 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 /**
  * The factory graph under proof, and the directory its manifests live in.
  *
- * `factory-graphs/desenvolvimento-de-software` and not
+ * `factory-graphs/software-development` and not
  * `schema/examples/graph-valid-flowpilot.json`: the two are the same flowpilot
  * port, but only this one can be registered end to end. The schema example's
  * `skill_ref.id`s are namespaced (`cartografo/refinar-ticket`) and the registry's
@@ -102,7 +102,7 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
  * example is a document that validates against the graph schema, not a graph
  * anything can run.
  */
-const FACTORY_DIR = join(REPO_ROOT, 'factory-graphs/desenvolvimento-de-software');
+const FACTORY_DIR = join(REPO_ROOT, 'factory-graphs/software-development');
 const GRAPH_PATH = join(FACTORY_DIR, 'grafo.json');
 const SKILLS_DIR = join(FACTORY_DIR, 'skills');
 

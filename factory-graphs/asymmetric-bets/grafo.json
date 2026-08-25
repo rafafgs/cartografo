@@ -1,5 +1,5 @@
 {
-  "problem_class": "bets-assimetricas",
+  "problem_class": "asymmetric-bets",
   "lineage": {
     "type": "base"
   },

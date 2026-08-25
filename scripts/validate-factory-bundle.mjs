@@ -310,7 +310,7 @@ export function manifestHash(manifest) {
  * manifest and the literal `true` in the graph, and the prose of an agentic item
  * is REWRITTEN in each format rather than copied — the discipline
  * `packages/runner/src/synthesizer/prompt.ts` states for the synthesizer and
- * `bets-assimetricas` already follows.
+ * `asymmetric-bets` already follows.
  *
  * @param {unknown} entry One check, or one verification.
  * @returns {{type: string|null, command: string|null}}

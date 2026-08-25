@@ -47,7 +47,7 @@
  *
  * ## What was measured
  *
- * - **`bets-assimetricas`, in production.** The largest input-values blocks a
+ * - **`asymmetric-bets`, in production.** The largest input-values blocks a
  *   real traversal has ever carried: `analise-assimetria` at 34.209 bytes and
  *   `red-team` at 39.092 (`notas/2026-08-18-third-bets-run.md`, hole 1). Both
  *   were cut inside `fundamentos.numeros` at 16 KB, so `premissas` and
@@ -56,7 +56,7 @@
  *   redispatch and opened a human gate for an environment limit rather than a
  *   judgement. `notas/2026-08-18-n3-round.md` (hole 4) confirms every run of the
  *   following round would have hit the same wall.
- * - **`desenvolvimento-de-software`, by design shape only.** That bundle has
+ * - **`software-development`, by design shape only.** That bundle has
  *   never carried a real ticket end to end; its single crossing runs a fake
  *   engine against scripted fixtures
  *   (`test/controller/factory-graph-software.e2e.test.ts`). Measured against

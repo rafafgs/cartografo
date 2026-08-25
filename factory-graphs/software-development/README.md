@@ -99,11 +99,11 @@ copying it there once validated:
 
 ```sh
 node scripts/publish-atlas-bundle.mjs \
-  factory-graphs/desenvolvimento-de-software ../atlas
+  factory-graphs/software-development ../atlas
 ```
 
 The control plane's skill registry already exists, and `cartografo import
-factory-graphs/desenvolvimento-de-software` registers the five manifests
+factory-graphs/software-development` registers the five manifests
 (`POST /v1/skills`, each one revalidated by the server) before sending the
 graph: a manifest the registry refuses aborts the import and the graph never
 goes up. The deterministic validator above remains the acceptance criterion **of

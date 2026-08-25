@@ -52,7 +52,7 @@ From a clean checkout to the first registered graph, in three commands:
 npm install                                                            # 1
 npx cartografo                                                         # 2 (leave it running)
 CARTOGRAFO_TOKEN=<the token from step 2> \
-  npx cartografo import factory-graphs/desenvolvimento-de-software  # 3 (another terminal)
+  npx cartografo import factory-graphs/software-development            # 3 (another terminal)
 ```
 
 Step 1 is `npm install` because a working checkout is where the lockfile moves.
@@ -105,7 +105,7 @@ database (D1), and that holds between processes, not only inside one.
 
 Step 3 registers factory graph 1 (D14) as a base lineage — checking the bundle's
 skill hash pins locally first (D4) — and prints the `graph_version.id` that was
-recorded. At the end, `GET /v1/classes` lists `desenvolvimento-de-software`.
+recorded. At the end, `GET /v1/classes` lists `software-development`.
 
 The bundle's skills go into the registry before the graph, and the registry keeps
 one version per row (D22): reimporting the same bundle rewrites nothing, and
@@ -173,7 +173,7 @@ away:
 ```bash
 npx cartografo status                                   # server and registered projects
 npx cartografo status --json                            # the same, for a script
-npx cartografo export desenvolvimento-de-software       # writes ./desenvolvimento-de-software.grafo.json
+npx cartografo export software-development              # writes ./software-development.grafo.json
 ```
 
 The file `export` writes is the same document `import` takes back: importing it

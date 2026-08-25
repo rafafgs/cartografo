@@ -13,7 +13,7 @@
  *
  * - **Any node list, not a hardcoded pair.** The nodes and the task text of
  *   each come from a JSON plan file, so the same driver walks the five nodes of
- *   `factory-graphs/desenvolvimento-de-software` or two of a fixture.
+ *   `factory-graphs/software-development` or two of a fixture.
  * - **A control plane that OUTLIVES the process.** The spike boots its own
  *   against a throwaway database and deletes it on exit, which is why nothing
  *   it produced could ever feed a surveyor. This one connects to a URL the

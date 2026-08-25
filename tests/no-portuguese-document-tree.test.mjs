@@ -405,6 +405,22 @@ test('AT3 — every carve-out names a reason, its owner, and a segment that exis
   }
 });
 
+test('AT3 — the carve-out is down to the one segment that is permanent (t282)', () => {
+  assert.equal(
+    ALLOWED_SEGMENTS.length,
+    1,
+    'four of the five carve-outs were pending on t282, which renamed their segments; ' +
+      'a carve-out for a segment the tree no longer has is a hole nobody is watching',
+  );
+
+  assert.equal(
+    ALLOWED_SEGMENTS[0].segment,
+    'notas',
+    'the one entry that survives t282 is `notas`, and it survives because no ticket ' +
+      'of this series ever proposed renaming the folder — only translating its contents',
+  );
+});
+
 test('AT4 — the sweep bites on a reintroduced Portuguese name', () => {
   assert.deepEqual(
     segmentOffendersIn('notas/2026-08-14-execucao-não-feita.md'),

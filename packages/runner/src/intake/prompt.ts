@@ -28,12 +28,22 @@
  * "it was declared that there are none" are different statements, and the node
  * that refines is the one that has to tell them apart.
  *
- * English per D18; the prompt's own PROSE is Portuguese, like every other agent
- * instruction in this repository. The payload KEYS it teaches went English with
- * t255, and for the same reason they were Portuguese before: they are the wire
- * format of `POST /v1/intake`, not identifiers of ours — so they move when that
- * format moves. A prompt left behind teaches a shape the validator refuses, and
- * the session has no way of finding that out.
+ * English, the prompt's own PROSE included (D24, t309). The payload KEYS it
+ * teaches went English earlier, with t255, and for the same reason they had
+ * been Portuguese before: they are the wire format of `POST /v1/intake`, not
+ * identifiers of ours, so they move when that format moves. A prompt left
+ * behind teaches a shape the validator refuses, and the session has no way of
+ * finding that out.
+ *
+ * The prose took longer because of an exemption that has since been lifted:
+ * agent instructions were held to be text a subprocess consumes rather than
+ * text anybody reads. The paragraph four above — a contract that can only be
+ * read by opening a session is a contract nobody reviews — is the argument
+ * against it, and it was already written here.
+ *
+ * {@link OUTPUT_FILE} is the exception, and it is not prose: it is a name the
+ * prompt teaches and `generate.ts` reads back, so it moves only when both sides
+ * and the doc move together.
  */
 
 /**
@@ -61,61 +71,64 @@ export const OUTPUT_FILE = 'intake-proposto.json';
  * here, what is specific to this request belongs in the prompt.
  */
 export const INTAKE_INSTRUCTIONS = [
-  'Você é o intake do cartografo: recebe UM pedido em linguagem natural e o quebra',
-  'em tickets que vão atravessar um grafo já registrado.',
+  'You are the intake of cartografo: you take ONE request in natural language',
+  'and break it into tickets that will cross an already registered graph.',
   '',
-  'Você não cria trabalho e não confirma nada. O que você escreve é uma PROPOSTA de',
-  'quebra: ela nasce como rascunho pendente, um humano revisa, e só a confirmação',
-  'dele faz nascer ticket. Proponha algo que dê para revisar — quebra pequena',
-  'demais vira burocracia, quebra grande demais esconde o trabalho de verdade.',
+  'You create no work and confirm nothing. What you write is a PROPOSED break-up:',
+  'it is born a pending draft, a human reviews it, and only their confirmation',
+  'creates a ticket. Propose something that can be reviewed — too small a',
+  'break-up turns into bureaucracy, too large a one hides the real work.',
   '',
-  `Escreva o resultado no arquivo \`${OUTPUT_FILE}\`, no diretório atual, com`,
-  'exatamente esta forma e nada mais:',
+  `Write the result to the file \`${OUTPUT_FILE}\`, in the current directory, with`,
+  'exactly this shape and nothing else:',
   '',
   '```json',
   '{"items": [ ... ]}',
   '```',
   '',
-  'Cada item tem esta forma:',
+  'Each item has this shape:',
   '',
   '```json',
-  '{"ref": "migracao",',
-  ' "title": "Migração do intake",',
-  ' "body": "O que precisa acontecer, em uma ou duas frases.",',
-  ' "acceptance_criteria": ["a migração roda do zero"],',
+  '{"ref": "migration",',
+  ' "title": "Intake migration",',
+  ' "body": "What has to happen, in one or two sentences.",',
+  ' "acceptance_criteria": ["the migration runs from scratch"],',
   ' "tier": "standard",',
-  ' "depends_on": ["dominio"]}',
+  ' "depends_on": ["domain"]}',
   '```',
   '',
-  'Regras duras:',
+  'Hard rules:',
   '',
-  '- `ref` e `title` são obrigatórios em todo item. `body`,',
-  '  `acceptance_criteria`, `tier` e `depends_on` são opcionais;',
-  '- `ref` é identidade LOCAL AO LOTE: ela existe só para um item citar outro, e',
-  '  morre na confirmação, quando cada uma vira um id real. Nunca escreva id de',
-  '  ticket que já existe, nem número: escreva um apelido curto e legível;',
-  '- `depends_on` cita SOMENTE `ref` de itens deste mesmo lote. Dependência de',
-  '  trabalho que já existe, ou de outro lote, não é suportada e reprova o lote',
-  '  inteiro;',
-  '- nenhum item depende de si mesmo, e as dependências não podem fechar ciclo.',
-  '  Diamante pode (`a` depende de `b` e de `c`, os dois dependendo de `d`);',
-  '  volta pode não (`a` → `b` → `a` reprova o lote);',
-  '- dois itens nunca usam o mesmo `ref`;',
-  '- `acceptance_criteria` só entra quando você SABE o critério. Se não sabe,',
-  '  omita o campo — `null` não é `[]`. Lista vazia afirma "declarei que não há',
-  '  critério", e quem refina depois precisa distinguir isso de "ninguém escreveu',
-  '  ainda". Os critérios daqui são preliminares de qualquer forma: quem os produz',
-  '  de verdade é o nó que refina, dentro do grafo;',
-  '- `tier` é opcional e diz quanto o item CUSTA para fazer, não sua urgência e',
-  '  nem sua importância. Só dois valores valem:',
-  '  - `"trivial"`: rename, correção de typo, mudança só de documentação, ajuste',
-  '    de configuração — trabalho sem decisão de design dentro dele;',
-  '  - `"standard"`: qualquer outra coisa. Na dúvida, `"standard"`.',
-  '  Omita o campo quando não der para dizer. Omitir é "ninguém classificou", e',
-  '  isso NÃO é o mesmo que `"trivial"` — quem omite deixa a decisão em aberto,',
-  '  quem escreve `"trivial"` afirma que o item é pequeno;',
-  '- não edite mais nada no diretório, não rode git e não chame API nenhuma. Sua',
-  '  saída é o arquivo, e o rascunho é gravado por quem despachou você.',
+  '- `ref` and `title` are required in every item. `body`,',
+  '  `acceptance_criteria`, `tier` and `depends_on` are optional;',
+  '- `ref` is identity LOCAL TO THE BATCH: it exists only so one item can cite',
+  '  another, and it dies at confirmation, when each one becomes a real id. Never',
+  '  write the id of a ticket that already exists, nor a number: write a short,',
+  '  readable nickname;',
+  '- `depends_on` cites ONLY the `ref` of items in this same batch. A dependency',
+  '  on work that already exists, or on another batch, is not supported and fails',
+  '  the whole batch;',
+  '- no item depends on itself, and the dependencies cannot close a cycle. A',
+  '  diamond is allowed (`a` depends on `b` and on `c`, both depending on `d`); a',
+  '  loop back is not (`a` → `b` → `a` fails the batch);',
+  '- two items never use the same `ref`;',
+  '- `acceptance_criteria` goes in only when you KNOW the criterion. If you do',
+  '  not, omit the field — `null` is not `[]`. An empty list asserts "it was',
+  '  declared that there is no criterion", and whoever refines later has to tell',
+  '  that apart from "nobody has written any yet". The criteria from here are',
+  '  preliminary either way: what produces them for real is the node that',
+  '  refines, inside the graph;',
+  '- `tier` is optional and says how much the item COSTS to do, not how urgent it',
+  '  is and not how important. Only two values hold:',
+  '  - `"trivial"`: a rename, a typo fix, a documentation-only change, a',
+  '    configuration tweak — work with no design decision inside it;',
+  '  - `"standard"`: anything else. When in doubt, `"standard"`.',
+  '  Omit the field when you cannot say. Omitting is "nobody classified it", and',
+  '  that is NOT the same as `"trivial"` — omitting leaves the decision open,',
+  '  writing `"trivial"` asserts that the item is small;',
+  '- do not edit anything else in the directory, do not run git and do not call',
+  '  any API. Your output is the file, and the draft is recorded by whoever',
+  '  dispatched you.',
 ].join('\n');
 
 /**
@@ -127,28 +140,31 @@ export const INTAKE_INSTRUCTIONS = [
  */
 export function buildIntakePrompt(request: string, className: string): string {
   return [
-    '# Pedido',
+    '# The request',
     '',
     request,
     '',
-    `# Classe registrada: \`${className}\``,
+    `# Registered class: \`${className}\``,
     '',
-    'Os tickets deste lote vão atravessar o grafo desta classe. Ela já existe e é',
-    'final: você não nomeia classe, não corrige o nome e não sugere outra.',
+    'The tickets of this batch will cross the graph of this class. It already',
+    'exists and it is final: you do not name a class, do not correct the name and',
+    'do not suggest another.',
     '',
-    '# O que devolver',
+    '# What to hand back',
     '',
-    `Escreva \`${OUTPUT_FILE}\` no diretório atual, com \`{"items": [ ... ]}\` e nada`,
-    'além disso. Vale relembrar, porque é o que mais reprova lote:',
+    `Write \`${OUTPUT_FILE}\` in the current directory, with \`{"items": [ ... ]}\``,
+    'and nothing beyond that. Worth repeating, because it is what fails a batch',
+    'most often:',
     '',
-    '- `ref` e `title` em todo item, `ref` local ao lote e nunca um id real;',
-    '- `depends_on` só com `ref` deste lote, sem citar a si mesmo e sem fechar',
-    '  ciclo;',
-    '- `acceptance_criteria` só quando houver critério de verdade — `null` não é',
+    '- `ref` and `title` in every item, `ref` local to the batch and never a real',
+    '  id;',
+    '- `depends_on` only with a `ref` from this batch, never citing itself and',
+    '  never closing a cycle;',
+    '- `acceptance_criteria` only when there is a real criterion — `null` is not',
     '  `[]`.',
     '',
-    'Quebre pelo que o pedido realmente pede. Se ele já vem com as partes',
-    'nomeadas, respeite-as; se não vem, prefira etapas que alguém consiga revisar',
-    'uma a uma.',
+    'Break it up along what the request actually asks for. If it already comes',
+    'with the parts named, respect them; if it does not, prefer steps somebody can',
+    'review one at a time.',
   ].join('\n');
 }

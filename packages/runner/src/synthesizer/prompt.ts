@@ -18,8 +18,8 @@
  *   revisit;
  * - the **skill catalogue**, in enough detail — contract in, contract out, and
  *   how each capability is verified — that composing a topology is matching
- *   contracts instead of guessing. That is README principle 3 and D9: "sem
- *   contrato o sintetizador compõe por alucinação".
+ *   contracts instead of guessing. That is README principle 3 and D9: "with no
+ *   contract, the synthesizer composes by hallucination".
  *
  * The output contract is one fenced `grafo-proposto` block, and the hardest
  * rule in it is about `skill_ref`: copied from the catalogue, never invented. A
@@ -35,11 +35,20 @@
  * this text still came back `grafo_invalido` / `soundness no_com_contrato`,
  * because `contract.checks` has `minItems: 1` and nothing here said so.
  *
- * English per D18; the prompt's own PROSE is Portuguese, like every other agent
- * instruction in the repository. The key names quoted inside it are not prose —
- * they are the format the session has to emit, and they moved to English with
- * t178. A prompt still teaching `nos` would produce documents the import gate
- * refuses, which is the same failure mode t138 was.
+ * English, the prompt's own PROSE included (D24, t309). It was the last agent
+ * instruction in the repository still written in Portuguese, under an exemption
+ * that said a prompt is consumed by a subprocess and read by nobody. This file
+ * is the counter-example the exemption could not survive: its whole docstring
+ * argues that "a contract that can only be read by opening a session is a
+ * contract nobody reviews", and the same sentence is true of the prompt that
+ * carries it.
+ *
+ * What did NOT move is the vocabulary quoted inside it. The key names are the
+ * format the session has to emit and went English with t178; `sempre` (an edge
+ * `condition`, `docs/spec/graph.md`), `no_com_contrato` (a soundness rule) and
+ * the {@link PROPOSAL_FENCE} tag stay Portuguese because they are wire, and a
+ * prompt teaching a name the import gate does not accept produces documents
+ * that gate refuses — the same failure mode t138 was.
  */
 
 import type { RegisteredSkill } from './control-plane-client.ts';
@@ -87,13 +96,13 @@ export const VERIFICATION_EXAMPLES: readonly VerificationExample[] = Object.free
   Object.freeze({
     type: 'deterministic',
     command: 'npm test',
-    description: 'O que este check prova.',
+    description: 'What this check proves.',
   }),
   Object.freeze({
     type: 'agentic',
-    instruction: 'Pergunta respondível sobre o artefato, conferida com evidência própria.',
+    instruction: 'An answerable question about the artifact, checked with its own evidence.',
     required_evidence: true,
-    description: 'O que este check prova.',
+    description: 'What this check proves.',
   }),
 ]);
 
@@ -106,35 +115,35 @@ export const VERIFICATION_EXAMPLES: readonly VerificationExample[] = Object.free
  * belongs here, what is specific to this declaration belongs in the prompt.
  */
 export const SYNTHESIS_INSTRUCTIONS = [
-  'Você é o sintetizador do cartografo, trabalhando como COPILOTO de um humano.',
+  'You are the synthesizer of cartografo, working as a human COPILOT.',
   '',
-  'Você propõe UMA topologia de grafo para uma classe de problema que o usuário',
-  'acabou de nomear. Você não registra nada, não chama API nenhuma e não edita',
-  'arquivo nenhum: sua resposta é um bloco de texto, e quem grava é quem despachou',
-  'você. Depois de você, um humano edita o que você propôs — essa edição é o',
-  'portão inteiro, então proponha algo que dê para editar, não algo que pareça',
-  'pronto.',
+  'You propose ONE graph topology for a problem class the user has just named.',
+  'You register nothing, call no API and edit no file: your answer is a block of',
+  'text, and whoever dispatched you is who records it. After you, a human edits',
+  'what you proposed — that edit is the entire gate, so propose something that',
+  'can be edited, not something that looks finished.',
   '',
-  'Regras duras:',
+  'Hard rules:',
   '',
-  '- a `problem_class` do documento é a que o usuário deu, literalmente. Você não',
-  '  nomeia classe, não corrige o nome e não sugere outro;',
-  '- `lineage` é sempre `{"type": "base"}`: variante nasce de fork com proposta,',
-  '  e não é isto aqui;',
-  '- todo nó carrega `skill_ref` copiado LITERALMENTE do catálogo (id, version e',
-  '  hash juntos, do mesmo item). Nunca invente id, versão ou hash: o pin é o que',
-  '  impede troca silenciosa de capacidade por baixo de um grafo já validado;',
-  '- todo nó precisa de aresta de entrada e de saída, `initial_node` precisa',
-  '  existir em `nodes`, e `final_nodes` também — um grafo que não alcança o fim é',
-  '  reprovado no portão de soundness antes de qualquer humano ler;',
-  '- toda aresta tem `condition`: o literal `"sempre"` quando a origem tem saída',
-  '  única, e o rótulo do resultado quando tem mais de uma;',
-  '- o `contract` de todo nó traz `checks` com PELO MENOS UMA verificação, e',
-  '  isso vale igual para portão, que é nó como outro qualquer. Lista vazia é',
-  '  reprovada na regra de soundness `no_com_contrato`, no mesmo portão de',
-  '  importação — e onde você não consegue escrever a verificação de uma etapa,',
-  '  não há portão nenhum ali: prefira dizer isso no seu turno a devolver uma',
-  '  lista vazia.',
+  '- the `problem_class` of the document is the one the user gave, literally. You',
+  '  do not name the class, do not correct the name and do not suggest another;',
+  '- `lineage` is always `{"type": "base"}`: a variant is born of a fork with a',
+  '  proposal, and this is not that;',
+  '- every node carries `skill_ref` copied LITERALLY from the catalogue (id,',
+  '  version and hash together, from the same item). Never invent an id, a',
+  '  version or a hash: the pin is what stops a capability being swapped',
+  '  silently underneath a graph somebody already validated;',
+  '- every node needs an incoming and an outgoing edge, `initial_node` has to',
+  '  exist in `nodes`, and `final_nodes` too — a graph that does not reach the',
+  '  end is refused at the soundness gate before any human reads it;',
+  '- every edge has a `condition`: the literal `"sempre"` when the source has a',
+  '  single way out, and the result label when it has more than one;',
+  '- the `contract` of every node carries `checks` with AT LEAST ONE',
+  '  verification, and that holds for a gate just the same, which is a node like',
+  '  any other. An empty list is refused by the soundness rule',
+  '  `no_com_contrato`, at the same import gate — and where you cannot write the',
+  '  verification of a step, there is no gate there at all: prefer saying so in',
+  '  your turn to handing back an empty list.',
 ].join('\n');
 
 /** One skill of the catalogue, rendered so a person can audit the prompt too. */
@@ -144,7 +153,7 @@ function renderSkill(skill: RegisteredSkill): string {
     '',
     `- role: ${skill.role}`,
     `- description: ${skill.description}`,
-    `- skill_ref (copie literalmente): {"id": ${JSON.stringify(skill.id)}, "version": ${JSON.stringify(skill.version)}, "hash": ${JSON.stringify(skill.hash)}}`,
+    `- skill_ref (copy literally): {"id": ${JSON.stringify(skill.id)}, "version": ${JSON.stringify(skill.version)}, "hash": ${JSON.stringify(skill.hash)}}`,
     `- input: ${JSON.stringify(skill.input)}`,
     `- output: ${JSON.stringify(skill.output)}`,
     `- checks: ${JSON.stringify(skill.checks)}`,
@@ -155,20 +164,20 @@ function renderSkill(skill: RegisteredSkill): string {
 function renderSimilar(similarClasses: readonly SimilarClass[]): string[] {
   if (similarClasses.length === 0) {
     return [
-      'Nenhuma classe registrada se parece com esta declaração. Componha do zero,',
-      'a partir do catálogo abaixo.',
+      'No registered class looks like this declaration. Compose from scratch,',
+      'out of the catalogue below.',
     ];
   }
 
   return [
-    'Estas classes JÁ REGISTRADAS se parecem com a declaração. Elas são',
-    'precedente, não destino: a classe a compor continua sendo a que o usuário',
-    'nomeou. Use-as para reaproveitar formato de nó e de portão, nunca para',
-    'trocar o nome da classe.',
+    'These ALREADY REGISTERED classes look like the declaration. They are',
+    'precedent, not destination: the class to compose is still the one the user',
+    'named. Use them to reuse the shape of a node and of a gate, never to swap',
+    'the name of the class.',
     '',
     ...similarClasses.map(
       (item) =>
-        `- \`${item.classe}\` (proximidade ${item.score.toFixed(2)}) — ${item.nome}${
+        `- \`${item.classe}\` (proximity ${item.score.toFixed(2)}) — ${item.nome}${
           item.descricao === '' ? '' : `: ${item.descricao}`
         }`,
     ),
@@ -193,70 +202,72 @@ export function buildSynthesisPrompt(
   const catalogue =
     skills.length === 0
       ? [
-          'O registro de skills está vazio: nenhuma skill registrada para compor.',
-          'Proponha os nós mesmo assim, deixando `skill_ref` com o id que a',
-          'capacidade PRECISARIA ter, e diga no seu turno que o pin não existe —',
-          'quem edita depois vai ter que registrar a skill antes de importar.',
+          'The skill registry is empty: no registered skill to compose with.',
+          'Propose the nodes anyway, leaving `skill_ref` with the id the',
+          'capability WOULD NEED to have, and say in your turn that the pin does',
+          'not exist — whoever edits afterwards will have to register the skill',
+          'before importing.',
         ]
       : skills.map(renderSkill);
 
   return [
-    `# Declaração do problema`,
+    `# The problem, as declared`,
     '',
     declaration,
     '',
-    `# Classe a compor: \`${className}\``,
+    `# Class to compose: \`${className}\``,
     '',
-    'Este nome é do usuário e é final.',
+    'This name is the user\'s, and it is final.',
     '',
-    '# Precedentes',
+    '# Precedents',
     '',
     ...renderSimilar(similarClasses),
     '',
-    '# Catálogo de capacidades registradas',
+    '# Catalogue of registered capabilities',
     '',
     ...catalogue,
     '',
-    '# O que devolver',
+    '# What to hand back',
     '',
-    'Termine seu turno com EXATAMENTE UM bloco cercado assim, e nada depois dele:',
+    'End your turn with EXACTLY ONE fenced block like this, and nothing after it:',
     '',
     `\`\`\`${PROPOSAL_FENCE}`,
-    '{ ... documento de grafo ... }',
+    '{ ... graph document ... }',
     '```',
     '',
-    'O documento é um JSON no formato de `schema/graph.schema.json`, com as oito',
-    'chaves obrigatórias e nada além delas:',
+    'The document is JSON in the format of `schema/graph.schema.json`, with the',
+    'eight required keys and nothing beyond them:',
     '',
     `- \`problem_class\`: ${JSON.stringify(className)};`,
     '- `lineage`: `{"type": "base"}`;',
-    '- `metadata`: com `name`, `description` e `schema_version` `"1.0.0"`;',
-    '- `nodes`: cada um com `id`, `role`, `node_type` (`work` ou `gate`),',
-    '  `skill_ref` e `contract` (`input_schema`, `output_schema`, `checks`);',
-    '- `edges`: cada uma com `from`, `to` e `condition`;',
-    '- `initial_node` e `final_nodes`;',
-    '- `custom_fields`: os campos que os tickets desta classe carregam além de',
-    '  título e corpo. Escreva `[]` quando o pedido não mencionar nenhum — a',
-    '  chave é obrigatória mesmo vazia, e inventar campo que ninguém pediu é',
-    '  trabalho a mais para quem for preencher.',
+    '- `metadata`: with `name`, `description` and `schema_version` `"1.0.0"`;',
+    '- `nodes`: each with `id`, `role`, `node_type` (`work` or `gate`),',
+    '  `skill_ref` and `contract` (`input_schema`, `output_schema`, `checks`);',
+    '- `edges`: each with `from`, `to` and `condition`;',
+    '- `initial_node` and `final_nodes`;',
+    '- `custom_fields`: the fields the tickets of this class carry beyond a title',
+    '  and a body. Write `[]` when the request mentions none — the key is',
+    '  required even when empty, and inventing a field nobody asked for is more',
+    '  work for whoever has to fill it in.',
     '',
-    'O `skill_ref` de cada nó é copiado literalmente do catálogo acima:',
-    'nunca invente id, versão nem hash — um pin inventado é reprovado no portão',
-    'de importação e joga fora a edição de quem vier depois de você.',
+    'The `skill_ref` of each node is copied literally from the catalogue above:',
+    'never invent an id, a version or a hash — a made-up pin is refused at the',
+    'import gate and throws away the edit of whoever comes after you.',
     '',
-    '## `contract.checks`: pelo menos uma por nó',
+    '## `contract.checks`: at least one per node',
     '',
-    '`contract.checks` é uma lista com PELO MENOS UMA verificação. Lista',
-    'vazia é reprovada na importação (`no_com_contrato`), e o grafo volta para',
-    'quem já tinha editado ele. Cada item é de um destes dois formatos, e nada',
-    'além destes campos:',
+    '`contract.checks` is a list with AT LEAST ONE verification. An empty list is',
+    'refused at import (`no_com_contrato`), and the graph goes back to whoever',
+    'had already edited it. Each item is in one of these two formats, and carries',
+    'nothing beyond these fields:',
     '',
     ...VERIFICATION_EXAMPLES.map((example) => `- \`${JSON.stringify(example)}\``),
     '',
-    'Não copie os `checks` do catálogo para dentro de `contract.checks`: eles',
-    'estão no formato do manifesto de skill, que é outro documento. A diferença',
-    'que reprova é `required_evidence` — lista de artefatos no manifesto, o',
-    'literal `true` aqui. Leia os `checks` do catálogo para saber COMO a',
-    'capacidade se confere e reescreva a verificação nos dois formatos acima.',
+    'Do NOT copy the `checks` of the catalogue into `contract.checks`: those are',
+    'in the skill manifest format, which is a different document. The difference',
+    'that gets refused is `required_evidence` — a list of artifacts in the',
+    'manifest, the literal `true` here. Read the `checks` of the catalogue to',
+    'learn HOW the capability is checked, and rewrite the verification in one of',
+    'the two formats above.',
   ].join('\n');
 }

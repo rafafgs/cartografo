@@ -431,59 +431,67 @@ export function buildExpectedMetric(bottleneck: NodeMetric): ExpectedMetric {
  * five operation types are listed literally because the vocabulary is closed
  * (`docs/spec/entities-versioning.md` §3) and this ticket adds none.
  *
- * The CONTENT stays in Portuguese: it stands in for the skill manifest the
- * graph will inject (t101/t105), and those are written in Portuguese.
+ * The CONTENT is English (D24, t309). It used to be Portuguese on the grounds
+ * that it stands in for the skill manifest the graph will inject (t101/t105),
+ * "and those are written in Portuguese" — which stopped being true before t309
+ * looked: the manifests under `specs/formats/examples/` and every skill of the
+ * factory bundles are English, and have been for several tickets. The
+ * stand-in now matches what it stands in for.
  */
 export const INSTRUCTIONS = [
-  'Você é o topógrafo de fluxo do cartografo, analisando UMA execução já terminada.',
+  'You are the flow topographer of cartografo, analysing ONE execution that has',
+  'already finished.',
   '',
-  'Você recebe: o grafo que rodou (nós e arestas) e a medição do nó mais caro da',
-  'execução, já calculada — os números não são seus para recalcular.',
+  'You are given: the graph that ran (nodes and edges) and the measurement of the',
+  'most expensive node of the execution, already computed — the numbers are not',
+  'yours to recompute.',
   '',
-  'Sua única tarefa: propor um diff SEMÂNTICO no grafo que ataque aquele gargalo.',
+  'Your only task: propose a SEMANTIC diff on the graph that attacks that',
+  'bottleneck.',
   '',
-  `Escreva o resultado no arquivo \`${OUTPUT_FILE}\`, no diretório atual, com`,
-  'exatamente esta forma e nada mais:',
+  `Write the result to the file \`${OUTPUT_FILE}\`, in the current directory, with`,
+  'exactly this shape and nothing else:',
   '',
   '```json',
   '{"operations": [ ... ]}',
   '```',
   '',
-  'Cada operação é de UM destes cinco tipos, e carrega a própria inversa:',
+  'Each operation is of ONE of these five types, and carries its own inverse:',
   '',
   '- `add_node`          {"type","node",   "inverse": {"type":"remove_node","node_id"}}',
   '- `remove_node`       {"type","node_id","inverse": {"type":"add_node","node"}}',
   '- `add_edge`          {"type","edge":{"from","to","condition"}, "inverse":{"type":"remove_edge","edge":{"from","to"}}}',
   '- `remove_edge`       {"type","edge":{"from","to"}, "inverse":{"type":"add_edge","edge":{"from","to","condition"}}}',
-  '- `change_node_field` {"type","node_id","field","from","to", "inverse": a mesma com from/to trocados}',
+  '- `change_node_field` {"type","node_id","field","from","to", "inverse": the same one with from/to swapped}',
   '',
-  '`field` só pode ser role, description, skill_ref ou contract. Trocar `id` ou',
-  '`node_type` não é troca de campo, e não existe operação para isso aqui.',
+  '`field` can only be role, description, skill_ref or contract. Changing `id` or',
+  '`node_type` is not a field change, and there is no operation for it here.',
   '',
-  'Regras duras:',
+  'Hard rules:',
   '',
-  '- a lista não pode ser vazia — se não houver mudança que ajude, diga isso no',
-  '  seu turno e escreva o arquivo assim mesmo, com a melhor proposta que tiver;',
-  '- todo nó novo precisa de aresta de entrada E de saída, senão o portão de',
-  '  soundness reprova a proposta inteira;',
-  '- não edite mais nada no diretório, não rode git e não chame API nenhuma. Sua',
-  '  saída é o arquivo, e a proposta é gravada por quem despachou você.',
+  '- the list cannot be empty — if there is no change that would help, say so in',
+  '  your turn and write the file anyway, with the best proposal you have;',
+  '- every new node needs an incoming AND an outgoing edge, or the soundness gate',
+  '  fails the whole proposal;',
+  '- do not edit anything else in the directory, do not run git and do not call',
+  '  any API. Your output is the file, and the proposal is recorded by whoever',
+  '  dispatched you.',
 ].join('\n');
 
 /**
  * The prompt: the graph that ran, and the measurement of its worst node.
  *
- * Portuguese for the same reason {@link INSTRUCTIONS} is: it is content handed
- * to a session, not code.
+ * English for the same reason {@link INSTRUCTIONS} is: content handed to a
+ * session is still content somebody reads.
  */
 export function buildPrompt(version: GraphVersion, evidence: FlowEvidence): string {
   const nodes = version.snapshot.nodes ?? [];
   const edges = version.snapshot.edges ?? [];
 
   const parts = [
-    `# Grafo \`${version.graph_id}\`, versão \`${version.id}\``,
+    `# Graph \`${version.graph_id}\`, version \`${version.id}\``,
     '',
-    '## Nós',
+    '## Nodes',
     '',
     ...nodes.map((node) => {
       const role = typeof node.role === 'string' ? node.role : '—';
@@ -492,29 +500,30 @@ export function buildPrompt(version: GraphVersion, evidence: FlowEvidence): stri
       return `- \`${node.id}\` (${nodeType}, role: ${role}) — ${description}`;
     }),
     '',
-    '## Arestas',
+    '## Edges',
     '',
     ...edges.map(
       (edge) =>
-        `- \`${edge.from}\` → \`${edge.to}\` quando: ${edge.condition ?? '(sem condição)'}`,
+        `- \`${edge.from}\` → \`${edge.to}\` when: ${edge.condition ?? '(no condition)'}`,
     ),
     '',
-    `## Medição da execução ${evidence.execution_id}`,
+    `## Measurement of execution ${evidence.execution_id}`,
     '',
-    `Gargalo: **\`${evidence.node_id}\`**.`,
+    `Bottleneck: **\`${evidence.node_id}\`**.`,
     '',
-    '| nó | agente (ms) | espera (ms) | fila (ms) | total (ms) | perguntas |',
+    '| node | agent (ms) | blocked (ms) | queue (ms) | total (ms) | questions |',
     '|---|---|---|---|---|---|',
     ...evidence.by_node.map(
       (row) =>
         `| \`${row.node_id}\` | ${row.agent_ms} | ${row.blocked_ms} | ${row.queue_ms} | ${row.total_ms} | ${row.input_requests} |`,
     ),
     '',
-    'Leitura das colunas: **agente** é tempo de sessão aberta no nó; **espera** é',
-    'tempo com o trabalho bloqueado naquele nó (tipicamente aguardando gente);',
-    '**fila** é o tempo entre o trabalho chegar ao nó e a sessão dele abrir.',
+    'Reading the columns: **agent** is time with a session open on the node;',
+    '**blocked** is time with the work blocked at that node (typically waiting on',
+    'people); **queue** is the time between the work reaching the node and its',
+    'session opening.',
     '',
-    `Proponha o diff que ataca o gargalo e escreva-o em \`${OUTPUT_FILE}\`.`,
+    `Propose the diff that attacks the bottleneck and write it to \`${OUTPUT_FILE}\`.`,
   ];
 
   return parts.join('\n');

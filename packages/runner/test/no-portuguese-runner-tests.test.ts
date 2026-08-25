@@ -145,11 +145,14 @@ const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
 /**
  * Plain-ASCII Portuguese, closed and short.
  *
- * Two halves. The first is the package guard's own list: function words a
+ * Three groups. The first is the package guard's own list: function words a
  * Portuguese sentence cannot avoid. The second is the content words this
- * package's tests actually used — every one measured in a file this ticket
- * translated, not imagined. A closed list only catches what somebody has seen
- * before, which is exactly why AT1 runs beside it rather than instead of it.
+ * package's tests actually used — every one measured in a file t312
+ * translated, not imagined. The third is t318's: the prose a test INVENTS for
+ * illustration, which is neither a function word nor a term of the domain, and
+ * so belonged to no earlier list. A closed list only catches what somebody has
+ * seen before, which is exactly why AT1 runs beside it rather than instead of
+ * it.
  */
 const STOPWORDS: readonly string[] = Object.freeze([
   // function words
@@ -274,6 +277,18 @@ const STOPWORDS: readonly string[] = Object.freeze([
   'permissoes',
   'execucao',
   'triagem',
+  // t318: the prose a test invents for illustration
+  //
+  // An escalation's options, the two halves of a decoded assistant message, a
+  // commit message a git fixture writes. None carries an accent and none is a
+  // term of this domain, so both earlier groups walked past all eight lines.
+  // Every word here was measured in a file this ticket translated.
+  'renumerar',
+  'manter',
+  'primeira',
+  'segunda',
+  'parte',
+  'partes',
 ]);
 
 /**
@@ -571,4 +586,71 @@ test('t317 — AT3 reads what AT1 and AT2 mask, which is the only reason it exis
   ]) {
     assert.ok(!MASKED_TOKENS.test(text), `AT3 fires on English: ${text}`);
   }
+});
+
+test('t318 — AT2 bites on the fixture prose no earlier group had a word for', () => {
+  // The eight lines the reproduction measured, verbatim. Two are the halves of
+  // one escalation object whose other three fields were already English — the
+  // shape this ticket exists for — and the rest are the same kind of invented
+  // illustration: a decoded message split in two, a commit a git fixture makes.
+  //
+  // Each asserts the premise first: neither AT1 nor AT3 sees any of them, so
+  // AT2 is the only sweep that can, and it can only because of the third group.
+  for (const text of [
+    '  options: ["Renumerar para 0003", "Manter 0002"],',
+    '  default: "Manter 0002",',
+    "    JSON.stringify({ question: 'Renumerar para 0003?', default: 'Manter 0002' }),",
+    "  assert.equal(request.question, 'Renumerar para 0003?');",
+    "        { type: 'text', text: 'Primeira parte.' },",
+    "        { type: 'text', text: 'Segunda parte.' },",
+    "  assert.equal(decodeClaudeCodeSessionText([frame]), 'Primeira parte.\\nSegunda parte.');",
+    "  const moved = commit(repoRoot, 'segunda entrega');",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(offendersIn(text).length > 0, `AT2 missed invented fixture prose: ${text}`);
+  }
+});
+
+test('t318 — AT2 stays quiet on the English those eight lines became', () => {
+  for (const text of [
+    '  options: ["Renumber to 0003", "Keep 0002"],',
+    '  default: "Keep 0002",',
+    "    JSON.stringify({ question: 'Renumber to 0003?', default: 'Keep 0002' }),",
+    "  assert.equal(request.question, 'Renumber to 0003?');",
+    "        { type: 'text', text: 'First part.' },",
+    "        { type: 'text', text: 'Second part.' },",
+    "  assert.equal(decodeClaudeCodeSessionText([frame]), 'First part.\\nSecond part.');",
+    "  const moved = commit(repoRoot, 'second delivery');",
+  ]) {
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t318 — an escalation fixture reads in ONE language, field by field', () => {
+  // The defect itself, stated as the invariant it broke: three English fields
+  // and two Portuguese ones in the same object. A per-field check, because the
+  // object is what a reader takes as the example of an escalation, and a sweep
+  // that reports a file cannot say the five fields disagree with each other.
+  const escalation: Record<string, string | string[]> = {
+    question: 'Renumber the migration to 0003?',
+    context: 't101 runs in parallel and owns the same numbering space.',
+    options: ['Renumber to 0003', 'Keep 0002'],
+    recommendation: 'Keep 0002 and renumber only if it collides at the merge.',
+    default: 'Keep 0002',
+  };
+
+  const source = readFileSync(path.join(TEST_ROOT, 'dispatch/dispatch.test.ts'), 'utf8');
+  const fixture = /const ESCALATION = \{(.*?)\n\};/s.exec(source)?.[1];
+  assert.ok(fixture !== undefined, 'the escalation fixture is no longer where this test reads it');
+
+  for (const [field, value] of Object.entries(escalation)) {
+    for (const literal of Array.isArray(value) ? value : [value]) {
+      assert.ok(
+        fixture.includes(literal),
+        `ESCALATION.${field} does not read in the same language as its siblings: ${literal}`,
+      );
+    }
+  }
+  assert.deepEqual(offendersIn(fixture), [], 'the escalation fixture still carries Portuguese');
 });

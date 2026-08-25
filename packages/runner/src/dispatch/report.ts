@@ -38,8 +38,10 @@
  * Nothing here touches the database: the runner is an ordinary client of the
  * public API, same boundary the UI has (D1, D11).
  *
- * English per D18; every route, field and status value is wire vocabulary and
- * stays in Portuguese.
+ * English, the escalation text included (D24, t309). Routes, fields and status
+ * values are still Portuguese and still wire vocabulary — that much of the old
+ * sentence holds. The question this module raises is not: it is read by the
+ * person who has to answer it.
  */
 
 import type { SessionFinishDetail, SessionStatus } from '../engine/types.ts';
@@ -198,7 +200,7 @@ export async function escalateRouting(
   policy: EscalationPolicy,
 ): Promise<void> {
   const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
-  const seen = observed === null ? 'nenhum' : `"${observed}"`;
+  const seen = observed === null ? 'none' : `"${observed}"`;
   // Built with concatenation and not with a nested template literal: the D18
   // sweep's masking scanner reads one backtick at a time, and a template
   // inside a `${…}` silently desyncs it for the whole rest of the file
@@ -209,12 +211,12 @@ export async function escalateRouting(
     .join(', ');
 
   const question =
-    `O nó \`${job.current_node_id}\` tem mais de uma saída e a sessão não escolheu ` +
-    `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
-    'aresta nenhuma deste nó. Por qual aresta o trabalho segue?';
+    `Node \`${job.current_node_id}\` has more than one way out and the session ` +
+    `chose none of them: the result observed was ${seen}, and it matches no edge ` +
+    'of this node. Which edge does the work follow?';
 
   if (policy === 'never') {
-    await blockWithNobodyToAsk(call, job, `${question} Este nó não tem a quem perguntar.`);
+    await blockWithNobodyToAsk(call, job, `${question} This node has nobody to ask.`);
     return;
   }
 
@@ -224,8 +226,8 @@ export async function escalateRouting(
     kind: 'question',
     question,
     context:
-      `Arestas que saem de \`${job.current_node_id}\`: ${routes}. ` +
-      'A sessão terminou sem falhar; o que falta é a decisão de rota.',
+      `Edges leaving \`${job.current_node_id}\`: ${routes}. ` +
+      'The session ended without failing; what is missing is the routing decision.',
     options: labels,
     recommendation: null,
     default_answer: null,

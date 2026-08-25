@@ -38,8 +38,9 @@
  * already runs under. Nothing here touches the database: the runner is an
  * ordinary client of the public API (D1, D11).
  *
- * English per D18. The reason is Portuguese, because it is what a PERSON reads
- * in the inbox — same voice as the five reasons next door.
+ * English, the reason included (D24, t309). It is still what a PERSON reads in
+ * the inbox, in the same voice as the six reasons next door — that argument was
+ * always about register, not about language, and it did not change.
  */
 
 import { blockForPreSessionFailure, type JobRef } from './blocks.ts';
@@ -182,12 +183,12 @@ export async function handlePreSessionFailure(
   if (failures < ceiling) return null;
 
   const reason =
-    `O despacho do nó \`${job.current_node_id}\` falhou ${String(failures)} vezes seguidas ` +
-    'antes de conseguir abrir sessão, e o runner não sabe classificar a causa: ' +
-    `${messageOf(error)}. Nenhuma sessão foi aberta em nenhuma dessas tentativas — o ` +
-    'trabalho para aqui em vez de voltar para a fila a cada tick, que é o que faria dele ' +
-    'uma lease por intervalo para sempre, com a fila do projeto parada atrás dele. Pode ' +
-    'muito bem ser transitório: veja o que a mensagem aponta, e desbloqueie se já passou.';
+    `The dispatch of node \`${job.current_node_id}\` failed ${String(failures)} times in a ` +
+    'row before it could open a session, and the runner cannot classify the cause: ' +
+    `${messageOf(error)}. No session was opened on any of those attempts — the work ` +
+    'stops here instead of going back to the queue every tick, which is what would make ' +
+    'it one lease per interval forever, with the project queue stalled behind it. It may ' +
+    'well be transient: look at what the message points at, and unblock if it has passed.';
 
   await blockForPreSessionFailure(call, job, reason);
   tracker.reset(job.id);

@@ -117,10 +117,19 @@
  * sequence. No export was renamed and no behaviour changed in any of the splits,
  * and the re-exports below are what makes that true for every caller.
  *
- * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
- * is — since t161 — the registered skill manifest itself, and those are written
- * in Portuguese (`specs/formats/examples/`); what is left of the old
- * fixed literal is `DEFAULT_INSTRUCTIONS`, in `options.ts`.
+ * English, prompt and instruction CONTENT included (D24, t309). What this
+ * replaces argued the opposite, and it argued it from a fact: the content is —
+ * since t161 — the registered skill manifest itself, and those were written in
+ * Portuguese (`specs/formats/examples/`). The fact expired without the sentence
+ * noticing. Every example under `specs/formats/examples/` and every skill in
+ * `factory-graphs/<bundle>/skills/` is English today, and this comment went on
+ * pointing at them as the reason for an exemption in eight files at once.
+ *
+ * The exemption is gone regardless of the manifests, because it rested on a
+ * second claim that was never checked: that a prompt is a subprocess's input
+ * and therefore not text anybody reads. D7 is what settles it — this repository
+ * is published to be read. What is left of the old fixed literal is still
+ * `DEFAULT_INSTRUCTIONS`, in `options.ts`, and it is English now too.
  */
 
 import { resolveBudget } from '../engine/resolve-budget.ts';
@@ -435,8 +444,8 @@ export function createClaudeCodeDispatch(
         await blockWithNobodyToAsk(
           call,
           job,
-          `O nó \`${job.current_node_id}\` não tem a quem perguntar, e a sessão travou em: ` +
-            request.question,
+          `Node \`${job.current_node_id}\` has nobody to ask, and the session got stuck ` +
+            `on: ${request.question}`,
         );
       } else if (request !== null) {
         // That POST is what blocks the work, inside the control plane and in the

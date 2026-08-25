@@ -37,8 +37,14 @@
  * `escalation-protocol.ts` already has, for the same reason — the 600-line
  * budget of `src/dispatch/` (t223).
  *
- * English per D18. The paragraph itself is Portuguese, like every other text in
- * this package that reaches a model.
+ * English, the paragraph included (D24, t309) — with two exceptions that are
+ * not prose: the `resultado` key and the `` ```resultado `` fence stay exactly
+ * as they are. Both are wire, not language: `parse-node-result.ts` matches the
+ * fence, `ROUTE_LABEL_KEY` in `packages/core/src/domain/graph.ts` owns the key,
+ * and `session.ts` reads it back to route the work. Renaming either is a
+ * wire-format migration across every package, every factory bundle and
+ * `docs/spec/graph.md` — tracked in `docs/spec/glossario-wire.md`, and not
+ * something a translation gets to do on the way past.
  */
 
 import type { GraphEdge } from './resolve-node.ts';
@@ -64,20 +70,21 @@ export function hasOutputSchema(schema: unknown): boolean {
 function whenNothingMatches(canAsk: boolean): string[] {
   return canAsk
     ? [
-        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
-        'nenhum bloco — não roteia nada: vira uma pergunta para uma pessoa, e o',
-        'trabalho para até alguém responder.',
+        'The value has to be one of those, literally. Anything else — or no block',
+        'at all — routes nothing: it becomes a question for a person, and the work',
+        'stops until somebody answers.',
         '',
-        'Se o que trava você é a decisão em si, use o bloco `input-request` acima em',
-        'vez de chutar um resultado.',
+        'If what blocks you is the decision itself, use the `input-request` block',
+        'above instead of guessing a result.',
       ]
     : [
-        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
-        'nenhum bloco — não roteia nada: o trabalho é bloqueado com o motivo, e',
-        'para até alguém olhar.',
+        'The value has to be one of those, literally. Anything else — or no block',
+        'at all — routes nothing: the work is blocked with the reason, and stops',
+        'until somebody looks.',
         '',
-        'Se o que trava você é a decisão em si, relate isso como falha do contrato',
-        'deste nó, com o motivo — nunca chute um resultado para sair andando.',
+        'If what blocks you is the decision itself, report that as a failure of the',
+        'contract of this node, with the reason — never guess a result to keep',
+        'moving.',
       ];
 }
 
@@ -97,15 +104,15 @@ export function resultProtocol(edges: readonly GraphEdge[], canAsk: boolean): st
   const routes = edges.length >= 2 && labels.length > 0;
 
   const heading = routes
-    ? '## Como fechar o turno: relate o resultado e diga para onde o trabalho vai'
-    : '## Como fechar o turno: relate o resultado';
+    ? '## How to close the turn: report the result and say where the work goes'
+    : '## How to close the turn: report the result';
 
   // The example payload is the report itself, with the routing key first when
   // there is one: a session reads the shape before it reads the prose, and a
   // key shown outside the object is a key that comes back in a block of its own.
   const example = routes
-    ? `{"resultado": "<um de: ${labels.join(', ')}>", ...o que o schema de saída declara}`
-    : '{...exatamente o que o schema de saída deste nó declara}';
+    ? `{"resultado": "<one of: ${labels.join(', ')}>", ...whatever the output schema declares}`
+    : '{...exactly what the output schema of this node declares}';
 
   // Built with concatenation and not with a nested template literal: the D18
   // sweep's masking scanner reads one backtick at a time, and a template inside
@@ -115,16 +122,17 @@ export function resultProtocol(edges: readonly GraphEdge[], canAsk: boolean): st
 
   const preamble = routes
     ? [
-        `Este nó tem mais de uma saída — ${quoted} —,`,
-        'e quem escolhe qual delas vale é você. Termine seu turno com exatamente UM',
-        'bloco cercado, e nada depois dele: o objeto que o contrato deste nó pede,',
-        'com o campo `resultado` DENTRO dele nomeando a aresta escolhida.',
+        `This node has more than one way out — ${quoted} —,`,
+        'and you are the one who picks which of them holds. End your turn with',
+        'exactly ONE fenced block, and nothing after it: the object the contract of',
+        'this node asks for, with the `resultado` field INSIDE it naming the edge',
+        'you chose.',
       ]
     : [
-        'Termine seu turno com exatamente UM bloco cercado, e nada depois dele,',
-        'trazendo o objeto que o `output_schema` deste nó declara. É esse objeto —',
-        'e nada mais do que você imprimir — que fica registrado como o resultado',
-        'desta etapa e que a etapa seguinte recebe como entrada.',
+        'End your turn with exactly ONE fenced block, and nothing after it,',
+        'carrying the object the `output_schema` of this node declares. That object',
+        '— and nothing else you print — is what is recorded as the result of this',
+        'step, and what the next step receives as its input.',
       ];
 
   return [
@@ -139,9 +147,9 @@ export function resultProtocol(edges: readonly GraphEdge[], canAsk: boolean): st
     ...(routes
       ? whenNothingMatches(canAsk)
       : [
-          'Sem esse bloco — ou com ele malformado — a etapa termina sem dizer o que',
-          'produziu. Nada falha na hora, e é justamente esse o problema: quem vier',
-          'depois não vai ter o que ler.',
+          'Without that block — or with it malformed — the step ends without saying',
+          'what it produced. Nothing fails at the time, and that is exactly the',
+          'problem: whoever comes next has nothing to read.',
         ]),
   ];
 }

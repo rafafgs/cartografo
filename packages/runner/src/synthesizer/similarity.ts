@@ -39,8 +39,9 @@ const SEPARATORS = /[^\p{L}\p{N}]+/gu;
  *
  * Lowercase, punctuation out, whitespace collapsed, ends trimmed — and nothing
  * beyond that. No stemming and no accent stripping BY DECISION: both hide the
- * heuristic behind magic, and `migração` and `migracao` being different words is
- * behaviour that explains itself in one line.
+ * heuristic behind magic, and `migrate` and `migration` staying two different
+ * words — as does any word spelled with and without its accents — is behaviour
+ * that explains itself in one line.
  *
  * @param text Raw text: the declaration, or a class's name and description.
  * @returns The normalized text; empty string when nothing was left.

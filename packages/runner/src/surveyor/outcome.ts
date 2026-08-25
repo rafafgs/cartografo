@@ -97,10 +97,10 @@ export function measureForExpectedMetric(metrics: FlowMetrics, name: string): nu
  */
 export function describeBottleneck(metrics: FlowMetrics): string {
   const worst: NodeMetric | null = metrics.gargalo;
-  if (worst === null) return 'nenhum nó custou tempo nesta rodada';
+  if (worst === null) return 'no node cost time in this round';
   return (
     `${worst.node_id}: total_ms=${worst.total_ms} ` +
-    `(agente=${worst.agent_ms}, espera=${worst.blocked_ms}, fila=${worst.queue_ms})`
+    `(agent=${worst.agent_ms}, blocked=${worst.blocked_ms}, queue=${worst.queue_ms})`
   );
 }
 

@@ -33,8 +33,11 @@
  * gate here would block dispatches whose manifest asked for nothing of the sort.
  * The block reports what there is; it does not judge whether it is enough.
  *
- * English per D18. The rendered content stays Portuguese, like every other
- * prompt in this package.
+ * English, the rendered content included (D24, t309). The block this composes
+ * is spread straight into `render-skill-instructions.ts`'s text, so an
+ * untranslated heading here would have left that prompt bilingual on its own —
+ * which is why t309 took this file too, though its Code Changes table never
+ * named it: it carries no diacritic, so neither sweep could point at it.
  */
 
 /**
@@ -190,7 +193,7 @@ function capValues(selection: Record<string, unknown>): CappedValues {
 }
 
 /**
- * The `### Valores de entrada` block, as lines ready to splice into the prompt.
+ * The `### Input values` block, as lines ready to splice into the prompt.
  *
  * Fenced JSON, the same shape every other section of
  * `render-skill-instructions.ts` uses, and under the cap that is the whole of it
@@ -213,13 +216,13 @@ export function renderInputValues(
   input: Record<string, unknown>,
 ): string[] {
   const capped = capValues(selectInputValues(declared, input));
-  const lines = ['### Valores de entrada', '', '```json', capped.text, '```'];
+  const lines = ['### Input values', '', '```json', capped.text, '```'];
 
   if (capped.truncated) {
     const shown = Buffer.byteLength(capped.text, 'utf8');
     lines.push(
-      `Cortado no limite do prompt: mostrando os primeiros ${grouped(shown)} de ` +
-        `${grouped(capped.originalBytes)} bytes. O objeto inteiro continua em ` +
+      `Cut at the prompt limit: showing the first ${grouped(shown)} of ` +
+        `${grouped(capped.originalBytes)} bytes. The whole object is still at ` +
         '`GET /v1/jobs/:id/context`.',
     );
   }

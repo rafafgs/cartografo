@@ -561,8 +561,8 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    * One terminal status per session that already ended (t207).
    *
    * The stub that lets `#finish` drop everything else. Invariant 3 of the frozen
-   * contract — "getStatus só devolve status terminal depois que onFinished
-   * correu" (`docs/formats/engine-adapter.md:778`) — is answerable from a
+   * contract — "`getStatus` only returns a terminal status after `onFinished`
+   * has run" (`docs/formats/engine-adapter.md:844`) — is answerable from a
    * string, and a string is all a session that is over needs to leave behind:
    * the `ChildProcess`, the caller's listener (in the real dispatch it closes
    * over the whole transcript buffer), the timers and the leftovers all go.

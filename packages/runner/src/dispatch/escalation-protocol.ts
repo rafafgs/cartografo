@@ -13,8 +13,13 @@
  * both unchanged: the split renames nothing, and the constant stays reachable
  * from everywhere it was already reached from.
  *
- * English per D18. The paragraphs themselves are Portuguese, like every other
- * text in this package that reaches a model.
+ * English, paragraphs included (D24, t309). They used to be Portuguese "like
+ * every other text in this package that reaches a model" — the exemption that
+ * covered every prompt here, on the grounds that a subprocess consumes them.
+ * These three are the clearest case against it: they are the protocol by which
+ * a session asks a person for a decision, so what they say is the product's
+ * escalation behaviour, written out in full. A reader who wants to know how
+ * this system escalates has nowhere else to look.
  */
 
 /**
@@ -29,25 +34,26 @@
  * t161 newly drove, the ones with a real graph behind them. Composing it into
  * both texts is what makes that impossible rather than unlikely.
  *
- * The text is unchanged from the literal it was extracted out of.
+ * Unchanged from the literal it was extracted out of until t309, which
+ * translated it; the wording, the fence and the five fields are the same.
  */
 export const ESCALATION_PROTOCOL = [
-  'Quando alguma coisa que o trabalho não resolve travar você, NÃO chute e não',
-  'fique esperando: termine seu turno com exatamente UM bloco cercado, e nada',
-  'depois dele:',
+  'When something the job does not settle blocks you, do NOT guess and do not',
+  'sit waiting: end your turn with exactly ONE fenced block, and nothing after',
+  'it:',
   '',
   '```input-request',
-  '{"question": "<a decisão que você precisa, em uma ou duas frases>",',
-  ' "context": "<a evidência, o que você já tentou, as alternativas>",',
-  ' "options": ["<rótulo curto>", "<rótulo curto>"],',
-  ' "recommendation": "<a ação que você tomaria, no imperativo>",',
-  ' "default": "<a opção que vale se a pessoa simplesmente aceitar>"}',
+  '{"question": "<the decision you need, in one or two sentences>",',
+  ' "context": "<the evidence, what you already tried, the alternatives>",',
+  ' "options": ["<short label>", "<short label>"],',
+  ' "recommendation": "<the action you would take, in the imperative>",',
+  ' "default": "<the option that applies if the person simply accepts>"}',
   '```',
   '',
-  'O control plane bloqueia o trabalho, uma pessoa responde, e você é despachado',
-  'de novo — com a pergunta e a resposta já escritas no prompt. Não existe',
-  'retomada de sessão: cada despacho é uma sessão nova que foi informada do que',
-  'aconteceu antes.',
+  'The control plane blocks the job, a person answers, and you are dispatched',
+  'again — with the question and the answer already written into the prompt.',
+  'There is no session resume: every dispatch is a new session that was told',
+  'what happened before.',
 ].join('\n');
 
 /**
@@ -64,10 +70,11 @@ export const ESCALATION_PROTOCOL = [
  * otherwise would put a gate in front of a judgement nobody can make.
  */
 export const ALWAYS_ESCALATION_PROTOCOL = [
-  '**Neste nó, escalar não é último recurso.** Antes de fechar o nó, use o bloco',
-  'acima mesmo que você ache que sabe a resposta: a decisão deste nó é de uma',
-  'pessoa, e a sua convicção não substitui a passagem por ela. Se depois de',
-  'olhar não houver decisão nenhuma a tomar, aí sim siga sem perguntar.',
+  '**At this node, escalating is not a last resort.** Before closing the node,',
+  'use the block above even if you think you know the answer: the decision at',
+  'this node belongs to a person, and being sure does not stand in for going',
+  'through them. If after looking there is no decision to take at all, then go',
+  'ahead without asking.',
 ].join('\n');
 
 /**
@@ -83,13 +90,13 @@ export const ALWAYS_ESCALATION_PROTOCOL = [
  * node's own contract, and it is reported as one.
  */
 export const NEVER_ESCALATION_PROTOCOL = [
-  'Este nó não tem a quem perguntar. Não existe pessoa esperando do outro lado',
-  'dele, então não escreva bloco de pergunta nenhum: ele não vira pergunta para',
-  'ninguém, e ficar esperando resposta é esperar por uma resposta que não vem.',
+  'This node has nobody to ask. There is no person waiting on the other side of',
+  'it, so do not write a question block at all: it becomes a question for',
+  'nobody, and waiting on it is waiting for an answer that never comes.',
   '',
-  'Se alguma coisa que o trabalho não resolve travar você, isso é falha do',
-  'contrato DESTE nó, e é assim que se relata: termine seu turno dizendo, no',
-  'resultado do nó, o que travou e por quê. Não chute para preencher, e não',
-  'invente saída — um nó que não conseguiu cumprir o contrato dele é um fato',
-  'que alguém precisa ler, e o trabalho para aqui até alguém olhar.',
+  'If something the job does not settle blocks you, the contract of THIS node',
+  'is what failed, and that is how you report it: end your turn saying, in the',
+  'node result, what blocked you and why. Do not guess to fill the gap, and do',
+  'not invent output — a node that could not meet its contract is a fact',
+  'somebody needs to read, and the work stops here until somebody looks.',
 ].join('\n');

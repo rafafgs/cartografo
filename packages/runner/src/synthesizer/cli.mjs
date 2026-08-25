@@ -21,8 +21,8 @@
  *
  * Usage:
  *   npm run synthesize --workspace @cartografo/runner -- \
- *     `"<declaração>" --class <nome> [--url <url>] [--out <caminho>]` \
- *     `[--timeout <seg>] [--token <token>]`
+ *     `"<declaration>" --class <name> [--url <url>] [--out <path>]` \
+ *     `[--timeout <seconds>] [--token <token>]`
  */
 
 import { mkdtempSync } from 'node:fs';

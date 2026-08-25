@@ -9,14 +9,29 @@
  *
  * What it renders is the mechanism that keeps a re-dispatch from asking the same
  * thing forever. Engine-native resume is out of scope for the v0 adapter
- * (`docs/formats/engine-adapter.md`, "Fora de escopo (v0)"), so "resuming" is
+ * (`docs/formats/engine-adapter.md`, "Out of scope (v0)"), so "resuming" is
  * always a fresh session that was TOLD what happened — and the block below is
  * how it is told.
  *
- * English per D18. The prompt's CONTENT stays in Portuguese: it is what reaches
- * a model, and the node instructions it is composed with are the registered
- * skill manifests, which are written in Portuguese
- * (`specs/formats/examples/`).
+ * English, content included (D24, t309). The paragraph this replaces said the
+ * opposite, and it is worth keeping the shape of what it argued: English per
+ * D18, but the prompt's CONTENT in Portuguese, because it is what reaches a
+ * model and the node instructions it is composed with are the registered skill
+ * manifests, which were Portuguese (`specs/formats/examples/`).
+ *
+ * Two things are wrong with that. The smaller one is that its evidence had
+ * already expired: every example under `specs/formats/examples/` and every
+ * skill in `factory-graphs/<bundle>/skills/` is English today, and the sentence
+ * pointing at them as Portuguese outlived the fact by several tickets, in eight
+ * files at once, because nothing reads a rationale.
+ *
+ * The larger one is that the manifests were never the argument. What made the
+ * exemption look sound is that a prompt is consumed by a subprocess, so nobody
+ * reads it — and D7 is the answer: this repository is published to be read, and
+ * to a reader a prompt is not plumbing but the most interesting file here, the
+ * place where the product's behaviour is actually written down. A model reads
+ * English at least as well; a person who does not read Portuguese reads none of
+ * it at all.
  */
 
 import type { Job } from './options.ts';
@@ -67,11 +82,11 @@ export function buildPrompt(
   answered: readonly Question[],
 ): string {
   const parts = [
-    `# Trabalho #${job.id} — ${job.title}`,
+    `# Job #${job.id} — ${job.title}`,
     '',
-    `Nó atual: \`${job.current_node_id}\`.`,
+    `Current node: \`${job.current_node_id}\`.`,
     '',
-    'Faça o que este nó pede neste trabalho, no diretório em que você está.',
+    'Do what this node asks of this job, in the directory you are in.',
   ];
 
   const byId = new Map(answered.map((question) => [question.id, question]));
@@ -90,16 +105,17 @@ export function buildPrompt(
   if (alreadyClosed.length > 0) {
     parts.push(
       '',
-      '## O que você já perguntou, e o que responderam',
+      '## What you already asked, and what came back',
       '',
-      'Isto já foi decidido. Não pergunte de novo: siga a resposta.',
+      'This is decided. Do not ask again: follow the answer.',
     );
     for (const question of alreadyClosed) {
-      const who = question.source === 'auto' ? 'a resposta automática' : (question.answered_by ?? 'a pessoa');
+      const who =
+        question.source === 'auto' ? 'the automatic answer' : (question.answered_by ?? 'the person');
       parts.push(
         '',
-        `- **Você perguntou:** ${question.question}`,
-        `  **${who} respondeu:** ${question.answer ?? ''}`,
+        `- **You asked:** ${question.question}`,
+        `  **${who} replied:** ${question.answer ?? ''}`,
       );
     }
   }

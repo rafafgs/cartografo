@@ -22,7 +22,7 @@
  *
  * What this buys and what it does not: `Bash` remains a way out to the network
  * and to the disk that no list of names closes completely (the residual gap is
- * written down in `docs/formats/engine-adapter.md`, "Permissões da sessão").
+ * written down in `docs/formats/engine-adapter.md`, "The session's permissions").
  * This is best-effort in what the engine offers — "sandbox where the engine
  * allows" (`notes/2026-08-14-extension-and-quality.md:44-45`) — not process
  * isolation.

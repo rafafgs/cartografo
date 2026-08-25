@@ -457,10 +457,10 @@ function render(
   const contract = node.contract ?? {};
 
   const parts = [
-    `# Nó \`${node.id}\` — skill \`${skill.id}\` v${skill.version}`,
+    `# Node \`${node.id}\` — skill \`${skill.id}\` v${skill.version}`,
     '',
-    `Papel do nó: \`${node.role ?? 'não declarado'}\`. Tipo: \`${node.node_type ?? 'não declarado'}\`.`,
-    `Papel da skill: \`${skill.role}\`. Pin: \`${skill.hash}\`.`,
+    `Node role: \`${node.role ?? 'not declared'}\`. Type: \`${node.node_type ?? 'not declared'}\`.`,
+    `Skill role: \`${skill.role}\`. Pin: \`${skill.hash}\`.`,
     '',
     skill.description,
     '',
@@ -475,35 +475,35 @@ function render(
     ...renderInputValues(skill.input, input),
     '---',
     '',
-    `## O contrato do nó \`${node.id}\``,
+    `## The contract of node \`${node.id}\``,
     '',
-    'Este é o contrato que ESTE nó declara no grafo registrado, e ele é',
-    'documentação: descreve o que o nó recebe, a forma que ele espera produzir e',
-    'como o que sai daqui é verificado — e é dessa forma que sai o vocabulário',
-    'das arestas deste nó. Ele NÃO é o validador do seu relato: o schema que',
-    'decide se a sua saída é aceita está mais abaixo, em `### O que você tem que',
-    'produzir`.',
+    'This is the contract THIS node declares in the registered graph, and it is',
+    'documentation: it describes what the node receives, the shape it expects to',
+    'produce and how what leaves here is verified — and that shape is where the',
+    'vocabulary of this node\'s edges comes from. It is NOT the validator of your',
+    'report: the schema that decides whether your output is accepted is further',
+    'down, under `### What you have to produce`.',
     '',
-    ...fenced('### O que entra', contract.input_schema ?? {}),
-    ...fenced('### A forma que este nó documenta', contract.output_schema ?? {}),
-    ...fenced('### Como este nó é verificado', contract.checks ?? []),
-    ...fenced('## Os checks declarados pela skill', skill.checks),
-    ...fenced('## As permissões desta sessão', skill.permissions),
-    'Elas já estão aplicadas: o que estiver fechado aí não vai funcionar, e',
-    'contornar não é opção. Se a tarefa exige algo que a declaração não permite,',
-    'isso é uma pergunta, não um obstáculo para driblar.',
+    ...fenced('### What comes in', contract.input_schema ?? {}),
+    ...fenced('### The shape this node documents', contract.output_schema ?? {}),
+    ...fenced('### How this node is verified', contract.checks ?? []),
+    ...fenced('## The checks the skill declares', skill.checks),
+    ...fenced('## The permissions of this session', skill.permissions),
+    'They are already applied: whatever is closed off there will not work, and',
+    'working around it is not an option. If the task needs something the',
+    'declaration does not allow, that is a question, not an obstacle to dodge.',
     '',
     '---',
     '',
-    '## O schema que fecha esta sessão',
+    '## The schema that closes this session',
     '',
-    `Este é o \`output\` declarado pela skill \`${skill.id}\` v${skill.version}, e é`,
-    'contra ele — não contra o contrato do nó acima — que',
-    '`PATCH /v1/sessions/:id/finish` checa o bloco `resultado` que você emitir',
-    '(D9). Um relato que não casar com esta forma é recusado no fechamento da',
-    'sessão, e o nó seguinte não recebe nada.',
+    `This is the \`output\` declared by skill \`${skill.id}\` v${skill.version}, and`,
+    'it is against it — not against the contract of the node above — that',
+    '`PATCH /v1/sessions/:id/finish` checks the `resultado` block you emit',
+    '(D9). A report that does not match this shape is refused at the close of the',
+    'session, and the next node receives nothing.',
     '',
-    ...fenced('### O que você tem que produzir', skill.output),
+    ...fenced('### What you have to produce', skill.output),
   ];
 
   // Whenever this node declares a shape, and no longer only when it decides
@@ -518,7 +518,7 @@ function render(
   // the first real traversal of the bets graph, when every claude-code session
   // on it came back `stop_reason: "refusal"` with
   // `stop_details.category: "reasoning_extraction"` — 5/5, zero output tokens,
-  // before the model ever read the node. The plantão's bisection isolated it to
+  // before the model ever read the node. The on-call bisection isolated it to
   // POSITION and to nothing else: the same prompt minus these lines reaches
   // `end_turn`, the same lines moved down here reach `end_turn`, and a softer
   // REWORDING left at the top still refuses. What the safeguard classifier

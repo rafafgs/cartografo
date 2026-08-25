@@ -35,8 +35,11 @@
  * Nothing here touches the database: the runner is an ordinary client of the
  * public API, same boundary the UI has (D1, D11).
  *
- * English per D18; every route, field and status value is wire vocabulary and
- * stays in Portuguese.
+ * English, reasons included (D24, t309). Every route, field and status value
+ * here is still Portuguese, and that half of the old sentence stands: they are
+ * wire vocabulary, frozen by D20's own machinery and renamed only by a
+ * migration. What changed is the other half — the reasons these blocks compose
+ * are prose a PERSON reads in an inbox, and prose was never wire.
  */
 
 import type { ControlPlaneCall } from './control-plane-client.ts';
@@ -139,11 +142,11 @@ export async function blockForUncommittedWork(
 ): Promise<void> {
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason:
-      `A sessão do nó \`${job.current_node_id}\` terminou como concluída, mas deixou ` +
-      `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
-      'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
-      'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
-      'Commite o que valer a pena, descarte o resto e desbloqueie.',
+      `The session of node \`${job.current_node_id}\` ended as completed, but left ` +
+      `uncommitted work in \`${worktreePath}\` — the \`git status\` of the tree ` +
+      'was not clean. The tree was RETAINED instead of removed, and the work did ' +
+      'not advance: what that session produced exists only in that directory. ' +
+      'Commit what is worth keeping, discard the rest and unblock.',
     actor: { type: 'system', ref: RUNNER_ACTOR_REF },
   });
 }
@@ -220,15 +223,15 @@ export async function blockForEngineRefusal(
   // scanner reads one backtick at a time.
   const classified =
     refusalCategory === undefined || refusalCategory === ''
-      ? 'O engine não classificou a recusa.'
-      : 'O engine classificou a recusa como `' + refusalCategory + '`.';
+      ? 'The engine did not classify the refusal.'
+      : 'The engine classified the refusal as `' + refusalCategory + '`.';
 
   const reason =
-    `A sessão do nó \`${job.current_node_id}\` não chegou a responder: o engine ` +
-    `RECUSOU o pedido antes de trabalhar. ${classified} ` +
-    'Recusa é determinística — o mesmo prompt é recusado de novo a cada tentativa ' +
-    '—, então o trabalho para aqui em vez de gastar mais sessões: reveja as ' +
-    'instruções do nó e a skill que ele fixa antes de desbloquear.';
+    `The session of node \`${job.current_node_id}\` never got to answer: the engine ` +
+    `REFUSED the request before doing any work. ${classified} ` +
+    'A refusal is deterministic — the same prompt is refused again on every ' +
+    'attempt —, so the work stops here instead of spending more sessions: review ' +
+    'the instructions of the node and the skill it pins before unblocking.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,
@@ -287,17 +290,17 @@ export async function blockForOutputSchemaRefusal(
   // masking scanner reads one backtick at a time.
   const listed =
     problems.length === 0
-      ? 'O control plane não detalhou o motivo.'
-      : 'Problemas: ' + problems.map((problem) => '`' + problem + '`').join('; ') + '.';
+      ? 'The control plane did not detail the reason.'
+      : 'Problems: ' + problems.map((problem) => '`' + problem + '`').join('; ') + '.';
 
   const reason =
-    `A sessão ${String(sessionId)} do nó \`${job.current_node_id}\` terminou, mas o ` +
-    'control plane RECUSOU o relato dela: ele não casa com o schema `output` da ' +
-    'skill que o nó fixa, então nada foi gravado e o nó seguinte não teria o que ' +
-    `ler. ${listed} ` +
-    'O trabalho para aqui em vez de seguir por uma aresta escolhida a partir de um ' +
-    'relato que não existe: reveja o contrato do nó e a skill que ele fixa antes de ' +
-    'desbloquear.';
+    `Session ${String(sessionId)} of node \`${job.current_node_id}\` ended, but the ` +
+    'control plane REFUSED its report: it does not match the `output` schema of ' +
+    'the skill the node pins, so nothing was recorded and the next node would ' +
+    `have nothing to read. ${listed} ` +
+    'The work stops here instead of following an edge chosen from a report that ' +
+    'does not exist: review the contract of the node and the skill it pins before ' +
+    'unblocking.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,

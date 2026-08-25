@@ -16,8 +16,11 @@
  * renames nothing and changes no behaviour; the file a declaration is written in
  * is all that moved — the same rule t202 wrote for itself.
  *
- * English per D18. {@link DEFAULT_INSTRUCTIONS} is Portuguese, because it is the
- * one thing in here that reaches a model.
+ * English, {@link DEFAULT_INSTRUCTIONS} included (D24, t309). It was the one
+ * thing in here exempted, "because it is the one thing that reaches a model" —
+ * and reaching a model was never what put a text beyond reading. It is also the
+ * text a person sees when they dispatch a job by hand with no graph behind it,
+ * which is every job this package's own suite runs.
  */
 
 import type { SessionPermissions } from '../engine/types.ts';
@@ -28,8 +31,8 @@ import type { ResolvedNode } from './resolve-node.ts';
 import type { WorktreeManager } from './session-worktree.ts';
 
 /**
- * The instruction of a work with NO resolvable node, fixed and literal, exactly
- * as t104's spike wrote it.
+ * The instruction of a work with NO resolvable node, fixed and literal — as
+ * t104's spike wrote it, in the language t309 put it into.
  *
  * It stopped being the instruction of every session in t161: a work standing on
  * a node of a registered graph is dispatched with that node's skill rendered
@@ -41,9 +44,9 @@ import type { WorktreeManager } from './session-worktree.ts';
  * cannot drift apart on the one paragraph both of them need.
  */
 export const DEFAULT_INSTRUCTIONS = [
-  'Você é uma sessão de trabalho despachada pelo runner do cartografo.',
+  'You are a work session dispatched by the cartografo runner.',
   '',
-  'Trabalhe no diretório atual e faça o que o trabalho pede.',
+  'Work in the current directory and do what the job asks.',
   '',
   ESCALATION_PROTOCOL,
 ].join('\n');

@@ -237,8 +237,8 @@ export class CodexAdapter implements EngineAdapter {
    * for the same recorded reason: with two adapters there is not yet evidence of
    * what the shared abstraction should look like. The stub is what lets
    * `#finish` drop everything else while invariant 3 of the frozen contract —
-   * "getStatus só devolve status terminal depois que onFinished correu"
-   * (`docs/formats/engine-adapter.md:778`) — keeps answering, for this adapter's
+   * "`getStatus` only returns a terminal status after `onFinished` has run"
+   * (`docs/formats/engine-adapter.md:844`) — keeps answering, for this adapter's
    * run of C1, C3, C8 and C9 as much as for the other's.
    *
    * It grows by one short string per session this process ever dispatched, which

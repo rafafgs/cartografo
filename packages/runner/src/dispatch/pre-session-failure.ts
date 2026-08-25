@@ -62,10 +62,12 @@
  * `report.ts`, who decides to is `dispatch.ts`, and this module only answers what
  * happened — which is what makes the boundary testable without a server.
  *
- * English per D18. The reasons are Portuguese, and deliberately so: they are
- * content a PERSON reads in the inbox, in the same voice
- * `blockForUncommittedWork` and `blockWithNobodyToAsk` already write in — never
- * the English `Error.message` these classes carry for a log.
+ * English, the reasons included (D24, t309). They were Portuguese deliberately,
+ * as "content a PERSON reads in the inbox" — which is the one argument in this
+ * package that never rested on the prompt exemption, and it survives the
+ * translation intact: they still speak in the voice `blockForUncommittedWork`
+ * and `blockWithNobodyToAsk` write in, and they are still not the terse
+ * `Error.message` these classes carry for a log. Only the language changed.
  */
 
 import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
@@ -105,7 +107,7 @@ export interface PreSessionJob {
 function versionOf(job: PreSessionJob): string {
   const declared = job.graph_version_id;
   return declared === undefined || declared === null || declared === ''
-    ? 'que o trabalho não declara'
+    ? 'that the job does not declare'
     : '`' + declared + '`';
 }
 
@@ -116,43 +118,46 @@ function versionOf(job: PreSessionJob): string {
  *
  * @param error Whatever the window threw, unopened.
  * @param job The work being dispatched.
- * @returns The block reason, in Portuguese, when the failure will reproduce on
- *   every retry; `null` when it will not, and the dispatch should keep throwing.
+ * @returns The block reason when the failure will reproduce on every retry;
+ *   `null` when it will not, and the dispatch should keep throwing.
  */
 export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): string | null {
   if (error instanceof UnresolvedPlaceholderError) {
     return (
-      `A skill \`${error.skillId}\` do nó \`${error.nodeId}\` nomeia entrada que este ` +
-      `despacho não carrega: ${error.paths.join(', ')}. Nenhuma sessão foi aberta — um ` +
-      'placeholder que não resolve nunca chega ao modelo como texto, e nada nisso muda ' +
-      'entre um tick e o próximo. Monte a entrada do nó (ou corrija o manifesto) e desbloqueie.'
+      `Skill \`${error.skillId}\` of node \`${error.nodeId}\` names input this dispatch ` +
+      `does not carry: ${error.paths.join(', ')}. No session was opened — a placeholder ` +
+      'that does not resolve never reaches the model as text, and nothing about that ' +
+      'changes between one tick and the next. Assemble the input of the node (or fix the ' +
+      'manifest) and unblock.'
     );
   }
 
   if (error instanceof SkillNotRegisteredError) {
     return (
-      `O nó \`${error.nodeId}\` fixa a skill \`${error.skillId}\`, que não está no ` +
-      'registro. Nenhuma sessão foi aberta: uma skill que ninguém registrou não vira ' +
-      'instrução genérica (D4). Registre o manifesto e desbloqueie.'
+      `Node \`${error.nodeId}\` pins skill \`${error.skillId}\`, which is not in the ` +
+      'registry. No session was opened: a skill nobody registered does not become ' +
+      'generic instruction (D4). Register the manifest and unblock.'
     );
   }
 
   if (error instanceof SkillPinMismatchError) {
     return (
-      `O nó \`${error.nodeId}\` fixa a skill \`${error.skillId}\` no hash ` +
-      `\`${error.declared}\`, mas o registro carrega \`${error.registered}\`. Nenhuma ` +
-      'sessão foi aberta: um pin que parou de casar quer dizer que o conteúdo se moveu ' +
-      'debaixo de um grafo que alguém validou (D4). Confira qual dos dois mudou e desbloqueie.'
+      `Node \`${error.nodeId}\` pins skill \`${error.skillId}\` at hash ` +
+      `\`${error.declared}\`, but the registry carries \`${error.registered}\`. No ` +
+      'session was opened: a pin that stopped matching means the content moved ' +
+      'underneath a graph somebody validated (D4). Check which of the two changed and ' +
+      'unblock.'
     );
   }
 
   if (error instanceof UnknownEngineError) {
-    const known = error.known.length === 0 ? 'nenhum' : error.known.join(', ');
+    const known = error.known.length === 0 ? 'none' : error.known.join(', ');
     return (
-      `O nó \`${error.nodeId}\` pede o engine \`${error.engine}\`, que não tem rota neste ` +
-      `runner (registrados: ${known}). Nenhuma sessão foi aberta: despachar em outro ` +
-      'engine rodaria o trabalho num motor que ninguém escolheu, e ainda registraria esse ' +
-      'motor como se o grafo o tivesse pedido. Configure a rota (ou corrija o grafo) e desbloqueie.'
+      `Node \`${error.nodeId}\` asks for engine \`${error.engine}\`, which has no route ` +
+      `in this runner (registered: ${known}). No session was opened: dispatching on ` +
+      'another engine would run the work on a motor nobody chose, and would record that ' +
+      'motor as though the graph had asked for it. Configure the route (or fix the graph) ' +
+      'and unblock.'
     );
   }
 
@@ -162,12 +167,12 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
   // would behave differently.
   if (error instanceof SessionStartError && error.message.startsWith(PERMISSION_REFUSAL_PREFIX)) {
     return (
-      `O nó \`${job.current_node_id}\` fixa uma política de permissão que este engine não ` +
-      `sabe aplicar, e ele recusou antes de abrir: ${error.message}. Nenhuma sessão foi ` +
-      'aberta: um engine que não consegue expressar a política ou recusa ou roda valendo ' +
-      'menos do que foi declarado, e a segunda opção é a única que um sistema de permissão ' +
-      'nunca pode ter (D4). A mesma skill, no mesmo hash, é recusada de novo em toda ' +
-      'retentativa — corrija o que a mensagem aponta no manifesto e desbloqueie.'
+      `Node \`${job.current_node_id}\` pins a permission policy this engine does not ` +
+      `know how to apply, and it refused before opening: ${error.message}. No session ` +
+      'was opened: an engine that cannot express the policy either refuses or runs ' +
+      'enforcing less than was declared, and the second is the one outcome a permission ' +
+      'system may never have (D4). The same skill, at the same hash, is refused again on ' +
+      'every retry — fix what the message points at in the manifest and unblock.'
     );
   }
 
@@ -175,10 +180,10 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
   // control plane having a bad day, and a bad day passes.
   if (error instanceof ControlPlaneClientError && error.status === 404) {
     return (
-      `O trabalho aponta para a versão de grafo ${versionOf(job)}, e o control plane ` +
-      'respondeu 404: a referência está pendurada. Nenhuma sessão foi aberta — sem o ' +
-      'snapshot não há nó, nem contrato, nem aresta de saída, e a leitura responde o ' +
-      'mesmo 404 em toda retentativa. Aponte o trabalho para uma versão registrada e desbloqueie.'
+      `The job points at graph version ${versionOf(job)}, and the control plane ` +
+      'answered 404: the reference is dangling. No session was opened — without the ' +
+      'snapshot there is no node, no contract and no outgoing edge, and the read answers ' +
+      'the same 404 on every retry. Point the job at a registered version and unblock.'
     );
   }
 
@@ -191,12 +196,12 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
   // reopened t252's loop for the one failure mode this ficha invented.
   if (error instanceof ExecutorEnvironmentError) {
     return (
-      `O runner não conseguiu ler o ambiente de execução deste nó: \`${error.command}\` ` +
-      `falhou (${error.stderr === '' ? 'sem saída' : error.stderr}). Nenhuma sessão foi ` +
-      'aberta — o caminho do banco de testes e o commit de referência são configuração ' +
-      'deste processo, e um banco que não responde responde igual em toda retentativa. ' +
-      'Corrija a configuração do banco (`--test-bench-path`, `--reference-repo`, ' +
-      '`--main-branch`) e desbloqueie.'
+      `The runner could not read the execution environment of this node: ` +
+      `\`${error.command}\` failed (${error.stderr === '' ? 'no output' : error.stderr}). ` +
+      'No session was opened — the test bench path and the reference commit are ' +
+      'configuration of THIS process, and a bench that does not answer answers the same ' +
+      'way on every retry. Fix the bench configuration (`--test-bench-path`, ' +
+      '`--reference-repo`, `--main-branch`) and unblock.'
     );
   }
 

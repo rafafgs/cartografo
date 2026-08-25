@@ -144,6 +144,16 @@ const VERBATIM_QUOTATIONS: ReadonlyArray<{ file: string; line: number; reason: s
       line: 11,
       reason: 'the same quotation, continued; its last line carries no diacritic to excuse',
     },
+    {
+      file: 'src/surveyor/spread.ts',
+      line: 10,
+      reason: 'quotes the same note, and for the same reason: it is the sentence this module answers',
+    },
+    {
+      file: 'src/surveyor/spread.ts',
+      line: 11,
+      reason: 'the same quotation, continued',
+    },
   ]);
 
 /** Any of these in a message means the sentence around it is Portuguese. */

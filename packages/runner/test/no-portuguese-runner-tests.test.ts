@@ -667,6 +667,228 @@ const REPLACEMENTS: ReadonlyArray<{
   },
 ]);
 
+/**
+ * A name something RENAMED, still quoted as though it were the current one.
+ *
+ * The class this sweep exists for is not a language problem, and that is the
+ * whole gotcha: renaming a column, a flag or an enum value moves every line of
+ * `src/` that reads it and no line of prose that describes it. The comment goes
+ * on saying `heartbeat_em` long after the route answers `heartbeat_at`, and it
+ * says it in a sentence that mentions no language at all, so a reader who trusts
+ * it goes looking for a field no route has — the same damage AT5 measures, from
+ * the other direction.
+ *
+ * The five sweeps before it are blind to every one of these, and each for its
+ * own reason. None carries an accent (AT1). Six of the eight tree-wide names are
+ * `snake_case`, which {@link MACHINE_NAMES} blanks before the stopword pass ever
+ * reads the line, and the rest are on no stopword group (AT2). No mask hides
+ * them (AT3). None is a word `src/` still spells in the position the line claims
+ * (AT4). And none is an invention: every one of them was a REAL name once, which
+ * is exactly what AT5's list is not (AT5).
+ *
+ * ## The authority, and why it is not a source file
+ *
+ * AT5 grounds each ban by reading the file that owns the field. That works for
+ * an invention, because an invention has no history. A rename does, and this
+ * repository already keeps the register of it: `docs/spec/glossario-wire.md` is
+ * the table of what every wire name was and what it became, row by row, with the
+ * file that defines it. So a ban here cites a ROW, and the day the glossary
+ * stops carrying it the ground test fails and names the ban to lift.
+ *
+ * Two renames are nobody's wire row and are grounded where they really live.
+ * The graph document's keys are `schema/graph.schema.json`'s property names,
+ * because the schema is what a proposal is validated against. The synthesizer's
+ * draft placeholder is `src/synthesizer/synthesize.ts`'s, which documents the
+ * default path in the same words its `--help` prints.
+ *
+ * ## Scope, which is the whole instrument
+ *
+ * {@link RetiredName.scope} is not decoration and it is not a shortcut around a
+ * pin list: it is what keeps a ban off the files where the same spelling is
+ * still alive. `nome`, `descricao` and `classe` are LIVE fields of
+ * `SimilarClass` (`src/synthesizer/prompt.ts:57-66`), so the graph-document
+ * group is scoped to the two files that BUILD a graph document and
+ * `synthesizer/prompt.test.ts` goes on spelling them the way the interface does.
+ * `uso` is the sharper case: `src/engine/types.ts:248` and
+ * `docs/formats/engine-adapter.md:1137` still call the token totals that, and
+ * `engine/conformance.claude-code.test.ts` mirrors both almost verbatim — that
+ * is AT4's boundary, and a sweep built to fire on a word `src/` still spells is
+ * a gate somebody turns off. `agente` is the same shape from the other end: its
+ * second occurrence is Portuguese fixture prose in
+ * `dispatch/parse-fenced-json.test.ts`, a file no part of this reproduction
+ * touches. Both are banned in the one suite that quoted them as current.
+ *
+ * There is no line pin here, and none was needed: a scope is a reason somebody
+ * has to write down, where a pinned line number is one somebody can inherit.
+ *
+ * ## What was measured and deliberately left out
+ *
+ * `classe` and `--classe` are not on this list. The tests that spell them REFUSE
+ * them: `synthesizer/cli.test.ts` and `intake/command-line.test.ts` both prove
+ * the retired flag is gone from the help text, and a refusal has to name what it
+ * refuses. What IS banned is the usage placeholder `<classe>`, which no refusal
+ * needs and which one test title still promised where the CLI prints `<class>`.
+ *
+ * `FiltroDeEventos` is out because it is not a wire name and the glossary
+ * therefore has no row for it: it is the old identifier of `EventFilter`
+ * (`packages/core/src/db/events.ts:159`), quoted by the same comment as
+ * `trabalho_id`, and corrected beside it with nothing to cite.
+ *
+ * Built from a list of strings and not written as regex literals, for the same
+ * reason {@link PROTOCOL_TOKENS}, {@link MASKED_TOKENS}, {@link WIRE_WORDS} and
+ * {@link WIRE_FICTIONS} are: a literal is CODE, and
+ * `no-portuguese-identifiers.test.ts` scans this directory.
+ */
+interface RetiredName {
+  /** The spelling the line still uses. */
+  stale: string;
+  /** What the artifact that owns the name calls it today. */
+  live: string;
+  /** Which document is final on the rename. */
+  authority: 'glossary' | 'graph-schema' | 'draft-path';
+  /** The files the ban covers. Absent means the whole tree. */
+  scope?: readonly string[];
+}
+
+/**
+ * The two files that build a graph document, and therefore name its keys.
+ *
+ * Both declare it in the same words — "in the shape of
+ * `schema/graph.schema.json`" — over a literal that spelled seven of those keys
+ * in a language the schema does not have.
+ */
+const GRAPH_DOCUMENT_FILES: readonly string[] = Object.freeze([
+  'synthesizer/parse-graph-proposal.test.ts',
+  'synthesizer/synthesize.e2e.test.ts',
+]);
+
+/** The suite that quoted two event-payload keys the taxonomy had already moved. */
+const DISPATCH_SUITE: readonly string[] = Object.freeze(['dispatch/dispatch.test.ts']);
+
+/** The suite whose titles quote the synthesizer's usage text. */
+const SYNTHESIZER_CLI: readonly string[] = Object.freeze(['synthesizer/cli.test.ts']);
+
+/** Every retired name this sweep bans, with the rename each one is behind. */
+const RETIRED_NAMES: ReadonlyArray<RetiredName> = Object.freeze([
+  // The wire, by glossary row, everywhere in the tree.
+  { stale: 'trabalho_id', live: 'job_id', authority: 'glossary' },
+  { stale: 'grafo_versao_id', live: 'graph_version_id', authority: 'glossary' },
+  { stale: 'tempo_esgotado', live: 'timed_out', authority: 'glossary' },
+  { stale: 'heartbeat_em', live: 'heartbeat_at', authority: 'glossary' },
+  { stale: 'trabalho_ja_leased', live: 'job_already_leased', authority: 'glossary' },
+  { stale: 'heartbeat_perdido', live: 'heartbeat_lost', authority: 'glossary' },
+  { stale: 'expirou', live: 'ttl_elapsed', authority: 'glossary' },
+  { stale: 'ativa', live: 'active', authority: 'glossary' },
+  // The wire again, in the one suite that quoted it: `src/` still spells both.
+  { stale: 'uso', live: 'usage', authority: 'glossary', scope: DISPATCH_SUITE },
+  { stale: 'agente', live: 'agent', authority: 'glossary', scope: DISPATCH_SUITE },
+  // The graph document, by schema property, in the two files that build one.
+  { stale: 'tipo', live: 'type', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'nome', live: 'name', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'versao', live: 'version', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'descricao', live: 'description', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'papel', live: 'role', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'contrato', live: 'contract', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  { stale: 'comando', live: 'command', authority: 'graph-schema', scope: GRAPH_DOCUMENT_FILES },
+  // The usage placeholder, by the doc comment that prints it.
+  { stale: '<classe>', live: '<class>', authority: 'draft-path', scope: SYNTHESIZER_CLI },
+]);
+
+/**
+ * Whether `text` spells `name` as a name, and not as a slice of a longer one.
+ *
+ * The boundaries are `no-portuguese-wire.test.ts`'s, and they are wider than
+ * `\b` on purpose: `\b` would read `trabalho_id` inside `depende_de_trabalho_id`
+ * and `ativa` inside `lease_nao_ativa`, and both of those are other names.
+ *
+ * @param text One raw line of a scanned file.
+ * @param name The retired spelling to look for.
+ */
+function spellsName(text: string, name: string): boolean {
+  return new RegExp(`(?<![A-Za-z0-9_$-])${name}(?![A-Za-z0-9_$-])`).test(text);
+}
+
+/** Every line of the tree that spells a retired name, as `file:line — what`. */
+function retiredHits(): string[] {
+  const hits: string[] = [];
+
+  for (const file of scannedFiles()) {
+    const covered = RETIRED_NAMES.filter(
+      (entry) => entry.scope === undefined || entry.scope.includes(file),
+    );
+    if (covered.length === 0) continue;
+
+    readFileSync(path.join(TEST_ROOT, file), 'utf8')
+      .split('\n')
+      .forEach((text, index) => {
+        for (const entry of covered) {
+          if (!spellsName(text, entry.stale)) continue;
+          hits.push(
+            `${file}:${index + 1} — \`${entry.stale}\` (today \`${entry.live}\`) — ${text.trim().slice(0, 100)}`,
+          );
+        }
+      });
+  }
+
+  return hits;
+}
+
+/**
+ * A header that reports the LANGUAGE of an artifact it does not read.
+ *
+ * The other half of the same defect, and no token sweep can reach it: there is
+ * no retired name on these lines at all. What there is instead is a claim —
+ * "the prompt's own prose is Portuguese", "the graph document's keys are the
+ * published, Portuguese surface" — sitting in a docstring, describing a file
+ * that stopped being that way several tickets ago. Every one of the three was
+ * true when it was written and none of them was ever revisited, because nothing
+ * reads a rationale.
+ *
+ * The check is the same shape AT6's ground test is: the claim is pinned, and so
+ * is the artifact that settles it. The day `src/intake/prompt.ts` really does go
+ * back to Portuguese prose, the ground test fails and names the claim to
+ * restore, instead of leaving a header that says the opposite of the file.
+ *
+ * ## What was measured and deliberately left out
+ *
+ * Twenty-two other headers in this tree carry a sentence of the same shape —
+ * "English per D18; X stays in Portuguese" — and they are NOT pinned here. They
+ * are not all wrong: route segments, payload keys and recorded transcripts
+ * really do stay Portuguese, and each one needs its own artifact read to tell
+ * which kind it is. That is a sweep of its own and it is the gate ticket's, not
+ * this one's. The three below are the three this reproduction measured, and each
+ * is contradicted by the very file it names.
+ */
+const LANGUAGE_CLAIMS: ReadonlyArray<{
+  file: string;
+  about: string;
+  english: RegExp;
+  claim: RegExp;
+  reason: string;
+}> = Object.freeze([
+  {
+    file: 'dispatch/prompt.test.ts',
+    about: 'packages/runner/src/dispatch/prompt.ts',
+    english: /English, content included \(D24, t309\)/,
+    claim: /the prompt's own CONTENT is Portuguese/,
+    reason: 'the module it tests records the OPPOSITE, at length, and the header cites it as agreeing',
+  },
+  {
+    file: 'intake/prompt.test.ts',
+    about: 'packages/runner/src/intake/prompt.ts',
+    english: /English, the prompt's own PROSE included \(D24, t309\)/,
+    claim: /the prompt's own prose is Portuguese/,
+    reason: "`INTAKE_INSTRUCTIONS` is English, and the module's own header says so",
+  },
+  {
+    file: 'synthesizer/synthesize.e2e.test.ts',
+    about: 'schema/graph.schema.json',
+    english: /"initial_node":/,
+    claim: /the graph document's keys are the\s+\*\s+published, Portuguese surface/,
+    reason: "the schema's property names are English, and have been since t178",
+  },
+]);
+
 test('t312 — AT1: no Portuguese diacritic survives in packages/runner/test', () => {
   const hits = scannedFiles().flatMap((file) =>
     hitsInFile(file, (text) => DIACRITICS.exec(text)?.[0] ?? null),
@@ -1144,5 +1366,191 @@ test('t323 — the answered-question fixture carries values the projection reall
   }
   for (const value of values('source')) {
     assert.ok(sources.includes(value), `prompt.test.ts declares a source the column's CHECK refuses: ${value}`);
+  }
+});
+
+test('t322 — AT6: a name something renamed is not quoted as though it were current', () => {
+  const hits = retiredHits();
+
+  assert.deepEqual(hits, [], `a retired name quoted as current (t322, AT6):\n${hits.join('\n')}`);
+});
+
+test('t322 — every name AT6 bans is a rename some document really recorded', () => {
+  // The half of the sweep that keeps it honest, and t319 wrote down why it has
+  // to exist: a claim a reader cannot check is how an exception outlives its
+  // reason. Every ban above rests on somebody having renamed something, and
+  // that is itself checkable — so it is checked, per name, against the document
+  // that owns the rename. The day one of these spellings comes back, this fails
+  // and names the ban to lift instead of leaving a sweep refusing a live name.
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+  const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
+  const glossary = read('docs/spec/glossario-wire.md');
+  const schema = read('schema/graph.schema.json');
+  const synthesize = read('packages/runner/src/synthesizer/synthesize.ts');
+
+  for (const entry of RETIRED_NAMES) {
+    switch (entry.authority) {
+      case 'glossary':
+        assert.match(
+          glossary,
+          new RegExp(`^\\|[^|]*\\|\\s*\`${entry.stale}\`\\s*\\|\\s*\`${entry.live}\`\\s*\\|`, 'm'),
+          `glossario-wire.md has no row retiring \`${entry.stale}\` for \`${entry.live}\`; AT6 is banning a name on a rename nobody recorded`,
+        );
+        break;
+
+      case 'graph-schema':
+        assert.match(
+          schema,
+          new RegExp(`"${entry.live}":`),
+          `graph.schema.json no longer declares \`${entry.live}\`; AT6 is banning \`${entry.stale}\` on a claim that stopped being true`,
+        );
+        assert.doesNotMatch(
+          schema,
+          new RegExp(`"${entry.stale}":`),
+          `graph.schema.json declares \`${entry.stale}\` again; the key came back and AT6 has to let it through`,
+        );
+        break;
+
+      case 'draft-path':
+        assert.match(
+          synthesize,
+          new RegExp(`\`${entry.live}\\.grafo\\.rascunho\\.json\``),
+          `synthesize.ts no longer documents the default draft as \`${entry.live}.grafo.rascunho.json\`; re-read the title AT6 is refusing`,
+        );
+        assert.ok(
+          !synthesize.includes(entry.stale),
+          `synthesize.ts prints \`${entry.stale}\` again; the placeholder came back and AT6 has to let it through`,
+        );
+        break;
+    }
+  }
+});
+
+test('t322 — AT6 reads what the five sweeps before it have no way of seeing', () => {
+  // The fifteen lines the reproduction measured, verbatim. Five comments about
+  // an event payload, a lease and a graph version, two test titles, two
+  // assertion messages, and six keys of a literal that calls itself a graph
+  // document.
+  //
+  // Each asserts the premise first. AT1 needs an accent and there is none; AT2
+  // needs the word on a closed list, and `trabalho` and `grafo` ARE on one —
+  // which is the point, because {@link MACHINE_NAMES} blanks every `snake_case`
+  // span before the stopword pass reads the line; AT3 needs a mask to be hiding
+  // the word and no mask touches these; AT4 needs the word to be one `src/` still
+  // spells in this position; AT5 needs the name to be an invention, and every one
+  // of these was a real name once.
+  for (const text of [
+    '    // by omission: their payloads carry no `trabalho_id`, so the work timeline',
+    '      // --- 1. no `grafo_versao_id` at all: today\'s behaviour, byte for byte ------',
+    '      // and the server\'s own `heartbeat_em` is the observation.',
+    '      // no grant has swept yet still reads `ativa`, and the poll below would',
+    '      // quiet (`heartbeat_perdido`), not one that never started (`expirou`,',
+    "test('t208 — tick() still tries the next candidate after `trabalho_ja_leased`', async () => {",
+    '      `a "${reason}" stop closes the session as tempo_esgotado with its cause`,',
+    '    "the transcript rides along with `uso`; it does not replace it",',
+    '        "the wiring raised this one, not the session — a session-authored one is `agente`",',
+    "test('AT5 — the default draft path is <classe>.grafo.rascunho.json in the current directory', async () => {",
+    '    lineage: { tipo: \'base\' },',
+    "    metadata: { nome: CLASS_NAME, descricao: 'Redige e revisa.', schema_version: '1.0.0' },",
+    "      { id: 'redigir', papel: 'redator', node_type: 'work', skill_ref: pin, contrato: contract },",
+    "    checks: [{ type: 'deterministic', comando: 'npm test', descricao: 'Prova.' }],",
+    "    skill_ref: { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 would have caught this one: ${text}`);
+    assert.ok(
+      RETIRED_NAMES.some((entry) => spellsName(text, entry.stale)),
+      `AT6 missed a name the rename retired: ${text}`,
+    );
+  }
+
+  // And the names they became: nothing left for AT6 to find, and English to AT2.
+  for (const text of [
+    '    // by omission: their payloads carry no `job_id`, so the work timeline',
+    '      // --- 1. no `graph_version_id` at all: today\'s behaviour, byte for byte ------',
+    '      // and the server\'s own `heartbeat_at` is the observation.',
+    '      // no grant has swept yet still reads `active`, and the poll below would',
+    '      // quiet (`heartbeat_lost`), not one that never started (`ttl_elapsed`,',
+    "test('t208 — tick() still tries the next candidate after `job_already_leased`', async () => {",
+    '      `a "${reason}" stop closes the session as timed_out with its cause`,',
+    '    "the transcript rides along with `usage`; it does not replace it",',
+    '        "the wiring raised this one, not the session — a session-authored one is `agent`",',
+    "test('AT5 — the default draft path is <class>.grafo.rascunho.json in the current directory', async () => {",
+    '    lineage: { type: \'base\' },',
+    "    metadata: { name: CLASS_NAME, description: 'Drafts and reviews.', schema_version: '1.0.0' },",
+    "      { id: 'redigir', role: 'redator', node_type: 'work', skill_ref: pin, contract },",
+    "    checks: [{ type: 'deterministic', command: 'npm test', description: 'Proof.' }],",
+    "    skill_ref: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },",
+  ]) {
+    assert.ok(
+      !RETIRED_NAMES.some((entry) => spellsName(text, entry.stale)),
+      `AT6 fires on a live name: ${text}`,
+    );
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t322 — AT6 reads a name and not a slice of a longer one', () => {
+  // The two boundaries `\b` gets wrong, and both are real names of this wire:
+  // `depende_de_trabalho_id` is the intake item's dependency key
+  // (glossario-wire.md §4) and `lease_nao_ativa` is a refusal code of
+  // `POST /v1/leases`. A sweep that read either as a hit would be unusable in
+  // the files that legitimately carry them.
+  for (const text of [
+    "  const body = { depende_de_trabalho_id: 7 };",
+    "  assert.equal(refused.body.error, 'lease_nao_ativa');",
+  ]) {
+    assert.ok(
+      !RETIRED_NAMES.some((entry) => spellsName(text, entry.stale)),
+      `AT6 read a slice of a longer name as a hit: ${text}`,
+    );
+  }
+});
+
+test('t322 — AT7: no header reports a language the artifact it names does not have', () => {
+  const offenders = LANGUAGE_CLAIMS.filter((entry) =>
+    entry.claim.test(readFileSync(path.join(TEST_ROOT, entry.file), 'utf8')),
+  ).map((entry) => `${entry.file} — still claims ${String(entry.claim)} — ${entry.reason}`);
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `a header describing a language its own subject does not have (t322, AT7):\n${offenders.join('\n')}`,
+  );
+});
+
+test('t322 — every language claim AT7 pins is checkable against the artifact', () => {
+  const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
+
+  for (const entry of LANGUAGE_CLAIMS) {
+    assert.match(
+      readFileSync(path.join(repoRoot, entry.about), 'utf8'),
+      entry.english,
+      `${entry.about} no longer reads in English; AT7 is refusing a claim that has become true again (${entry.file})`,
+    );
+  }
+});
+
+test('t322 — AT7 reads what every token sweep is blind to, because there is no token', () => {
+  // The reason this pair exists beside AT6 rather than inside it: there is no
+  // retired name on any of these lines. What there is is a SENTENCE about a
+  // file, and the file says the opposite.
+  for (const text of [
+    " * English per D18; the prompt's own prose is Portuguese, like every other agent",
+    " * English per D18; the draft file name and the graph document's keys are the",
+    " * English per D18; the prompt's own CONTENT is Portuguese, because it is what",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.deepEqual(offendersIn(text), [], `AT2 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(!WIRE_WORDS.test(text), `AT4 would have caught this one: ${text}`);
+    assert.ok(!WIRE_FICTIONS.test(text), `AT5 would have caught this one: ${text}`);
+    assert.ok(
+      !RETIRED_NAMES.some((entry) => spellsName(text, entry.stale)),
+      `AT6 would have caught this one: ${text}`,
+    );
   }
 });

@@ -290,7 +290,7 @@ test('AT4c — a valid block lands the draft file and the one-line summary', asy
       '```',
     ]),
   );
-  const dir = scratch(t, 'sucesso');
+  const dir = scratch(t, 'success');
 
   const out: string[] = [];
   const code = await runSynthesis({
@@ -347,7 +347,7 @@ test('t148 — a block that arrives inside a stream-json frame lands the draft t
       ),
     ]),
   );
-  const dir = scratch(t, 'quadro-sucesso');
+  const dir = scratch(t, 'frame-success');
 
   const out: string[] = [];
   const code = await runSynthesis({

@@ -2013,7 +2013,7 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
   // The path the manager hands out is NOT the directory the test happens to
   // own: with the static option gone, the only way the engine can end up here
   // is through `acquire` (FR6, FR7).
-  const worktreePath = path.join(workDir, "worktree-da-sessao");
+  const worktreePath = path.join(workDir, "worktree-of-the-session");
   const record = path.join(workDir, "despacho-em-worktree.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });

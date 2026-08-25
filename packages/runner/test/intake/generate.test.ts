@@ -222,7 +222,7 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
     adapter,
     request: REQUEST,
     className: CLASS_NAME,
-    workingDir: scratch(t, 'sessao-boa'),
+    workingDir: scratch(t, 'good-session'),
     timeoutSeconds: 60,
     envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
   });
@@ -265,7 +265,7 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
     adapter: fakeAdapter(),
     request: REQUEST,
     className: CLASS_NAME,
-    workingDir: scratch(t, 'sessao-com-tier'),
+    workingDir: scratch(t, 'session-with-tier'),
     timeoutSeconds: 60,
     envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: triaged })),
   });
@@ -296,7 +296,7 @@ test('AT3c — a session that did not complete posts nothing', async (t) => {
         adapter: fakeAdapter(),
         request: REQUEST,
         className: CLASS_NAME,
-        workingDir: scratch(t, 'sessao-morta'),
+        workingDir: scratch(t, 'dead-session'),
         timeoutSeconds: 60,
         envOverrides: {
           ...engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS })),

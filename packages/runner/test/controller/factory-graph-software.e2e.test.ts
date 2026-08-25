@@ -138,7 +138,7 @@ function directoryWorktrees(root: string): WorktreeManager {
   return {
     acquire: (jobId) => {
       serial += 1;
-      const dir = path.join(root, `sessao-${String(jobId)}-${String(serial)}`);
+      const dir = path.join(root, `session-${String(jobId)}-${String(serial)}`);
       mkdirSync(dir, { recursive: true });
       return Promise.resolve({ path: dir, branch: `ticket-${String(jobId)}` });
     },

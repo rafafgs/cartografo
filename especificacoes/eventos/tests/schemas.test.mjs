@@ -1,11 +1,10 @@
-// Testes de contrato dos schemas de evento (t98, teste de aceite 1).
+// Contract tests for the event schemas (t98, acceptance test 1).
 //
-// A tabela abaixo É a especificação: cada tipo de evento, a entidade que ele
-// descreve e os campos do payload `data` (os marcados como opcionais ficam
-// fora de `required`, mas continuam declarados em `properties`). Qualquer
-// divergência entre um arquivo de schema e esta tabela é um erro do schema,
-// nunca do teste — a tabela reproduz a seção "Schema / Mudanças de Dados" da
-// ficha.
+// The table below IS the specification: each event type, the entity it
+// describes and the fields of the `data` payload (the ones marked optional stay
+// out of `required`, but are still declared in `properties`). Any divergence
+// between a schema file and this table is an error in the schema, never in the
+// test — the table reproduces the "Schema / Data Changes" section of the ficha.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,71 +12,71 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const DIR_SCHEMAS = fileURLToPath(new URL('../schemas/', import.meta.url));
+const SCHEMAS_DIR = fileURLToPath(new URL('../schemas/', import.meta.url));
 
-/** tipo -> { entidade, obrigatorios, opcionais } */
-export const TABELA = {
+/** type -> { entity, required, optional } */
+export const TABLE = {
   'job.created': {
-    entidade: 'job',
-    obrigatorios: ['title', 'entry_node_id'],
-    // `body` e `acceptance_criteria` entraram com o intake (t122): um trabalho
-    // pode nascer com conteúdo, e os critérios que o intake grava são
-    // preliminares — quem tem a palavra final é o nó `refinar`. `fields` entrou
-    // com os campos customizados por classe (t168): o que a classe declara no
-    // grafo dela, o trabalho carrega aqui. `tier` entrou com a triagem barata
-    // (t175): quanto o trabalho CUSTA para rodar, nunca por qual aresta ele
-    // sai — o grafo segue congelado.
-    opcionais: ['body', 'acceptance_criteria', 'fields', 'tier'],
+    entity: 'job',
+    required: ['title', 'entry_node_id'],
+    // `body` and `acceptance_criteria` came in with the intake (t122): a job
+    // can be born carrying content, and the criteria the intake writes are
+    // preliminary — the one that has the last word is the `refinar` node.
+    // `fields` came in with the per-class custom fields (t168): what the class
+    // declares in its own graph, the job carries here. `tier` came in with the
+    // cheap triage (t175): how much the job COSTS to run, never which edge it
+    // leaves by — the graph stays frozen.
+    optional: ['body', 'acceptance_criteria', 'fields', 'tier'],
   },
   'job.transitioned': {
-    entidade: 'job',
-    obrigatorios: ['to_node_id'],
-    opcionais: ['from_node_id'],
+    entity: 'job',
+    required: ['to_node_id'],
+    optional: ['from_node_id'],
   },
   'job.blocked': {
-    entidade: 'job',
-    // `consecutive_failures` entrou com o teto de falhas consecutivas (t265):
-    // quantas sessões falhadas em sequência, no mesmo nó, levantaram a bandeira.
-    // Opcional porque é o único motivo de bloqueio que tem sequência atrás de
-    // si — os outros quatro (falha antes da sessão, trabalho não commitado, nó
-    // sem a quem perguntar, escalação comum) não contam nada, e escrever um
-    // número ali seria inventar medição.
-    obrigatorios: ['reason'],
-    opcionais: ['consecutive_failures'],
+    entity: 'job',
+    // `consecutive_failures` came in with the ceiling on consecutive failures
+    // (t265): how many failed sessions in a row, at the same node, raised the
+    // flag. Optional because it is the only reason for blocking that has a run
+    // behind it — the other four (failure before the session, work left
+    // uncommitted, a node with nobody to ask, an ordinary escalation) count
+    // nothing, and writing a number there would be inventing a measurement.
+    required: ['reason'],
+    optional: ['consecutive_failures'],
   },
   'job.unblocked': {
-    entidade: 'job',
-    obrigatorios: [],
-    opcionais: [],
+    entity: 'job',
+    required: [],
+    optional: [],
   },
   'job.amended': {
-    entidade: 'job',
-    obrigatorios: ['changed_fields'],
-    opcionais: [],
+    entity: 'job',
+    required: ['changed_fields'],
+    optional: [],
   },
   'job.dependency_declared': {
-    entidade: 'job',
-    obrigatorios: ['depends_on_job_id'],
-    opcionais: [],
+    entity: 'job',
+    required: ['depends_on_job_id'],
+    optional: [],
   },
-  // O 18º tipo entrou com os ganchos declarados no grafo (t169): quando a
-  // entrega de um gancho esgota as seis tentativas, o único rastro observável
-  // fora da tabela de entregas é este evento. Os quatro campos são
-  // obrigatórios pela mesma razão dos de `session.permission_denied` — sem saber
-  // QUAL gancho, de QUAL nó, para QUAL url e com QUAL erro, o incidente não é
-  // auditável, e este log existe para ser auditado.
+  // The 18th type came in with the hooks declared in the graph (t169): when a
+  // hook delivery exhausts its six attempts, the only trace observable outside
+  // the deliveries table is this event. The four fields are required for the
+  // same reason as those of `session.permission_denied` — without knowing WHICH
+  // hook, of WHICH node, to WHICH url and with WHICH error, the incident is not
+  // auditable, and this log exists to be audited.
   'job.hook_failed': {
-    entidade: 'job',
-    obrigatorios: ['hook_id', 'node_id', 'url', 'last_error'],
-    opcionais: [],
+    entity: 'job',
+    required: ['hook_id', 'node_id', 'url', 'last_error'],
+    optional: [],
   },
-  // `silence_seconds` entrou com o segundo cão de guarda (t163): a sessão passa
-  // a declarar dois orçamentos independentes — relógio de parede e silêncio —
-  // e ambos são opcionais pela mesma razão, ausência = sem política própria.
+  // `silence_seconds` came in with the second watchdog (t163): the session now
+  // declares two independent budgets — wall clock and silence — and both are
+  // optional for the same reason, absence = no policy of its own.
   'session.opened': {
-    entidade: 'session',
-    obrigatorios: ['engine', 'working_dir', 'prompt'],
-    opcionais: [
+    entity: 'session',
+    required: ['engine', 'working_dir', 'prompt'],
+    optional: [
       'job_id',
       'node_id',
       'engine_session_ref',
@@ -86,44 +85,48 @@ export const TABELA = {
     ],
   },
   'session.finished': {
-    entidade: 'session',
-    obrigatorios: ['status'],
-    // `timeout_reason` (t163) é o que separa as duas paradas nossas sem que o
-    // enum de `status` cresça: os dois cães de guarda desembocam em
-    // `timed_out`, e a causa viaja no payload.
+    entity: 'session',
+    required: ['status'],
+    // `timeout_reason` (t163) is what separates our two kinds of stop without
+    // growing the `status` enum: both watchdogs end at `timed_out`, and the
+    // cause travels in the payload.
     //
-    // `models` (t172) é a identidade que faltava para a pergunta "custo por
-    // modelo": até aqui o log dizia qual MOTOR rodou (`session.opened.engine`) e
-    // nunca qual modelo. É lista porque uma sessão roda mais de um — medido
-    // contra a CLI real, um turno só devolveu dois — e colapsar em "o" modelo
-    // atribuiria a conta inteira ao errado.
+    // `models` (t172) is the identity that was missing for the question "cost
+    // per model": until here the log said which ENGINE ran
+    // (`session.opened.engine`) and never which model. It is a list because one
+    // session runs more than one — measured against the real CLI, a single turn
+    // gave back two — and collapsing it into "the" model would charge the whole
+    // bill to the wrong one.
     //
-    // `output` e `output_schema_error` entraram com a projeção de input por nó
-    // (t253): `output` é o resultado ESTRUTURADO que a sessão relata do nó, sem
-    // `required` aninhado nenhum, porque a forma de dentro é conferida contra o
-    // schema `output` da própria skill (D9) e não contra este envelope. Quando
-    // essa conferência recusa, o valor não é gravado e o que viaja no lugar dele
-    // é a lista de motivos em `output_schema_error` — nunca ao custo de registrar
-    // o status terminal da sessão, que é o fato que ninguém pode perder.
+    // `output` and `output_schema_error` came in with the per-node input
+    // projection (t253): `output` is the STRUCTURED result the session reports
+    // from the node, with no nested `required` at all, because the shape inside
+    // is checked against the skill's own `output` schema (D9) and not against
+    // this envelope. When that check refuses, the value is not written and what
+    // travels in its place is the list of reasons in `output_schema_error` —
+    // never at the cost of recording the session's terminal status, which is
+    // the fact nobody can lose.
     //
-    // `failure_kind` e `refusal_category` entraram com a recusa do engine
-    // (t265): `failed` é uma palavra só para duas coisas — um crash, que vale
-    // retentar, e um engine que RECUSOU responder, que se reproduz idêntico a
-    // cada tentativa (medido: quatro recusas seguidas no mesmo prompt, t198).
-    // O tipo é fechado porque a palavra é nossa; a categoria é aberta porque é
-    // a palavra do engine, exatamente como `models` ao lado.
+    // `failure_kind` and `refusal_category` came in with the engine's refusal
+    // (t265): `failed` is a single word for two things — a crash, which is
+    // worth retrying, and an engine that REFUSED to answer, which reproduces
+    // identically on every attempt (measured: four refusals in a row on the
+    // same prompt, t198). The kind is closed because the word is ours; the
+    // category is open because it is the engine's word, exactly like `models`
+    // beside it.
     //
-    // `output_accepted` entrou com o relato recusado que ainda assim movia o
-    // trabalho (t268). É o mesmo fato de `output_schema_error` visto do lado de
-    // quem age: a lista diz POR QUE um relato foi recusado e só existe quando
-    // houve recusa, e este diz SE ele foi aceito — gravado em todo fechamento,
-    // `true` inclusive quando nada foi relatado, `false` só quando o schema
-    // `output` da skill pinada recusou. Booleano e não derivação da lista
-    // porque quem lê é o runner, na resposta do próprio `PATCH /finish`, para
-    // decidir se o trabalho anda: ali "sem motivos" e "não conferido" seriam a
-    // mesma ausência, e a diferença entre as duas é um trabalho seguindo por
-    // uma aresta escolhida a partir de um relato que não foi gravado.
-    opcionais: [
+    // `output_accepted` came in with the refused report that moved the job
+    // anyway (t268). It is the same fact as `output_schema_error` seen from the
+    // acting side: the list says WHY a report was refused and exists only where
+    // there was a refusal, and this one says WHETHER it was accepted — written
+    // at every close, `true` included when nothing was reported, `false` only
+    // when the pinned skill's `output` schema refused. A boolean and not a
+    // derivation of the list, because the one who reads it is the runner, in
+    // the answer to its own `PATCH /finish`, deciding whether the job moves:
+    // there "no reasons" and "not checked" would be the same absence, and the
+    // difference between the two is a job travelling down an edge chosen from a
+    // report that was never written.
+    optional: [
       'exit_code',
       'usage',
       'timeout_reason',
@@ -135,103 +138,105 @@ export const TABELA = {
       'output_accepted',
     ],
   },
-  // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
-  // usar uma ferramenta que a política da sessão negou vira telemetria. Os três
-  // campos são obrigatórios — uma negação sem recurso, sem ferramenta ou sem
-  // motivo não é auditável, e este log existe para ser auditado.
+  // The 17th type came in with permission enforcement (t125): every attempt to
+  // use a tool the session policy denied becomes telemetry. The three fields
+  // are required — a denial without a resource, without a tool or without a
+  // reason is not auditable, and this log exists to be audited.
   'session.permission_denied': {
-    entidade: 'session',
-    obrigatorios: ['resource', 'tool', 'reason'],
-    opcionais: [],
+    entity: 'session',
+    required: ['resource', 'tool', 'reason'],
+    optional: [],
   },
   'input_request.created': {
-    entidade: 'input_request',
-    obrigatorios: ['job_id', 'kind', 'question', 'auto_approvable'],
-    // `node_id` desde a t167: de qual nó a pergunta veio, carimbado pelo servidor.
-    opcionais: ['session_id', 'node_id', 'context', 'options', 'recommendation', 'default_answer'],
+    entity: 'input_request',
+    required: ['job_id', 'kind', 'question', 'auto_approvable'],
+    // `node_id` since t167: which node the question came from, stamped by the server.
+    optional: ['session_id', 'node_id', 'context', 'options', 'recommendation', 'default_answer'],
   },
   'input_request.answered': {
-    entidade: 'input_request',
-    obrigatorios: ['answer', 'answered_by'],
-    opcionais: [],
+    entity: 'input_request',
+    required: ['answer', 'answered_by'],
+    optional: [],
   },
   'input_request.auto_resolved': {
-    entidade: 'input_request',
-    obrigatorios: ['answer', 'based_on'],
-    opcionais: [],
+    entity: 'input_request',
+    required: ['answer', 'based_on'],
+    optional: [],
   },
   'lease.granted': {
-    entidade: 'lease',
-    obrigatorios: ['job_id', 'runner_id', 'expires_at'],
-    opcionais: [],
+    entity: 'lease',
+    required: ['job_id', 'runner_id', 'expires_at'],
+    optional: [],
   },
   'lease.expired': {
-    entidade: 'lease',
-    obrigatorios: ['runner_id', 'reason'],
-    opcionais: [],
+    entity: 'lease',
+    required: ['runner_id', 'reason'],
+    optional: [],
   },
   'graph_version.registered': {
-    entidade: 'graph_version',
-    obrigatorios: ['graph_id', 'source'],
-    opcionais: ['parent_version', 'proposal_id'],
+    entity: 'graph_version',
+    required: ['graph_id', 'source'],
+    optional: ['parent_version', 'proposal_id'],
   },
   'graph_version.applied': {
-    entidade: 'graph_version',
-    obrigatorios: ['graph_id'],
-    opcionais: ['proposal_id'],
+    entity: 'graph_version',
+    required: ['graph_id'],
+    optional: ['proposal_id'],
   },
   'graph_version.reverted': {
-    entidade: 'graph_version',
-    obrigatorios: ['graph_id', 'target_version', 'reason'],
-    opcionais: [],
+    entity: 'graph_version',
+    required: ['graph_id', 'target_version', 'reason'],
+    optional: [],
   },
-  // O 20º tipo entrou com o estado de contrato da versão (t283): registrar um
-  // manifesto re-julga toda versão que o fixava e não pôde ser conferida, e cada
-  // uma que se move grava este evento. Os dois campos são obrigatórios porque um
-  // re-check que não diz para qual estado foi, nem sobre quantos problemas, não
-  // conta nada que a linha já não conte melhor. `problem_count` é contagem e não
-  // o relatório: o relatório está na linha, a um GET de distância.
+  // The 20th type came in with the version's contract state (t283): registering
+  // a manifest re-judges every version that pinned it and could not be checked,
+  // and each one that moves writes this event. Both fields are required because
+  // a re-check that says neither which state it went to nor over how many
+  // problems counts nothing the row does not already count better.
+  // `problem_count` is a count and not the report: the report is on the row, one
+  // GET away.
   'graph_version.contracts_checked': {
-    entidade: 'graph_version',
-    obrigatorios: ['state', 'problem_count'],
-    opcionais: [],
+    entity: 'graph_version',
+    required: ['state', 'problem_count'],
+    optional: [],
   },
-  // O 19º tipo entrou com a D21 (t245): o control plane declara a execução
-  // concluída, e é ele — só ele (D1) — quem afirma esse fato. Sem payload, pela
-  // mesma razão de `job.unblocked`: `execution_id`, `entity.id` e `occurred_at`
-  // do envelope já dizem de qual rodada se fala e quando ela acabou, e um campo
-  // a mais seria dado repetido dentro do próprio evento.
+  // The 19th type came in with D21 (t245): the control plane declares the
+  // execution finished, and it is the control plane — it alone (D1) — that
+  // asserts that fact. No payload, for the same reason as `job.unblocked`: the
+  // envelope's `execution_id`, `entity.id` and `occurred_at` already say which
+  // round is meant and when it ended, and one more field would be data repeated
+  // inside the event itself.
   'execution.finished': {
-    entidade: 'execution',
-    obrigatorios: [],
-    opcionais: [],
+    entity: 'execution',
+    required: [],
+    optional: [],
   },
 };
 
 const ENVELOPE = 'envelope.schema.json';
 
-function lerSchema(arquivo) {
-  const bruto = readFileSync(join(DIR_SCHEMAS, arquivo), 'utf8');
+function readSchema(file) {
+  const raw = readFileSync(join(SCHEMAS_DIR, file), 'utf8');
   try {
-    return JSON.parse(bruto);
-  } catch (erro) {
-    assert.fail(`${arquivo} não é JSON válido: ${erro.message}`);
+    return JSON.parse(raw);
+  } catch (error) {
+    assert.fail(`${file} is not valid JSON: ${error.message}`);
   }
 }
 
-function arquivosDeSchema() {
-  return readdirSync(DIR_SCHEMAS)
-    .filter((nome) => nome.endsWith('.schema.json'))
+function schemaFiles() {
+  return readdirSync(SCHEMAS_DIR)
+    .filter((name) => name.endsWith('.schema.json'))
     .sort();
 }
 
-test('o diretório contém o envelope e um schema por tipo de evento', () => {
-  const esperados = [ENVELOPE, ...Object.keys(TABELA).map((t) => `${t}.schema.json`)].sort();
-  assert.deepEqual(arquivosDeSchema(), esperados);
+test('the directory holds the envelope and one schema per event type', () => {
+  const expected = [ENVELOPE, ...Object.keys(TABLE).map((type) => `${type}.schema.json`)].sort();
+  assert.deepEqual(schemaFiles(), expected);
 });
 
-test('o envelope declara os campos comuns a todo evento', () => {
-  const envelope = lerSchema(ENVELOPE);
+test('the envelope declares the fields common to every event', () => {
+  const envelope = readSchema(ENVELOPE);
 
   assert.deepEqual(
     [...envelope.required].sort(),
@@ -245,123 +250,126 @@ test('o envelope declara os campos comuns a todo evento', () => {
   assert.equal(envelope.properties.occurred_at.format, 'date-time');
   assert.equal(envelope.properties.data.type, 'object');
 
-  const entidade = envelope.properties.entity;
-  assert.deepEqual([...entidade.required].sort(), ['id', 'type']);
-  // `execution` entrou com a D21 (t245): a rodada virou sujeito de evento, e o
-  // `entity.id` dela é o próprio `execution_id` — inteiro, como o de quase todo
-  // mundo aqui. A 0003 e a `routes/executions.ts` diziam o contrário ("não
-  // existe entidade execução"), e as duas são anteriores à decisão.
+  const entity = envelope.properties.entity;
+  assert.deepEqual([...entity.required].sort(), ['id', 'type']);
+  // `execution` came in with D21 (t245): the round became the subject of an
+  // event, and its `entity.id` is the `execution_id` itself — an integer, like
+  // almost everyone else's here. Migration 0003 and `routes/executions.ts` said
+  // the opposite ("there is no execution entity"), and both predate the decision.
   assert.deepEqual(
-    [...entidade.properties.type.enum].sort(),
+    [...entity.properties.type.enum].sort(),
     ['execution', 'graph_version', 'input_request', 'job', 'lease', 'session'],
   );
-  assert.deepEqual([...entidade.properties.id.type].sort(), ['integer', 'string']);
+  assert.deepEqual([...entity.properties.id.type].sort(), ['integer', 'string']);
 
-  const ator = envelope.properties.actor;
-  assert.deepEqual([...ator.required].sort(), ['ref', 'type']);
-  assert.deepEqual([...ator.properties.type.enum].sort(), ['agent', 'system', 'user']);
-  assert.equal(ator.properties.ref.type, 'string');
+  const actor = envelope.properties.actor;
+  assert.deepEqual([...actor.required].sort(), ['ref', 'type']);
+  assert.deepEqual([...actor.properties.type.enum].sort(), ['agent', 'system', 'user']);
+  assert.equal(actor.properties.ref.type, 'string');
 });
 
-for (const [tipo, spec] of Object.entries(TABELA)) {
-  const arquivo = `${tipo}.schema.json`;
+for (const [type, spec] of Object.entries(TABLE)) {
+  const file = `${type}.schema.json`;
 
-  test(`${arquivo} é JSON válido e estende o envelope`, () => {
-    const schema = lerSchema(arquivo);
-    assert.ok(Array.isArray(schema.allOf), `${arquivo}: falta o allOf`);
+  test(`${file} is valid JSON and extends the envelope`, () => {
+    const schema = readSchema(file);
+    assert.ok(Array.isArray(schema.allOf), `${file}: the allOf is missing`);
     const refs = schema.allOf.map((sub) => sub.$ref);
     assert.ok(
       refs.some((ref) => typeof ref === 'string' && ref.includes(ENVELOPE)),
-      `${arquivo}: nenhum allOf referencia ${ENVELOPE} (refs: ${JSON.stringify(refs)})`,
+      `${file}: no allOf references ${ENVELOPE} (refs: ${JSON.stringify(refs)})`,
     );
   });
 
-  test(`${arquivo} fixa properties.type.const igual ao nome do arquivo`, () => {
-    const schema = lerSchema(arquivo);
-    assert.equal(schema.properties.type.const, tipo);
+  test(`${file} pins properties.type.const to the name of the file`, () => {
+    const schema = readSchema(file);
+    assert.equal(schema.properties.type.const, type);
   });
 
-  test(`${arquivo} fixa a entidade do evento`, () => {
-    const schema = lerSchema(arquivo);
-    assert.equal(schema.properties.entity.properties.type.const, spec.entidade);
+  test(`${file} pins the entity of the event`, () => {
+    const schema = readSchema(file);
+    assert.equal(schema.properties.entity.properties.type.const, spec.entity);
   });
 
-  test(`${arquivo} declara os campos de dados da tabela`, () => {
-    const schema = lerSchema(arquivo);
-    const dados = schema.properties.data;
+  test(`${file} declares the data fields of the table`, () => {
+    const schema = readSchema(file);
+    const data = schema.properties.data;
 
     assert.deepEqual(
-      [...dados.required].sort(),
-      [...spec.obrigatorios].sort(),
-      `${arquivo}: data.required diverge da tabela`,
+      [...data.required].sort(),
+      [...spec.required].sort(),
+      `${file}: data.required diverges from the table`,
     );
     assert.deepEqual(
-      Object.keys(dados.properties ?? {}).sort(),
-      [...spec.obrigatorios, ...spec.opcionais].sort(),
-      `${arquivo}: data.properties diverge da tabela`,
+      Object.keys(data.properties ?? {}).sort(),
+      [...spec.required, ...spec.optional].sort(),
+      `${file}: data.properties diverges from the table`,
     );
     assert.equal(
-      dados.additionalProperties,
+      data.additionalProperties,
       false,
-      `${arquivo}: data deve fechar additionalProperties`,
+      `${file}: data has to close additionalProperties`,
     );
   });
 }
 
-test('t175 — job.created.data.tier fecha o conjunto em trivial, standard e null', () => {
-  // Estrutural, como o resto deste diretório (`examples.test.mjs` escreve a
-  // razão): sem ajv, o que se confere é a DECLARAÇÃO — e um enum declarado é
-  // exatamente o que separa "aceita os dois valores e o nulo" de "aceita
-  // qualquer string". A tabela em `src/db/event-validation.ts` é a duplicata
-  // que o servidor cobra em tempo de escrita; as duas têm que andar juntas, e
-  // é a asserção de `opcionais` acima que pega a divergência.
-  const tier = lerSchema('job.created.schema.json').properties.data.properties.tier;
+test('t175 — job.created.data.tier closes the set at trivial, standard and null', () => {
+  // Structural, like the rest of this directory (`examples.test.mjs` writes the
+  // reason down): with no ajv, what gets checked is the DECLARATION — and a
+  // declared enum is exactly what separates "accepts the two values and the
+  // null" from "accepts any string at all". The table in
+  // `src/db/event-validation.ts` is the duplicate the server charges at write
+  // time; the two have to move together, and it is the `optional` assertion
+  // above that catches the divergence.
+  const tier = readSchema('job.created.schema.json').properties.data.properties.tier;
 
-  assert.ok(tier, 'job.created não declara dados.tier');
-  assert.deepEqual([...tier.type].sort(), ['null', 'string'], 'null é resposta válida');
+  assert.ok(tier, 'job.created does not declare data.tier');
+  assert.deepEqual([...tier.type].sort(), ['null', 'string'], 'null is a valid answer');
   assert.deepEqual(
     [...tier.enum].sort((a, b) => String(a).localeCompare(String(b))),
     ['standard', 'trivial', null].sort((a, b) => String(a).localeCompare(String(b))),
-    'o enum fecha o conjunto: qualquer outra string é recusada',
+    'the enum closes the set: any other string is refused',
   );
 });
 
-test('nenhum schema descreve update ou delete de evento (append-only)', () => {
-  for (const arquivo of arquivosDeSchema()) {
-    const bruto = readFileSync(join(DIR_SCHEMAS, arquivo), 'utf8').toLowerCase();
-    for (const proibido of ['update', 'delete', 'atualiza', 'remove']) {
+test('no schema describes an update or a delete of an event (append-only)', () => {
+  for (const file of schemaFiles()) {
+    const raw = readFileSync(join(SCHEMAS_DIR, file), 'utf8').toLowerCase();
+    for (const forbidden of ['update', 'delete', 'atualiza', 'remove']) {
       assert.ok(
-        !bruto.includes(proibido),
-        `${arquivo}: menciona "${proibido}" — o log é append-only, a única operação é inserir`,
+        !raw.includes(forbidden),
+        `${file}: mentions "${forbidden}" — the log is append-only, the only operation is insert`,
       );
     }
   }
 });
 
-test('taxonomy.md referencia todos os schemas', () => {
-  // Item mecânico da definição de pronto. O resto do documento é prosa e é
-  // conferido por revisão humana no portão de aceite (exceção ao TDD da
-  // ficha); "existe schema sem entrada no catálogo" não é prosa.
+test('taxonomy.md references every schema', () => {
+  // The mechanical item of the definition of done. The rest of the document is
+  // prose and is checked by human review at the acceptance gate (an exception to
+  // the ficha's TDD); "there is a schema with no entry in the catalogue" is not
+  // prose.
   const doc = readFileSync(fileURLToPath(new URL('../taxonomy.md', import.meta.url)), 'utf8');
-  const ausentes = arquivosDeSchema().filter((nome) => !doc.includes(nome));
-  assert.deepEqual(ausentes, [], `schemas sem referência em taxonomy.md: ${ausentes.join(', ')}`);
+  const missing = schemaFiles().filter((name) => !doc.includes(name));
+  assert.deepEqual(missing, [], `schemas with no reference in taxonomy.md: ${missing.join(', ')}`);
 });
 
-test('nenhum tipo de evento fora do escopo da PoC', () => {
-  // `service_class` (urgência) e os eventos de proposta ficam fora da PoC
-  // (D6/D16). A checagem é por NOME DE TIPO, não por vocabulário: citar o
-  // topógrafo numa descrição é legítimo — ele é o consumidor desta telemetria.
-  const fora = [
+test('no event type outside the scope of the PoC', () => {
+  // `service_class` (urgency) and the proposal events stay outside the PoC
+  // (D6/D16). The check is by TYPE NAME, not by vocabulary: citing the
+  // topographer in a description is legitimate — it is the consumer of this
+  // telemetry.
+  const outOfScope = [
     'service_class',
     'proposta.criada',
     'proposta.aprovada',
     'proposta.aplicada',
     'proposta.revertida',
   ];
-  for (const arquivo of arquivosDeSchema()) {
-    const bruto = readFileSync(join(DIR_SCHEMAS, arquivo), 'utf8');
-    for (const termo of fora) {
-      assert.ok(!bruto.includes(termo), `${arquivo}: contém "${termo}", que está fora de escopo`);
+  for (const file of schemaFiles()) {
+    const raw = readFileSync(join(SCHEMAS_DIR, file), 'utf8');
+    for (const term of outOfScope) {
+      assert.ok(!raw.includes(term), `${file}: contains "${term}", which is outside the scope`);
     }
   }
 });

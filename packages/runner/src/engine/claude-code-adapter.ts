@@ -167,6 +167,24 @@ interface Session {
    * made up.
    */
   refusal: { category: string | null } | null;
+  /**
+   * Whether a frame said the ACCOUNT refused, rather than the engine (t296).
+   *
+   * `false` until one does, and it never goes back: a later frame that says
+   * nothing about a limit does not un-throttle the session, which is the rule
+   * the refusal beside it already follows.
+   */
+  quota: boolean;
+  /**
+   * When the account said it would reset, if any line said (t296).
+   *
+   * `null` is the ordinary case and the one the consumer has to work without:
+   * no engine promises this text. It is kept beside the flag rather than
+   * derived from it because the two do not arrive together — the sentence can
+   * be printed on a line of its own, before or after the frame that carries the
+   * status.
+   */
+  quotaResetAt: string | null;
   finished: boolean;
   refSent: boolean;
   clock: NodeJS.Timeout | null;
@@ -338,6 +356,201 @@ export function extractRefusal(
   };
 }
 
+/**
+ * Whether the terminal `result` frame says the ACCOUNT refused (t296, FR4).
+ *
+ * One key, and it was not guessed either: `api_error_status: 429` is what the
+ * n=3 round read off the real frame of a session that had just burned 25
+ * minutes and 4M cache tokens (`notas/2026-08-18-n3-round.md`, hole 1). Like
+ * the refusal above, it exited non-zero and looked exactly like a crash, so the
+ * runner bought the same answer twice more inside twenty seconds and then
+ * flagged the work as broken.
+ *
+ * `429` and not `terminal_reason` beside it: that field said `api_error`, which
+ * is every API error there is — a 500, an overload, a connection that dropped —
+ * and those are exactly the ones the next attempt SHOULD buy. The status code is
+ * the only thing on that frame that separates "come back later" from "try
+ * again now", and reading the looser field would have turned every transient
+ * server error into a quarter-hour wait.
+ *
+ * The comparison is strict, against the number: a `"429"` in a string is a
+ * frame this adapter does not recognize rather than one it half-reads, which is
+ * `extractRefusal`'s posture applied to a numeric field.
+ *
+ * @param frame A parsed line of the stream.
+ * @returns Whether this frame reports the account's own limit.
+ */
+export function extractQuota(frame: Record<string, unknown>): boolean {
+  return frame.api_error_status === 429;
+}
+
+/**
+ * The clock time and zone a limit message names, if a line names one.
+ *
+ * `resets 4:40pm Europe/Lisbon` is the shape that was measured, and the two
+ * halves are what make an instant out of it: a wall clock with no date, and the
+ * zone that clock is read in. Nothing else in the sentence is matched on — the
+ * prose around it is the engine's and is free to change.
+ */
+const RESET_PATTERN =
+  /reset[s]?(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+([A-Za-z][A-Za-z_-]*(?:\/[A-Za-z0-9_+-]+)*)/i;
+
+/** The fields of an instant, as a zone's own calendar reads it. */
+interface ZonedParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+/**
+ * How a zone reads an instant, or `null` when the zone is not a zone.
+ *
+ * `Intl` is the whole timezone database and it is already in the runtime, which
+ * is why no dependency is added for this: what a zone's offset was at a given
+ * instant is a question only a tz database can answer, and getting it wrong by
+ * an hour twice a year is the ordinary way hand-rolled offset arithmetic fails.
+ */
+function zonedParts(instantMs: number, zone: string): ZonedParts | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(new Date(instantMs));
+  } catch {
+    // An unrecognized zone throws `RangeError`, and that is the answer: a zone
+    // nobody can resolve is a hint this adapter does not have.
+    return null;
+  }
+
+  const read = (type: string): number => Number(parts.find((part) => part.type === type)?.value);
+  const zoned = {
+    year: read('year'),
+    month: read('month'),
+    day: read('day'),
+    // `hour12: false` still spells midnight `24` in some ICU builds, and `24:00`
+    // of one day is `00:00` of the next — which is the value being read here.
+    hour: read('hour') % 24,
+    minute: read('minute'),
+    second: read('second'),
+  };
+  return Object.values(zoned).some((value) => !Number.isFinite(value)) ? null : zoned;
+}
+
+/**
+ * The instant a wall clock names in a zone, resolved through that zone's offset.
+ *
+ * Two passes on purpose: the offset itself depends on the instant, so the first
+ * guess is corrected by the offset it lands in. Around a DST change the answer
+ * is one of the two candidates rather than an error — an hour of slack in a
+ * backoff hint is not worth a failure path, and the alternative is reporting
+ * nothing at all for every session that ends near a clock change.
+ */
+function instantOfWallClock(
+  zone: string,
+  date: Pick<ZonedParts, 'year' | 'month' | 'day'>,
+  hour: number,
+  minute: number,
+): number | null {
+  const asUtc = Date.UTC(date.year, date.month - 1, date.day, hour, minute);
+
+  let instant = asUtc;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const seen = zonedParts(instant, zone);
+    if (seen === null) return null;
+    const offset =
+      Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute, seen.second) -
+      Math.floor(instant / 1_000) * 1_000;
+    instant = asUtc - offset;
+  }
+  return instant;
+}
+
+/**
+ * When the account's quota resets, as a line of the stream said it (t296, FR4).
+ *
+ * Read off the RAW line rather than off a named field of the frame, and that is
+ * the one decision here worth defending. There is no captured 429 in this
+ * repository — the only evidence is the prose an incident note quoted — so
+ * whether this text travels in the terminal frame's `result`, in a `message`
+ * beside it, or in the "dying scream in plain text" the stream is already
+ * documented to mix in (`engine-adapter.md`) is not something anybody can state
+ * today. Matching on the sentence covers all three, and costs one `includes`
+ * per line for every session that never sees a limit.
+ *
+ * **It never throws, and every way of being unsure ends the same.** A line with
+ * no reset in it, a clock that is not a clock, a zone the runtime does not
+ * know, a missing zone entirely: all `undefined`. This is a HINT — what it buys
+ * is a shorter wait than the backoff ladder would give — and invariant 1 of the
+ * frozen contract ("onFinished exactly once, always") outranks any hint.
+ *
+ * The date comes from `now`, because the message carries none: the next
+ * occurrence of that wall clock in that zone, which is what "resets 4:40pm"
+ * means at 1pm and equally at 5pm.
+ *
+ * @param line A line of the stream, frame or not.
+ * @param nowMs The instant to resolve the missing date against.
+ * @returns An ISO 8601 instant, or `undefined` when the line named none.
+ */
+export function extractQuotaResetAt(line: string, nowMs: number = Date.now()): string | undefined {
+  // Cheap gate before the pattern: this runs on every line of every session,
+  // and the sessions that matter here are the ones measured in millions of
+  // tokens.
+  if (!line.includes('reset')) return undefined;
+
+  const match = RESET_PATTERN.exec(line);
+  if (match === null) return undefined;
+
+  const [, rawHour, rawMinute, meridiem, zone] = match;
+  if (rawHour === undefined || zone === undefined) return undefined;
+
+  const minute = rawMinute === undefined ? 0 : Number(rawMinute);
+  if (minute > 59) return undefined;
+
+  let hour = Number(rawHour);
+  if (meridiem === undefined) {
+    if (hour > 23) return undefined;
+  } else {
+    if (hour < 1 || hour > 12) return undefined;
+    hour = (hour % 12) + (meridiem.toLowerCase() === 'pm' ? 12 : 0);
+  }
+
+  const today = zonedParts(nowMs, zone);
+  if (today === null) return undefined;
+
+  const candidate = instantOfWallClock(zone, today, hour, minute);
+  if (candidate === null) return undefined;
+  if (candidate > nowMs) return new Date(candidate).toISOString();
+
+  // The clock has already gone past today: the reset the engine is talking
+  // about is the next one, which is tomorrow in the zone's own calendar.
+  //
+  // The day after is counted on the CALENDAR and not by adding 24 hours to the
+  // instant: near a DST change those two are different days, and near midnight
+  // they are different days in every zone that is not the one `Date` runs in.
+  const nextDay = new Date(Date.UTC(today.year, today.month - 1, today.day + 1));
+  const next = instantOfWallClock(
+    zone,
+    {
+      year: nextDay.getUTCFullYear(),
+      month: nextDay.getUTCMonth() + 1,
+      day: nextDay.getUTCDate(),
+    },
+    hour,
+    minute,
+  );
+  return next === null ? undefined : new Date(next).toISOString();
+}
+
 export class ClaudeCodeAdapter implements EngineAdapter {
   readonly engineName = 'claude-code';
 
@@ -455,6 +668,8 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       usage: null,
       models: null,
       refusal: null,
+      quota: false,
+      quotaResetAt: null,
       finished: false,
       refSent: false,
       clock: null,
@@ -677,6 +892,12 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    * report is the one the engine stands by.
    */
   #harvest(session: Session, line: string): void {
+    // BEFORE the frame check, and off the raw line: the reset instant is a
+    // sentence, and where the CLI prints it is exactly what no capture in this
+    // repository settles (t296). A frame's own field and the plain-text scream
+    // the stream is documented to mix in are both just lines here.
+    session.quotaResetAt = extractQuotaResetAt(line) ?? session.quotaResetAt;
+
     const frame = parseFrame(line);
     if (frame === null || frame.type !== 'result') return;
 
@@ -687,6 +908,9 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     session.usage = extractUsage(frame) ?? session.usage;
     session.models = extractModels(frame) ?? session.models;
     session.refusal = extractRefusal(frame) ?? session.refusal;
+    // Same rule again for the account's own limit (t296): a later frame that
+    // says nothing about a `429` does not un-throttle the session.
+    session.quota = extractQuota(frame) || session.quota;
   }
 
   /** Natural end of the process: drains what is left and classifies the outcome. */
@@ -787,6 +1011,20 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       ...(session.refusal === null || session.refusal.category === null
         ? {}
         : { refusalCategory: session.refusal.category }),
+      // ...and the third fact `failed` is one word for (t296). The status is
+      // untouched by it — the six members are frozen against this very case, in
+      // writing and by name (`engine-adapter.md`, "Rejected — a richer
+      // `SessionStatus`") — so what changes is the kind beside it and nothing
+      // else. AFTER the refusal and only when there is none: an engine that
+      // declared a refusal said something about its own answer, and a rate limit
+      // on top of that would be the account explaining a decision the engine had
+      // already taken.
+      ...(session.quota && session.refusal === null ? { failureKind: 'quota' as const } : {}),
+      // The hint, and only where it means something: a reset instant beside a
+      // session that was not throttled is a date nobody asked for.
+      ...(session.quota && session.quotaResetAt !== null
+        ? { quotaResetAt: session.quotaResetAt }
+        : {}),
     };
     session.listener.onFinished(
       status,

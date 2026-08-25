@@ -592,6 +592,62 @@ export interface SessionFinishDetail {
    * Absent follows `usage`'s discipline; an empty list is not an answer.
    */
   readonly models?: readonly string[];
+
+  /**
+   * What KIND of failure this was, when the engine said something the status
+   * cannot carry (t265, t296).
+   *
+   * The third use of this interface's additive growth point, and it is here for
+   * the same reason `timeoutReason` is: `failed` is one word for facts that
+   * deserve different answers. A crash is worth retrying — the process died and
+   * the next attempt may not. An engine REFUSAL is not: measured in t198, the
+   * same prompt was refused four times in a row before a fifth session worked,
+   * so a consumer that retries it buys the same answer again. A `quota` is worth
+   * retrying LATER: the account hit its own limit, which is nobody's mistake and
+   * stops being true at an instant the engine usually names — measured in t296,
+   * three attempts burned in twenty seconds and a work flagged as broken for it.
+   *
+   * A closed set, and the opposite openness decision from `refusalCategory`
+   * below: these words are OURS, and a value enters here when a kind of failure
+   * is measured, never because an engine invented one. This is also where a
+   * quota state was NOT allowed to become a seventh `SessionStatus` (see
+   * *Rejected — a richer `SessionStatus`*): one status, one cause beside it.
+   *
+   * Absent is the ordinary case and covers every session opened before the
+   * field existed. It is never inferred from an exit code: a non-zero exit is
+   * what all three have in common, which is exactly why the field had to exist.
+   */
+  readonly failureKind?: "engine_refusal" | "quota";
+
+  /**
+   * How the engine itself classified the refusal, when it classified it (t265).
+   *
+   * The engine's own word, verbatim and unmapped — `reasoning_extraction` is
+   * what the bisection read off the real frame. Open vocabulary, like `models`
+   * and unlike `failureKind`: a closed enum here would demand a release of this
+   * format every time an engine names a new category, and a category nobody can
+   * record is a diagnosis nobody can make.
+   *
+   * Absent is "the engine refused and said no more than that", a real shape of
+   * the frame and not a defect — the refusal itself travels in `failureKind`.
+   */
+  readonly refusalCategory?: string;
+
+  /**
+   * When the account's quota resets, as the engine best said it (t296).
+   *
+   * An ISO 8601 instant, and the one field here that never reaches the wire:
+   * there is no key for it in the control plane's session closure and no row in
+   * the event contract. It is a scheduling hint for whoever holds the work — wait
+   * until this instant instead of guessing at a backoff — and a hint that
+   * outlived the process that read it would be a measurement, which it is not.
+   *
+   * Absent is a case every consumer must answer for: no engine promises this
+   * text, and an adapter that could not parse what it was given reports nothing
+   * rather than a date it made up. Meaningful only beside
+   * `failureKind: "quota"`.
+   */
+  readonly quotaResetAt?: string;
 }
 
 /**

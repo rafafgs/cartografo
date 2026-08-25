@@ -88,6 +88,32 @@ export const DEFAULT_SILENCE_SECONDS = 300;
 export const DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES = 5;
 
 /**
+ * How long a work waits after each quota refusal, rung by rung (t296, FR7).
+ *
+ * The ladder is only reached when the engine did NOT name its own reset instant
+ * — when it does, that instant wins, because it is the truth and this is a
+ * guess. 30 seconds doubling to a 15-minute cap, and both ends were picked
+ * against the same incident (`notas/2026-08-18-n3-round.md`, hole 1): the
+ * measured re-leases were 3 seconds apart, which is fast enough to burn three
+ * attempts and the whole failure ceiling before anybody could read the log, and
+ * the measured window was hours, which is long enough that a wait growing past
+ * a quarter of an hour would only add latency to the recovery nobody is
+ * watching.
+ *
+ * It is a ladder and not a single number for the reason a single number cannot
+ * have both ends: the first rung has to be short, because a limit can be one
+ * minute of an unlucky burst, and the last has to be long, because an account
+ * that is genuinely out for the day should not be asked sixty times an hour.
+ *
+ * Nothing here is load-bearing to another decision. Frozen so a caller cannot
+ * mutate the default for every dispatch in the process, which is the same
+ * posture every other shared constant of this file has.
+ */
+export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
+  30_000, 60_000, 120_000, 300_000, 600_000, 900_000,
+]);
+
+/**
  * What `GET /v1/jobs/:id` gives back, in the part the dispatch reads.
  *
  * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
@@ -309,6 +335,22 @@ export interface ClaudeCodeDispatchOptions {
    * failure before a session creates no row for it to see.
    */
   maxConsecutivePreSessionFailures?: number;
+  /**
+   * How long each quota refusal makes a work wait, rung by rung (t296, FR7).
+   * Default: {@link DEFAULT_QUOTA_BACKOFF_MS}.
+   *
+   * The same override discipline the ceiling above has, applied to a list: what
+   * is not a usable policy — an empty ladder, a zero, a negative, a `NaN` — is
+   * "no override" and never "no wait", because a wait of zero is the loop this
+   * option exists to close. `resolveQuotaBackoff` (`quota-retry.ts`) is where
+   * that is decided.
+   *
+   * Only the fallback is configurable, and that is deliberate: when the engine
+   * names the instant its quota resets, THAT is what the work waits for, and a
+   * dispatch that could shorten it would be paying for a refusal it already
+   * knows the answer to.
+   */
+  quotaBackoffMs?: readonly number[];
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
   /**

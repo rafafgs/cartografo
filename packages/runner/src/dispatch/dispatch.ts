@@ -68,6 +68,13 @@
  * throws, and the CAP on those lives in the control plane, which is the only
  * side that can count across leases.
  *
+ * **And a QUOTA is neither of those** (t296). An account at its own limit
+ * refuses for a while and then stops, with nobody doing anything: blocking it
+ * flags an inbox for a fact that heals itself, and retrying it buys the same
+ * `429` three times in twenty seconds — measured. So the work stays a candidate
+ * and this runner stops offering it until the engine's own reset instant, or
+ * the next rung of a ladder when it named none (`quota-retry.ts`).
+ *
  * **And so is a report the CONTROL PLANE refused** (t268). The closure answers
  * whether what the session reported survived the `output` schema of the skill
  * its node pins; when it did not, nothing was stored, and this file stops the
@@ -116,7 +123,6 @@
  * fixed literal is `DEFAULT_INSTRUCTIONS`, in `options.ts`.
  */
 
-import { resolvePermissions } from '../engine/permission-policy.ts';
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import { SessionStartError } from '../engine/types.ts';
 import { createDispatchControlPlaneClient } from './control-plane-client.ts';
@@ -130,14 +136,9 @@ import {
 import { DispatchError, type DispatchOutcome } from './outcome.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
-import { PermissionDenialTracker } from './parse-permission-denial.ts';
+import { createPreSessionFailureHandler } from './pre-session-retry.ts';
+import { QUOTA_COOLDOWN_REASON, QuotaCooldownTracker } from './quota-retry.ts';
 import {
-  PreSessionFailureTracker,
-  handlePreSessionFailure,
-  resolvePreSessionFailureCeiling,
-} from './pre-session-retry.ts';
-import {
-  PermissionDenialReporter,
   advance,
   blockForEngineRefusal,
   blockForOutputSchemaRefusal,
@@ -150,6 +151,7 @@ import {
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy } from './resolve-node.ts';
 import { resolveSessionPlan, type SessionPlan } from './resolve-session-plan.ts';
+import { createSessionCollector } from './session-collector.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
 
@@ -187,16 +189,15 @@ export function createClaudeCodeDispatch(
   // forget the credential.
   const call = createDispatchControlPlaneClient(options);
 
-  // ONE tracker per dispatch, held in this closure and nowhere else (t272, FR2).
-  // The streak it counts is what turns "retry the next tick" into something with
-  // a floor, so it has to outlive a single call and may not be shared with a
-  // dispatch that was wired separately. What it deliberately does not do —
-  // survive a restart, be seen by a second runner — is argued in
-  // `pre-session-retry.ts`.
-  const preSessionFailures = new PreSessionFailureTracker();
-  const preSessionCeiling = resolvePreSessionFailureCeiling(
-    options.maxConsecutivePreSessionFailures,
-  );
+  // TWO policies per dispatch, each held in this closure and nowhere else
+  // (t272, FR2; t296, FR6): a streak of failures before a session, and a wait
+  // after an account said `429`. Both have to outlive a single call and neither
+  // may be shared with a dispatch that was wired separately — a module-level one
+  // would be a global, and the spikes do build two runners in one process. What
+  // neither of them survives — a restart, a second runner — is argued where each
+  // is written.
+  const preSession = createPreSessionFailureHandler(call, options.maxConsecutivePreSessionFailures);
+  const quotaCooldown = new QuotaCooldownTracker(options.quotaBackoffMs);
 
   // BOTH halves of the node's input, composed once (t270): the control plane's
   // projection and what only this machine knows. Which one wins a shared key —
@@ -205,15 +206,17 @@ export function createClaudeCodeDispatch(
   const resolveInput = createMergedInputResolver(options, call);
 
   return async (jobId: number): Promise<DispatchOutcome> => {
-    const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
+    // The cheapest stop this dispatch has, and first for that reason (t296,
+    // FR8): the account said `429`, and until it resets nothing is read, no tree
+    // is taken and no session is opened — which is the whole difference from the
+    // incident, where the second and third attempts each paid for a session to
+    // be told the same thing. The lease goes back through the controller's own
+    // `finally`, as it does for every work blocked before anything opened.
+    if (quotaCooldown.isCoolingDown(jobId, Date.now())) {
+      return { blocked: true, reason: QUOTA_COOLDOWN_REASON };
+    }
 
-    // Every failure before a session exists, through ONE decision (t272, FR5): a
-    // reason means the work was stopped and the site returns `{blocked}`, `null`
-    // means it rethrows exactly as it did before. Bound once because the three
-    // sites share the work, the client and the streak — and because a decision
-    // spelled three times is three decisions (`pre-session-retry.ts`).
-    const handle = async (error: unknown): Promise<string | null> =>
-      await handlePreSessionFailure(error, job, call, preSessionFailures, preSessionCeiling);
+    const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
 
     let plan: SessionPlan;
 
@@ -225,11 +228,13 @@ export function createClaudeCodeDispatch(
     try {
       plan = await resolveSessionPlan(call, job, options.engines, resolveInput);
     } catch (error) {
-      // `null` is "this one may well work next time": it goes up untouched, the
-      // controller's tick rejects, and the loop retries. A reason is the other
-      // half, and the block is what makes the work stop being a candidate at
-      // all — no new bookkeeping, just the filter `GET /v1/jobs` already has.
-      const reason = await handle(error);
+      // The first of the three sites that route through ONE decision (t272,
+      // FR5), so the three cannot drift into three policies. `null` is "this one
+      // may well work next time": it goes up untouched, the controller's tick
+      // rejects, and the loop retries. A reason is the other half, and the block
+      // is what makes the work stop being a candidate at all — no new
+      // bookkeeping, just the filter `GET /v1/jobs` already has.
+      const reason = await preSession.handle(error, job);
       if (reason === null) throw error;
       return { blocked: true, reason };
     }
@@ -255,7 +260,7 @@ export function createClaudeCodeDispatch(
     try {
       worktree = await options.worktrees.acquire(job.id);
     } catch (error) {
-      const reason = await handle(error);
+      const reason = await preSession.handle(error, job);
       if (reason === null) throw error;
       return { blocked: true, reason };
     }
@@ -280,24 +285,11 @@ export function createClaudeCodeDispatch(
         ...(permissions === undefined ? {} : { permissions }),
       });
 
-      const lines: string[] = [];
-      let engineRef: string | null = null;
-      let announceEnd: (outcome: Outcome) => void = () => undefined;
-      const end = new Promise<Outcome>((resolve) => {
-        announceEnd = resolve;
-      });
-
-      // The tracker watches for exactly what this session denied — the same list
-      // the adapter handed the engine, resolved from the same policy (t125, FR6).
-      // `permissions` and not `options.permissions`: since t161 the policy that
-      // reached the engine may be the skill's, and a tracker watching for the
-      // other one would report denials nobody was denied and miss the real ones.
-      const tracker = new PermissionDenialTracker(resolvePermissions(permissions).deniedTools);
-
-      // A denial can happen before `POST /v1/sessions` has answered, and there is
-      // no id to post it against until then. It waits inside the reporter, and
-      // the queue is drained as soon as the id exists (`report.ts`).
-      const denials = new PermissionDenialReporter(call);
+      // What this session PRODUCES, wired in one place (t296): its lines, its
+      // ref, its denials and its end. `session-collector.ts` says how each is
+      // caught; WHEN each is read is the sequence's business and stays here.
+      const collected = createSessionCollector(call, permissions);
+      const { lines, denials } = collected;
 
       // `startSession` rejects with `SessionStartError` when the session did not
       // come up — a dispatch that never happened, and the controller's `finally`
@@ -308,26 +300,7 @@ export function createClaudeCodeDispatch(
       // The handle it resolves with is kept, and that is the whole point: from
       // here on there is a live process in `spec.workingDir`, and the only thing
       // that can stop it is this handle (t148, FR1).
-      const handle = await route.adapter.startSession(spec, {
-        onOutput(line) {
-          lines.push(line);
-          for (const denial of tracker.observe(line)) denials.record(denial);
-        },
-        onEngineRef(ref) {
-          engineRef = ref;
-        },
-        onFinished(status, exitCode, detail) {
-          announceEnd({
-            status,
-            exitCode,
-            timeoutReason: detail?.timeoutReason,
-            usage: detail?.usage,
-            models: detail?.models,
-            failureKind: detail?.failureKind,
-            refusalCategory: detail?.refusalCategory,
-          });
-        },
-      });
+      const handle = await route.adapter.startSession(spec, collected.listener);
 
       // Announced the moment there is something to announce, and taken back
       // once there is not (t193, FR9). The two calls bracket the whole window in
@@ -354,7 +327,7 @@ export function createClaudeCodeDispatch(
           job_id: job.id,
           node_id: job.current_node_id,
           engine: route.adapter.engineName,
-          engine_session_ref: engineRef,
+          engine_session_ref: collected.engineRef(),
           working_dir: spec.workingDir,
           prompt: spec.prompt,
           timeout_seconds: spec.timeoutSeconds,
@@ -365,11 +338,11 @@ export function createClaudeCodeDispatch(
         // Whatever this work had been failing on, it now has a session row: that
         // is the signal it is unstuck, and a count left behind would be waiting
         // to tip the ceiling on some unrelated hiccup weeks later.
-        preSessionFailures.reset(job.id);
+        preSession.reset(job.id);
 
         denials.bindSession(session.id);
 
-        outcome = await end;
+        outcome = await collected.end;
         announceSessionEnd();
       } catch (error) {
         // Everything between the session coming up and its outcome being known
@@ -547,6 +520,16 @@ export function createClaudeCodeDispatch(
         return { blocked: true, reason };
       }
 
+      // And the account's own limit: the same shape with the block taken OUT
+      // (t296, FR8). No `blocks.ts` call, ever, on this path — `job.blocked`
+      // stays false and the work stays a candidate, and what holds it back is
+      // this process remembering until when. The reset instant rides BESIDE the
+      // outcome, never inside it: it has no key on the wire.
+      if (outcome.status === 'failed' && outcome.failureKind === 'quota') {
+        quotaCooldown.recordQuotaFailure(job.id, collected.quotaResetAt(), Date.now());
+        return { blocked: true, reason: QUOTA_COOLDOWN_REASON };
+      }
+
       // Asking is a successful dispatch — the question is already recorded above,
       // and the work is already blocked. What is NOT successful is a session that
       // died: reporting that as a normal dispatch would hide a broken engine
@@ -558,6 +541,10 @@ export function createClaudeCodeDispatch(
           outcome.exitCode,
         );
       }
+
+      // A session that COMPLETED is proof the account answers again, so the
+      // ladder starts over (t296, FR8).
+      quotaCooldown.reset(job.id);
 
       // A session ran and everything it owed was written. Said out loud since
       // t252, because the caller now has two normal endings to tell apart.
@@ -589,7 +576,7 @@ export function createClaudeCodeDispatch(
       // decision's business, and reordering the two would be exactly the kind of
       // silent regression the comment above is guarding.
       if (error instanceof SessionStartError) {
-        const reason = await handle(error);
+        const reason = await preSession.handle(error, job);
         if (reason !== null) return { blocked: true, reason };
       }
 

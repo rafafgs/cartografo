@@ -319,25 +319,29 @@ export interface SessionFinishDetail {
 
   /**
    * What KIND of failure this was, when the engine said something the status
-   * cannot carry (t265).
+   * cannot carry (t265, t296).
    *
    * The third use of this interface's additive-growth point, and it is here for
-   * the same reason `timeoutReason` is: `failed` is one word for two facts that
+   * the same reason `timeoutReason` is: `failed` is one word for facts that
    * deserve different answers. A crash is worth retrying — the process died, and
    * the next attempt may not. An engine REFUSAL is not: measured in t198, the
    * same prompt was refused four times in a row before a fifth session worked,
-   * so a consumer that retries it is buying the same answer again.
+   * so a consumer that retries it is buying the same answer again. And a
+   * `quota` is worth retrying LATER and not now: the account hit its own limit,
+   * which is nobody's mistake and stops being true at an instant the engine
+   * usually names — measured in t296, three attempts burned in twenty seconds
+   * for US$9.3 and a work flagged as broken.
    *
-   * A closed set of one, and the opposite openness decision from
-   * `refusalCategory` below: this word is OURS. A second value enters here when a
-   * second failure kind is measured, never because an engine invented one.
+   * A closed set, and the opposite openness decision from `refusalCategory`
+   * below: these words are OURS. The second value entered here because a second
+   * failure kind was measured, never because an engine invented one.
    *
    * Absent is the ordinary case and covers every session opened before this
    * field existed — a crash, a clean end, a cancel. It is never inferred from an
-   * exit code: a non-zero exit is what a refusal and a crash have in common,
-   * which is exactly why this field had to exist.
+   * exit code: a non-zero exit is what all three have in common, which is
+   * exactly why this field had to exist.
    */
-  readonly failureKind?: 'engine_refusal';
+  readonly failureKind?: 'engine_refusal' | 'quota';
 
   /**
    * How the engine itself classified the refusal, when it classified it (t265).
@@ -353,6 +357,24 @@ export interface SessionFinishDetail {
    * `failureKind`.
    */
   readonly refusalCategory?: string;
+
+  /**
+   * When the account's quota resets, as the engine best said it (t296).
+   *
+   * An ISO 8601 instant, and the ONE field of this interface that never reaches
+   * the wire: there is no key for it in `PATCH /v1/sessions/:id/finish` and no
+   * row in the event contract. It is a scheduling hint for whoever is holding
+   * the work — the runner waits until this instant instead of guessing at a
+   * backoff — and a hint that outlives the process that read it would be a
+   * measurement, which this is not.
+   *
+   * Absent is the ordinary case, and it is a case the consumer has to have an
+   * answer for: no engine promises this text, no capture of it exists in this
+   * repository outside one quoted line of an incident note, and an adapter that
+   * could not parse what it was given reports nothing rather than a date it
+   * made up. It is meaningful only beside `failureKind: 'quota'`.
+   */
+  readonly quotaResetAt?: string;
 }
 
 /**

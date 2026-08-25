@@ -88,10 +88,11 @@
         "failure_kind": {
           "enum": [
             "engine_refusal",
+            "quota",
             null
           ],
-          "description": "What KIND of failure this was, when the status alone does not say (t265). The same move as timeout_reason, applied to the other ambiguous status: a crash and an engine that REFUSED to answer both end up in failed, and only the refusal reproduces identically on every retry — measured in t198, the same prompt was refused four times in a row before the fifth session worked. A closed set because the word is OURS: a second value enters when a second kind of failure is measured, never because an engine invented one. null/absent when the adapter reported no kind at all — never deduced from the exit code, which is precisely what a refusal and a crash have in common.",
-          "examples": ["engine_refusal", null]
+          "description": "What KIND of failure this was, when the status alone does not say (t265, t296). The same move as timeout_reason, applied to the other ambiguous status: a crash, an engine that REFUSED to answer and an account that answered 429 all end up in failed, and the three deserve different answers — a crash is worth retrying now, a refusal reproduces identically on every retry (measured in t198: the same prompt refused four times in a row before the fifth session worked), and a quota heals itself at a known instant (measured in t296: three attempts in twenty seconds, US$9.3, and a job flagged 'consecutive failures' for an account that was merely at its limit). A closed set because the word is OURS: a second value entered when a second kind of failure was measured, never because an engine invented one. null/absent when the adapter reported no kind at all — never deduced from the exit code, which is precisely what all three have in common.",
+          "examples": ["engine_refusal", "quota", null]
         },
         "refusal_category": {
           "type": [

@@ -416,13 +416,16 @@ export interface FinishSessionInput {
   exit_code?: unknown;
   timeout_reason?: unknown;
   /**
-   * What KIND of failure this was, when `failed` alone does not say (t265).
+   * What KIND of failure this was, when `failed` alone does not say (t265,
+   * t296).
    *
-   * Today one value, `engine_refusal`: the engine refused the request before
-   * working. It rides in the event and in nothing else — no column, no field on
-   * `GET /v1/sessions` — because the two consumers it has are the log and the
-   * block reason, and promoting it to the projection before a third one exists
-   * is how a schema grows fields nobody reads.
+   * Two values. `engine_refusal`: the engine refused the request before
+   * working. `quota`: the ACCOUNT answered `429`, which is not the work's fault
+   * and stops being true by itself. Either one rides in the event and in
+   * nothing else — no column, no field on `GET /v1/sessions` — because the
+   * consumers it has are the log, the block reason and the guard below, and
+   * promoting it to the projection before a reader exists is how a schema grows
+   * fields nobody reads.
    */
   failure_kind?: unknown;
   /** How the engine classified its own refusal, when it did (t265). */
@@ -735,9 +738,11 @@ export function finishSession(
     // Three guards, and each one excludes a different thing. Anything but
     // `failed` is not a failure to count — `timed_out` is a stop of OURS, and
     // `completed` is what resets the streak. A `failure_kind` present means the
-    // runner is already blocking this one on its own account, and two owners for
-    // one flag is how a job ends up blocked with nothing pending. And a session
-    // with no job belongs to no streak at all.
+    // runner is already handling this one on its own account — blocking a
+    // refusal (t265) or waiting out a quota (t296) — and a second owner is how a
+    // job ends up blocked with nothing pending, or blocked for an account that
+    // will answer again in an hour. And a session with no job belongs to no
+    // streak at all.
     if (data.status === 'failed' && data.failure_kind === null && row.job_id !== null) {
       blockOnRepeatedFailure(db, row.job_id, row.node_id, timestamp);
     }

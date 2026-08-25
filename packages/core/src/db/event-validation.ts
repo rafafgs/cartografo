@@ -295,12 +295,17 @@ const RULES: Record<string, TypeRule> = {
       // in the payload — the same reasoning that kept quota states out of the
       // adapter's own status vocabulary.
       timeout_reason: optional('string', { values: ['wall_clock', 'silence'] }),
-      // What KIND of failure it was, when `failed` alone does not say (t265).
-      // The same move `timeout_reason` above makes, applied to the other
-      // ambiguous status: a crash and an engine that REFUSED to answer both land
-      // on `failed`, and only the second one reproduces identically on every
-      // retry. Closed set, like `tier` and unlike `models`: this word is ours.
-      failure_kind: optional('string', { values: ['engine_refusal'] }),
+      // What KIND of failure it was, when `failed` alone does not say (t265,
+      // t296). The same move `timeout_reason` above makes, applied to the other
+      // ambiguous status: a crash, an engine that REFUSED to answer and an
+      // ACCOUNT that answered `429` all land on `failed`, and the three want
+      // three different answers — retry now, never retry, retry after the reset.
+      // Closed set, like `tier` and unlike `models`: this word is ours, and the
+      // second value entered because a second kind was measured
+      // (`notas/2026-08-18-n3-round.md`, hole 1), never because an engine
+      // invented one. No cross-field check against `status` here either, for the
+      // reason `timeout_reason` has never had one.
+      failure_kind: optional('string', { values: ['engine_refusal', 'quota'] }),
       // ...and how the engine classified its own refusal. Open, like `models`
       // beside it and for the same reason: the category is the ENGINE's word
       // (`reasoning_extraction` is what t198 measured), and a closed enum would

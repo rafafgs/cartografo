@@ -193,3 +193,53 @@ export async function handlePreSessionFailure(
   tracker.reset(job.id);
   return reason;
 }
+
+/**
+ * The whole pre-session decision, wired for one dispatch (t296).
+ *
+ * Three things travelled together from the day this module was written — a
+ * tracker that must not be shared, a ceiling that must be resolved once, and
+ * the one call that reads both — and they were assembled at the top of
+ * `dispatch.ts` because there was nowhere else to put them. There is now, and
+ * it is here: a wiring is not a sequence, and the orchestrator's whole job is
+ * the sequence (the rule its own header states, and the reason its 600-line
+ * budget keeps being spent on it).
+ *
+ * Nothing about the policy changed with the move. The tracker is still one per
+ * dispatch and still held in a closure — a module-level one would be a global,
+ * and two runners in one process would count each other's failures — and the
+ * ceiling is still resolved once, so three call sites cannot drift into three
+ * policies.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param declaredCeiling What the dispatch was configured with, if anything.
+ * @returns The decision, bound to this dispatch's own streaks.
+ */
+export function createPreSessionFailureHandler(
+  call: ControlPlaneCall,
+  declaredCeiling: number | undefined,
+): PreSessionFailureHandler {
+  const tracker = new PreSessionFailureTracker();
+  const ceiling = resolvePreSessionFailureCeiling(declaredCeiling);
+
+  return {
+    handle: async (error, job) => handlePreSessionFailure(error, job, call, tracker, ceiling),
+    reset: (jobId) => {
+      tracker.reset(jobId);
+    },
+  };
+}
+
+/** What one dispatch holds of the decision above. */
+export interface PreSessionFailureHandler {
+  /**
+   * Decides one failure that happened before a session existed.
+   *
+   * @returns The reason the work was stopped with, or `null` when the caller
+   *   should rethrow and let the next tick try again.
+   */
+  handle(error: unknown, job: PreSessionRetryJob): Promise<string | null>;
+
+  /** Forgets a work's streak, because a session opened (t272, FR6). */
+  reset(jobId: number): void;
+}

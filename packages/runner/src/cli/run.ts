@@ -14,8 +14,8 @@
  * Three decisions worth stating, because each one has a plausible opposite:
  *
  * - **Pairing comes before the first tick, always.** A runner that asks for a
- *   lease without having registered gets `404 runner_desconhecido`
- *   (`packages/core/src/routes/leases.ts:169`), which is a configuration error
+ *   lease without having registered gets `404 unknown_runner`
+ *   (`packages/core/src/routes/leases.ts:203`), which is a configuration error
  *   dressed as a queue answer — insisting on it never helps.
  * - **A tick that rejects is logged and the loop keeps turning.** The lease is
  *   already back by the time the rejection gets here: the controller returns it

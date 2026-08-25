@@ -274,7 +274,7 @@ test('AT13 — a denied lease reaches the caller as a reason, not as an error', 
 test('AT13 — an error answer of the control plane becomes an exception with the status', async () => {
   const { ControlPlaneClient, ControlPlaneClientError } = await loadClient();
 
-  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { erro: 'runner_desconhecido' } }));
+  const { fetchImpl } = fakeFetch(() => ({ status: 404, body: { error: 'unknown_runner' } }));
   const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
 
   await assert.rejects(

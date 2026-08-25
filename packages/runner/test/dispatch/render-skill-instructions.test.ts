@@ -87,7 +87,7 @@ function registeredSkill(overrides: Record<string, unknown> = {}): Record<string
     },
     instructions: '# Check one step\n\nJudge with your own evidence, never with the report of whoever produced it.',
     origin: { type: 'native' },
-    registrado_em: '2026-08-15T12:00:00.000Z',
+    registered_at: '2026-08-15T12:00:00.000Z',
     ...overrides,
   };
 }

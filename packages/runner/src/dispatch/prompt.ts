@@ -58,11 +58,18 @@ export interface Question {
   answer: string | null;
   answered_by: string | null;
   /**
-   * Where the decision came from.
+   * Where the decision came from: `user` or `auto`, and nothing else.
    *
-   * The KEY went English with the API in t226; the VALUES did not (`usuario`,
-   * `auto`, `recomendacao`, …) — those are the `input_request.answered` payload's
-   * vocabulary, which is D20's second child.
+   * The KEY went English with the API in t226 and the VALUES followed with
+   * t235, D20's fifth child, which rewrote the column's own `CHECK` to
+   * `('user','auto')` (`packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql:98`).
+   * This comment said otherwise until t323 — it still listed the pre-t235
+   * spellings — and the fixture of `test/dispatch/prompt.test.ts` was built on
+   * the claim, with a third value that had never been in the enum at all.
+   *
+   * Read as `string | null` and not as the union, because it is what a body
+   * carried: only `auto` is branched on below, and a value this projection has
+   * never seen is a person's answer, not a crash.
    */
   source: string | null;
 }

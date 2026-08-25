@@ -195,8 +195,8 @@ test('t162 — the runner is an installable command, started by plain node', asy
         runner_id: runnerId,
         project_id: 1,
         job_id: 999_162,
-        teto_runner: 1,
-        teto_projeto: 1,
+        runner_cap: 1,
+        project_cap: 1,
         ttl_seconds: 1,
       }),
     });
@@ -205,7 +205,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
     // by the `400 invalid_body` this very call used to earn, so the case passed
     // for as long as the body named fields the route does not have (t323).
     assert.equal(response.status, 201, `the command started but never paired: ${body}`);
-    assert.doesNotMatch(body, /runner_desconhecido/);
+    assert.doesNotMatch(body, /unknown_runner/);
     assert.equal(
       runner.err(),
       '',

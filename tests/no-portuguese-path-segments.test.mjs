@@ -356,7 +356,6 @@ test('AT2 — the sweep spares the names that replaced them', () => {
     'schema/examples/graph-valid-minimal.json',
     'docs/formats/engine-adapter.md',
     'scripts/validate-graph.mjs',
-    'tests/fixtures/bets-asymmetric-thesis-example.json',
     // the three package identities that replaced the ones above (t303)
     'packages/surveyor/bin/surveyor.mjs',
     'packages/screen/bin/screen.mjs',

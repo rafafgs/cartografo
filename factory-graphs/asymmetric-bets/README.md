@@ -182,7 +182,7 @@ node's `skill_ref` pins (D4).
 This bundle's acceptance tests are in
 [`tests/factory-graph-2.test.mjs`](../../tests/factory-graph-2.test.mjs)
 (`node --test`), with the crossing fixture in
-[`tests/fixtures/bets-asymmetric-thesis-example.json`](../../tests/fixtures/bets-asymmetric-thesis-example.json).
+[`tests/fixtures/asymmetric-bets-crossing.fixture.json`](../../tests/fixtures/asymmetric-bets-crossing.fixture.json).
 
 ## Directory convention
 
@@ -250,11 +250,14 @@ trap for whoever comes next.
    commit on `main`. This bundle follows bundle 1's precedent — whose acceptance
    criterion is also the deterministic validator, and not "import it through the
    API" — and proves the crossing at the level that is already verifiable today:
-   a fixture of a real thesis in which each node's conforming output feeds the
-   next node's input, contract by contract, up to `decide`, where no edge is
-   followed without a recorded human answer (`tests/factory-graph-2.test.mjs`,
-   AT11). Once `t109` exists, a real execution test through the runner is
-   stronger than this one and worth writing.
+   a fixture in which each node's conforming output feeds the next node's
+   input, contract by contract, up to `decide`, where no edge is followed
+   without a recorded human answer (`tests/factory-graph-2.test.mjs`, AT11).
+   The fixture carries no thesis: since `t308` its payloads are the smallest
+   English values that still validate against both contracts of every node, so
+   what it demonstrates is the shape the contracts agree on and nothing about
+   any particular investment. Once `t109` exists, a real execution test through
+   the runner is stronger than this one and worth writing.
 6. **The entry node read an input nobody assembled** (`t260`). Until that
    ticket, `triar-tese` — `triage-thesis` since the D24 translation — named
    `{{input.tese.titulo}}`, `{{input.tese.ativo}}`, `{{input.tese.hipotese}}` and

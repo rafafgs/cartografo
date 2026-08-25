@@ -778,12 +778,24 @@ test('AT17 — a path that walks through a value that is not an object is unreso
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const BETS_SKILLS_DIR = path.join(REPO_ROOT, 'factory-graphs', 'asymmetric-bets', 'skills');
-const BETS_FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'bets-asymmetric-thesis-example.json');
+const BETS_FIXTURE = path.join(
+  REPO_ROOT,
+  'tests',
+  'fixtures',
+  'asymmetric-bets-crossing.fixture.json',
+);
 
-/** One step of the crossing the t116 fixture hand-authored. */
+/**
+ * One step of the crossing the t116 fixture hand-authored.
+ *
+ * The frame keys are `crossing`/`node`/`input` since t308, which rebuilt the
+ * fixture in English and dropped the invented thesis it used to carry. What
+ * this case reads out of it did not change: the hand-authored input of each
+ * node, against the manifest that node's graph entry pins.
+ */
 interface CrossingStep {
-  no: string;
-  entrada: Record<string, unknown>;
+  node: string;
+  input: Record<string, unknown>;
 }
 
 /** The six nodes the fixture models, each with the skill its graph node pins. */
@@ -834,13 +846,13 @@ function factoryNode(nodeId: string, manifest: Record<string, unknown>): Resolve
 
 test('AT18 — the asymmetric-bets manifests resolve against the crossing fixture', async (parent) => {
   const { renderSkillInstructions } = await loadModule();
-  const fixture = JSON.parse(readFileSync(BETS_FIXTURE, 'utf8')) as { travessia: CrossingStep[] };
+  const fixture = JSON.parse(readFileSync(BETS_FIXTURE, 'utf8')) as { crossing: CrossingStep[] };
 
   let covered = 0;
 
   for (const [nodeId, skillId] of BETS_NODES) {
     await parent.test(`${nodeId} → ${skillId}`, async () => {
-      const step = fixture.travessia.find((entry) => entry.no === nodeId);
+      const step = fixture.crossing.find((entry) => entry.node === nodeId);
       assert.ok(step !== undefined, `the fixture has no step for the node "${nodeId}"`);
 
       const manifest = factoryManifest(skillId);
@@ -851,7 +863,7 @@ test('AT18 — the asymmetric-bets manifests resolve against the crossing fixtur
       const rendered = await renderSkillInstructions(
         factoryNode(nodeId, manifest),
         (await makeReader(manifest)).read,
-        step.entrada,
+        step.input,
       );
 
       assert.ok(rendered !== null);
@@ -908,7 +920,7 @@ test('AT18 — the asymmetric-bets manifests resolve against the crossing fixtur
     );
 
     // And the claim that made it a separate case: strip the two wiring fields
-    // and it is exactly those two that no thesis fixture could have supplied.
+    // and it is exactly those two that no crossing fixture could have supplied.
     const UnresolvedPlaceholderError = await loadUnresolvedError();
     await assert.rejects(
       async () =>

@@ -1,0 +1,364 @@
+{
+  "description": "The crossing fixture of factory graph 2 (asymmetric-bets), read by AT11 and t276 of tests/factory-graph-2.test.mjs and by AT18 of packages/runner/test/dispatch/render-skill-instructions.test.ts. It is deliberately not a thesis: the values are the smallest ones that still validate against both contracts of every node, so what the fixture proves is that the six contracts fit into one another and that `decide` refuses an outcome with no recorded human answer — never that any thesis is any good. The frame keys below (`crossing`, `node`, `input`, `output`) belong to this file alone. The keys inside the payloads belong to the manifests, and `perguntas_respondidas` / `pergunta` / `resposta` are the control plane's own projection vocabulary, which is why they are the only Portuguese left here.",
+  "allocation_question": {
+    "id": "allocation-1",
+    "pergunta": "Allocate 1% of capital to ASSET-1, exiting if the sample exit trigger fires?",
+    "resposta": "Approved: allocate 1% of capital, exiting in full if the sample exit trigger fires."
+  },
+  "expected_edge": "approved",
+  "crossing": [
+    {
+      "node": "triage",
+      "input": {
+        "job": {
+          "id": 1,
+          "title": "ASSET-1 sample crossing",
+          "body": "A hypothesis in one line, present so the triage has prose to read."
+        },
+        "project": {
+          "triage_criteria": ["criterion-1"],
+          "portfolio": {
+            "open_positions": 0,
+            "current_exposure_pct": 0
+          },
+          "circle_of_competence": ["competence-1"]
+        },
+        "asset": "ASSET-1",
+        "premise_source": "source-1",
+        "intended_size": 1
+      },
+      "output": {
+        "outcome": "pass",
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        },
+        "evaluated_criteria": [
+          {
+            "criterion": "criterion-1",
+            "verdict": "meets",
+            "evidence": "evidence-1"
+          }
+        ],
+        "rationale": "The single criterion is met, so the crossing advances.",
+        "note": "Minimal payload: the shape is the subject here, not the content."
+      }
+    },
+    {
+      "node": "collect-fundamentals",
+      "input": {
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        }
+      },
+      "output": {
+        "fundamentals": {
+          "summary": "One sourced figure, which is the least this contract accepts.",
+          "figures": [
+            {
+              "metric": "metric-1",
+              "value": "1",
+              "period": "period-1",
+              "source": "source-1"
+            }
+          ]
+        },
+        "assumptions": [
+          {
+            "assumption": "assumption-1",
+            "source": "source-1",
+            "confidence": "medium"
+          }
+        ],
+        "note": "Minimal payload: one figure and one sourced assumption."
+      }
+    },
+    {
+      "node": "analyze-asymmetry",
+      "input": {
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        },
+        "fundamentals": {
+          "summary": "One sourced figure, which is the least this contract accepts.",
+          "figures": [
+            {
+              "metric": "metric-1",
+              "value": "1",
+              "period": "period-1",
+              "source": "source-1"
+            }
+          ]
+        },
+        "assumptions": [
+          {
+            "assumption": "assumption-1",
+            "source": "source-1",
+            "confidence": "medium"
+          }
+        ]
+      },
+      "output": {
+        "asymmetry": {
+          "downside_max_pct": 10,
+          "upside_target_pct": 30,
+          "asymmetry_ratio": 3,
+          "scenarios": [
+            {
+              "name": "scenario-1",
+              "probability": 0.6,
+              "return_pct": 30,
+              "key_assumptions": ["assumption-1"]
+            },
+            {
+              "name": "scenario-2",
+              "probability": 0.4,
+              "return_pct": -10,
+              "key_assumptions": ["assumption-1"]
+            }
+          ]
+        },
+        "note": "Minimal payload: the two scenarios the contract demands, and no more."
+      }
+    },
+    {
+      "node": "red-team",
+      "input": {
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        },
+        "fundamentals": {
+          "summary": "One sourced figure, which is the least this contract accepts.",
+          "figures": [
+            {
+              "metric": "metric-1",
+              "value": "1",
+              "period": "period-1",
+              "source": "source-1"
+            }
+          ]
+        },
+        "assumptions": [
+          {
+            "assumption": "assumption-1",
+            "source": "source-1",
+            "confidence": "medium"
+          }
+        ],
+        "asymmetry": {
+          "downside_max_pct": 10,
+          "upside_target_pct": 30,
+          "asymmetry_ratio": 3,
+          "scenarios": [
+            {
+              "name": "scenario-1",
+              "probability": 0.6,
+              "return_pct": 30,
+              "key_assumptions": ["assumption-1"]
+            },
+            {
+              "name": "scenario-2",
+              "probability": 0.4,
+              "return_pct": -10,
+              "key_assumptions": ["assumption-1"]
+            }
+          ]
+        }
+      },
+      "output": {
+        "outcome": "pass",
+        "objections": [
+          {
+            "objection": "objection-1",
+            "severity": "low",
+            "thesis_answer": "answer-1"
+          }
+        ],
+        "researched_counter_evidence": [
+          {
+            "claim_attacked": "assumption-1",
+            "source": "source-1",
+            "finding": "finding-1"
+          }
+        ],
+        "note": "The single objection is low and answered, so the crossing survives."
+      }
+    },
+    {
+      "node": "size-risk",
+      "input": {
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        },
+        "asymmetry": {
+          "downside_max_pct": 10,
+          "upside_target_pct": 30,
+          "asymmetry_ratio": 3,
+          "scenarios": [
+            {
+              "name": "scenario-1",
+              "probability": 0.6,
+              "return_pct": 30,
+              "key_assumptions": ["assumption-1"]
+            },
+            {
+              "name": "scenario-2",
+              "probability": 0.4,
+              "return_pct": -10,
+              "key_assumptions": ["assumption-1"]
+            }
+          ]
+        },
+        "objections": [
+          {
+            "objection": "objection-1",
+            "severity": "low",
+            "thesis_answer": "answer-1"
+          }
+        ],
+        "project": {
+          "capital": {
+            "total": 100000,
+            "currency": "USD",
+            "current_exposure_pct": 0
+          }
+        }
+      },
+      "output": {
+        "sizing": {
+          "position_size_pct": 1,
+          "max_accepted_loss_pct": 10,
+          "exit_trigger": "trigger-1",
+          "horizon": "horizon-1"
+        },
+        "note": "Minimal payload: one size, one ceiling, one trigger, one horizon."
+      }
+    },
+    {
+      "node": "decide",
+      "input": {
+        "triaged_thesis": {
+          "id": "thesis-1",
+          "title": "ASSET-1 sample crossing",
+          "asset": "ASSET-1",
+          "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+          "research_scope": ["scope-1"]
+        },
+        "asymmetry": {
+          "downside_max_pct": 10,
+          "upside_target_pct": 30,
+          "asymmetry_ratio": 3,
+          "scenarios": [
+            {
+              "name": "scenario-1",
+              "probability": 0.6,
+              "return_pct": 30,
+              "key_assumptions": ["assumption-1"]
+            },
+            {
+              "name": "scenario-2",
+              "probability": 0.4,
+              "return_pct": -10,
+              "key_assumptions": ["assumption-1"]
+            }
+          ]
+        },
+        "objections": [
+          {
+            "objection": "objection-1",
+            "severity": "low",
+            "thesis_answer": "answer-1"
+          }
+        ],
+        "sizing": {
+          "position_size_pct": 1,
+          "max_accepted_loss_pct": 10,
+          "exit_trigger": "trigger-1",
+          "horizon": "horizon-1"
+        },
+        "perguntas_respondidas": [
+          {
+            "id": "allocation-1",
+            "pergunta": "Allocate 1% of capital to ASSET-1, exiting if the sample exit trigger fires?",
+            "resposta": "Approved: allocate 1% of capital, exiting in full if the sample exit trigger fires."
+          }
+        ]
+      },
+      "output": {
+        "outcome": "pass",
+        "human_decision": {
+          "question_id": "allocation-1",
+          "literal_answer": "Approved: allocate 1% of capital, exiting in full if the sample exit trigger fires."
+        },
+        "note": "The answer is transcribed word for word; this node never paraphrases one."
+      }
+    }
+  ],
+  "decision_without_human_answer": {
+    "input": {
+      "triaged_thesis": {
+        "id": "thesis-1",
+        "title": "ASSET-1 sample crossing",
+        "asset": "ASSET-1",
+        "hypothesis": "A hypothesis in one line, present so the triage has prose to read.",
+        "research_scope": ["scope-1"]
+      },
+      "asymmetry": {
+        "downside_max_pct": 10,
+        "upside_target_pct": 30,
+        "asymmetry_ratio": 3,
+        "scenarios": [
+          {
+            "name": "scenario-1",
+            "probability": 0.6,
+            "return_pct": 30,
+            "key_assumptions": ["assumption-1"]
+          },
+          {
+            "name": "scenario-2",
+            "probability": 0.4,
+            "return_pct": -10,
+            "key_assumptions": ["assumption-1"]
+          }
+        ]
+      },
+      "objections": [
+        {
+          "objection": "objection-1",
+          "severity": "low",
+          "thesis_answer": "answer-1"
+        }
+      ],
+      "sizing": {
+        "position_size_pct": 1,
+        "max_accepted_loss_pct": 10,
+        "exit_trigger": "trigger-1",
+        "horizon": "horizon-1"
+      },
+      "perguntas_respondidas": []
+    },
+    "attempted_output": {
+      "outcome": "pass",
+      "note": "A session that decided the allocation on its own: the input is legal, the output is not. The contract refuses this payload because no human_decision was recorded — the mechanism lives in the schema, not in prose."
+    }
+  }
+}

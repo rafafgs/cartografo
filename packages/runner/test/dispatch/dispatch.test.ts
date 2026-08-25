@@ -4539,11 +4539,11 @@ const BETS_FIXTURE = path.join(
   REPO_ROOT,
   "tests",
   "fixtures",
-  "bets-asymmetric-thesis-example.json",
+  "asymmetric-bets-crossing.fixture.json",
 );
 
-/** The thesis title the fixture carries, and the string a resolved prompt shows. */
-const THESIS_TITLE = "Navelar Logística";
+/** The title the fixture carries, and the string a resolved prompt shows. */
+const CROSSING_TITLE = "ASSET-1 sample crossing";
 
 /**
  * The `collect-fundamentals` input the t116 fixture hand-authored.
@@ -4551,16 +4551,19 @@ const THESIS_TITLE = "Navelar Logística";
  * Read from the committed fixture instead of typed here: what these two cases
  * prove is that a REAL manifest resolves against a REAL input, and an input
  * retyped in the test would be a shape nobody else has to keep working.
+ *
+ * The frame keys are `crossing`/`node`/`input` since t308, which rebuilt the
+ * fixture in English and dropped the invented thesis it used to carry.
  */
 function fundamentalsInput(): Record<string, unknown> {
   const fixture = JSON.parse(readFileSync(BETS_FIXTURE, "utf8")) as {
-    travessia: { no: string; entrada: Record<string, unknown> }[];
+    crossing: { node: string; input: Record<string, unknown> }[];
   };
-  const step = fixture.travessia.find(
-    (entry) => entry.no === "collect-fundamentals",
+  const step = fixture.crossing.find(
+    (entry) => entry.node === "collect-fundamentals",
   );
   assert.ok(step !== undefined, "the fixture has no collect-fundamentals step");
-  return step.entrada;
+  return step.input;
 }
 
 /** One committed factory manifest of the bets bundle. */
@@ -4671,8 +4674,8 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
       ).argv.join("\n");
 
       assert.ok(
-        argv.includes(THESIS_TITLE),
-        "the resolved thesis title has to be in the text the session was given",
+        argv.includes(CROSSING_TITLE),
+        "the resolved title has to be in the text the session was given",
       );
       assert.ok(
         !argv.includes("{{"),

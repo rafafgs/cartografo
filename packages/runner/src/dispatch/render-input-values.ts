@@ -40,19 +40,55 @@
 /**
  * The ceiling, in bytes, of the JSON this block fences.
  *
- * 16 KB, and the number is a decision rather than a limit somebody measured: the
- * precedent in this repository is `TRANSCRIPT_CAP_BYTES` at 1 MB
- * (`packages/core/src/repositories/session.ts`), and this cap is deliberately
- * three orders of magnitude under it because the two texts are paid for
- * differently. A transcript is written once to a row nobody re-reads; this block
- * is prepended to every turn of every session on the node, and a node whose
- * predecessor produced a large object would spend its whole context on a copy of
- * it before reading a word of its own instructions.
+ * 64 KB, and unlike the 16 KB it replaces the number is measured (t298). What
+ * the old comment promised — "the number that survives is the one a real
+ * traversal argues for" — is what happened: the third real bets run argued, and
+ * this is what it said.
  *
- * Reversible, and expected to move: the number that survives is the one a real
- * traversal argues for.
+ * ## What was measured
+ *
+ * - **`bets-assimetricas`, in production.** The largest input-values blocks a
+ *   real traversal has ever carried: `analise-assimetria` at 34.209 bytes and
+ *   `red-team` at 39.092 (`notas/2026-08-18-third-bets-run.md`, hole 1). Both
+ *   were cut inside `fundamentos.numeros` at 16 KB, so `premissas` and
+ *   `assimetria` — `required` by the very skills reading them — never rendered
+ *   at all. The analysis node noticed and asked a question, which cost a
+ *   redispatch and opened a human gate for an environment limit rather than a
+ *   judgement. `notas/2026-08-18-n3-round.md` (hole 4) confirms every run of the
+ *   following round would have hit the same wall.
+ * - **`desenvolvimento-de-software`, by design shape only.** That bundle has
+ *   never carried a real ticket end to end; its single crossing runs a fake
+ *   engine against scripted fixtures
+ *   (`test/controller/factory-graph-software.e2e.test.ts`). Measured against
+ *   those fixtures its five nodes render 1.378 / 1.708 / 1.576 / 2.070 / 1.790
+ *   bytes — `test` the largest at 2.070. That is a statement about the SHAPE of
+ *   the bundle's inputs, not about their production size, and it is two orders
+ *   of magnitude under the bets figures because the fixtures are one-line
+ *   reports rather than a research node's collected premises.
+ *
+ * ## Why 65.536 and not something else
+ *
+ * The bets maximum drove it: 65.536 / 39.092 ≈ 1,68× headroom over the largest
+ * block production has actually produced, and the round-3 note proposed this
+ * very number as its fix candidate. The software bundle's shape measurement
+ * changed nothing — it clears the cap by 30×.
+ *
+ * The original argument for staying far under `TRANSCRIPT_CAP_BYTES`
+ * (`packages/core/src/repositories/session.ts`, 1 MB) still holds and is why the
+ * cap did not simply go away: a transcript is written once to a row nobody
+ * re-reads, while this block is prepended to every turn of every session on the
+ * node. At 64 KB it is still sixteen times under the transcript cap.
+ *
+ * ## What would make it wrong
+ *
+ * A node whose collected input outgrows 64 KB — a research class reading more
+ * documents than bets does, or a bundle that hands a node a whole corpus rather
+ * than a summary of one. The symptom is the one this ficha fixed: a session
+ * escalating over its own truncated `required` keys. Measure that traversal's
+ * real block and raise the number again; do NOT lower it, which is what
+ * t298's regression guard in `test/dispatch/render-input-values.test.ts` is for.
  */
-export const INPUT_VALUES_CAP_BYTES = 16_384;
+export const INPUT_VALUES_CAP_BYTES = 65_536;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -103,7 +139,7 @@ export function selectInputValues(
   return selection;
 }
 
-/** A byte count, grouped the way the rendered text is written (`16.384`). */
+/** A byte count, grouped the way the rendered text is written (`65.536`). */
 function grouped(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }

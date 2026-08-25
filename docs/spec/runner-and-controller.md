@@ -839,7 +839,7 @@ Every item here is another ticket's declared scope, not an oversight:
   next node's projection reads. **Corrected by `t267`:** what a session receives
   today is four things, each with its own label — the manifest's body already
   interpolated, the **values** the skill's `input` names (the
-  `### Valores de entrada` block, cut at 16 KB with a marker and a pointer to
+  `### Valores de entrada` block, cut at 64 KB with a marker and a pointer to
   `GET /v1/jobs/:id/context`,
   [`render-input-values.ts`](../../packages/runner/src/dispatch/render-input-values.ts)),
   the node's `contrato` labelled as documentation, and the pinned skill's

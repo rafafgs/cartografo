@@ -197,11 +197,23 @@ actually said.
   `scripts/no-portuguese-prose.test.mjs` rather than fixed — widening the
   expression is a change to three gates at once, and belongs to whoever measures
   the cost.
-- **`scripts/check-engine-adapter-spec.test.mjs` is flaky under a parallel root
-  run**, which t299's closing note already recorded for AT1. It failed here on AT2
-  with "no table row for 'event harvesting'" and passed immediately on its own,
-  with the row present in the document and no edit between the two runs. Not caused
-  by this ticket; worth knowing before anybody bisects it.
+- **`scripts/check-engine-adapter-spec.test.mjs`'s flake had a cause, and it is
+  fixed.** t299's closing note recorded it as "failed once here with 'no table row
+  for timeout' and passed immediately on its own". It failed twice on this branch
+  too, on a different row each time ('event harvesting', then 'skill injection'),
+  always under the full parallel run and never on its own. The cause is
+  `set -o pipefail` meeting `grep -q`: a `grep -q` that finds its match exits at
+  once, the producer on the left of the pipe dies of SIGPIPE, and `pipefail`
+  reports the pipeline as failed even though the match was found. It is a race
+  between the producer finishing its write and grep deciding, so it is quiet on
+  six table rows and shows up under load. Measured rather than reasoned about: a
+  200 k-line producer piped into a `grep -q` matching line 1 fails **200 times out
+  of 200**. The two `grep -q` pipelines in the script now read from a here-string,
+  which has no producer to kill; the assertions are untouched. It is a file
+  outside this ticket's declared surface, taken because the ticket's own
+  Definition of Done asks for a green `npm test` and this gate could not give a
+  reproducible one. `notas/2026-08-18-action-plan.md` §5 lists the hunt ("the root
+  test that failed 1 in 7") as clean-up work; this is that item, closed.
 - **`git ls-files` and not a filesystem walk.** A translation ticket leaves
   renamed files behind in a dirty checkout, and an editor backup under `notas/` is
   not part of the tree the gate makes a claim about. Same reading as

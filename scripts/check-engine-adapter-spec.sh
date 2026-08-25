@@ -12,6 +12,15 @@
 # t299); before that they were Portuguese, and the patterns kept `.+` in place
 # of an accented character for the reason check [3] still records.
 #
+# A note on `grep -q` and `set -o pipefail`, which cost this gate a flake: a
+# `grep -q` that finds its match exits at once, and the producer on the left of
+# the pipe then dies of SIGPIPE — which `pipefail` reports as a failed pipeline
+# even though the match was found. It is a race between the producer finishing
+# its write and grep reading enough to decide, so it stays quiet on a small
+# input and shows up under load. That is why every `grep -q` below reads from a
+# here-string rather than from a pipe. Measured, not guessed: a 200 k-line
+# producer piped into `grep -q` matching line 1 fails 200 times out of 200.
+#
 # Usage: scripts/check-engine-adapter-spec.sh
 # Exits 0 if every check passes, 1 on the first that fails.
 
@@ -66,7 +75,7 @@ if [ -z "$kit_rows" ]; then
   fail 'the "conformance kit" section has no markdown table'
 else
   while IFS='|' read -r label pattern; do
-    if printf '%s\n' "$kit_rows" | grep -qiE "$pattern"; then
+    if grep -qiE "$pattern" <<<"$kit_rows"; then
       pass "row for '$label'"
     else
       fail "no table row for '$label' (pattern: $pattern)"
@@ -83,7 +92,7 @@ fi
 
 # --- 4. the feasibility section cites a primary source -----------------------
 printf '\n[4] feasibility: second CLI\n'
-if section '## Feasibility: a second CLI' | grep -q 'http'; then
+if grep -q 'http' <<<"$(section '## Feasibility: a second CLI')"; then
   pass 'the section carries at least one URL as a source citation'
 else
   fail 'the section carries no URL (http) as a source citation'

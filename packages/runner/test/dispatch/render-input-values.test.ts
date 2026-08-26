@@ -213,12 +213,18 @@ test('t267 — over the cap the JSON is cut to the cap and the marker names both
 test('t267 — the cut walks backward off a continuation byte, never through a rune', async () => {
   const { renderInputValues, INPUT_VALUES_CAP_BYTES } = await loadModule();
 
-  // `{\n  "xy": "` is 11 bytes, and every `é` after it is 2 — so the cap lands
-  // on an ODD offset inside the run, which is the middle of a character. The
-  // fix costs one byte; not walking back prints a `U+FFFD` no node produced.
-  const input = { xy: 'é'.repeat(40_000) };
+  // `{\n  "xy": "` is 11 bytes, and every `\u00e9` after it is 2 — so the cap
+  // lands on an ODD offset inside the run, which is the middle of a character.
+  // The fix costs one byte; not walking back prints a `U+FFFD` no node produced.
+  //
+  // Written as an escape and not as a literal (t314): the character is here for
+  // its BYTE WIDTH and not as a word, so the assertion below states the width
+  // outright rather than leaving it to be read off the source encoding.
+  const RUNE = '\u00e9';
+  assert.equal(Buffer.byteLength(RUNE, 'utf8'), 2, 'the whole fixture rests on this');
+  const input = { xy: RUNE.repeat(40_000) };
   const whole = JSON.stringify(input, null, 2);
-  assert.equal(whole.indexOf('é'), 11, 'the fixture puts the run at an odd byte offset');
+  assert.equal(whole.indexOf(RUNE), 11, 'the fixture puts the run at an odd byte offset');
   assert.ok(Buffer.byteLength(whole, 'utf8') > INPUT_VALUES_CAP_BYTES);
 
   const shown = fencedText(renderInputValues({}, input));

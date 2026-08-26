@@ -112,36 +112,13 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     line: 196,
     reason: 'a Portuguese DETECTOR, not Portuguese prose: the same shape the package guard is built from',
   },
-  {
-    file: 'engine/command.test.ts',
-    line: 561,
-    reason: 'names the two-byte character the fixture below is built from; the fixture is about bytes, not language',
-  },
-  {
-    file: 'engine/command.test.ts',
-    line: 564,
-    reason: 'a run of one two-byte character, sized against the argv byte limit',
-  },
-  {
-    file: 'engine/codex-command.test.ts',
-    line: 411,
-    reason: 'the same two-byte fixture, for the codex adapter',
-  },
-  {
-    file: 'dispatch/render-input-values.test.ts',
-    line: 216,
-    reason: 'names the two-byte character that puts the truncation cap at an odd byte offset',
-  },
-  {
-    file: 'dispatch/render-input-values.test.ts',
-    line: 219,
-    reason: 'the two-byte run itself',
-  },
-  {
-    file: 'dispatch/render-input-values.test.ts',
-    line: 221,
-    reason: 'asserts the byte offset that run lands on',
-  },
+  // **The six two-byte-fixture pins are gone (t314).** They excused
+  // `engine/command.test.ts`, `engine/codex-command.test.ts` and
+  // `dispatch/render-input-values.test.ts` for carrying a literal `á` or `é`
+  // that was there for its UTF-8 WIDTH and not as a word. Those fixtures are
+  // written `'\u00e1'` and `'\u00e9'` now: same character, same two bytes, same
+  // place, and each site asserts the width outright. A byte is not a language,
+  // so there is nothing left to excuse.
   {
     file: 'fixtures/codex-input-request.jsonl',
     line: 4,

@@ -186,15 +186,15 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     reason:
       'a retired name inside a `--` tail, which this sweep strips: the fixture proves a trailing comment is not a citation',
   },
+  // `cli-skill-import-unit.test.ts:90` used to be here — the `kebabCase` accent
+  // fixture. It is written with Unicode escapes since t314, so the sample still
+  // folds real combining marks and the file no longer spells one.
   {
     file: 'cli-skill-import-unit.test.ts',
-    line: 90,
-    reason:
-      'a fixture about DIACRITICS and not about language: `kebabCase` folds combining marks, and an all-ASCII sample would prove nothing',
-  },
-  {
-    file: 'cli-skill-import-unit.test.ts',
-    line: 221,
+    // 221 until t314, which added six lines of comment above it. The pin broke
+    // loudly and was re-read rather than inherited, which is what a line pin is
+    // for; the reason below is unchanged and still holds.
+    line: 227,
     reason:
       '`src/cli/skill-import.ts:95` WRITES this placeholder; the assertion reads it back',
   },

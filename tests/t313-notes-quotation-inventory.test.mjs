@@ -59,7 +59,12 @@ const ROOT = path.resolve(import.meta.dirname, '..');
  * are the mechanism every gate in this family runs on. It is pinned below
  * instead, so the ticket that does widen it finds this note first.
  */
-const ANY_DIACRITIC = /[áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ]/;
+// Written as escapes and not as literals (t314), so that the one general sweep
+// over the whole tree does not have to hold this file open as an exception. A
+// character class is not a word of any language, and `\u00e1` is the same
+// character in the same place.
+const ANY_DIACRITIC =
+  /[\u00e1\u00e0\u00e2\u00e3\u00e9\u00ea\u00ed\u00f3\u00f4\u00f5\u00fa\u00fc\u00e7\u00c1\u00c0\u00c2\u00c3\u00c9\u00ca\u00cd\u00d3\u00d4\u00d5\u00da\u00dc\u00c7]/;
 
 /**
  * Every surviving diacritic under `notes/`, by file and line, with its reason.

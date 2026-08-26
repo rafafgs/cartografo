@@ -473,7 +473,7 @@ test('t152 — a job one event old is not done: nothing open is not the same as 
   );
 });
 
-test('t152 — concluído from the server is necessary, never sufficient: an open session keeps the job open', async () => {
+test('t152 — `concluído` from the server is necessary, never sufficient: an open session keeps the job open', async () => {
   requireArtifacts(T107_ARTIFACTS.timeline);
   const { buildTimeline } = (await import(
     new URL('../src/timeline.ts', import.meta.url).href

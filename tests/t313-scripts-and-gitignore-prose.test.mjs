@@ -105,7 +105,14 @@ test('AT8 — validate-graph.mjs cites the glossary in English, section intact',
   const source = read('scripts/validate-graph.mjs');
 
   assert.ok(source.includes('glossary §5.4'), 'the citation has to read `glossary §5.4`');
-  assert.equal(source.includes('glossário'), false, 'the comment still spells the word in Portuguese');
+  // Escaped, not literal (t314): the needle is a token being searched for, not a
+  // sentence, so it costs nothing to spell it in a way the repo-wide sweep can
+  // walk past. Same string, same bytes.
+  assert.equal(
+    source.includes('gloss\u00e1rio'),
+    false,
+    'the comment still spells the word in Portuguese',
+  );
 
   // The section number is the citation. Translating the word around it and
   // losing the pointer would trade one defect for a worse one.
@@ -176,8 +183,17 @@ test('AT10 — the frozen three really do carry the Portuguese they are frozen f
   // quietly lost their teeth — a pin proves a file did not change, never that it
   // is still worth pinning.
   const detector = read('scripts/no-portuguese-prose.mjs');
-  assert.ok(detector.includes('não'), 'the `STOPWORD` list lost the commonest Portuguese word');
-  assert.ok(/DIACRITIC = \/\[[^\]]*ç/.test(detector), 'the `DIACRITIC` class lost its cedilla');
+  // Escaped for the reason above. These two needles are the sharpest teeth in
+  // this file — they are what says the detector still detects — and spelling
+  // them as escapes changes neither of them by a byte.
+  assert.ok(
+    detector.includes('n\u00e3o'),
+    'the `STOPWORD` list lost the commonest Portuguese word',
+  );
+  assert.ok(
+    /DIACRITIC = \/\[[^\]]*\u00e7/.test(detector),
+    'the `DIACRITIC` class lost its cedilla',
+  );
 
   const carveOut = read('scripts/no-portuguese-identifiers.test.mjs');
   assert.ok(carveOut.includes('doc.nos'), 'the frozen D18 schema-key fixture is gone');

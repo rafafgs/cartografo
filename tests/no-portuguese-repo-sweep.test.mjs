@@ -69,6 +69,9 @@
  * third list — a third list is where "inconvenient to translate" would have
  * gone, and it is the thing this ticket exists to refuse.
  *
+ * The globs were too narrow by seven files. It was nine before two of them were
+ * escaped out of the list rather than kept in it; see {@link LANGUAGE_GATES}.
+ *
  * The second is the frozen migration filenames, path only.
  *
  * There is no third. Everything else the first measurement found was fixed:
@@ -139,28 +142,27 @@ const GATE_PATTERNS = Object.freeze([
  * retired rendering is gone, that a detector still detects, that an inventory
  * is complete. None of them is prose somebody did not get round to.
  *
- * It is also as short as the truth allows, which is why it is nine and not
- * fourteen. Five files that first appeared in the measurement were removed from
- * it instead of kept: where the only Portuguese was a diacritic standing as a
- * literal in a character class or in a fixture whose point is its byte width,
- * the character was rewritten as a Unicode escape and the file dropped out. A
- * `ç` is the same byte in the same place and is not a word of any language.
+ * It is also as short as the truth allows, which is why it is seven. Every file
+ * whose only Portuguese was an isolated TOKEN rather than a phrase — a
+ * diacritic standing in a character class, a single word used as a search
+ * needle — was rewritten with Unicode escapes and dropped out instead of being
+ * listed: `\u00e7` is the same character in the same place, and a character
+ * class is not a sentence in any language. That took
+ * `tests/t313-notes-quotation-inventory.test.mjs` and
+ * `tests/t313-scripts-and-gitignore-prose.test.mjs` off the list, and it is the
+ * first thing to try before adding an eighth.
+ *
+ * What is left is seven files where the Portuguese is a PHRASE the file has to
+ * spell — a refusal message a spec must no longer contain, a retired table
+ * header, a frozen migration comment quoted verbatim, a detector's own word
+ * list. Escaping those would hide a sentence rather than a token, and hiding a
+ * sentence is what this gate is for catching.
  */
 const LANGUAGE_GATES = Object.freeze([
   {
     file: 'tests/t313-docs-specs-drift.test.mjs',
     reason:
       'asserts that each retired Portuguese rendering is ABSENT from the spec that used to carry it, which it can only do by spelling the rendering',
-  },
-  {
-    file: 'tests/t313-notes-quotation-inventory.test.mjs',
-    reason:
-      'the inventory of every marked Portuguese quotation under notes/, plus the wider diacritic class it measures completeness against',
-  },
-  {
-    file: 'tests/t313-scripts-and-gitignore-prose.test.mjs',
-    reason:
-      'asserts that DIACRITIC still carries its cedilla and STOPWORD its commonest word: a detector nobody checks is a detector that can be emptied',
   },
   {
     file: 'tests/small-suites-english-fixtures.test.mjs',

@@ -408,7 +408,9 @@ test('t203 — the boundary: one byte below stays inline, the limit itself switc
 });
 
 test('t203 — the decision counts UTF-8 bytes, not UTF-16 units', () => {
-  const accented = 'á'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
+  // An escape and not a literal (t314): this character is a byte width, not a
+  // word. The two assertions below are the proof it still is one.
+  const accented = '\u00e1'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
   assert.ok(accented.length < ARGV_INLINE_LIMIT_BYTES, 'the fixture is under the limit by .length');
   assert.ok(
     Buffer.byteLength(accented, 'utf8') > ARGV_INLINE_LIMIT_BYTES,

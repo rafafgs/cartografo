@@ -558,10 +558,12 @@ test('t203 — the boundary: one byte below stays inline, the limit itself switc
 });
 
 test('t203 — the decision counts UTF-8 bytes, not UTF-16 units', () => {
-  // Every `á` is one `.length` unit and TWO bytes. This fixture is comfortably
-  // under the limit by `.length` and comfortably over it by what the kernel
-  // actually copies — which is the only measure that matters here.
-  const accented = 'á'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
+  // Every `\u00e1` is one `.length` unit and TWO bytes. This fixture is
+  // comfortably under the limit by `.length` and comfortably over it by what
+  // the kernel actually copies — which is the only measure that matters here.
+  // Written as an escape and not a literal (t314); the pair of assertions
+  // below is what proves the width did not move with the spelling.
+  const accented = '\u00e1'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
   assert.ok(accented.length < ARGV_INLINE_LIMIT_BYTES, 'the fixture is under the limit by .length');
   assert.ok(
     Buffer.byteLength(accented, 'utf8') > ARGV_INLINE_LIMIT_BYTES,

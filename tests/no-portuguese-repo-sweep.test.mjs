@@ -10,41 +10,398 @@
  * Portuguese sentence from landing tomorrow in a tract none of them walks, and
  * there are many: the twenty-eight existing sweeps between them read `docs/`,
  * `notes/`, `schema/`, `specs/`, `factory-graphs/`, the migrations, an explicit
- * per-package file list and the root `tests/` directory. Nothing reads
- * everything.
+ * per-package file list and the root `tests/` directory. Nothing read
+ * everything, and the hole was not small — see the closing note
+ * (`notes/2026-08-26-t314-closing-note.md`) for the 148 lines that were sitting
+ * in it on the day this gate was written.
  *
- * This one does. `git ls-files`, every path, both signals, two exceptions.
+ * This one reads everything. `git ls-files`, every path, both signals, two
+ * exceptions.
+ *
+ * ## What is scanned, and the one thing that is not
+ *
+ * Every tracked path except `package-lock.json` ({@link GENERATED_ARTIFACTS}).
+ * That is a scope boundary and not an exception: npm writes that file, npm
+ * rewrites it on every install, and its ninety-four hits are third-party
+ * `.com`/`.org` URLs in dependency metadata this project does not author. The
+ * same kind of boundary `git ls-files` itself already draws around what is
+ * gitignored.
+ *
+ * ## The reading, which is strategy and not exemption
+ *
+ * Applied uniformly to every file, with no per-tree special case. Each cut is
+ * one already proven by a sibling, and the difference between a cut and an
+ * exception is that a cut turns on POSITION and applies everywhere, while an
+ * exception names a file:
+ *
+ * - **the gloss** — `(literally "…")`, D24's own convention for the one span
+ *   where the original is supposed to survive. Cut first, so that a marked
+ *   quotation is never read;
+ * - **backtick spans**, every file — `` `condicao` `` mid-sentence is the name
+ *   of a field, not a word of the sentence (t299's cut, shared out of
+ *   `scripts/no-portuguese-prose.mjs` by this ticket's FR3);
+ * - **fenced blocks**, `.md` only — where the JSON of the graph document, the
+ *   DDL of the migrations and the frames of a session live (t299 again);
+ * - **whole-string URLs and hostnames**, `.json`/`.jsonl` — `com` is a
+ *   Portuguese function word and also the commonest TLD there is, and JSON has
+ *   no backtick to escape with (t280's cut);
+ * - **machine names**, every file — dotted paths, `snake_case`, `kebab-case`
+ *   and the flags a person types. This is the cut
+ *   `packages/core/test/no-portuguese-core-tests.test.ts` had to invent to sweep
+ *   a package tree at all, and it is what carries `api.anthropic.com`,
+ *   `git@github.com:…`, `nota-curta-com-campo` and `criterios_de_aceite` without
+ *   naming one of them. Narrow on purpose: only shapes that cannot be a
+ *   Portuguese sentence;
+ * - **the two frozen edge keys**, in machine position only — see
+ *   {@link WIRE_KEYS}.
+ *
+ * What survives every cut is prose, and prose is what this gate is for.
+ *
+ * ## The two exceptions, and why there are two and not three
+ *
+ * {@link EXCEPTIONS}. The first is stated as what it MEANS — a file whose job is
+ * to enumerate what is forbidden — and not as the four filename globs t314's
+ * body first proposed. Those globs were a proxy for that meaning and turned out
+ * to be too narrow by nine files: `tests/t313-docs-specs-drift.test.mjs` asserts
+ * that a retired Portuguese rendering is gone by spelling it, and it is no less
+ * a language gate for being named after a ticket instead of after a rule. The
+ * fix is to write the rule down and enumerate what it covers, not to open a
+ * third list — a third list is where "inconvenient to translate" would have
+ * gone, and it is the thing this ticket exists to refuse.
+ *
+ * The second is the frozen migration filenames, path only.
+ *
+ * There is no third. Everything else the first measurement found was fixed:
+ * nineteen lines of untranslated docblock prose, fourteen fixture strings (and
+ * the sibling gate that was pinning them Portuguese), and five multibyte
+ * fixtures rewritten as Unicode escapes so that a byte-offset test keeps its
+ * byte offset without keeping a literal diacritic. The one class that was NOT
+ * fixed is the frozen `de`/`para` wire vocabulary, which is masked by position
+ * rather than exempted by file, because removing it is a wire-format change and
+ * a reversal of D20 — costed in the closing note, for whoever records that
+ * decision.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
-/** Generated artefacts this project does not author (FR2). */
+import {
+  DIACRITIC,
+  GLOSS,
+  STOPWORD,
+  blank,
+  proseOf,
+  withoutSpans,
+} from '../scripts/no-portuguese-prose.mjs';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+
+/**
+ * Generated artefacts this project does not author (FR2).
+ *
+ * A scope boundary, not a member of {@link EXCEPTIONS}: the entries here are
+ * not this project's prose at all. `package-lock.json` is npm's, rewritten on
+ * every `npm install`, and every one of its ninety-four hits is a third-party
+ * `.com`/`.org` URL in dependency metadata.
+ */
 export const GENERATED_ARTIFACTS = Object.freeze(['package-lock.json']);
 
-/** The two permanent exceptions (FR5). Not implemented yet. */
-export const EXCEPTIONS = Object.freeze([]);
+/**
+ * The four filename shapes a language gate is usually given.
+ *
+ * A convention and not the rule — the rule is {@link LANGUAGE_GATES}'s
+ * docblock. Kept as globs because most gates do follow the convention and
+ * listing nineteen filenames that a pattern already describes would rot on the
+ * twentieth.
+ */
+const GATE_PATTERNS = Object.freeze([
+  /^packages\/[^/]+\/test\/no-portuguese-[^/]*\.test\.[^/]+$/,
+  /^tests\/no-portuguese-[^/]*\.test\.mjs$/,
+  /^scripts\/no-portuguese-[^/]*\.mjs$/,
+  /^tests\/notes-redaction\.test\.mjs$/,
+]);
 
-/** Every tracked path this gate walks. Not implemented yet. */
+/**
+ * The language gates the four patterns do not reach, each with its reason.
+ *
+ * The rule both this list and {@link GATE_PATTERNS} serve: **a file whose job
+ * is to enumerate what is forbidden.** Such a file is written in the forbidden
+ * vocabulary by construction — that vocabulary is its data — and a sweep that
+ * read one would either disarm it or never pass.
+ *
+ * What this list must never hold is a file that is merely inconvenient to
+ * translate. Every entry below asserts something ABOUT Portuguese: that a
+ * retired rendering is gone, that a detector still detects, that an inventory
+ * is complete. None of them is prose somebody did not get round to.
+ *
+ * It is also as short as the truth allows, which is why it is nine and not
+ * fourteen. Five files that first appeared in the measurement were removed from
+ * it instead of kept: where the only Portuguese was a diacritic standing as a
+ * literal in a character class or in a fixture whose point is its byte width,
+ * the character was rewritten as a Unicode escape and the file dropped out. A
+ * `ç` is the same byte in the same place and is not a word of any language.
+ */
+const LANGUAGE_GATES = Object.freeze([
+  {
+    file: 'tests/t313-docs-specs-drift.test.mjs',
+    reason:
+      'asserts that each retired Portuguese rendering is ABSENT from the spec that used to carry it, which it can only do by spelling the rendering',
+  },
+  {
+    file: 'tests/t313-notes-quotation-inventory.test.mjs',
+    reason:
+      'the inventory of every marked Portuguese quotation under notes/, plus the wider diacritic class it measures completeness against',
+  },
+  {
+    file: 'tests/t313-scripts-and-gitignore-prose.test.mjs',
+    reason:
+      'asserts that DIACRITIC still carries its cedilla and STOPWORD its commonest word: a detector nobody checks is a detector that can be emptied',
+  },
+  {
+    file: 'tests/small-suites-english-fixtures.test.mjs',
+    reason:
+      'pins the Portuguese sentence a factory bundle used to carry, so that the translation cannot silently come back',
+  },
+  {
+    file: 'tests/factory-graph-1.test.mjs',
+    reason:
+      'quotes the pre-t280 Portuguese wording of the refusal it guards, to record that what is pinned is the claim and not the language',
+  },
+  {
+    file: 'packages/core/test/glossary-wire.test.ts',
+    reason:
+      'parses docs/spec/glossary-wire.md, whose table is a map of retired names: a map of retired names is written in retired names forever',
+  },
+  {
+    file: 'packages/core/test/migrate.test.ts',
+    reason:
+      'quotes, verbatim, the Portuguese comment a frozen migration carries, to prove the migration was not edited when its neighbours were',
+  },
+  {
+    file: 'packages/runner/test/surveyor/spread.test.ts',
+    reason:
+      'declares a Portuguese detector of its own and asserts the surveyor prose it guards no longer trips it',
+  },
+  {
+    file: 'packages/screen/test/server-proxy.test.ts',
+    reason:
+      'asserts the proxy no longer answers in Portuguese, by matching the refusals it used to send and a diacritic class of its own',
+  },
+]);
+
+/**
+ * The two permanent exceptions (AC3).
+ *
+ * Two, and the count is load-bearing. Each carries the rule it stands for and
+ * the reason that rule is permanent; `covers` decides membership, and `scope`
+ * says whether the exception reaches the file's contents or only its name.
+ */
+export const EXCEPTIONS = Object.freeze([
+  Object.freeze({
+    name: 'the language gates',
+    scope: 'path and content',
+    reason:
+      'a file whose job is to enumerate what is forbidden is written in the forbidden vocabulary by construction: a sweep that read one would either disarm that gate or never pass. Covers the four naming conventions and the nine gates those conventions do not reach, each named in LANGUAGE_GATES with its own reason.',
+    covers: (relativePath) =>
+      GATE_PATTERNS.some((pattern) => pattern.test(relativePath)) ||
+      LANGUAGE_GATES.some((entry) => entry.file === relativePath),
+  }),
+  Object.freeze({
+    name: 'the frozen migration filenames',
+    scope: 'path only',
+    reason:
+      'a migration filename IS `schema_migrations.id`, checksummed and resolved by name, so renaming one re-runs a migration that already applied (t279, D24). The contents are not covered: they are English already and `tests/no-portuguese-migration-comments.test.mjs` keeps them that way, so this gate reads them like any other file. Prospective, and deliberately so: none of the twenty-four frozen names trips either signal today, because they are ASCII snake_case and `_` is a word character, so `\\bcom\\b` never matches inside `0002_grafo_versao_proposta`. It is here for the name that would.',
+    covers: (relativePath) => relativePath.startsWith('packages/core/migrations/'),
+  }),
+]);
+
+/** The exception that spares a file whole, if any covers it. */
+function contentExceptionFor(relativePath) {
+  return EXCEPTIONS.find(
+    (entry) => entry.scope === 'path and content' && entry.covers(relativePath),
+  );
+}
+
+/** The exception that spares a file's name, if any covers it. */
+function pathExceptionFor(relativePath) {
+  return EXCEPTIONS.find((entry) => entry.covers(relativePath));
+}
+
+/** A JSON string whose whole content is a URL or a bare dotted hostname. */
+const HOSTNAME_VALUE = /"(?:https?:\/\/)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/[^"\s]*)?"/gi;
+
+/**
+ * Shapes that are a machine name rather than a word of prose.
+ *
+ * Lifted from `packages/core/test/no-portuguese-core-tests.test.ts`, which had
+ * to invent them to sweep a package tree at all, and narrow there for the
+ * reason they are narrow here: a whole-file pass has no idea whether it is
+ * looking at a message or at a fixture, so only the shapes that CANNOT be a
+ * Portuguese sentence are blanked. A hostname is one (`api.anthropic.com`), a
+ * snake_case key is one (`criterios_de_aceite`), a kebab id is one
+ * (`nota-curta-com-campo`), a flag is one (`--classe`). A sentence is not.
+ */
+const MACHINE_NAMES = Object.freeze([
+  // a dotted name written into a regex literal: `\.grafo\.rascunho\.json`
+  /(?:\\\.[A-Za-z0-9_]+)+/g,
+  // a dotted path or a hostname: `api.anthropic.com`, `trabalho.criado`
+  /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]+)+\b/g,
+  // snake_case: `metrica_esperada`
+  /\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g,
+  // kebab-case: `nota-curta-com-baldes`
+  /\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b/g,
+  // a flag a person types: `--role`, `-h`
+  /--?[A-Za-z][A-Za-z0-9-]*/g,
+]);
+
+/**
+ * The two frozen edge keys, blanked where they are a NAME and nowhere else.
+ *
+ * `de` and `para` are required keys of a graph edge and of `metrica_esperada`
+ * (`packages/core/src/domain/hypothesis.ts`,
+ * `packages/core/test/no-portuguese-user-facing-strings.test.ts`'s
+ * `WIRE_LITERALS`, `docs/spec/glossary-wire.md`). D20 did not unfreeze them and
+ * D18 left them out of the English rule; removing them is a wire-format change
+ * that rewrites every graph document, its parsers, its specs and its fixtures,
+ * which is a decision somebody records rather than a translation somebody
+ * performs. The closing note costs it.
+ *
+ * So they are masked by POSITION, the way
+ * `no-portuguese-core-tests.test.ts`'s `WIRE_KEYS` masks its six: a key is
+ * followed by a colon, a quoted name is delimited, a property access follows a
+ * dot, and a field list ends in a brace. Prose is none of those, which is what
+ * keeps AT4 honest — `written para the reviewer` is still reported, and it is
+ * the very word this gate is proven to bite on.
+ */
+const WIRE_KEYS = Object.freeze([
+  // a key position: `para: 0.1`, `"para":`, `'para' :`
+  /\b(?:de|para)["']?\s*:/g,
+  // a delimited citation, but NOT a value right after a `key:` — `title: 'para'`
+  // is prose that happens to be one word long, and stays red
+  /(?<!:)(?<!:\s)'(?:de|para)'/g,
+  /"(?:de|para)"/g,
+  // a property access: `edges[0].para`, `metric.para`
+  /\.(?:de|para)\b/g,
+  // the tail of a shape description: `{nome, direcao, de, para}`
+  /\b(?:de|para)(?=\s*[}\]])/g,
+]);
+
+/**
+ * The lines of one file as this gate reads them, prose intact and rest blanked.
+ *
+ * Blanked rather than dropped, so the index of a line in the result is still
+ * its number in the file and a failure can name it.
+ *
+ * @param {string} relativePath Repo-relative path, which chooses two cuts.
+ * @param {string} contents The file, whole.
+ * @returns {string[]} One entry per line of the input.
+ */
+export function linesToScan(relativePath, contents) {
+  const extension = path.extname(relativePath);
+  const json = extension === '.json' || extension === '.jsonl';
+
+  const lines =
+    extension === '.md'
+      ? proseOf(contents)
+      : contents.split('\n').map((line) => withoutSpans(line.replace(GLOSS, '')));
+
+  return lines.map((line) => {
+    let masked = json ? line.replace(HOSTNAME_VALUE, (match) => `"${blank(match.slice(2))}"`) : line;
+    for (const span of MACHINE_NAMES) masked = masked.replace(span, blank);
+    for (const span of WIRE_KEYS) masked = masked.replace(span, blank);
+    return masked;
+  });
+}
+
+/** The first of the two signals a piece of text trips, as a phrase, or `null`. */
+function signalIn(text) {
+  const diacritic = DIACRITIC.exec(text);
+  if (diacritic !== null) return `diacritic "${diacritic[0]}"`;
+
+  const stopword = STOPWORD.exec(text);
+  if (stopword !== null) return `stopword "${stopword[0]}"`;
+
+  return null;
+}
+
+/**
+ * Every offender of one file, name and contents both (FR1, FR4).
+ *
+ * Pure: it reads the two strings it is handed and never the disk, which is what
+ * lets AT2, AT3 and AT4 hand it a path that does not exist.
+ *
+ * Reported whole rather than stopping at the first: a half-translated file has
+ * dozens, and a gate that named one per run would take dozens of runs to
+ * finish.
+ *
+ * @param {string} relativePath Repo-relative path of the file.
+ * @param {string} contents The file, whole.
+ * @returns {string[]} One entry per offending path segment and offending line.
+ */
+export function offendersIn(relativePath, contents) {
+  if (GENERATED_ARTIFACTS.includes(relativePath)) return [];
+
+  const found = [];
+
+  if (pathExceptionFor(relativePath) === undefined) {
+    for (const segment of relativePath.split('/')) {
+      const why = signalIn(segment);
+      if (why !== null) found.push(`${relativePath}: path segment "${segment}": ${why}`);
+    }
+  }
+
+  if (contentExceptionFor(relativePath) !== undefined) return found;
+
+  linesToScan(relativePath, contents).forEach((line, index) => {
+    const why = signalIn(line);
+    if (why === null) return;
+
+    found.push(`${relativePath}:${String(index + 1)}: ${why} — ${line.trim().slice(0, 120)}`);
+  });
+
+  return found;
+}
+
+/**
+ * Every offender of a whole file set.
+ *
+ * @param {ReadonlyArray<{path: string, contents: string}>} files
+ * @returns {string[]} One entry per offender, in the order the files came.
+ */
+export function scan(files) {
+  return files.flatMap((file) => offendersIn(file.path, file.contents));
+}
+
+/**
+ * Every tracked path in the repository, as repo-relative paths.
+ *
+ * Read off `git ls-files` rather than off the filesystem, the reading every
+ * whole-tree sibling already uses: an untracked build artefact or an editor
+ * backup is not part of the tree this gate makes a claim about, and a rename in
+ * a dirty checkout leaves both halves on disk but only one in the index.
+ *
+ * @returns {string[]} Every tracked path, sorted.
+ */
 export function trackedPaths() {
-  throw new Error('t314: trackedPaths is not implemented yet');
+  return execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\0')
+    .filter((entry) => entry.length > 0)
+    .sort();
 }
 
-/** Every offender of one file, path and content. Not implemented yet. */
-export function offendersIn() {
-  throw new Error('t314: offendersIn is not implemented yet');
-}
-
-/** Every offender of a whole file set. Not implemented yet. */
-export function scan() {
-  throw new Error('t314: scan is not implemented yet');
-}
-
-/** Reads one tracked file off disk, as `scan` wants it. Not implemented yet. */
-export function readTracked() {
-  throw new Error('t314: readTracked is not implemented yet');
+/**
+ * One tracked file, read off disk, in the shape {@link scan} wants.
+ *
+ * @param {string} relativePath Repo-relative path.
+ * @returns {{path: string, contents: string}}
+ */
+export function readTracked(relativePath) {
+  return { path: relativePath, contents: readFileSync(path.join(ROOT, relativePath), 'utf8') };
 }
 
 test('AT1 — no Portuguese survives anywhere in the tracked tree', () => {
@@ -64,6 +421,30 @@ test('AT1 — no Portuguese survives anywhere in the tracked tree', () => {
   );
 });
 
+test('AT1 — the sweep reaches every tract, not a corner of one', () => {
+  const paths = trackedPaths();
+
+  for (const tree of [
+    '.github/',
+    'docs/',
+    'factory-graphs/',
+    'notes/',
+    'packages/core/src/',
+    'packages/core/test/',
+    'packages/runner/src/',
+    'packages/screen/src/',
+    'schema/',
+    'scripts/',
+    'specs/',
+    'tests/',
+  ]) {
+    assert.ok(
+      paths.some((entry) => entry.startsWith(tree)),
+      `nothing under ${tree} is walked; the whole-tree claim is not resolving`,
+    );
+  }
+});
+
 test('AT2 — the gates are spared, whichever of the four shapes names them', () => {
   const gates = [
     'packages/core/test/no-portuguese-wire.test.ts',
@@ -80,10 +461,37 @@ test('AT2 — the gates are spared, whichever of the four shapes names them', ()
     [],
     'a gate enumerates what it forbids: a sweep that read one would disarm itself',
   );
+
+  assert.ok(
+    offendersIn('tests/no-portuguese-repo-sweep-notes.md', portuguese).length > 0,
+    'the patterns are shapes and not prefixes: a neighbouring name is read like any other',
+  );
+});
+
+test('AT2 — every enumerated language gate exists, and says why it is one', () => {
+  const tracked = new Set(trackedPaths());
+
+  for (const entry of LANGUAGE_GATES) {
+    assert.ok(
+      tracked.has(entry.file),
+      `LANGUAGE_GATES names "${entry.file}", which is not a file any more: an exception ` +
+        'that outlives its subject is a hole nobody is watching',
+    );
+    assert.ok(entry.reason.length > 40, `"${entry.file}" has no reason worth reading`);
+    assert.equal(
+      GATE_PATTERNS.some((pattern) => pattern.test(entry.file)),
+      false,
+      `"${entry.file}" is already covered by a naming pattern; listing it twice hides the rule`,
+    );
+  }
 });
 
 test('AT3 — the migration exception is a prefix on the directory and nothing wider', () => {
-  const name = '0002_grafo_versao_proposta_com_condicao.sql';
+  // Synthetic, and it has to be: no frozen migration name trips either signal
+  // today. They are ASCII snake_case and `_` is a word character, so `\bcom\b`
+  // never matches inside `0002_grafo_versao_proposta_com_condicao`. The
+  // exception is prospective — this is the name it is waiting for.
+  const name = '0099_migração_pendente.sql';
   const clean = '-- a migration comment, in English\n';
 
   assert.deepEqual(
@@ -94,8 +502,22 @@ test('AT3 — the migration exception is a prefix on the directory and nothing w
 
   assert.deepEqual(
     scan([{ path: `packages/core/src/${name}`, contents: clean }]),
-    [`packages/core/src/${name}: path segment "${name}": stopword "com"`],
+    [`packages/core/src/${name}: path segment "${name}": diacritic "ç"`],
     'the same name one directory over is read like any other path',
+  );
+
+  assert.deepEqual(
+    scan([{ path: 'packages/core/migrations-old/0099_migração.sql', contents: clean }]),
+    [
+      'packages/core/migrations-old/0099_migração.sql: path segment "0099_migração.sql": diacritic "ç"',
+    ],
+    'the prefix ends at the slash: a directory that merely starts the same way is read',
+  );
+
+  assert.deepEqual(
+    offendersIn('packages/core/migrations/0007_ok.sql', '-- uma linha em português\n'),
+    ['packages/core/migrations/0007_ok.sql:1: diacritic "ê" — -- uma linha em português'],
+    'the exception is on the NAME only: a migration comment is read like any other line',
   );
 });
 
@@ -122,6 +544,33 @@ test('AT4 — a bare stopword is reported, and a marked one is not', () => {
   );
 });
 
+test('AT4 — the wire mask turns on position, and prose is not a position', () => {
+  const path = 'packages/core/src/domain/example.ts';
+
+  for (const machine of [
+    'const metric = { nome, direcao, de: 0.4, para: 0.1 };',
+    "for (const key of ['de', 'para']) validate(key);",
+    'edges[0].para = 1;',
+    'the shape {nome, direcao: "sobe"|"cai", de, para} is frozen',
+  ]) {
+    assert.deepEqual(
+      offendersIn(path, `${machine}\n`),
+      [],
+      `the frozen edge key is a name here, not a word: ${machine}`,
+    );
+  }
+
+  for (const prose of [
+    '// A decision written para somebody who was not in the room.',
+    "const title = 'uma nota para o revisor';",
+  ]) {
+    assert.ok(
+      offendersIn(path, `${prose}\n`).length > 0,
+      `the mask excused a word position, which is where Portuguese hides: ${prose}`,
+    );
+  }
+});
+
 test('AT5 — the exception list has exactly two entries, each with a reason', () => {
   assert.equal(
     EXCEPTIONS.length,
@@ -135,5 +584,14 @@ test('AT5 — the exception list has exactly two entries, each with a reason', (
       typeof entry.reason === 'string' && entry.reason.length > 40,
       `"${entry.name}" has no reason worth reading`,
     );
+    assert.ok(
+      ['path only', 'path and content'].includes(entry.scope),
+      `"${entry.name}" does not say how far it reaches`,
+    );
   }
+
+  assert.ok(
+    EXCEPTIONS[1].reason.includes('t279'),
+    'the migration exception cites the ticket that established it',
+  );
 });

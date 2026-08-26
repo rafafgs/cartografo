@@ -25,7 +25,9 @@
  *   Fourteen of the sixteen documents under `docs/spec/` were named in
  *   Portuguese; the table in this ticket says what each becomes, and the two
  *   that keep their names (`intake.md`, and the wire glossary t281 owns) are
- *   named here so that "unchanged" is a decision rather than an omission.
+ *   named here so that "unchanged" is a decision rather than an omission. The
+ *   glossary kept its name for two days only: t326 renamed it once t281 was
+ *   done with its contents, and the list below carries the name it has now.
  *
  * ## The one place the old name is allowed to survive
  *
@@ -82,20 +84,23 @@ export const ENTRIES = Object.freeze([
 /**
  * The documents under `docs/spec/` after the rename table of FR5.
  *
- * `intake.md` was already English and does not move; `glossario-wire.md` is
- * t281's and does not move either.
+ * `intake.md` was already English and does not move; the wire glossary was
+ * t281's and did not move with this table either.
  *
- * Two names moved again after this ticket: t303 renamed `topografo-cost.md` and
- * `topografo-flow.md` to `surveyor-cost.md` and `surveyor-flow.md` when it gave
- * the evaluator's two packages English identities. They are listed here under
- * the names they carry now, because this assertion is a claim about what is on
- * disk today — the record of what t299's own table said is
- * `RETIRED_SPEC_DOCUMENTS` below, and that list is untouched.
+ * Three names moved again after this ticket: t303 renamed `topografo-cost.md`
+ * and `topografo-flow.md` to `surveyor-cost.md` and `surveyor-flow.md` when it
+ * gave the evaluator's two packages English identities, and t326 renamed the
+ * wire glossary to `glossary-wire.md` once t281 had finished translating it.
+ * They are listed here under the names they carry now, because this assertion is
+ * a claim about what is on disk today — the record of what t299's own table said
+ * is `RETIRED_SPEC_DOCUMENTS` below, and that list is untouched. The glossary is
+ * not added to it for the same reason `topografo-cost.md` is not: t299's table
+ * never named it, and a frozen record does not grow.
  */
 export const SPEC_DOCUMENTS = Object.freeze([
   'entities-versioning.md',
   'events-stream.md',
-  'glossario-wire.md',
+  'glossary-wire.md',
   'graph.md',
   'human-escalation.md',
   'intake-generation.md',

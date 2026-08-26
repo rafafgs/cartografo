@@ -38,7 +38,7 @@
  *
  * ## The stems, and why stems rather than words
  *
- * Eleven, one per name D24 retired, matched as a SUBSTRING of a path component:
+ * Twelve, one per name D24 retired, matched as a SUBSTRING of a path component:
  *
  * | stem              | the names it retires                                       |
  * |-------------------|------------------------------------------------------------|
@@ -53,6 +53,7 @@
  * | `desenvolvimento` | `desenvolvimento-de-software/` -> `software-development/`  |
  * | `notas`           | `notas/` -> `notes/`                                       |
  * | `grafo`           | `grafo.json`, `grafo.schema.json`, `grafo-travessia.json`  |
+ * | `glossario`       | `glossario-wire.md` and its two parser suites (t326)       |
  *
  * A substring rather than a whole component, because these words inflect and
  * compose: `especificacoes` is the plural of `especificacao`, and
@@ -95,6 +96,16 @@
  * `graph.json` / `graph.schema.json` / `graph-traversal.json`, the CLI reads the
  * new name, the `$id` is `urn:cartografo:schema:graph:1.0.0`, and the stem is
  * here.
+ *
+ * The twelfth arrived with t326, and it is the last of D24's series to move.
+ * `docs/spec/glossario-wire.md` was the one document under `docs/spec/` t299's
+ * rename table skipped, because t281 owned it and was translating its contents
+ * at the time; the file came out of that pair English inside and Portuguese
+ * outside. t326 is the day it moves — the document is `docs/spec/glossary-wire.md`
+ * and its two parser suites moved with it — so the stem belongs here, on the
+ * same rule this gate's header wrote for `grafo`. It is pure future-proofing:
+ * `glossario` has never been a path segment in this tree except inside those
+ * three names, so it covers nothing today and everything tomorrow.
  *
  * `grafo` is nearly safe as a substring, and the exception is the whole reason
  * this gate now blanks one word before it reads a path. It does not read inside
@@ -186,6 +197,7 @@ export const RETIRED_STEMS = Object.freeze([
   'desenvolvimento',
   'notas',
   'grafo',
+  'glossario',
 ]);
 
 /**
@@ -335,6 +347,10 @@ test('AT2 — the sweep bites on every name D24 retired', () => {
     ['schema/grafo.schema.json', 'grafo'],
     ['packages/runner/test/fixtures/grafo-travessia.json', 'grafo'],
     ['software-development.grafo.json', 'grafo'],
+    // the last document of D24's series to move, and its two parser suites (t326)
+    ['docs/spec/glossario-wire.md', 'glossario'],
+    ['packages/core/test/glossario-wire.test.ts', 'glossario'],
+    ['packages/core/test/glossario-wire-docs.test.ts', 'glossario'],
   ];
 
   for (const [dead, stem] of retired) {
@@ -367,6 +383,13 @@ test('AT2 — the sweep spares the names that replaced them', () => {
     'notes/2026-08-25-t305-closing-note.md',
     'docs/spec/graph.md',
     'scripts/validate-graph.mjs',
+    // the English names t326 gave the wire glossary and its two parser suites:
+    // the `glossario` stem must not read inside `glossary`
+    'docs/spec/glossary-wire.md',
+    'packages/core/test/glossary-wire.test.ts',
+    'packages/core/test/glossary-wire-docs.test.ts',
+    'packages/core/test/glossary-terms.ts',
+    'packages/test-support/src/glossary.ts',
     // the brand name, which spells `grafo` and is D24's own first exception
     'packages/core/bin/cartografo.mjs',
     'packages/runner/bin/cartografo-runner.mjs',

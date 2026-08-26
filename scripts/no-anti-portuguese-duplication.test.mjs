@@ -9,7 +9,7 @@
  * really were one fact written down more than once, and those two are what this
  * gate keeps collapsed:
  *
- * - **The table parser of `docs/spec/glossario-wire.md`.** Five wire gates each
+ * - **The table parser of `docs/spec/glossary-wire.md`.** Five wire gates each
  *   opened that spec and matched its rows with a parser of their own, and the
  *   five had already drifted: two split a multi-spelling cell and stripped the
  *   `=` qualifier, three did neither, and two tracked `### N.N` headings while
@@ -64,7 +64,7 @@ export const OWNER_SPECIFIER = '@cartografo/test-support';
 export const PARSER_NAME = 'glossaryTerms';
 
 /** The spec the parser owns the reading of. */
-export const GLOSSARY_FILE = 'glossario-wire.md';
+export const GLOSSARY_FILE = 'glossary-wire.md';
 
 /** The per-package gate that consumes the parser, one per workspace. */
 export const WIRE_GATE_FILE = 'no-portuguese-wire.test.ts';

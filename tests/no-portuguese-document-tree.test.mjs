@@ -92,14 +92,14 @@ export const ROOT_DOCUMENTS = Object.freeze(['README.md', 'DECISIONS.md']);
 /**
  * The one document whose CONTENTS this gate never reads.
  *
- * t281 owns `docs/spec/glossario-wire.md` and gave it a gate of its own
+ * t281 owns `docs/spec/glossary-wire.md` and gave it a gate of its own
  * (`packages/core/test/no-portuguese-glossary-prose.test.ts`), which sweeps its
  * prose and spares its table rows — because the rows are the data: a map of
  * retired Portuguese names is written in retired Portuguese names forever.
  * t299's sweep carves it out for the same reason. Its path segments are still
  * read here; only its lines are spared.
  */
-export const CONTENT_NOT_SWEPT = 'docs/spec/glossario-wire.md';
+export const CONTENT_NOT_SWEPT = 'docs/spec/glossary-wire.md';
 
 /**
  * The path segments that stay Portuguese. There are none, and that is the point.

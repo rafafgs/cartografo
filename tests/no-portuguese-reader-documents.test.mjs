@@ -1,7 +1,7 @@
 /**
  * D24 gate: every document a stranger reads before the code is English (t299).
  *
- * The series' first sibling (t281) took `docs/spec/glossario-wire.md`, the one
+ * The series' first sibling (t281) took `docs/spec/glossary-wire.md`, the one
  * document that could not simply be translated because it is a map of retired
  * names. This one takes the opposite half: the documents somebody opens BEFORE
  * touching a line of source — the README, the product explainer, the two format
@@ -74,7 +74,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
  * and it is permanent by design rather than by neglect — a map of retired names
  * is written in retired names forever.
  */
-export const NOT_SWEPT = 'glossario-wire.md';
+export const NOT_SWEPT = 'glossary-wire.md';
 
 /** An opening or closing code fence, and the run of backticks that makes it. */
 const FENCE = /^\s*(`{3,})/;

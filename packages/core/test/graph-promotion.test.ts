@@ -151,7 +151,7 @@ function newNode(): Record<string, unknown> {
     id: 'checar_fatos',
     role: 'revisor',
     node_type: 'work',
-    description: 'Confere cada afirmação da nota contra a fonte citada.',
+      description: 'Checks each claim of the note against the cited source.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
       version: '1.0.0',
@@ -172,7 +172,7 @@ function newNode(): Record<string, unknown> {
         {
           type: 'deterministic',
           command: 'test -s checagem.md',
-          description: 'O relatório de checagem existe e não está vazio.',
+          description: 'The check report exists and is not empty.',
         },
       ],
     },
@@ -222,7 +222,7 @@ function expectedOperations(): unknown[] {
   ];
 }
 
-const EVIDENCE = { fonte: 'telemetria', observacao: 'divergência sistemática neste projeto' };
+const EVIDENCE = { fonte: 'telemetry', observacao: 'systematic divergence in this project' };
 const EXPECTED_METRIC = { nome: 'retrabalho_por_travessia', direcao: 'cai', de: 0.4, para: 0.1 };
 
 /** Evolves a lineage through the ordinary proposal flow: create, then apply. */
@@ -269,7 +269,7 @@ async function offer(
  *
  * A promotion/offer is a proposal like any other — including in this: since
  * t165 `apply` demands `aprovada`, and nothing about carrying a diff between
- * lineages skips the gate of princípio 5.
+ * lineages skips the gate of principle 5.
  */
 async function approve(ctx: TestContext, id: number): Promise<void> {
   const response = await request<{ proposal: Proposal }>(
@@ -526,14 +526,14 @@ test('t140 AT22 — promoting or offering on an unknown lineage is a 404', async
   await registerBase(ctx);
   const before = proposalCount(ctx);
 
-  const promoted = await promote(ctx, 'inexistente', {
+  const promoted = await promote(ctx, 'does-not-exist', {
     evidence: EVIDENCE,
     expected_metric: EXPECTED_METRIC,
   });
   assert.equal(promoted.status, 404, JSON.stringify(promoted.body));
   assert.equal(promoted.body.error, 'unknown_graph');
 
-  const offered = await offer(ctx, 'inexistente', {
+  const offered = await offer(ctx, 'does-not-exist', {
     variant_id: VARIANT_ID,
     evidence: EVIDENCE,
     expected_metric: EXPECTED_METRIC,

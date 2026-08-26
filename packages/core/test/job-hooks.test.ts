@@ -175,7 +175,7 @@ function registerGraph(db: Database, document: GraphDocument): string {
 /** Creates a job standing on `redigir`, optionally tied to a graph version. */
 function newJob(db: Database, graphVersionId: string | null): Job {
   return createJob(db, {
-    title: 'a nota que dispara ganchos',
+    title: 'the note that fires hooks',
     entry_node_id: 'redigir',
     graph_version_id: graphVersionId ?? undefined,
   });
@@ -284,7 +284,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
 
   // Blocked on `redigir`, which is exactly where the node_blocked hook points.
   const stuck = newJob(db, versionId);
-  const blocked = blockJob(db, stuck.id, { reason: 'a redação parou esperando o tema' });
+  const blocked = blockJob(db, stuck.id, { reason: 'the drafting stopped waiting for the theme' });
   assert.equal(blocked?.blocked, true);
 
   const enqueued = only(hookDeliveries(db));
@@ -298,7 +298,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   transitionJob(db, walking.id, { to_node_id: 'revisar' });
   const afterMoving = hookDeliveries(db).length;
 
-  blockJob(db, walking.id, { reason: 'a revisão parou' });
+  blockJob(db, walking.id, { reason: 'the review stopped' });
 
   assert.equal(
     hookDeliveries(db).length,
@@ -316,7 +316,7 @@ test('AT6 — a job with no graph version enqueues nothing, and raises nothing',
 
   const moved = transitionJob(db, job.id, { to_node_id: 'revisar' });
   assert.equal(moved?.current_node_id, 'revisar');
-  const blocked = blockJob(db, job.id, { reason: 'sem grafo, e mesmo assim travado' });
+  const blocked = blockJob(db, job.id, { reason: 'no graph, and jammed all the same' });
   assert.equal(blocked?.blocked, true);
 
   assert.deepEqual(hookDeliveries(db), [], 'nothing to look hooks up in is not an error');
@@ -331,7 +331,7 @@ test('AT7 — a graph version with no hooks key enqueues nothing, and raises not
 
   const job = newJob(db, registerGraph(db, document));
   transitionJob(db, job.id, { to_node_id: 'revisar' });
-  blockJob(db, job.id, { reason: 'a revisão parou' });
+  blockJob(db, job.id, { reason: 'the review stopped' });
 
   assert.deepEqual(
     hookDeliveries(db),
@@ -363,7 +363,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
     tickIntervalMs: 10,
     fetchImpl: async () => {
       attempts += 1;
-      throw new Error('consumidor do gancho fora do ar');
+      throw new Error('the hook consumer is down');
     },
   });
   const url = await app.listen({ port: 0, host: '127.0.0.1' });

@@ -72,13 +72,13 @@ test('AT1 — POST /v1/webhooks registers a subscription and never echoes the se
   const ctx = await startControlPlane(t);
 
   const response = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
 
   assert.equal(response.status, 201);
   assert.ok(Number.isInteger(response.body.id) && response.body.id > 0);
-  assert.equal(response.body.url, 'https://exemplo.invalid/hook');
+  assert.equal(response.body.url, 'https://example.invalid/hook');
   assert.equal(response.body.project_id, 1, 'without projeto_id the subscription is the default one');
   assert.equal(response.body.filter_types, null, 'without tipos the subscription wants every type');
   assert.equal(response.body.deactivated_at, null, 'a fresh subscription is active');
@@ -102,15 +102,15 @@ test('AT2 — an invalid url, a missing secret or an unknown type is a 400', asy
     return response.body;
   };
 
-  await refused({ url: 'ftp://exemplo.invalid/hook', secret: SECRET });
-  await refused({ url: 'nao-e-uma-url', secret: SECRET });
-  await refused({ url: '/apenas/um/caminho', secret: SECRET });
+  await refused({ url: 'ftp://example.invalid/hook', secret: SECRET });
+  await refused({ url: 'not-a-url', secret: SECRET });
+  await refused({ url: '/only/one/path', secret: SECRET });
   await refused({ secret: SECRET });
-  await refused({ url: 'https://exemplo.invalid/hook' });
-  await refused({ url: 'https://exemplo.invalid/hook', secret: '' });
+  await refused({ url: 'https://example.invalid/hook' });
+  await refused({ url: 'https://example.invalid/hook', secret: '' });
 
   const unknownType = await refused({
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
     filter_types: ['nao_existe'],
   });
@@ -134,12 +134,12 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
   };
 
   const mine = await create({
-    url: 'https://exemplo.invalid/projeto-1',
+    url: 'https://example.invalid/projeto-1',
     secret: SECRET,
     filter_types: ['job.created'],
   });
   const other = await create({
-    url: 'https://exemplo.invalid/projeto-9',
+    url: 'https://example.invalid/projeto-9',
     secret: SECRET,
     project_id: 9,
   });
@@ -174,7 +174,7 @@ test('AT4 — DELETE deactivates, is idempotent, and 404s on an unknown id', asy
   const ctx = await startControlPlane(t);
 
   const created = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
   assert.equal(created.status, 201);

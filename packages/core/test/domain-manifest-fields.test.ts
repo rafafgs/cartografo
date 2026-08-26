@@ -131,20 +131,20 @@ test('AT8 — the document, node, edge and hook field sets are exactly the graph
 /** A manifest with every field the pin covers, plus the catalogue fields it does not. */
 function pinnableManifest(): Record<string, unknown> {
   return {
-    id: 'exemplo',
+    id: 'example',
     version: '1.0.0',
     hash: `sha256:${'0'.repeat(64)}`,
     role: 'work',
-    description: 'Uma skill de exemplo.',
+    description: 'An example skill.',
     input: { type: 'object' },
     output: { type: 'object' },
     preconditions: [],
     checks: [
-      { id: 'suite', type: 'deterministic', description: 'A suíte passa.', command: 'make test' },
+      { id: 'suite', type: 'deterministic', description: 'The suite passes.', command: 'make test' },
     ],
     permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
     budgets: { timeout_s: 1800 },
-    instructions: '# Exemplo',
+    instructions: '# Example',
     origin: { type: 'native' },
   };
 }
@@ -156,7 +156,7 @@ test('AT8 — the hash covers the six content fields by their new names, and not
   // the subset under its OLD name would serialize to nothing and the mutation
   // below would come back with the same hash.
   const covered: Array<[string, unknown]> = [
-    ['instructions', '# Outro corpo'],
+    ['instructions', '# Another body'],
     ['input', { type: 'string' }],
     ['output', { type: 'string' }],
     ['checks', []],
@@ -178,7 +178,7 @@ test('AT8 — the hash covers the six content fields by their new names, and not
   const catalogue: Array<[string, unknown]> = [
     ['id', 'outro-id'],
     ['version', '2.0.0'],
-    ['description', 'outra descrição'],
+    ['description', 'another description'],
     ['role', 'gate'],
     ['origin', { type: 'imported', reviewed_by: 'rafael' }],
   ];

@@ -170,7 +170,7 @@ async function graphRoundTrip(
         },
       },
     ],
-    evidence: { fonte: 'telemetria', observacao: 'a revisão passa tudo' },
+    evidence: { fonte: 'telemetry', observacao: 'the review passes everything' },
     expected_metric: { nome: 'reprovacoes', direcao: 'sobe', de: 0, para: 2 },
   });
   assert.equal(proposal.status, 201, JSON.stringify(proposal.body));
@@ -181,7 +181,7 @@ async function graphRoundTrip(
   const applied = await request(ctx, 'POST', `/v1/proposals/${proposalId}/apply`, {});
   assert.equal(applied.status, 200, JSON.stringify(applied.body));
   const reverted = await request(ctx, 'POST', `/v1/proposals/${proposalId}/revert`, {
-    reason: 'o red-team reprovou tudo e a travessia parou',
+    reason: 'the red team failed everything and the crossing stopped',
   });
   assert.equal(reverted.status, 200, JSON.stringify(reverted.body));
 
@@ -236,7 +236,7 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
 
   // --- the execution, end to end, through the API only ----------------------
   const job = await createJob(ctx, {
-    title: 'trabalho que anda',
+    title: 'job that walks',
     entry_node_id: 'entrada',
     execution_id: EXECUTION,
     graph_version_id: 'v1',
@@ -247,14 +247,14 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
     to_node_id: 'desenvolvimento',
   });
-  await request(ctx, 'PATCH', `/v1/jobs/${job.id}`, { title: 'título emendado' });
+  await request(ctx, 'PATCH', `/v1/jobs/${job.id}`, { title: 'amended title' });
 
   const session = await request<Session>(ctx, 'POST', '/v1/sessions', {
     job_id: job.id,
     node_id: 'desenvolvimento',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'implemente a ficha',
+    prompt: 'implement the ticket',
     timeout_seconds: 5400,
   });
   assert.equal(session.status, 201);
@@ -263,14 +263,14 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     job_id: job.id,
     session_id: session.body.id,
     kind: 'question',
-    question: 'renumerar a migração?',
-    recommendation: 'manter 0002',
+    question: 'renumber the migration?',
+    recommendation: 'keep 0002',
     auto_approvable: true,
   });
   assert.equal(inputRequest.status, 201);
 
   await request(ctx, 'PATCH', `/v1/input-requests/${inputRequest.body.id}/answer`, {
-    answer: 'manter 0002',
+    answer: 'keep 0002',
     answered_by: 'rafael',
   });
   await request(ctx, 'PATCH', `/v1/sessions/${session.body.id}/finish`, {
@@ -287,7 +287,7 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // A second job, blocked and auto-resolved: it covers the ends the main
   // sequence does not touch (blocked flag, automatic origin).
   const stopped = await createJob(ctx, {
-    title: 'trabalho que para',
+    title: 'job that stops',
     entry_node_id: 'entrada',
     execution_id: EXECUTION,
     graph_version_id: 'v2',
@@ -309,12 +309,12 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // first would leave the job unblocked at the end and the "flag raised" end with
   // no coverage at all. The sequence as it is now exercises both origins of a
   // block — the automatic one from the escalation and the manual one.
-  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { reason: 'esperando humano' });
+  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { reason: 'waiting for a human' });
   const otherSession = await request<Session>(ctx, 'POST', '/v1/sessions', {
     execution_id: EXECUTION,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'sessão que fica aberta',
+    prompt: 'session that stays open',
   });
   assert.equal(otherSession.status, 201);
 
@@ -328,7 +328,7 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // `execution.finished` in the log — and the lease round trip below never
   // touches this job, so nothing is still holding it when it arrives.
   const arriving = await createJob(ctx, {
-    title: 'nota que chega ao fim',
+    title: 'note that reaches the end',
     entry_node_id: 'redigir',
     execution_id: FINISHED_EXECUTION,
     graph_version_id: baseVersion,
@@ -348,13 +348,13 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     node_id: 'revisar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'revisa e encerra',
+    prompt: 'review and close',
   });
   assert.equal(closing.status, 201);
   const closed = await request(ctx, 'PATCH', `/v1/sessions/${closing.body.id}/finish`, {
     status: 'completed',
     exit_code: 0,
-    output: { outcome: 'passou', evidencia: 'a nota responde ao tema' },
+    output: { outcome: 'pass', evidence: 'the note answers the theme' },
   });
   assert.equal(closed.status, 200, JSON.stringify(closed.body));
 

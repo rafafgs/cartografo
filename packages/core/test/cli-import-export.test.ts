@@ -95,7 +95,7 @@ async function registeredSkills(url: string): Promise<RegisteredSkill[]> {
 test('AT5 — importing the factory bundle, refusing a reimport, exporting and the round trip', { timeout: 300_000 }, async (t) => {
   const base = temporaryArea(t);
   const first = await startControlPlane(t, {
-    databasePath: path.join(base, 'primeiro', 'cartografo.db'),
+    databasePath: path.join(base, 'first', 'cartografo.db'),
   });
 
   let importedVersion = '';
@@ -198,7 +198,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
 
   await t.test('round trip: the exported file imports into another control plane with the same id', async () => {
     const second = await startControlPlane(t, {
-      databasePath: path.join(base, 'segundo', 'cartografo.db'),
+      databasePath: path.join(base, 'second', 'cartografo.db'),
     });
 
     const result = await runCli(['import', exportedFile, '--url', second.url], { token: second.token });

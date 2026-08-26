@@ -86,7 +86,7 @@ test('AT — once filled, the node lets the ticket through', async () => {
 
   assert.deepEqual(
     missingRequiredFields(DECLARATIONS, 'triagem', {
-      premise_source: 'relatório trimestral 2026Q2, página 12',
+      premise_source: 'quarterly report 2026Q2, page 12',
     }),
     [],
   );

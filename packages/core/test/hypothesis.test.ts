@@ -27,7 +27,7 @@ let cachedHypothesis: typeof HypothesisModule | null = null;
 async function loadHypothesis(): Promise<typeof HypothesisModule> {
   assert.ok(
     existsSync(path.join(PACKAGE_ROOT, 'src', 'domain', 'hypothesis.ts')),
-    'artefato ainda não existe: packages/core/src/domain/hypothesis.ts',
+    'artifact does not exist yet: packages/core/src/domain/hypothesis.ts',
   );
   cachedHypothesis ??= (await import(
     new URL('../src/domain/hypothesis.ts', import.meta.url).href

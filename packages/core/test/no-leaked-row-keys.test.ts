@@ -13,7 +13,7 @@
  * `docs/spec/glossario-wire.md` §4.2 has no row for any of the four, and
  * inventing a spelling the glossary does not hold is the one thing the glossary
  * exists to prevent. Renaming them is a migration and a glossary entry, and it
- * is a ficha of its own.
+ * is a ticket of its own.
  *
  * So the projections have to build `body`, `acceptance_criteria`,
  * `transcript_truncated` and `transcript_original_size` EXPLICITLY, out of a row

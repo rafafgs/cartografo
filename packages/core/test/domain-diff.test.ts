@@ -121,7 +121,7 @@ const ARCHIVE_NODE: GraphNode = {
       {
         type: 'deterministic',
         command: 'test -s acervo/nota.md',
-        description: 'A nota chegou ao acervo.',
+        description: 'The note reached the archive.',
       },
     ],
   },

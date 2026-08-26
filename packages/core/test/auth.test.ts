@@ -56,7 +56,7 @@ async function raw(
   const response = await fetch(`${ctx.url}${routePath}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ title: 'trabalho autenticado', entry_node_id: 'refinar' }),
+    body: JSON.stringify({ title: 'authenticated job', entry_node_id: 'refinar' }),
   });
   const text = await response.text();
   return {
@@ -168,7 +168,7 @@ test('t143 AT — a runner credential is refused outside its route family', asyn
   const token = await pairedRunnerToken(ctx, 'runner-a');
 
   const denied = await call(ctx, 'POST', '/v1/jobs', token, {
-    title: 'trabalho que um runner não cria',
+    title: 'a job a runner does not create',
     entry_node_id: 'refinar',
   });
   assert.equal(denied.status, 403, 'authenticated is not authorized: the token is valid and refused');
@@ -246,7 +246,7 @@ test('t180 — the 403 of a runner outside its surface names the surface in Engl
   const token = await pairedRunnerToken(ctx, 'runner-a');
 
   const denied = await call(ctx, 'POST', '/v1/jobs', token, {
-    title: 'trabalho que um runner não cria',
+    title: 'a job a runner does not create',
     entry_node_id: 'refinar',
   });
 

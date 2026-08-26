@@ -573,13 +573,13 @@ test('t279 AT6 — a database born from scratch records every checksum, and warn
   // and `0003` after. All three have to end up with a checksum anyway.
   writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
   writeMigration(dir, '0002_checksum.sql', CHECKSUM_COLUMN_SQL);
-  writeMigration(dir, '0003_terceira.sql', 'CREATE TABLE terceira (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '0003_third.sql', 'CREATE TABLE third (id TEXT PRIMARY KEY);');
 
   const warned: string[] = [];
   const db = openDatabase(path.join(base, 'cartografo.db'));
   t.after(() => db.close());
 
-  const expected = ['0001_init', '0002_checksum', '0003_terceira'];
+  const expected = ['0001_init', '0002_checksum', '0003_third'];
   assert.deepEqual(
     migrate(db, dir, { onChecksumBackfilled: (id) => warned.push(id) }),
     expected,
@@ -611,8 +611,8 @@ test('t279 AT7 — an applied migration edited in place fails the next startup, 
   mkdirSync(dir);
   writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
   writeMigration(dir, '0002_checksum.sql', CHECKSUM_COLUMN_SQL);
-  const original = 'CREATE TABLE terceira (id TEXT PRIMARY KEY);';
-  writeMigration(dir, '0003_terceira.sql', original);
+  const original = 'CREATE TABLE third (id TEXT PRIMARY KEY);';
+  writeMigration(dir, '0003_third.sql', original);
 
   const dbPath = path.join(base, 'cartografo.db');
   const first = openDatabase(dbPath);
@@ -622,8 +622,8 @@ test('t279 AT7 — an applied migration edited in place fails the next startup, 
   // The D20 move, in miniature: same file, same id, different content. Today
   // this is a silent skip, and the divergence only surfaces later as an
   // unrelated `no such column` in the middle of a request.
-  const edited = 'CREATE TABLE terceira (id TEXT PRIMARY KEY, extra TEXT);';
-  writeMigration(dir, '0003_terceira.sql', edited);
+  const edited = 'CREATE TABLE third (id TEXT PRIMARY KEY, extra TEXT);';
+  writeMigration(dir, '0003_third.sql', edited);
 
   const second = openDatabase(dbPath);
   t.after(() => second.close());
@@ -632,7 +632,7 @@ test('t279 AT7 — an applied migration edited in place fails the next startup, 
     () => migrate(second, dir),
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /0003_terceira/, 'the message has to name the migration');
+      assert.match(error.message, /0003_third/, 'the message has to name the migration');
       assert.ok(
         error.message.includes(sha256Of(original)),
         'and the checksum recorded when it ran',
@@ -668,7 +668,7 @@ test('t279 AT8 — an applied migration missing on disk stops the startup before
   // The cleanup pass D24 forbids: the id already recorded stops matching any
   // file, and the renamed file looks like a migration that never ran.
   renameSync(path.join(dir, '0001_init.sql'), path.join(dir, '0001_inicio.sql'));
-  writeMigration(dir, '0003_terceira.sql', 'CREATE TABLE terceira (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '0003_third.sql', 'CREATE TABLE third (id TEXT PRIMARY KEY);');
 
   const second = openDatabase(dbPath);
   t.after(() => second.close());
@@ -690,7 +690,7 @@ test('t279 AT8 — an applied migration missing on disk stops the startup before
   );
   assert.equal(
     second
-      .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'terceira'")
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'third'")
       .get(),
     undefined,
     'and the migration that really was pending stays unapplied',

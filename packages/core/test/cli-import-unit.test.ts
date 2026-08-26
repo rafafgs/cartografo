@@ -143,7 +143,7 @@ test('a skills directory that cannot be listed stops the check where it is', (t)
 
 test('a manifest that is not readable JSON is one problem, and the rest is still checked', (t) => {
   const directory = bundleCopy(t, (copy) => {
-    writeFileSync(path.join(copy, 'skills', 'refine-ticket.json'), '{ nem JSON', 'utf8');
+    writeFileSync(path.join(copy, 'skills', 'refine-ticket.json'), '{ not JSON', 'utf8');
   });
   const problems = verifyBundle(directory, graphOf(directory));
 
@@ -165,17 +165,17 @@ test('each rule a manifest has to keep is reported on its own', (t) => {
     hash: manifestHash(manifest),
   });
 
-  writeManifest(directory, 'nem-objeto.json', ['not an object']);
-  writeManifest(directory, 'sem-campos.json', { id: 'sem-campos' });
+  writeManifest(directory, 'not-an-object.json', ['not an object']);
+  writeManifest(directory, 'no-fields.json', { id: 'no-fields' });
   writeManifest(directory, 'ID_ERRADO.json', withHash({ ...sound, id: 'ID_ERRADO' }));
-  writeManifest(directory, 'outro-nome.json', withHash({ ...sound, id: 'refine-ticket' }));
+  writeManifest(directory, 'another-name.json', withHash({ ...sound, id: 'refine-ticket' }));
   writeManifest(directory, 'versao-errada.json', withHash({ ...sound, id: 'versao-errada', version: '1.0' }));
-  writeManifest(directory, 'papel-errado.json', withHash({ ...sound, id: 'papel-errado', role: 'juiz' }));
+  writeManifest(directory, 'wrong-role.json', withHash({ ...sound, id: 'wrong-role', role: 'judge' }));
   writeManifest(directory, 'hash-torto.json', { ...sound, id: 'hash-torto', hash: 'sha256:xyz' });
   writeManifest(directory, 'hash-mentiroso.json', {
     ...sound,
     id: 'hash-mentiroso',
-    instructions: 'outra coisa completamente diferente',
+    instructions: 'something else entirely',
   });
 
   // The document is the valid factory graph: what is under test here is the
@@ -229,7 +229,7 @@ test('a pin is checked in each of the three ways it can be wrong', (t) => {
   // recomputed hash leaves the manifest valid and the PIN stale — which is the
   // case the pin exists for (D4).
   const rewritten = bundleCopy(t, (copy) => {
-    const manifest = { ...manifestOf(copy, 'refine-ticket.json'), instructions: 'faça outra coisa' };
+    const manifest = { ...manifestOf(copy, 'refine-ticket.json'), instructions: 'do something else' };
     writeManifest(copy, 'refine-ticket.json', { ...manifest, hash: manifestHash(manifest) });
   });
   const problems = verifyBundle(rewritten, graphOf(rewritten));
@@ -242,10 +242,10 @@ test('a pin is checked in each of the three ways it can be wrong', (t) => {
 test('a document with no nodes to pin is checked without complaining about pins', (t) => {
   const directory = bundleCopy(t);
 
-  assert.deepEqual(messagesOf(verifyBundle(directory, 'nem sequer um objeto'), 'pin'), []);
-  assert.deepEqual(messagesOf(verifyBundle(directory, { nodes: 'nem lista' }), 'pin'), []);
+  assert.deepEqual(messagesOf(verifyBundle(directory, 'not even an object'), 'pin'), []);
+  assert.deepEqual(messagesOf(verifyBundle(directory, { nodes: 'not a list' }), 'pin'), []);
   assert.deepEqual(
-    messagesOf(verifyBundle(directory, { nodes: ['nem objeto'] }), 'pin'),
+    messagesOf(verifyBundle(directory, { nodes: ['not an object'] }), 'pin'),
     [],
     'an entry that is not a node is the graph validator\'s business, not the pin check\'s',
   );
@@ -260,7 +260,7 @@ test('a path that does not exist never becomes a request', async (t) => {
   const plane = await startFakeControlPlane(t, accepting());
 
   await assert.rejects(
-    capture(() => runImport({ path: '/nao/existe/graph.json', url: plane.url })),
+    capture(() => runImport({ path: '/does/not/exist/graph.json', url: plane.url })),
     UsageError,
   );
   assert.deepEqual(plane.requests, []);
@@ -511,7 +511,7 @@ test('an invalid bundle never becomes a request at all', async (t) => {
 test('a class already registered comes back as class_already_registered', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 409,
-    body: { error: 'class_already_registered', message: 'a classe software-development já existe' },
+    body: { error: 'class_already_registered', message: 'the class software-development already exists' },
   }));
   const directory = bundleCopy(t);
 
@@ -520,7 +520,7 @@ test('a class already registered comes back as class_already_registered', async 
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /class_already_registered — a classe software-development já existe/);
+  assert.match(run.stderr, /class_already_registered — the class software-development already exists/);
 });
 
 test('a graph the control plane refuses is printed rule by rule', async (t) => {
@@ -561,11 +561,11 @@ test('any other refusal of the graph is printed with what came with it', async (
 
   const detailed = await startFakeControlPlane(t, () => ({
     status: 503,
-    body: { error: 'indisponivel', message: 'o núcleo está reindexando' },
+    body: { error: 'unavailable', message: 'the core is reindexing' },
   }));
   const withBody = await capture(() => runImport({ path: graphPath, url: detailed.url }));
   assert.equal(withBody.code, 1);
-  assert.match(withBody.stderr, /HTTP 503\) — indisponivel: o núcleo está reindexando/);
+  assert.match(withBody.stderr, /HTTP 503\) — unavailable: the core is reindexing/);
 
   const silent = await startFakeControlPlane(t, () => ({ status: 500, text: '' }));
   const withoutBody = await capture(() => runImport({ path: graphPath, url: silent.url }));
@@ -587,10 +587,10 @@ test('an input nobody produces is a contract problem, read off the local manifes
   const directory = bundleCopy(t, (area) => {
     const manifest = manifestOf(area, 'develop-ticket.json');
     const input = manifest.input as Record<string, unknown>;
-    // `carteira` is not projected, not provided by the executor and produced by
+    // `wallet` is not projected, not provided by the executor and produced by
     // no ancestor of `develop`: it is the shape of every gap the three real
     // crossings hit.
-    input.required = [...(input.required as string[]), 'carteira'];
+    input.required = [...(input.required as string[]), 'wallet'];
     manifest.hash = manifestHash(manifest);
     writeManifest(area, 'develop-ticket.json', manifest);
 
@@ -605,7 +605,7 @@ test('an input nobody produces is a contract problem, read off the local manifes
   assert.equal(problems.length, 1, problems.join('\n'));
   assert.ok(problems[0].includes('unproduced_input'), problems[0]);
   assert.ok(problems[0].includes('develop'), problems[0]);
-  assert.ok(problems[0].includes('carteira'), problems[0]);
+  assert.ok(problems[0].includes('wallet'), problems[0]);
 });
 
 test('both factory bundles clear the contract check as they are in the repository', (t) => {

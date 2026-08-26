@@ -1,7 +1,7 @@
 /**
  * Static contract matching at import (t278).
  *
- * Principle 3 promises contracts are checked at the gate, and until this ficha
+ * Principle 3 promises contracts are checked at the gate, and until this ticket
  * nothing checked the one thing a session actually needs: that the DATA a
  * node's pinned skill declares as required `input` will be there when a job
  * arrives. Three real crossings found it out at dispatch time, after paying for
@@ -196,9 +196,9 @@ test('a key produced on only one of two paths into a node is not available there
   const problems = problemsOf({
     nodes: [
       { id: 'A' },
-      { id: 'B', output: objectSchema(['dossie'], { dossie: { type: 'object' } }) },
+      { id: 'B', output: objectSchema(['dossier'], { dossier: { type: 'object' } }) },
       { id: 'C' },
-      { id: 'D', input: objectSchema(['dossie'], { dossie: { type: 'object' } }) },
+      { id: 'D', input: objectSchema(['dossier'], { dossier: { type: 'object' } }) },
     ],
     edges: [
       { from: 'A', to: 'B' },
@@ -212,7 +212,7 @@ test('a key produced on only one of two paths into a node is not available there
   const [problem] = problems;
   assert.equal(problem.code, 'unproduced_input');
   assert.equal(problem.node_id, 'D');
-  assert.equal('key' in problem ? problem.key : null, 'dossie');
+  assert.equal('key' in problem ? problem.key : null, 'dossier');
   assert.deepEqual(
     'produced_elsewhere_by' in problem ? problem.produced_elsewhere_by : null,
     ['B'],
@@ -240,9 +240,9 @@ test('an unresolved ancestor contributes nothing to whoever comes after it', () 
       {
         id: 'A',
         unregistered: true,
-        output: objectSchema(['dossie'], { dossie: { type: 'object' } }),
+        output: objectSchema(['dossier'], { dossier: { type: 'object' } }),
       },
-      { id: 'B', input: objectSchema(['dossie'], { dossie: { type: 'object' } }) },
+      { id: 'B', input: objectSchema(['dossier'], { dossier: { type: 'object' } }) },
     ],
   });
 

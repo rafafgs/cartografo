@@ -56,7 +56,7 @@ const NEW_NODE: GraphNode = {
   id: 'checar_fatos',
   role: 'revisor',
   node_type: 'work',
-  description: 'Confere cada afirmação da nota contra a fonte citada.',
+  description: 'Checks each claim of the note against the cited source.',
   skill_ref: {
     id: 'cartografo/checar-fatos',
     version: '1.0.0',
@@ -77,7 +77,7 @@ const NEW_NODE: GraphNode = {
       {
         type: 'deterministic',
         command: 'test -s checagem.md',
-        description: 'O relatório de checagem existe e não está vazio.',
+        description: 'The check report exists and is not empty.',
       },
     ],
   },
@@ -464,7 +464,7 @@ test('AT5 — applying an operation over a missing target throws instead of a si
 /* t166 — engine and model become proposable fields.                           */
 /*                                                                            */
 /* No new operation type: `change_node_field` already validates the shape and   */
-/* the inverse, so what this ficha changes is one allowlist. The regression    */
+/* the inverse, so what this ticket changes is one allowlist. The regression   */
 /* half matters as much as the addition — a `field` outside the list has to    */
 /* stay refused, or the allowlist has stopped being one.                       */
 /* -------------------------------------------------------------------------- */
@@ -511,7 +511,7 @@ test('t166 AT — a field outside CHANGEABLE_FIELDS is still refused (regression
 
   for (const field of ['id', 'node_type', 'motor', 'modelo']) {
     assert.ok(!CHANGEABLE_FIELDS.includes(field), `the guard is vacuous: "${field}" is allowed`);
-    const report = validateOperation(swapField(field, 'antes', 'depois'));
+    const report = validateOperation(swapField(field, 'before', 'after'));
     assert.equal(report.valid, false, `"${field}" must not be swappable by change_node_field`);
     assert.ok(report.errors.some((error) => error.code === 'field_not_changeable'));
   }

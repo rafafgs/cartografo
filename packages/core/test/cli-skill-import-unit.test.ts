@@ -65,7 +65,7 @@ function emptyRegistry(): FakeAnswer {
 function scanOptions(source: string, url: string, output?: string) {
   return {
     source,
-    repo: 'https://github.com/exemplo/skills',
+    repo: 'https://github.com/example/skills',
     ref: 'a1b2c3d',
     role: 'work',
     by: 'rafael',
@@ -138,7 +138,7 @@ test('a role that is neither work nor gate never becomes a draft', async (t) => 
   const source = sourceFile(t, skillSource('name: a-skill'));
 
   await assert.rejects(
-    capture(() => runScanSkill({ ...scanOptions(source, plane.url), role: 'juiz' })),
+    capture(() => runScanSkill({ ...scanOptions(source, plane.url), role: 'judge' })),
     (error: unknown) => error instanceof UsageError && /work or gate/.test(error.message),
   );
   assert.deepEqual(plane.requests, [], 'D4: the role is never inferred, so it is never guessed away');
@@ -183,7 +183,7 @@ test('a registry that does not answer 200 stops the scan', async (t) => {
 test('an id already registered is a human decision, not an overwrite', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 200,
-    body: { skills: ['nem objeto', { id: 'a-skill' }] },
+    body: { skills: ['not an object', { id: 'a-skill' }] },
   }));
   const source = sourceFile(t, skillSource('name: A Skill'));
 
@@ -262,7 +262,7 @@ test('a manifest file that is not a manifest never opens a gate', async (t) => {
   const broken = path.join(area, 'quebrado.json');
   writeFileSync(broken, '{ "id": ', 'utf8');
   const list = path.join(area, 'lista.json');
-  writeFileSync(list, '["nem manifesto"]', 'utf8');
+  writeFileSync(list, '["not a manifest"]', 'utf8');
 
   await assert.rejects(
     capture(() => runProposeSkill({ path: path.join(area, 'does-not-exist.json'), url: plane.url })),
@@ -287,7 +287,7 @@ test('the approval is opened on the job, never auto-approvable', async (t) => {
   const manifest = path.join(area, 'a-skill.manifest.json');
   writeFileSync(
     manifest,
-    JSON.stringify({ id: 'a-skill', origin: { repo: 'exemplo/skills', ref: 'a1b2c3d' } }),
+    JSON.stringify({ id: 'a-skill', origin: { repo: 'example/skills', ref: 'a1b2c3d' } }),
     'utf8',
   );
 
@@ -306,7 +306,7 @@ test('a manifest with no id and no origin is described as what it is', async (t)
   const plane = await startFakeControlPlane(t, () => ({ status: 201, body: { id: 5 } }));
   const area = temporaryArea(t, 'cartografo-t212-propose-');
   const manifest = path.join(area, 'anonimo.json');
-  writeFileSync(manifest, JSON.stringify({ origin: 'nem objeto' }), 'utf8');
+  writeFileSync(manifest, JSON.stringify({ origin: 'not an object' }), 'utf8');
 
   const run = await capture(() => runProposeSkill({ path: manifest, url: plane.url }));
 
@@ -421,7 +421,7 @@ test('the last answer on the gate is the one that counts', async (t) => {
   const plane = await startFakeControlPlane(t, (request) =>
     request.method === 'GET'
       ? queue([
-          answered('rejeitar: faltou o input schema', 90),
+          answered('rejeitar: the input schema is missing', 90),
           answered(JSON.stringify(APPROVED_MANIFEST), 91),
         ])
       : {

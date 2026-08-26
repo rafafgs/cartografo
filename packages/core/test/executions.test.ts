@@ -126,11 +126,11 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
     job_id: v1a.id,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'trabalhe',
+    prompt: 'work',
   });
 
   // v2: 1 created + 1 block = 2 events.
-  await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { reason: 'travou' });
+  await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { reason: 'jammed' });
 
   const response = await request<{ execution_id: number; metrics: MetricByVersionWithNodes[] }>(
     ctx,
@@ -192,12 +192,12 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   await createJob(ctx, { title: 'only from eight', entry_node_id: 'entrada', execution_id: 8 });
 
   const blocked = await createJob(ctx, {
-    title: 'travado',
+    title: 'jammed',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
   const moving = await createJob(ctx, {
-    title: 'andando',
+    title: 'walking',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -221,7 +221,7 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   const pending = await ask(blocked.id);
   const answered = await ask(moving.id);
   await request(ctx, 'PATCH', `/v1/input-requests/${answered.id}/answer`, {
-    answer: 'siga',
+    answer: 'go on',
     answered_by: 'rafael',
   });
   assert.ok(pending.id !== answered.id);
@@ -895,7 +895,7 @@ async function seedSession(
     ...(seed.nodeId === undefined ? {} : { node_id: seed.nodeId }),
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'trabalhe',
+    prompt: 'work',
   });
   assert.equal(opened.status, 201);
   const id = opened.body.id;

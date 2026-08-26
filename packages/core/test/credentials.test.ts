@@ -107,9 +107,9 @@ test('t124 AT — the migration creates `credential` with the declared shape', a
     () =>
       db
         .prepare('INSERT INTO credential (owner_type, hash, created_at) VALUES (?, ?, ?)')
-        .run('inventado', 'x'.repeat(64), new Date().toISOString()),
+        .run('made-up', 'x'.repeat(64), new Date().toISOString()),
     /CHECK/i,
-    'only `usuario` and `runner` are accepted types',
+    'only `user` and `runner` are accepted types',
   );
 });
 

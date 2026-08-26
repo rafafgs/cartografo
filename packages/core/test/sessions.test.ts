@@ -701,7 +701,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
     ctx,
     'POST',
     `/v1/sessions/${opened.body.id}/permission-denials`,
-    { resource: 'memoria', tool: 'WebFetch', reason: 'inventado' },
+    { resource: 'memory', tool: 'WebFetch', reason: 'made up' },
   );
   assert.equal(outsideEnum.status, 400);
   assert.equal(outsideEnum.body.error, 'validation_failed');
@@ -1063,7 +1063,7 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
     execution_id: 1631,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'trabalhe e cale-se',
+    prompt: 'work and keep quiet',
     silence_seconds: 300,
   });
   assert.equal(opened.status, 201);
@@ -1232,7 +1232,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
       node_id: nodeId,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
-      prompt: `trabalhe em ${nodeId}`,
+      prompt: `work on ${nodeId}`,
     });
     assert.equal(opened.status, 201);
     const closed = await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
@@ -1499,7 +1499,7 @@ async function openNodeSession(ctx: TestContext, jobId: number): Promise<Session
     node_id: 'redigir',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'Redija a nota.',
+    prompt: 'Draft the note.',
   });
   assert.equal(response.status, 201);
   return response.body;
@@ -1533,10 +1533,10 @@ test('t253 AT1 — an output matching the node\'s skill schema is stored and rou
     ctx,
     'PATCH',
     `/v1/sessions/${session.id}/finish`,
-    { status: 'completed', exit_code: 0, output: { texto: 'a nota redigida' } },
+    { status: 'completed', exit_code: 0, output: { texto: 'the drafted note' } },
   );
   assert.equal(finished.status, 200);
-  assert.deepEqual(finished.body.output, { texto: 'a nota redigida' });
+  assert.deepEqual(finished.body.output, { texto: 'the drafted note' });
   assert.equal(
     finished.body.output_accepted,
     true,
@@ -1544,14 +1544,14 @@ test('t253 AT1 — an output matching the node\'s skill schema is stored and rou
   );
 
   const [stored] = await readSessions(ctx, job.id);
-  assert.deepEqual(stored.output, { texto: 'a nota redigida' }, 'the column round-trips');
+  assert.deepEqual(stored.output, { texto: 'the drafted note' }, 'the column round-trips');
 
   const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.deepEqual(
     events.map((event: Event) => event.type),
     ['session.opened', 'session.finished'],
   );
-  assert.deepEqual(events[1].data.output, { texto: 'a nota redigida' });
+  assert.deepEqual(events[1].data.output, { texto: 'the drafted note' });
   assert.equal(
     events[1].data.output_schema_error,
     null,

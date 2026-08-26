@@ -19,7 +19,7 @@
  * manifests interpolate a placeholder nothing produces yet
  * (`{{input.traversal.nodes_visited}}` and `{{input.referencia.commit}}`/`.modo`), so a
  * REAL dispatch of either final node fails closed with `UnresolvedPlaceholderError`
- * before a session exists. That gap is this ficha's own discovery and explicitly
+ * before a session exists. That gap is this ticket's own discovery and explicitly
  * not its scope — what is in scope is the derivation, and the derivation is
  * exercised the way the control plane sees it: `POST /v1/sessions` plus
  * `PATCH /v1/sessions/:id/finish`.
@@ -100,9 +100,9 @@ const CASES: readonly FinalNodeCase[] = Object.freeze([
       },
       record: {
         thesis_id: 'tese-eqx-2026-08',
-        summary: 'a triagem descartou a tese antes da coleta; nada foi alocado',
+        summary: 'triage discarded the thesis before the collection; nothing was allocated',
       },
-      note: 'travessia registrada; nada a monitorar',
+      note: 'crossing recorded; nothing to monitor',
     },
   },
   {
@@ -164,7 +164,7 @@ for (const testCase of CASES) {
     // Born ON the final node: this file is about what the last node owes, and
     // walking the whole graph to get there would only re-prove the transitions.
     const job = await createJob(ctx, {
-      title: `travessia parada em ${testCase.finalNode}`,
+      title: `crossing parked at ${testCase.finalNode}`,
       entry_node_id: testCase.finalNode,
       graph_version_id: versionId,
     });
@@ -190,7 +190,7 @@ for (const testCase of CASES) {
       node_id: testCase.finalNode,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
-      prompt: 'Registre a travessia.',
+      prompt: 'Record the crossing.',
     });
     assert.equal(opened.status, 201);
 

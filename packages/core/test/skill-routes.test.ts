@@ -127,7 +127,7 @@ const ONE_CHECK = [
   {
     id: 'suite-verde',
     type: 'deterministic',
-    description: 'A suíte do projeto passa.',
+    description: 'The project suite passes.',
     command: 'make test',
   },
 ];
@@ -344,7 +344,7 @@ test('AT7 — registering the same id and version again is idempotent, never an 
   const first = await post(ctx, importedManifest());
   assert.equal(first.status, 201);
 
-  const second = await post(ctx, importedManifest({ description: 'outra descrição para o mesmo id' }));
+  const second = await post(ctx, importedManifest({ description: 'another description for the same id' }));
   assert.equal(second.status, 200, `expected 200, got ${second.status}: ${JSON.stringify(second.body)}`);
   assert.equal(second.body.id, 'feature-dev');
   assert.equal(
@@ -418,7 +418,7 @@ test('AT10 — a deterministic check with no command is refused, naming the fiel
   const refused = await post(
     ctx,
     importedManifest({
-      checks: [{ id: 'suite-verde', type: 'deterministic', description: 'A suíte do projeto passa.' }],
+      checks: [{ id: 'suite-verde', type: 'deterministic', description: 'The project suite passes.' }],
     }),
   );
   assert.equal(
@@ -445,7 +445,7 @@ test('AT11 — a check whose type is not one of the two is refused, naming the v
   const refused = await post(
     ctx,
     importedManifest({
-      checks: [{ id: 'x', type: 'nao-existe', description: 'Um check que ninguém sabe executar.' }],
+      checks: [{ id: 'x', type: 'does-not-exist', description: 'A check nobody knows how to run.' }],
     }),
   );
   assert.equal(
@@ -454,7 +454,7 @@ test('AT11 — a check whose type is not one of the two is refused, naming the v
     `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
   );
   const message = reason(refused.body);
-  assert.match(message, /nao-existe/, 'the message has to quote the value it refused');
+  assert.match(message, /does-not-exist/, 'the message has to quote the value it refused');
   assert.match(message, /\bx\b/, 'the message has to name the offending check');
   assert.match(message, /deterministic/, 'the message has to say which types exist');
   assert.match(message, /agentic/, 'the message has to say which types exist');
@@ -498,7 +498,7 @@ test('AT12 — a check with no id, type or description is refused, naming all th
 const V1 = '1.0.0';
 const V2 = '1.1.0';
 const V1_TEXT = '# Feature Development Orchestrator\n\nSiga o protocolo.';
-const V2_TEXT = '# Feature Development Orchestrator\n\nSiga o protocolo, agora com fase 5.';
+const V2_TEXT = '# Feature Development Orchestrator\n\nFollow the protocol, now with phase 5.';
 
 /** Registers one version of `feature-dev`, asserting the status it deserves. */
 async function register(
@@ -697,9 +697,9 @@ function twoNodeGraph(className: string, pins: Array<{ id: string; version: stri
       checks: [
         {
           type: 'agentic',
-          instruction: 'Confirme o que o nó produziu.',
+          instruction: 'Confirm what the node produced.',
           required_evidence: true,
-          description: 'o documento declara o próprio check',
+          description: 'the document declares its own check',
         },
       ],
     },

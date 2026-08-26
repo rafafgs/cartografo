@@ -192,7 +192,7 @@ async function createDraft(
 ): Promise<Draft> {
   const response = await request<DraftResponse>(ctx, 'POST', '/v1/intake', {
     class: CLASS,
-    request: 'quebrar o pedido em fichas',
+    request: 'break the request into tickets',
     ...body,
   });
   assert.equal(response.status, 201, `POST /v1/intake returned ${response.status}`);
@@ -225,10 +225,10 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
     execution_id: 7,
     items: [
       {
-        ref: 'migration',
-        title: 'Migration 0005',
-        body: 'New columns on job and the two intake tables.',
-        acceptance_criteria: ['the migration runs from zero'],
+        ref: 'migracao',
+        title: 'Migração 0005',
+        body: 'Colunas novas em trabalho e as duas tabelas do intake.',
+        acceptance_criteria: ['a migração roda do zero'],
       },
       { ref: 'routes', title: 'Draft and confirmation routes' },
     ],
@@ -244,9 +244,9 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
   assert.equal(draft.created_jobs, null, 'nothing is created until somebody confirms');
   assert.deepEqual(
     draft.items.map((item) => item.ref),
-    ['migration', 'routes'],
+    ['migracao', 'routes'],
   );
-  assert.deepEqual(draft.items[0].acceptance_criteria, ['the migration runs from zero']);
+  assert.deepEqual(draft.items[0].acceptance_criteria, ['a migração roda do zero']);
   assert.equal(draft.items[1].body, null);
   assert.deepEqual(draft.items[1].depends_on, []);
 
@@ -264,7 +264,7 @@ test('AT9 — a malformed item is 400 with the WHOLE list of problems and writes
 
   const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
     class: CLASS,
-    request: 'um lote torto',
+    request: 'a crooked batch',
     items: [
       { ref: 'a', title: '' },
       { ref: 'a', title: 'ref repetido' },
@@ -375,7 +375,7 @@ test('AT10 — PATCH replaces items while pending, and is 409 once the draft is 
   assert.equal(confirmed.status, 201);
 
   const late = await request<ErrorResponse>(ctx, 'PATCH', `/v1/intake/${draft.id}`, {
-    items: [{ ref: 'a', title: 'tarde demais' }],
+    items: [{ ref: 'a', title: 'too late' }],
   });
   assert.equal(late.status, 409);
   assert.equal(late.body.error, 'draft_not_pending');
@@ -505,7 +505,7 @@ test('t175 — confirming a mixed-tier batch carries each item tier onto its own
   const draft = await createDraft(ctx, {
     items: [
       { ref: 'rename', title: 'Rename the column', tier: 'trivial' },
-      { ref: 'feature', title: 'A feature inteira', tier: 'standard' },
+      { ref: 'feature', title: 'The whole feature', tier: 'standard' },
       { ref: 'no-triage', title: 'Nobody triaged this one' },
     ],
   });
@@ -742,7 +742,7 @@ test('AT16 — confirming a draft creates no graph version and moves no pointer'
     items: [
       { ref: 'a', title: 'First', depends_on: ['b'] },
       { ref: 'b', title: 'Second' },
-      { ref: 'c', title: 'Terceira', depends_on: ['a'] },
+      { ref: 'c', title: 'Third', depends_on: ['a'] },
     ],
   });
 
@@ -776,7 +776,7 @@ test('FR6 — GET /v1/intake lists drafts, with filters, and 404s on a stranger'
   await registerFactoryGraph(ctx);
 
   const pending = await createDraft(ctx, { items: [{ ref: 'a', title: 'pendente' }] });
-  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'descartado' }] });
+  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'discarded' }] });
   await request(ctx, 'POST', `/v1/intake/${discarded.id}/discards`, {});
 
   const all = await request<{ drafts: Draft[] }>(ctx, 'GET', '/v1/intake');
@@ -948,7 +948,7 @@ test('t180 — the intake refusals are English prose in the one envelope', async
     '/v1/intake',
     {
       class: CLASS,
-      request: 'quebrar o pedido em fichas',
+      request: 'break the request into tickets',
       items: [
         { ref: 'a', title: 'a', depends_on: ['b'] },
         { ref: 'b', title: 'b', depends_on: ['a'] },

@@ -145,7 +145,7 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
 
   // 2. Create a job under the version that was just born.
   const created = await operation(client, '/jobs', HttpMethod.Post)(undefined, {
-    title: 'primeira nota',
+    title: 'first note',
     entry_node_id: 'redigir',
     grafo_versao_id: graph.graph_version.id,
   });
@@ -163,9 +163,9 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
   const asked = await operation(client, '/input-requests', HttpMethod.Post)(undefined, {
     job_id: job.id,
     kind: 'question',
-    question: 'A nota fala do tema declarado?',
-    context: 'Primeira travessia do grafo mínimo.',
-    options: ['Sim', 'Não'],
+    question: 'Does the note speak of the stated theme?',
+    context: 'First crossing of the minimal graph.',
+    options: ['Yes', 'No'],
     recommendation: 'Sim',
     default_answer: 'Sim',
     auto_approvable: false,

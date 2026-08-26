@@ -8,7 +8,7 @@
  * the posture on refresh: a restarted runner reports again, and there is no
  * timer, no TTL and no cache to invalidate.
  *
- * Two claims carry the ficha:
+ * Two claims carry the ticket:
  *
  * - **A report REPLACES the stored catalog for that engine.** Merging would let
  *   a model an engine stopped offering linger as a row nobody can explain, and
@@ -208,7 +208,7 @@ test('t166 AT — an empty report clears the engine, and says so in its own answ
   // `motor_modelo` being rows-of-models and not rows-of-engines (FR12): with no
   // model row there is nothing left to carry the name, so an engine that offers
   // nothing is indistinguishable from one that never reported. Closing that
-  // would take a second table, and nothing in this ficha needs it — a runner
+  // would take a second table, and nothing in this ticket needs it — a runner
   // whose adapter has no catalog is a runner with no models to dispatch on.
   assert.deepEqual(await listEngines(ctx), []);
 });

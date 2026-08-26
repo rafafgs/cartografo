@@ -63,9 +63,9 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   const report = validateItems([
     {
       ref: 'a',
-      title: 'Migration 0005',
-      body: 'Creates the two intake tables.',
-      acceptance_criteria: ['the migration runs from zero'],
+      title: 'Migração 0005',
+      body: 'Colunas novas em trabalho e as duas tabelas do intake.',
+      acceptance_criteria: ['a migração roda do zero'],
     },
     { ref: 'b', title: 'Confirmation route' },
   ]);
@@ -75,9 +75,9 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   assert.deepEqual(report.items, [
     {
       ref: 'a',
-      title: 'Migration 0005',
-      body: 'Creates the two intake tables.',
-      acceptance_criteria: ['the migration runs from zero'],
+      title: 'Migração 0005',
+      body: 'Colunas novas em trabalho e as duas tabelas do intake.',
+      acceptance_criteria: ['a migração roda do zero'],
       fields: null,
       tier: null,
       depends_on: [],
@@ -138,8 +138,8 @@ test('t168 — an item whose fields is not a map of scalars is rejected', async 
 
   const report = validateItems([
     { ref: 'a', title: 'valor aninhado', fields: { downside: { valor: 12 } } },
-    { ref: 'b', title: 'lista no lugar de mapa', fields: ['downside'] },
-    { ref: 'c', title: 'texto no lugar de mapa', fields: 'downside=12' },
+    { ref: 'b', title: 'a list where a map goes', fields: ['downside'] },
+    { ref: 'c', title: 'text where a map goes', fields: 'downside=12' },
     { ref: 'd', title: 'this one is fine', fields: { downside: 12 } },
   ]);
 
@@ -171,7 +171,7 @@ test('t175 — tier accepts the two declared values, and an absent one normalize
 
   const report = validateItems([
     { ref: 'rename', title: 'Rename a variable', tier: 'trivial' },
-    { ref: 'feature', title: 'A feature inteira, do zero', tier: 'standard' },
+    { ref: 'feature', title: 'The whole feature, from zero', tier: 'standard' },
     { ref: 'no-triage', title: 'Nobody triaged this one' },
   ]);
 
@@ -209,8 +209,8 @@ test('AT2 — a ref repeated between two items is rejected', async () => {
   const { validateItems } = await loadIntake();
 
   const report = validateItems([
-    { ref: 'a', title: 'primeiro' },
-    { ref: 'a', title: 'segundo' },
+    { ref: 'a', title: 'first' },
+    { ref: 'a', title: 'second' },
   ]);
 
   assert.equal(report.valid, false);
@@ -292,13 +292,13 @@ test('AT4 — depends_on citing a ref that is not in the batch is rejected', asy
   const { validateItems } = await loadIntake();
 
   const report = validateItems([
-    { ref: 'a', title: 'primeiro', depends_on: ['b', 'fantasma'] },
-    { ref: 'b', title: 'segundo' },
+    { ref: 'a', title: 'first', depends_on: ['b', 'ghost'] },
+    { ref: 'b', title: 'second' },
   ]);
 
   assert.equal(report.valid, false);
   assert.deepEqual(codes(report), ['unknown_dependency']);
-  assert.match(asText(report), /fantasma/, 'the report names the unknown ref');
+  assert.match(asText(report), /ghost/, 'the report names the unknown ref');
   assert.doesNotMatch(
     asText(report),
     /"b"/,
@@ -309,7 +309,7 @@ test('AT4 — depends_on citing a ref that is not in the batch is rejected', asy
 test('AT5 — an item whose depends_on cites its own ref is rejected', async () => {
   const { validateItems } = await loadIntake();
 
-  const report = validateItems([{ ref: 'a', title: 'sozinho', depends_on: ['a'] }]);
+  const report = validateItems([{ ref: 'a', title: 'alone', depends_on: ['a'] }]);
 
   assert.equal(report.valid, false);
   assert.deepEqual(codes(report), ['self_dependency']);
@@ -516,12 +516,12 @@ test('t255 — an item written with the retired Portuguese keys is refused, neve
 test('t255 — an unknown dependency points at the offending item with the renamed key', async () => {
   const { validateItems } = await loadIntake();
 
-  const report = validateItems([{ ref: 'a', title: 'primeiro', depends_on: ['fantasma'] }]);
+  const report = validateItems([{ ref: 'a', title: 'first', depends_on: ['ghost'] }]);
 
   assert.deepEqual(codes(report), ['unknown_dependency']);
   assert.deepEqual(
     report.problems[0].target,
-    { ref: 'a', depends_on: 'fantasma' },
+    { ref: 'a', depends_on: 'ghost' },
     'the target is published inside the 400, so its own keys are the wire’s too',
   );
 });

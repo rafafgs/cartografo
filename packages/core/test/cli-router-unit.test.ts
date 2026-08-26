@@ -111,10 +111,10 @@ test('a subcommand missing what it cannot work without is refused before any req
 
 test('what is left over on the command line is refused instead of ignored', async () => {
   const lines: [string[], RegExp][] = [
-    [['status', 'sobrando'], /status does not understand: "sobrando"/],
-    [['import', 'graph.json', 'sobrando'], /import does not understand: "sobrando"/],
-    [['export', 'classe', 'sobrando', 'mais'], /export does not understand: "sobrando", "mais"/],
-    [['register-skill', '--job', '7', 'sobrando'], /register-skill does not understand: "sobrando"/],
+    [['status', 'extra'], /status does not understand: "extra"/],
+    [['import', 'graph.json', 'extra'], /import does not understand: "extra"/],
+    [['export', 'a-class', 'extra', 'more'], /export does not understand: "extra", "more"/],
+    [['register-skill', '--job', '7', 'extra'], /register-skill does not understand: "extra"/],
   ];
 
   for (const [line, expected] of lines) {
@@ -183,7 +183,7 @@ test('a control plane that is not there becomes one actionable line', async (t) 
 test('a refused credential becomes one actionable line, and the token travels', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 401,
-    body: { erro: 'nao_autorizado', mensagem: 'token inválido' },
+    body: { erro: 'nao_autorizado', mensagem: 'invalid token' },
   }));
   t.after(() => useToken(undefined));
 

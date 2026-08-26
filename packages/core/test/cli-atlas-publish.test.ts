@@ -146,7 +146,7 @@ test('AT6-AT8 — both factory bundles round-trip through a git-backed atlas', {
 
   // 2. two control planes: one imports from the clone, the other from this repo.
   const mirrored = await startControlPlane(t, {
-    databasePath: path.join(base, 'espelho', 'cartografo.db'),
+    databasePath: path.join(base, 'mirror', 'cartografo.db'),
   });
   const local = await startControlPlane(t, {
     databasePath: path.join(base, 'local', 'cartografo.db'),

@@ -215,7 +215,7 @@ test('AT3 — an empty value, a missing value or a name outside the charset is a
   await refused('/v1/hook-secrets/Gancho', { value: VALUE });
   await refused('/v1/hook-secrets/-comeca-com-hifen', { value: VALUE });
   await refused('/v1/hook-secrets/com.ponto', { value: VALUE });
-  await refused('/v1/hook-secrets/com%20espaco', { value: VALUE });
+  await refused('/v1/hook-secrets/with%20space', { value: VALUE });
 
   const list = await request<{ secrets: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
   assert.deepEqual(list.body.secrets, [], 'a refused registration writes nothing');

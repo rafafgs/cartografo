@@ -58,7 +58,7 @@ interface Proposal {
   applied_version_id: string | null;
 }
 
-const EVIDENCE = { fonte: 'telemetria', observacao: 'duas travessias com retrabalho' };
+const EVIDENCE = { fonte: 'telemetry', observacao: 'two crossings with rework' };
 const EXPECTED_METRIC = { nome: 'retrabalho_por_travessia', direcao: 'cai', de: 0.4, para: 0.1 };
 
 function minimalGraph(): GraphDocument {
@@ -140,7 +140,7 @@ function newNode(): GraphNode {
     id: 'checar_fatos',
     role: 'revisor',
     node_type: 'work',
-    description: 'Confere cada afirmação da nota contra a fonte citada.',
+      description: 'Checks each claim of the note against the cited source.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
       version: '1.0.0',
@@ -161,7 +161,7 @@ function newNode(): GraphNode {
         {
           type: 'deterministic',
           command: 'test -s checagem.md',
-          description: 'O relatório de checagem existe e não está vazio.',
+          description: 'The check report exists and is not empty.',
         },
       ],
     },
@@ -317,7 +317,7 @@ test('t196 AT4 — reverting records exactly one reverted, and no version is reg
   const abandoned = applied.body.graph_version.id;
   const before = (await versionEvents(ctx)).length;
 
-  const reason = 'a checagem de fatos dobrou o tempo de travessia';
+  const reason = 'the fact check doubled the crossing time';
   const reverted = await request<{ proposal: Proposal }>(
     ctx,
     'POST',

@@ -154,7 +154,7 @@ function newNode(): Record<string, unknown> {
     id: 'checar_fatos',
     role: 'revisor',
     node_type: 'work',
-    description: 'Confere cada afirmação da nota contra a fonte citada.',
+      description: 'Checks each claim of the note against the cited source.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
       version: '1.0.0',
@@ -175,7 +175,7 @@ function newNode(): Record<string, unknown> {
         {
           type: 'deterministic',
           command: 'test -s checagem.md',
-          description: 'O relatório de checagem existe e não está vazio.',
+          description: 'The check report exists and is not empty.',
         },
       ],
     },
@@ -200,7 +200,7 @@ function passingOperations(): unknown[] {
   ];
 }
 
-const EVIDENCE = { fonte: 'telemetria', observacao: 'divergência sistemática neste projeto' };
+const EVIDENCE = { fonte: 'telemetry', observacao: 'systematic divergence in this project' };
 const EXPECTED_METRIC = { nome: 'retrabalho_por_travessia', direcao: 'cai', de: 0.4, para: 0.1 };
 
 /** Creates a pending proposal against a lineage — used as the fork's origin, and by AT15. */
@@ -326,7 +326,7 @@ test('t118 AT7 — forking an unknown lineage is a 404 and writes nothing', asyn
   await registerBase(ctx);
   const before = counts(ctx);
 
-  const response = await fork(ctx, 'inexistente', { id: VARIANT_ID });
+  const response = await fork(ctx, 'does-not-exist', { id: VARIANT_ID });
   assert.equal(response.status, 404);
   assert.equal(response.body.error, 'unknown_graph');
   assert.deepEqual(counts(ctx), before);
@@ -449,7 +449,7 @@ test('t118 AT15 — the ordinary proposal flow evolves the variant, base untouch
 
   const proposal = await createProposal(ctx, VARIANT_ID, variantVersion);
 
-  // The gate of princípio 5 stands between the two, since t165: `apply` demands
+  // The gate of principle 5 stands between the two, since t165: `apply` demands
   // `aprovada`, and a variant's proposal is a proposal like any other.
   const approved = await request<{ proposal: Proposal }>(
     ctx,

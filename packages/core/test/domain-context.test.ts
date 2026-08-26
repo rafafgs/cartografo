@@ -98,8 +98,8 @@ test('t253 FR7 — the job seeds input.job, and its own fields land at the top l
       job: {
         id: 253,
         title: 'Input projection',
-        body: 'o corpo bruto',
-        fields: { premise_source: 'nota de 2026-08-17', downside: 3, upside: 12 },
+        body: 'the raw body',
+        fields: { premise_source: 'note from 2026-08-17', downside: 3, upside: 12 },
       },
     }),
   );
@@ -107,12 +107,12 @@ test('t253 FR7 — the job seeds input.job, and its own fields land at the top l
   assert.deepEqual(input.job, {
     id: 253,
     title: 'Input projection',
-    body: 'o corpo bruto',
+    body: 'the raw body',
   });
   // Beside `input.job`, never inside it: this is what keeps bets' scalar custom
   // fields (`premise_source`, `downside`, `upside`) resolving with no bucket to
   // declare.
-  assert.equal(input.premise_source, 'nota de 2026-08-17');
+  assert.equal(input.premise_source, 'note from 2026-08-17');
   assert.equal(input.downside, 3);
   assert.equal(input.upside, 12);
 });

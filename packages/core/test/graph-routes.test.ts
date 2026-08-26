@@ -319,8 +319,8 @@ test('AT10 — the reads reflect the freshly registered graph and 404 on what do
     [version.id],
   );
 
-  assert.equal((await fetch(`${address}/v1/graphs/inexistente`)).status, 404);
-  assert.equal((await fetch(`${address}/v1/graphs/inexistente/versions`)).status, 404);
+  assert.equal((await fetch(`${address}/v1/graphs/does-not-exist`)).status, 404);
+  assert.equal((await fetch(`${address}/v1/graphs/does-not-exist/versions`)).status, 404);
   assert.equal((await fetch(`${address}/v1/graph-versions/sha256:naoexiste`)).status, 404);
 });
 
@@ -623,7 +623,7 @@ test('t278 — a graph whose skills are not registered yet is still registered',
 test('t283 — a resolved document that fails the contracts gate is still a 422 that writes nothing', async (t) => {
   const address = await startApp(t);
 
-  // The pre-t283 refusal, pinned against a regression from this ficha: storing
+  // The pre-t283 refusal, pinned against a regression from this ticket: storing
   // the state must not turn the one case that already refused into a `failed`
   // row. `failed` is only ever reached by a re-check.
   const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };

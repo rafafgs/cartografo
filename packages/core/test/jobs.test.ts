@@ -409,7 +409,7 @@ test('AT2 — POST /v1/jobs/:id/transitions walks the graph and records job.tran
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'andar', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'walk', entry_node_id: 'entrada' });
 
   const first = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
     to_node_id: 'implementar',
@@ -439,7 +439,7 @@ test('AT3 — block and unblock move the flag and record both events', async (t)
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'parar', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'stop', entry_node_id: 'entrada' });
 
   const blocked = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
     reason: 'waiting for the human to answer',
@@ -715,7 +715,7 @@ test('t262 AT-1 — arriving at a final node that pins a skill is not enough to 
   const versionId = await registerMinimalGraph(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a nota curta',
+    title: 'the short note',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1296,13 +1296,13 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
     title: 'A note about the context projection',
-    body: 'o pedido bruto',
+    body: 'the raw request',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
     execution_id: 7,
   });
 
-  await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-1', texto: 'primeiro corte' });
+  await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-1', texto: 'first cut' });
   await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass', evidence: 'checks out' });
   await runNode(ctx, job.id, 'publicar', 'completed', { url: 'https://example/nota-1' });
   // Neither of these two is a fact about the graph: one failed, and one is still
@@ -1343,7 +1343,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
   assert.deepEqual(input.job, {
     id: job.id,
     title: 'A note about the context projection',
-    body: 'o pedido bruto',
+    body: 'the raw request',
   });
   assert.deepEqual(input.project, {
     repo: 'git@github.com:rafaelgomes/cartografo.git',
@@ -1351,7 +1351,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
   });
   assert.deepEqual(
     input.artefato,
-    { branch: 'nota-1', texto: 'primeiro corte', url: 'https://example/nota-1' },
+    { branch: 'nota-1', texto: 'first cut', url: 'https://example/nota-1' },
     'the bucket accumulates across the gate that declares none',
   );
   assert.equal(input.outcome, 'pass', 'the gate merged at the top level');
@@ -1373,10 +1373,10 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
-    title: 'Nota curta',
+    title: 'Short note',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
-    fields: { premise_source: 'nota de 2026-08-17' },
+    fields: { premise_source: 'note from 2026-08-17' },
   });
 
   const first = await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-2' });
@@ -1401,7 +1401,7 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
   );
 
   const expected = buildNodeInput({
-    job: { id: job.id, title: 'Nota curta', body: null, fields: { premise_source: 'nota de 2026-08-17' } },
+    job: { id: job.id, title: 'Short note', body: null, fields: { premise_source: 'note from 2026-08-17' } },
     snapshot: {
       nodes: [
         { id: 'redigir', contract: { produces: 'artefato' } },
@@ -1616,7 +1616,7 @@ async function endSessionWith(
     node_id: nodeId,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'Redija a nota.',
+    prompt: 'Draft the note.',
   });
   assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
 

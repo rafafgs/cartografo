@@ -265,7 +265,7 @@ async function registerRunners(db: ConnectionModule.Database, ...ids: string[]):
 test('AT3 — POST /v1/leases with an unregistered runner_id returns 404', async (t) => {
   const { address } = await start(t);
 
-  const response = await requestLease(address, { runner_id: 'runner-fantasma', job_id: 1 });
+  const response = await requestLease(address, { runner_id: 'runner-ghost', job_id: 1 });
 
   assert.equal(
     response.status,
@@ -276,7 +276,7 @@ test('AT3 — POST /v1/leases with an unregistered runner_id returns 404', async
   // would pass this test without the rule existing at all.
   const body = (await response.json()) as { error?: string; runner_id?: string };
   assert.equal(body.error, 'unknown_runner');
-  assert.equal(body.runner_id, 'runner-fantasma');
+  assert.equal(body.runner_id, 'runner-ghost');
 });
 
 test('AT4 — a granted lease is born active with expires_at = granted_at + ttl_seconds', async (t) => {
@@ -1045,7 +1045,7 @@ async function runFinalNode(address: string, jobId: number): Promise<void> {
       node_id: 'revisar',
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
-      prompt: 'revisa e encerra',
+      prompt: 'review and close',
     },
     201,
   );
@@ -1056,7 +1056,7 @@ async function runFinalNode(address: string, jobId: number): Promise<void> {
     body: JSON.stringify({
       status: 'completed',
       exit_code: 0,
-      output: { outcome: 'passou', evidencia: 'a nota responde ao tema declarado' },
+      output: { outcome: 'pass', evidence: 'the note answers the stated theme' },
     }),
   });
   assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
@@ -1096,7 +1096,7 @@ test('t264 AT1 — execution.finished fires on release even though the transitio
   await registerRunners(db, 'runner-t264');
   const version = await registerMinimalGraph(address);
 
-  const job = await traveller(address, 2640, version, 'nota que devolve o lease por último');
+  const job = await traveller(address, 2640, version, 'note that gives the lease back last');
 
   // The lease the runner holds for the whole of its dispatch.
   const granted = await requestLease(address, { runner_id: 'runner-t264', job_id: job.id });
@@ -1136,8 +1136,8 @@ test('t264 AT2 — releasing a lease of an unfinished round is a no-op', async (
   await registerRunners(db, 'runner-t264');
   const version = await registerMinimalGraph(address);
 
-  const arrived = await traveller(address, 2641, version, 'nota que chega');
-  const midGraph = await traveller(address, 2641, version, 'nota que ainda está redigindo');
+  const arrived = await traveller(address, 2641, version, 'note that arrives');
+  const midGraph = await traveller(address, 2641, version, 'note still drafting');
 
   const granted = await requestLease(address, { runner_id: 'runner-t264', job_id: arrived.id });
   assert.equal(granted.status, 201);

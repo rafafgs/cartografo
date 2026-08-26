@@ -233,7 +233,7 @@ test('AT1 — the stream delivers the envelope the events route would return', a
   assert.equal(stream.contentType, 'text/event-stream');
 
   const job = await createJob(ctx, {
-    title: 'primeiro trabalho da rodada',
+    title: 'first job of the round',
     entry_node_id: 'entrada',
     execution_id: 41,
   });
@@ -264,7 +264,7 @@ test('AT2 — ?type filters the stream down to the asked types', async (t) => {
   t.after(() => stream.abort());
 
   const job = await createJob(ctx, { title: 'anda', entry_node_id: 'entrada' });
-  await moveJob(ctx, job.id, 'revisao');
+  await moveJob(ctx, job.id, 'revisar');
 
   await waitFor(() => stream.messages.length >= 1, 'the transition to reach the stream');
   await settle();
@@ -284,9 +284,9 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
   const stream = await openStream(`${url}/v1/events/stream?project_id=42`);
   t.after(() => stream.abort());
 
-  await createJob(ctx, { title: 'de outro projeto', entry_node_id: 'entrada', project_id: 7 });
+  await createJob(ctx, { title: 'from another project', entry_node_id: 'entrada', project_id: 7 });
   const mine = await createJob(ctx, {
-    title: 'do projeto 42',
+    title: 'from project 42',
     entry_node_id: 'entrada',
     project_id: 42,
   });
@@ -322,14 +322,14 @@ test('AT5 — Last-Event-ID resumes without gaps and without repeating', async (
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const first = await openStream(`${url}/v1/events/stream`);
-  await createJob(ctx, { title: 'antes da queda', entry_node_id: 'entrada' });
+  await createJob(ctx, { title: 'before the crash', entry_node_id: 'entrada' });
   await waitFor(() => first.messages.length >= 1, 'the first event to reach the stream');
   const cursor = first.messages[0].id;
   assert.ok(cursor !== null);
   first.abort();
 
-  const second = await createJob(ctx, { title: 'durante a queda', entry_node_id: 'entrada' });
-  await moveJob(ctx, second.id, 'revisao');
+  const second = await createJob(ctx, { title: 'during the crash', entry_node_id: 'entrada' });
+  await moveJob(ctx, second.id, 'revisar');
 
   const resumed = await openStream(`${url}/v1/events/stream`, { 'last-event-id': cursor });
   t.after(() => resumed.abort());
@@ -352,12 +352,12 @@ test('AT6 — without Last-Event-ID the stream never replays what is already in 
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const old = await createJob(ctx, { title: 'já estava no log', entry_node_id: 'entrada' });
+  const old = await createJob(ctx, { title: 'already in the log', entry_node_id: 'entrada' });
 
   const stream = await openStream(`${url}/v1/events/stream`);
   t.after(() => stream.abort());
 
-  const fresh = await createJob(ctx, { title: 'depois da conexão', entry_node_id: 'entrada' });
+  const fresh = await createJob(ctx, { title: 'after the connection', entry_node_id: 'entrada' });
 
   await waitFor(() => stream.messages.length >= 1, 'the new event to reach the stream');
   await settle();
@@ -404,14 +404,14 @@ test('AT8 — a client that goes away leaves no timer and no error behind', asyn
   t.after(() => process.off('uncaughtException', collect));
 
   const stream = await openStream(`${url}/v1/events/stream`);
-  await createJob(ctx, { title: 'antes do abandono', entry_node_id: 'entrada' });
+  await createJob(ctx, { title: 'before the abandonment', entry_node_id: 'entrada' });
   await waitFor(() => stream.messages.length >= 1, 'the first event to reach the stream');
 
   stream.abort();
   await settle();
 
   // The write path does not care that nobody is listening any more (FR6).
-  const orphan = await createJob(ctx, { title: 'depois do abandono', entry_node_id: 'entrada' });
+  const orphan = await createJob(ctx, { title: 'after the abandonment', entry_node_id: 'entrada' });
   assert.ok(orphan.id > 0);
   await settle();
 

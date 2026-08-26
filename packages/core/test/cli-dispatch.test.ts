@@ -18,7 +18,7 @@ import { temporaryArea, runCli, startControlPlane } from './cli-support.ts';
 test('AT1 — with no subcommand, the command still starts the control plane and serves /health', { timeout: 180_000 }, async (t) => {
   const base = temporaryArea(t);
   const controlPlane = await startControlPlane(t, {
-    databasePath: path.join(base, 'dados', 'cartografo.db'),
+    databasePath: path.join(base, 'data', 'cartografo.db'),
   });
 
   assert.equal(controlPlane.readiness.event, 'cartografo.ready');

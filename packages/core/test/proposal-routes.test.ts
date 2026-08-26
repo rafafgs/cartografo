@@ -513,7 +513,7 @@ test('AT13 — reverting without a reason returns 400; reverting a pending propo
   assert.equal(blankReason.status, 400, 'a blank reason is not evidence');
 
   const pending = await post(address, `/v1/proposals/${proposal.id}/revert`, {
-    reason: 'mudei de ideia',
+    reason: 'changed my mind',
   });
   assert.equal(pending.status, 409);
   assert.equal((await jsonBody<{ error: string }>(pending)).error, 'proposal_not_applied');
@@ -1084,7 +1084,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
     200,
   );
   assert.equal(
-    (await post(address, `/v1/proposals/${b.id}/revert`, { reason: 'piorou de verdade' })).status,
+    (await post(address, `/v1/proposals/${b.id}/revert`, { reason: 'it really did get worse' })).status,
     200,
   );
 
@@ -1131,7 +1131,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
 /* -------------------------------------------------------------------------- */
 /* t165 — the human gate: pendente → aprovada → aplicada                       */
 /*                                                                            */
-/* The tela has offered `Aprovar`/`Rejeitar` since t111 against routes that    */
+/* The screen has offered `Aprovar`/`Rejeitar` since t111 against routes that    */
 /* did not exist (`packages/screen/src/public/actions.js`), and `aprovada` — the */
 /* only status from which it offers `Aplicar` — was not even in the            */
 /* migration's CHECK. These are the two ends of that contract meeting.         */
@@ -1281,7 +1281,7 @@ test('t165 AT6 — the read routes expose rejection_reason', async (t) => {
   assert.equal(
     (await getProposal(address, proposal.id)).rejection_reason,
     reason,
-    'GET /v1/proposals/:id carries the reason the tela already reads (inbox.js:197)',
+    'GET /v1/proposals/:id carries the reason the screen already reads (inbox.js:197)',
   );
 
   const [listed] = await listProposals(address);
@@ -1539,7 +1539,7 @@ test('t215 AT — a proposal that moves a pin to a registered version applies li
   await registerSkill(address, skillManifest('revisar-nota', '1.0.0', '# Revisar\n\nConfira.'));
   const newer = await registerSkill(
     address,
-    skillManifest('revisar-nota', '1.1.0', '# Revisar\n\nConfira, e cite o trecho.'),
+    skillManifest('revisar-nota', '1.1.0', '# Review\n\nCheck it, and cite the passage.'),
   );
 
   const proposal = await createProposal(address, graph.id, version.id, [movePin(pinned, newer)]);
@@ -1700,7 +1700,7 @@ test('t246 AT-D3 — the same target and operations under a different lens are t
     expected_metric: EXPECTED_METRIC,
   };
 
-  // `EVIDENCE` carries no `lens` at all, so it buckets under `null` — the tela's
+  // `EVIDENCE` carries no `lens` at all, so it buckets under `null` — the screen's
   // manual-edit proposals are that case, and the cost lens is the other.
   const withoutLens = await postProposal(address, { ...base, evidence: EVIDENCE });
   assert.equal(withoutLens.status, 201);

@@ -478,7 +478,7 @@ test('t256 — a destination that is not an object is the same refusal', async (
 
   const document = readExample('graph-valid-with-hooks.json') as Record<string, unknown>;
   const hooks = document.hooks as Array<Record<string, unknown>>;
-  hooks[0].destination = 'https://exemplo.invalid/ganchos/revisao';
+  hooks[0].destination = 'https://example.invalid/hooks/revisar';
 
   const report = ported.validateStructure(document);
   assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');
@@ -508,7 +508,7 @@ test('t168 — a document with no custom_fields is a structure error in both val
   assert.equal(missing.code, 'missing_required_field');
 
   const notAList = minimalGraph();
-  notAList.custom_fields = 'nem lista nem nada';
+  notAList.custom_fields = 'neither a list nor anything else';
   const listReport = ported.validateStructure(notAList);
 
   assert.deepEqual(listReport, reference.validarEstrutura(notAList), 'and they agree here too');
@@ -531,7 +531,7 @@ test('t230 — a structure message and the vocabulary around it are English', as
   const reference = await loadReference();
 
   const document = minimalGraph();
-  document.nodes = 'nem lista nem nada';
+  document.nodes = 'neither a list nor anything else';
   const report = ported.validateStructure(document);
 
   assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');

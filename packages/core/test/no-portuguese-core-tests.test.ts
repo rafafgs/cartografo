@@ -25,7 +25,35 @@
  * - **AT2, the plain-ASCII Portuguese.** The closed-stopword method the
  *   package's own `no-portuguese-user-facing-strings.test.ts` uses, over the
  *   whole file rather than over its literals. Seeded from the runner gate's
- *   list and grown by the content words this package actually carried.
+ *   list, grown twice: once by the content words this package's fixtures
+ *   carried, and again by a re-measure over the whole tree AFTER both sweeps
+ *   first went green, which found 144 more lines in 24 files. The list is a
+ *   floor, and the floor moved — which is the same lesson t312 wrote down and
+ *   this ticket had to learn a second time on itself.
+ *
+ * ## What the sweeps do not report, and why
+ *
+ * Three masks and one pin list, and the difference between them is whether
+ * the excuse belongs to a WORD or to a LINE. A word-wide mask is cheap and
+ * has to be narrow, so each one turns on position rather than on vocabulary:
+ *
+ * - {@link WIRE_KEYS} blanks six words where they head a property, because
+ *   that is where `src/routes/proposals.ts`, `src/domain/context.ts`,
+ *   `src/routes/leases.ts` and the graph screen really read them. As a VALUE
+ *   the same word is prose and still goes red.
+ * - {@link RETIRED_NAMES} blanks the pre-D20 vocabulary where it is delimited
+ *   — backticked, quoted, or a path segment — because the glossary gates are
+ *   a map of retired names and a map of retired names is written in them.
+ *   Undelimited, the same word is prose. Right after a `key:`, it is a stale
+ *   VALUE and goes red, which is how four files' `node_type: 'trabalho'` was
+ *   found.
+ * - {@link PROTOCOL_TOKENS} and {@link ILLUSTRATIVE_IDS} blank what t269,
+ *   `docs/spec/graph.md:547` and FR6 decided to keep.
+ *
+ * {@link OUT_OF_SCOPE} is the other kind: twenty-one lines, each excused for
+ * a reason no regular expression encodes — a message `src/` itself writes, a
+ * route D18 retired and this test proves is gone, a fixture the sweep under
+ * test has to CATCH.
  *
  * ## Why the five language gates are never scanned
  *
@@ -99,64 +127,202 @@ export function scannedFiles(): string[] {
  */
 const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
   {
-    file: 'sessions.test.ts',
-    line: 365,
-    reason: 'a route D18 RETIRED, asserted to answer 404; translating it would prove a route that never existed is gone',
-  },
-  {
-    file: 'sessions.test.ts',
-    line: 366,
-    reason: 'the same retired route, on the read verb',
-  },
-  {
-    file: 'sessions.test.ts',
-    line: 367,
-    reason: 'the retired finish route, spelled the way D18 retired it',
-  },
-  {
-    file: 'sessions.test.ts',
-    line: 1822,
-    reason: "the input property of the bets red-team gate at 1.0.0; the fixture's own docstring pins that version's names on purpose",
-  },
-  {
     file: 'input-requests.test.ts',
     line: 119,
-    reason: '`src/repositories/input-request.ts:265` WRITES this block reason; the assertion has to spell it the way the control plane does',
+    reason:
+      '`src/repositories/input-request.ts:265` WRITES this block reason; the assertion has to spell it the way the control plane does',
   },
   {
     file: 'input-requests.test.ts',
     line: 152,
-    reason: 'the same block reason, handed to the block route',
-  },
-  {
-    file: 'input-requests.test.ts',
-    line: 482,
-    reason: 'a route D18 RETIRED, asserted to answer 404',
+    reason:
+      'the same block reason, handed to the block route',
   },
   {
     file: 'input-requests.test.ts',
     line: 897,
-    reason: 'the same block reason `src/repositories/input-request.ts:265` writes, read back off the projection',
+    reason:
+      'the same block reason, read back off the projection',
   },
   {
     file: 'input-requests.test.ts',
     line: 916,
-    reason: 'the same block reason, in the event payload',
+    reason:
+      'the same block reason, in the event payload',
   },
   {
     file: 'proposal-routes.test.ts',
     line: 14,
-    reason: 'an English sentence that QUOTES the frozen hypothesis keys `src/routes/proposals.ts:744-745` names',
+    reason:
+      'an English sentence that QUOTES the frozen hypothesis keys `src/routes/proposals.ts:744-745` calls frozen in so many words',
   },
   {
     file: 'proposal-routes.test.ts',
     line: 16,
-    reason: 'the same sentence, listing the rest of the frozen shape',
+    reason:
+      'the same sentence, listing the rest of that frozen shape',
   },
   {
     file: 'proposal-routes.test.ts',
     line: 939,
-    reason: 'an English sentence that quotes the wire key it asserts on, the way `src/repositories/proposals.ts:548` spells it',
+    reason:
+      'an English sentence quoting the wire key it asserts on, spelled the way `src/repositories/proposals.ts:548` declares it',
+  },
+  {
+    file: 'spec-database-citations.test.ts',
+    line: 469,
+    reason:
+      'a stale DDL citation, verbatim: this is the fixture the sweep under test has to CATCH, so it cannot be renamed',
+  },
+  {
+    file: 'spec-database-citations.test.ts',
+    line: 470,
+    reason:
+      'the same stale DDL, on the column that references it',
+  },
+  {
+    file: 'spec-database-citations.test.ts',
+    line: 511,
+    reason:
+      'a retired name inside a `--` tail, which this sweep strips: the fixture proves a trailing comment is not a citation',
+  },
+  {
+    file: 'cli-skill-import-unit.test.ts',
+    line: 90,
+    reason:
+      'a fixture about DIACRITICS and not about language: `kebabCase` folds combining marks, and an all-ASCII sample would prove nothing',
+  },
+  {
+    file: 'cli-skill-import-unit.test.ts',
+    line: 221,
+    reason:
+      '`src/cli/skill-import.ts:95` WRITES this placeholder; the assertion reads it back',
+  },
+  {
+    file: 'cli-skill-import.test.ts',
+    line: 177,
+    reason:
+      'the same placeholder `src/cli/skill-import.ts:95` writes, on the input schema',
+  },
+  {
+    file: 'cli-skill-import.test.ts',
+    line: 178,
+    reason:
+      'the same placeholder, on the output schema',
+  },
+  {
+    file: 'event-validation.test.ts',
+    line: 302,
+    reason:
+      'the RETIRED entity type, asserted to be REFUSED; translating it would refuse a name no envelope ever carried',
+  },
+  {
+    file: 'glossario-wire-docs.test.ts',
+    line: 383,
+    reason:
+      'a retired name in prose position, undelimited: the one shape that citation sweep has to ignore, and this line is its evidence',
+  },
+  {
+    file: 'glossario-wire.test.ts',
+    line: 123,
+    reason:
+      'the retired header cells of `docs/spec/glossario-wire.md`; a map of retired names is written in retired names',
+  },
+  {
+    file: 'glossary-terms.ts',
+    line: 36,
+    reason:
+      '`pergunta.tipo=pergunta` is the one §1.6 row qualified by key AND value, and the sentence has to spell both halves',
+  },
+  {
+    file: 'migrate.test.ts',
+    line: 308,
+    reason:
+      'a verbatim quotation of a comment inside a frozen migration file, quoted to explain why the sweep strips `--` tails',
+  },
+  {
+    file: 'sessions.test.ts',
+    line: 1822,
+    reason:
+      "the input property of the bets red-team gate at 1.0.0; the fixture's own docstring pins that version's names on purpose",
+  },
+  {
+    file: 'spec-intake-http-codes.test.ts',
+    line: 336,
+    reason:
+      'the retired filter names, as the EXPECTED output of the sweep under test',
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 228,
+    reason:
+      'user-SUBMITTED content, kept in Portuguese by t313: `docs/spec/intake.md` §2 prints this exact item to show intake accepts an item in any language, and `tests/t313-docs-specs-drift.test.mjs` AT7 asserts this file still submits it',
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 229,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 230,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 231,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 247,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'intake-routes.test.ts',
+    line: 249,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 66,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 67,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 68,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 78,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 79,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
+  },
+  {
+    file: 'domain-intake.test.ts',
+    line: 80,
+    reason:
+      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
   },
 ]);
 
@@ -389,6 +555,75 @@ const STOPWORDS: readonly string[] = Object.freeze([
   'taxonomia',
   'telemetria',
   'trimestral',
+  // t315, second round: the tail a stopword list only finds once it has one
+  //
+  // The first two groups turned both sweeps green, and a re-measure over the
+  // whole tree with a wider word list found 144 more lines in 24 files: a
+  // prompt (`trabalhe`), a scratch directory (`espelho`), a runner name
+  // (`laptop do fundador`), a refusal fixture (`nem objeto`), a hook consumer
+  // (`consumidor quebrado`). This group is that round, and it is the ticket's
+  // own lesson applied to itself: a closed list is a floor, and a floor moves
+  // when somebody stands on it.
+  //
+  // Deliberately NOT here, because each is a value the wire really carries:
+  // `piorou` and `confirmada` (`veredito`), `sobe` and `cai` (`direcao`),
+  // `uso`, `recurso`, `ferramenta`, `motivo`, `travada`, `concluida` and
+  // `cota` (retired payload keys and statuses, asserted to be REFUSED),
+  // `variante` (`lineage.type`), `rascunho`, `reprovado` and `aprovado`
+  // (routing labels), `redator`, `revisor` and `copidesque` (node roles of
+  // the shared illustrative convention).
+  'andando',
+  'andar',
+  'antigo',
+  'bruto',
+  'carteira',
+  'chegou',
+  'consumidor',
+  'corte',
+  'curta',
+  'demais',
+  'descartado',
+  'dois',
+  'dossie',
+  'encerra',
+  'espelho',
+  'exemplo',
+  'faltou',
+  'fantasma',
+  'fichas',
+  'fundador',
+  'ideia',
+  'inexistente',
+  'inteira',
+  'inventado',
+  'juiz',
+  'lugar',
+  'memoria',
+  'mudei',
+  'nem',
+  'objeto',
+  'papel',
+  'parar',
+  'quebrado',
+  'quebrar',
+  'redigida',
+  'redija',
+  'retentar',
+  'revisa',
+  'saudavel',
+  'seguir',
+  'sequer',
+  'siga',
+  'sobrando',
+  'sozinho',
+  'tarde',
+  'terceira',
+  'torto',
+  'trabalhe',
+  'travado',
+  'travou',
+  'trecho',
+  'verdade',
 ]);
 
 /**
@@ -439,12 +674,15 @@ const PROTOCOL_TOKENS = new RegExp(
  * - `pergunta`, `resposta` — the two keys of every entry of
  *   `input.perguntas_respondidas`, built by `src/domain/context.ts:266-267`
  *   and by `src/routes/jobs.ts:127-128`.
+ * - `projeto` — a field of `LeaseCeilings`, declared at
+ *   `src/routes/leases.ts:132` and read at line 217; the test helper that
+ *   builds one has to spell it the way the interface does.
  *
  * Built from a list of strings rather than written as a regex literal, for the
  * reason {@link PROTOCOL_TOKENS} is.
  */
 const WIRE_KEYS = new RegExp(
-  `\\b(?:${['antes', 'depois', 'fonte', 'observacao', 'pergunta', 'resposta'].join('|')})["']?\\s*:`,
+  `\\b(?:${['antes', 'depois', 'fonte', 'observacao', 'pergunta', 'projeto', 'resposta'].join('|')})["']?\\s*:`,
   'g',
 );
 
@@ -694,4 +932,51 @@ test('t315 — AT2 does NOT bite on the wire tokens and shared ids this ticket k
   for (const text of allowed) {
     assert.deepEqual(offendersIn(text), [], `AT2 flagged a kept wire token: ${text}`);
   }
+});
+
+test('t315 — a wire key is masked as a KEY and reported as a value', () => {
+  // The whole of the WIRE_KEYS rule, stated as the pair it turns on. Left, the
+  // key the source really reads; right, the same word standing where prose
+  // stands. If these two ever agree, the mask has stopped discriminating and is
+  // just an excuse.
+  for (const [key, value] of [
+    ["    { execucao_id: scenario.executionId, depois: 0.1 },", "          output: { merge_commit: 'depois' },"],
+    ["  const EVIDENCE = { fonte: 'telemetry', observacao: 'two crossings' };", "  title: 'a fonte que ninguem checou',"],
+    ["    { id: '4', pergunta: 'Which mapping holds?', resposta: 'Option 1.' },", '    `aguardando resposta da pergunta ${id}`,'],
+    ['  leaseCeilings: { runner: number; projeto: number },', "  title: 'de outro projeto',"],
+    ['      \'{"fonte":"telemetry"}\',', "  const fonte = 'telemetry';"],
+  ]) {
+    assert.deepEqual(offendersIn(key), [], `WIRE_KEYS did not mask a key position: ${key}`);
+    assert.ok(offendersIn(value).length > 0, `WIRE_KEYS excused a value position: ${value}`);
+  }
+});
+
+test('t315 — a retired name is masked when quoted and reported when it is prose', () => {
+  for (const [quoted, prose] of [
+    ["  job: ['trabalho'],", '    The words pergunta, trabalho and resposta, in prose.'],
+    [' * Whether `trabalho` lands on `job` is not this gate to say.', '  * the trabalho table, named in prose'],
+    ['  assert.equal(repeated(broken).length, 1, \'"trabalho" is listed twice\');', "  title: 'primeiro trabalho da rodada',"],
+    ["    'Answering is `PATCH /v1/perguntas/:id/resposta`.',", "    'A pergunta criada pelo agente bloqueia.',"],
+  ]) {
+    assert.deepEqual(offendersIn(quoted), [], `RETIRED_NAMES did not mask a citation: ${quoted}`);
+    assert.ok(offendersIn(prose).length > 0, `RETIRED_NAMES excused prose: ${prose}`);
+  }
+});
+
+test('t315 — a retired name right after a key is a stale VALUE, and still goes red', () => {
+  // The exception inside the exception, and the defect it found: four files
+  // built graph nodes with `node_type: 'trabalho'` while
+  // `schema/graph.schema.json:191` has read `["work", "gate"]` since t178.
+  for (const stale of [
+    "  node_type: 'trabalho',",
+    "      { id: 'D', node_type: 'portao' },",
+    "  entity: { type: 'trabalho', id: 1 },",
+  ]) {
+    assert.ok(offendersIn(stale).length > 0, `a stale enum value was masked as a citation: ${stale}`);
+  }
+  assert.deepEqual(
+    offendersIn("      { id: 'B', kind: 'work' },"),
+    [],
+    'and the spelling the schema really declares is not reported',
+  );
 });

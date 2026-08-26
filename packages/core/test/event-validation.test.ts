@@ -57,7 +57,7 @@ test('t157 FR5 — an empty item is refused in an optional string-list too', () 
       job_id: 1,
       kind: 'question',
       question: 'which path?',
-      options: ['seguir', ''],
+      options: ['go on', ''],
       auto_approvable: false,
     },
     'options',
@@ -526,15 +526,15 @@ test('t196 AT9 — the graph_version payloads demand what their schemas require'
     requireValidData('graph_version.reverted', {
       graph_id: 'nota-curta',
       target_version: 'sha256:abc',
-      reason: 'piorou o retrabalho',
+      reason: 'the rework got worse',
     }),
-    { graph_id: 'nota-curta', target_version: 'sha256:abc', reason: 'piorou o retrabalho' },
+    { graph_id: 'nota-curta', target_version: 'sha256:abc', reason: 'the rework got worse' },
   );
   for (const missing of ['graph_id', 'target_version', 'reason']) {
     const complete: Record<string, unknown> = {
       graph_id: 'nota-curta',
       target_version: 'sha256:abc',
-      reason: 'piorou o retrabalho',
+      reason: 'the rework got worse',
     };
     delete complete[missing];
     refuses('graph_version.reverted', complete, missing);

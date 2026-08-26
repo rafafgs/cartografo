@@ -373,15 +373,15 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
-  recordJobCreated(ctx.db, 1, 'primeiro fato da rodada');
+  recordJobCreated(ctx.db, 1, 'first fact of the round');
 
   await waitFor(t, () => ctx.calls.length >= 1, 'the recorded event to be pushed');
   const [call] = ctx.calls;
 
-  assert.equal(call.url, 'https://exemplo.invalid/hook');
+  assert.equal(call.url, 'https://example.invalid/hook');
   assert.equal(call.method, 'POST');
   assert.equal(headerValue(call.headers, 'content-type'), 'application/json');
 
@@ -418,9 +418,9 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
 test('AT6 — a subscription never replays what was already in the log', async (t) => {
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
-  const old = recordJobCreated(ctx.db, 1, 'já estava no log');
+  const old = recordJobCreated(ctx.db, 1, 'already in the log');
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
   assert.equal(
@@ -429,7 +429,7 @@ test('AT6 — a subscription never replays what was already in the log', async (
     'the subscription is born pointing at the end of the log',
   );
 
-  const fresh = recordJobCreated(ctx.db, 2, 'depois da assinatura');
+  const fresh = recordJobCreated(ctx.db, 2, 'after the subscription');
 
   await waitFor(t, () => ctx.calls.length >= 1, 'the new event to be pushed');
   await drive(t);
@@ -446,13 +446,13 @@ test('AT7 — filter_types narrows the fan-out to the asked types', async (t) =>
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
     filter_types: ['job.created'],
   });
   recordJobCreated(ctx.db, 1, 'entra');
-  recordJobMoved(ctx.db, 1, 'revisao');
-  recordJobCreated(ctx.db, 2, 'entra também');
+  recordJobMoved(ctx.db, 1, 'revisar');
+  recordJobCreated(ctx.db, 2, 'goes in too');
 
   await waitFor(t, () => ctx.calls.length >= 2, 'the two matching events to be pushed');
   await drive(t);
@@ -467,15 +467,15 @@ test('AT7 — filter_types narrows the fan-out to the asked types', async (t) =>
 test('AT8 — a failed attempt is rescheduled by the backoff step, and retried', async (t) => {
   const ctx = await startDispatcher(t, {
     respond: async () => {
-      throw new Error('sem rota para o host');
+      throw new Error('no route to host');
     },
   });
 
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
-  recordJobCreated(ctx.db, 1, 'para retentar');
+  recordJobCreated(ctx.db, 1, 'to retry');
 
   await waitFor(
     t,
@@ -493,7 +493,7 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   assert.equal(failed.next_attempt_at, after(BACKOFF_MS[0]));
   assert.equal(failed.delivered_at, null);
   assert.ok(
-    (failed.last_error ?? '').includes('sem rota para o host'),
+    (failed.last_error ?? '').includes('no route to host'),
     `the failure is recorded: ${String(failed.last_error)}`,
   );
 
@@ -523,7 +523,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
   });
 
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
   recordJobCreated(ctx.db, 1, 'para esgotar');
@@ -556,20 +556,20 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
 test('AT10 — a broken subscriber does not hold up a healthy one', async (t) => {
   const ctx = await startDispatcher(t, {
     respond: async (call) => {
-      if (call.url === 'https://exemplo.invalid/quebrado') throw new Error('consumidor quebrado');
+      if (call.url === 'https://example.invalid/broken') throw new Error('broken consumer');
       return { status: 200 };
     },
   });
 
   const broken = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/quebrado',
+    url: 'https://example.invalid/broken',
     secret: SECRET,
   });
   const healthy = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/saudavel',
+    url: 'https://example.invalid/healthy',
     secret: SECRET,
   });
-  recordJobCreated(ctx.db, 1, 'para os dois');
+  recordJobCreated(ctx.db, 1, 'for both');
 
   await waitFor(
     t,
@@ -587,15 +587,15 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
 test('AT11 — deactivating stops the retry in flight and every future fan-out', async (t) => {
   const ctx = await startDispatcher(t, {
     respond: async () => {
-      throw new Error('nao responde');
+      throw new Error('no answer');
     },
   });
 
   const subscription = await subscribe(ctx, {
-    url: 'https://exemplo.invalid/hook',
+    url: 'https://example.invalid/hook',
     secret: SECRET,
   });
-  const pushed = recordJobCreated(ctx.db, 1, 'antes da desativação');
+  const pushed = recordJobCreated(ctx.db, 1, 'before the deactivation');
 
   await waitFor(
     t,
@@ -614,7 +614,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
   );
 
   // Matching events keep arriving and the clock walks past every backoff step.
-  recordJobCreated(ctx.db, 2, 'depois da desativação');
+  recordJobCreated(ctx.db, 2, 'after the deactivation');
   advance(ctx.clock, 24 * 60 * 60 * 1000);
   await drive(t, LONG_SETTLE_TICKS);
 

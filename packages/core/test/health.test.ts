@@ -94,11 +94,11 @@ test('AT7 — with a corrupted database, /health does not say db:"ok"', async (t
   const { createApp } = await loadServer();
 
   const base = temporaryArea(t);
-  const filePath = path.join(base, 'corrompido.db');
+  const filePath = path.join(base, 'corrupted.db');
   // The file exists, has a size and is NOT a database: the open succeeds (SQLite
   // reads the header only on the first query), so what blows up is the check's
   // `SELECT 1` — exactly what this test wants to prove.
-  writeFileSync(filePath, 'isto nao e um banco sqlite, so lixo textual\n'.repeat(64), 'utf8');
+  writeFileSync(filePath, 'this is not a sqlite database, just textual garbage\n'.repeat(64), 'utf8');
 
   const db = openDatabase(filePath);
   const app = createApp({ db });

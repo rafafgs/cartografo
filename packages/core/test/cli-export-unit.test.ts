@@ -100,9 +100,9 @@ test('a lineage with no current version is refused, in each of its shapes', asyn
     { status: 200, body: { graph: {} } },
     { status: 200, body: { graph: { current_version_id: '' } } },
     { status: 200, body: { graph: { current_version_id: 42 } } },
-    { status: 200, body: { graph: 'nem objeto' } },
+    { status: 200, body: { graph: 'not an object' } },
     { status: 200, body: {} },
-    { status: 200, body: ['nem objeto'] },
+    { status: 200, body: ['not an object'] },
     { status: 200, text: 'not json at all' },
   ];
 
@@ -128,7 +128,7 @@ test('a version the control plane cannot serve is unknown_graph_version', async 
 test('a version that comes back without a snapshot is refused, in each of its shapes', async (t) => {
   const shapes: FakeAnswer[] = [
     { status: 200, body: { graph_version: {} } },
-    { status: 200, body: { graph_version: 'nem objeto' } },
+    { status: 200, body: { graph_version: 'not an object' } },
     { status: 200, body: {} },
     { status: 200, text: 'not json at all' },
   ];
@@ -146,7 +146,7 @@ test('the export writes the snapshot and nothing around it', async (t) => {
   const plane = await startFakeControlPlane(t, healthy());
   const area = temporaryArea(t, 'cartografo-t212-export-');
   // A directory that does not exist yet: the command owes the path it was given.
-  const output = path.join(area, 'pasta', 'nova', 'desenvolvimento.graph.json');
+  const output = path.join(area, 'folder', 'new', 'desenvolvimento.graph.json');
 
   const run = await capture(() =>
     runExport({ className: 'desenvolvimento', url: plane.url, output }),

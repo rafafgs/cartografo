@@ -1,32 +1,34 @@
--- 0015_trabalho_campos_customizados — os campos que a CLASSE declara na ficha (t168).
+-- 0015_trabalho_campos_customizados — the fields the CLASS declares on the ticket (t168).
 --
--- Renumerada duas vezes, de 0012 para 0013 e de 0013 para 0015 (t187): a
--- 0012_motor_modelo (t166) chegou antes na branch, e o 0013 seguinte foi
--- reivindicado em paralelo por mais dois tickets — ficou com a
--- `0013_sessao_modelos` (t172), e a `0014_pergunta_no_id` (t167) veio depois.
--- `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
--- dependência entre elas — esta só mexe em `job`.
+-- Renumbered twice, from 0012 to 0013 and from 0013 to 0015 (t187):
+-- 0012_motor_modelo (t166) reached the branch first, and the 0013 that followed
+-- was claimed in parallel by two more tickets — it went to
+-- `0013_sessao_modelos` (t172), and `0014_pergunta_no_id` (t167) came after.
+-- `src/db/migrate.ts` fails loudly on a repeated number. No dependency order
+-- between them — this one only touches `job`.
 --
--- A classe de bets assimétricas (D14) precisa de `downside`, `upside` e
--- `premise_source` na ficha; desenvolvimento de software não precisa de nenhum
--- deles. Uma coluna por campo seria uma migração por classe de problema, e é
--- por isso que a DEFINIÇÃO mora no documento de grafo da classe
--- (`custom_fields`, schema/graph.schema.json) e só o VALOR mora aqui.
+-- The asymmetric-bets class (D14) needs `downside`, `upside` and
+-- `premise_source` on the ticket; software development needs none of them. One
+-- column per field would be one migration per problem class, and that is why
+-- the DEFINITION lives in the class's graph document (`custom_fields`,
+-- schema/graph.schema.json) and only the VALUE lives here.
 --
--- `fields` é JSON em coluna TEXT, como `criterios_de_aceite` ao lado e como
--- `session.usage`, `input_request.options` e `intake_draft.items`: as chaves são
--- declaradas pela classe, então normalizar em tabela obrigaria o control plane
--- a conhecer o vocabulário de cada classe — exatamente o que a D8 tira dele.
+-- `fields` is JSON in a TEXT column, like `criterios_de_aceite` beside it and
+-- like `session.usage`, `input_request.options` and `intake_draft.items`: the
+-- keys are declared by the class, so normalizing them into a table would force
+-- the control plane to know every class's vocabulary — exactly what D8 takes
+-- away from it.
 --
--- NULO e `{}` são coisas diferentes, a mesma disciplina que `corpo` e
--- `criterios_de_aceite` seguem desde a 0006: NULO é "esta ficha nasceu sem
--- campo nenhum", `{}` é "a classe declara campos e ninguém preencheu ainda".
+-- NULL and `{}` are different things, the same discipline `corpo` and
+-- `criterios_de_aceite` have followed since 0006: NULL is "this ticket was born
+-- with no field at all", `{}` is "the class declares fields and nobody has
+-- filled one in yet".
 --
--- Quem cobra um campo obrigatório é a rota de transição, em código
--- (`custom_fields[].required_at` × `current_node_id`), e não um CHECK aqui: o que é
--- exigido muda com a VERSÃO DE GRAFO do trabalho, e um CHECK de tabela não sabe
--- em que nó a ficha está nem sob qual versão ela corre.
+-- What demands a mandatory field is the transition route, in code
+-- (`custom_fields[].required_at` × `current_node_id`), and not a CHECK here:
+-- what is demanded changes with the job's GRAPH VERSION, and a table CHECK
+-- knows neither which node the ticket sits on nor which version it runs under.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE job ADD COLUMN fields TEXT; -- JSON: {[nome]: string|number|boolean}; NULL != {}
+ALTER TABLE job ADD COLUMN fields TEXT; -- JSON: {[name]: string|number|boolean}; NULL != {}

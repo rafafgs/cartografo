@@ -1,35 +1,36 @@
--- 0013_sessao_modelos — quais modelos rodaram a sessão (t172).
+-- 0013_sessao_modelos — which models ran the session (t172).
 --
--- Até aqui o log sabia dizer qual MOTOR rodou cada sessão (`session.opened.engine`,
--- desde a t102) e nunca qual modelo. "Custo por modelo" não tinha resposta não
--- porque faltasse agregação, mas porque o dado nunca foi coletado: não havia
--- campo para ele em lugar nenhum — nem na taxonomia, nem na tabela, nem na
--- interface do EngineAdapter.
+-- Until now the log could say which ENGINE ran each session
+-- (`session.opened.engine`, since t102) and never which model. "Cost per model"
+-- had no answer, not because aggregation was missing, but because the datum was
+-- never collected: there was no field for it anywhere — not in the taxonomy,
+-- not in the table, not in the EngineAdapter interface.
 --
--- - `models` é um array JSON de identificadores, na mesma convenção de
---   armazenamento que `criterios_de_aceite` em `job`: TEXT com JSON dentro,
---   projetado de volta em lista pelo repositório. NULO é "o engine não nomeou
---   nenhum", e lista vazia não é resposta válida — quem diz "nada" é o NULO.
--- - **Lista, e não um identificador só.** Uma sessão roda mais de um modelo, e
---   isso foi medido, não suposto: um único turno da CLI real devolveu dois no
---   `modelUsage` do frame terminal — o do turno principal e o de um auxiliar
---   mais barato. Colapsar em "o" modelo atribuiria a conta inteira ao errado,
---   que é o mesmo estrago que a regra "ausência nunca é zero" evita para tokens.
--- - **Sem `CHECK`, ao contrário de `timeout_reason` na 0011.** Lá o conjunto de
---   valores é fechado e vem da nossa própria interface, então um terceiro valor
---   é erro de quem escreveu. Aqui o conjunto é aberto por natureza: o valor é o
---   identificador que o engine reportou, e uma migração a cada modelo novo seria
---   o mesmo enum fechado que a 0012 já recusou para `engine_model.model_id`.
+-- - `models` is a JSON array of identifiers, on the same storage convention as
+--   `criterios_de_aceite` in `job`: TEXT with JSON inside, projected back into a
+--   list by the repository. NULL is "the engine named none", and an empty list
+--   is not a valid answer — what says "nothing" is the NULL.
+-- - **A list, and not a single identifier.** A session runs more than one
+--   model, and that was measured, not assumed: a single turn of the real CLI
+--   returned two of them in the terminal frame's `modelUsage` — the main turn's
+--   and that of a cheaper auxiliary. Collapsing to "the" model would put the
+--   whole bill on the wrong one, which is the same damage the "absence is never
+--   zero" rule avoids for tokens.
+-- - **No `CHECK`, unlike `timeout_reason` in 0011.** There the value set is
+--   closed and comes from our own interface, so a third value is a mistake by
+--   whoever wrote it. Here the set is open by nature: the value is the
+--   identifier the engine reported, and a migration per new model would be the
+--   same closed enum 0012 already refused for `engine_model.model_id`.
 --
--- Anulável e sem backfill, como `silence_seconds`, `timeout_reason` e
--- `transcript` antes dela: linha anterior a esta migração lê NULO, que é
--- exatamente o que ela é. Não há valor a inventar para uma sessão que terminou
--- antes de alguém estar contando — e inventar um seria escrever no log um fato
--- que ninguém mediu.
+-- Nullable and without backfill, like `silence_seconds`, `timeout_reason` and
+-- `transcript` before it: a row older than this migration reads NULL, which is
+-- exactly what it is. There is no value to invent for a session that ended
+-- before anybody was counting — and inventing one would be writing into the log
+-- a fact nobody measured.
 --
--- Os VALORES são strings do engine, e chegam como o engine as escreveu: não há
--- enum aqui para a t235 traduzir.
+-- The VALUES are the engine's strings, and they arrive as the engine wrote
+-- them: there is no enum here for t235 to translate.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE session ADD COLUMN models TEXT;  -- NULO = o engine não nomeou modelo
+ALTER TABLE session ADD COLUMN models TEXT;  -- NULL = the engine named no model

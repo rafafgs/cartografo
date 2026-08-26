@@ -1,39 +1,41 @@
--- 0020_sessao_saida — o resultado estruturado que a sessão relata do nó (t253).
+-- 0020_sessao_saida — the structured result the session reports from the node (t253).
 --
--- É a metade que ESCREVE da projeção de input por nó. Até aqui nenhum evento e
--- nenhuma tabela carregava a saída estruturada de um nó, então nada tinha como
--- montar o objeto que a `input` do nó seguinte declara: o despacho passava `{}`
--- e toda skill com placeholder recusava em produção
--- (`packages/runner/src/dispatch/options.ts`, `resolveInput`). Esta coluna é o
--- lugar onde o `merge_commit` que `implantar` lê passa a existir depois que
--- `integrar` o produziu.
+-- It is the WRITING half of the per-node input projection. Until now no event
+-- and no table carried a node's structured output, so nothing could assemble
+-- the object the next node's `input` declares: dispatch passed `{}` and every
+-- skill with a placeholder refused in production
+-- (`packages/runner/src/dispatch/options.ts`, `resolveInput`). This column is
+-- where the `merge_commit` that `implantar` reads starts existing after
+-- `integrar` has produced it.
 --
--- - `output` é JSON num TEXT, mesma convenção de `usage`, `models` e
---   `criterios_de_aceite`: objeto na entrada, objeto na projeção, e o
---   repositório é quem serializa. Não é uma coluna por chave porque as chaves
---   são da CLASSE — o `output_schema` da skill pinada pelo nó é quem as declara
---   (D9) —, e uma coluna por chave seria uma migração por classe de problema.
--- - **Sem `CHECK`, e sem conferência aqui.** O que a forma de dentro tem que ser
---   é decidido contra o schema da própria skill, no `PATCH /finish`, onde a
---   linha do registro está ao alcance. O banco guarda; quem julga é o control
---   plane, que é o único que escreve (D1).
--- - **NULO é "nada estruturado foi relatado", e nunca `{}`.** As duas leituras
---   são fatos diferentes: objeto vazio é uma sessão que relatou um objeto sem
---   chave nenhuma, NULO é uma sessão que não relatou. É a mesma disciplina que
---   `usage` tem desde a t102 e `transcript` desde a t159 — e é também o que a
---   linha grava quando o relato não casou com o schema, com o motivo indo para
---   `output_schema_error` no evento em vez de para cá.
+-- - `output` is JSON in a TEXT, the same convention as `usage`, `models` and
+--   `criterios_de_aceite`: an object on the way in, an object in the
+--   projection, and the repository is what serializes. It is not one column per
+--   key because the keys belong to the CLASS — the `output_schema` of the skill
+--   the node pins is what declares them (D9) — and one column per key would be
+--   one migration per problem class.
+-- - **No `CHECK`, and no checking here.** What the shape inside has to be is
+--   decided against the skill's own schema, in `PATCH /finish`, where the
+--   registry row is within reach. The database keeps; what judges is the
+--   control plane, which is the only writer (D1).
+-- - **NULL is "nothing structured was reported", and never `{}`.** The two
+--   readings are different facts: an empty object is a session that reported an
+--   object with no key at all, NULL is a session that reported nothing. It is
+--   the same discipline `usage` has had since t102 and `transcript` since t159
+--   — and it is also what the row records when the report did not match the
+--   schema, with the reason going to `output_schema_error` on the event rather
+--   than here.
 --
--- Anulável e sem backfill, como `silence_seconds`, `models`, `transcript` e
--- `tier` antes dela: linha anterior a esta migração lê NULO, que é exatamente o
--- que ela é. Não há valor a inventar para uma sessão que terminou antes de
--- alguém estar coletando, e inventar um seria escrever no banco um fato que
--- ninguém mediu.
+-- Nullable and without backfill, like `silence_seconds`, `models`, `transcript`
+-- and `tier` before it: a row older than this migration reads NULL, which is
+-- exactly what it is. There is no value to invent for a session that ended
+-- before anybody was collecting, and inventing one would be writing into the
+-- database a fact nobody measured.
 --
--- O nome da coluna já nasce em inglês, como todo o resto da tabela desde o
--- quarto filho da D20 (t229); `Session.saida` é a projeção interna, e o `SELECT`
--- do repositório é quem faz o apelido.
+-- The column's name is born in English, like all the rest of the table since
+-- D20's fourth child (t229); `Session.saida` is the internal projection, and
+-- the repository's `SELECT` is what does the aliasing.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE session ADD COLUMN output TEXT;  -- NULO = nada estruturado foi relatado
+ALTER TABLE session ADD COLUMN output TEXT;  -- NULL = nothing structured was reported

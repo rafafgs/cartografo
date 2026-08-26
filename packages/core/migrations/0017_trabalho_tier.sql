@@ -1,45 +1,45 @@
--- 0017_trabalho_tier — quanto este trabalho custa para rodar (t175).
+-- 0017_trabalho_tier — what this job costs to run (t175).
 --
--- Renumerada de 0012 para 0017 (a ficha pedia 0012, e a ficha foi escrita antes
--- da 0012_motor_modelo, da 0013_sessao_modelos, da 0014_pergunta_no_id, da
--- 0015_trabalho_campos_customizados e da 0016_gancho chegarem à main). É a
--- terceira vez que isso acontece — a 0015 conta a própria história — e
--- `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
--- dependência: esta só mexe em `job`.
+-- Renumbered from 0012 to 0017 (the ticket asked for 0012, and the ticket was
+-- written before 0012_motor_modelo, 0013_sessao_modelos, 0014_pergunta_no_id,
+-- 0015_trabalho_campos_customizados and 0016_gancho reached main). It is the
+-- third time this happens — 0015 tells its own story — and
+-- `src/db/migrate.ts` fails loudly on a repeated number. No dependency order:
+-- this one only touches `job`.
 --
--- O conceito não é novo no repositório, é DEFERIDO em dois lugares: o
--- `docs/spec/graph.md:401-403` deixou o `work_tier` do flowpilot fora do grafo
--- portado, e o `docs/spec/topografo-cost.md` registrou que nem o documento de
--- grafo nem o manifesto de skill têm campo de custo ou de tier. Esta coluna é a
--- fatia mais estreita possível dessa dívida, e a fronteira é o que a mantém
--- estreita: `tier` muda quanto um nó CUSTA para rodar, nunca por qual aresta o
--- trabalho sai. O grafo segue congelado durante a execução (princípio 2), e as
--- únicas decisões em voo continuam sendo os veredictos de portão.
+-- The concept is not new in the repository, it is DEFERRED in two places:
+-- `docs/spec/graph.md:401-403` left flowpilot's `work_tier` out of the ported
+-- graph, and `docs/spec/topografo-cost.md` recorded that neither the graph
+-- document nor the skill manifest has a cost or tier field. This column is the
+-- narrowest possible slice of that debt, and the boundary is what keeps it
+-- narrow: `tier` changes how much a node COSTS to run, never which edge the job
+-- leaves by. The graph stays frozen during execution (principle 2), and the
+-- only in-flight decisions are still the gate verdicts.
 --
--- **`CHECK` fechado, ao contrário de `session.models` e de `engine_model`.** Lá
--- o conjunto é aberto por natureza — o valor é um identificador que o engine
--- reportou, e um enum obrigaria uma migração por modelo novo. Aqui o conjunto é
--- nosso: `trivial` e `standard` são vocabulário desta triagem, e um terceiro
--- valor não é dado novo, é erro de quem escreveu. Mesmo raciocínio do
--- `timeout_reason` na 0011 e do `source` na 0012.
+-- **A closed `CHECK`, unlike `session.models` and `engine_model`.** There the
+-- set is open by nature — the value is an identifier the engine reported, and
+-- an enum would force a migration per new model. Here the set is ours:
+-- `trivial` and `standard` are this triage's own vocabulary, and a third value
+-- is not new data, it is a mistake by whoever wrote it. The same reasoning as
+-- `timeout_reason` in 0011 and `source` in 0012.
 --
--- **NULO não é `trivial`.** É a única leitura perigosa desta coluna e por isso
--- ela é anulável e sem backfill, como `silence_seconds`, `transcript` e
--- `fields` antes dela: linha anterior a esta migração lê NULO, que é exatamente
--- o que ela é — ninguém triou. Colapsar ausência em "trivial" rebaixaria para um
--- modelo mais barato o trabalho inteiro que existia antes desta ficha, sem que
--- ninguém tivesse escolhido isso e sem nada falhar em lugar nenhum.
+-- **NULL is not `trivial`.** It is this column's one dangerous reading, and
+-- that is why it is nullable and without backfill, like `silence_seconds`,
+-- `transcript` and `fields` before it: a row older than this migration reads
+-- NULL, which is exactly what it is — nobody triaged. Collapsing absence into
+-- "trivial" would demote to a cheaper model every job that existed before this
+-- ticket, with nobody having chosen that and with nothing failing anywhere.
 --
--- Não há coluna de MODELO aqui, e a ausência é deliberada: qual modelo é o
--- barato é vocabulário de engine, e vive abaixo da fronteira 1 do
--- `EngineAdapter`, dentro de cada adapter. O control plane guarda a
--- classificação; quem a traduz em `--model` é quem sabe o que é um modelo.
+-- There is no MODEL column here, and the absence is deliberate: which model is
+-- the cheap one is engine vocabulary, and it lives below the `EngineAdapter`'s
+-- boundary 1, inside each adapter. The control plane keeps the classification;
+-- what translates it into `--model` is whoever knows what a model is.
 --
--- Os dois VALORES já nasceram em inglês, por serem vocabulário da interface do
--- EngineAdapter, que é inglesa inteira e é quem os consome — o mesmo raciocínio
--- que a 0011 escreveu para `wall_clock` e `silence`.
+-- Both VALUES were born in English, being vocabulary of the EngineAdapter
+-- interface, which is English throughout and is what consumes them — the same
+-- reasoning 0011 wrote down for `wall_clock` and `silence`.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE job ADD COLUMN tier TEXT  -- NULO = ninguém triou; NULO != 'trivial'
+ALTER TABLE job ADD COLUMN tier TEXT  -- NULL = nobody triaged; NULL != 'trivial'
   CHECK (tier IS NULL OR tier IN ('trivial', 'standard'));

@@ -1,50 +1,49 @@
--- 0022_execucao_finalizada — a execução vira sujeito de evento (D21, t245).
+-- 0022_execucao_finalizada — the execution becomes the subject of an event (D21, t245).
 --
--- Nasceu 0021 provisoriamente e foi renumerada para 0022 no merge, exatamente
--- pelo motivo que o cabeçalho provisório antecipava: a t246 chegou primeiro na
--- main com `0021_proposta_dedupe_key.sql` e `src/db/migrate.ts` falha alto em
--- número repetido — mesmo precedente registrado no cabeçalho da 0003, da 0005,
--- da 0017 e da 0019. Nenhuma ordem de dependência entre as duas: aquela adiciona
--- coluna e índice em `proposal`, esta só mexe no CHECK de `event`, então rodar
--- depois não muda nada do que ela faz.
+-- Born 0021 provisionally and renumbered to 0022 at the merge, for exactly the
+-- reason the provisional header anticipated: t246 reached main first with
+-- `0021_proposta_dedupe_key.sql` and `src/db/migrate.ts` fails loudly on a
+-- repeated number — the same precedent recorded in the headers of 0003, 0005,
+-- 0017 and 0019. No dependency order between the two: that one adds a column
+-- and an index on `proposal`, this one only touches `event`'s CHECK, so running
+-- afterwards changes nothing about what it does.
 --
--- ## O que muda, e o que não muda
+-- ## What changes, and what does not
 --
--- Uma coisa só: `event.entity_type` passa a admitir `'execution'`, ao lado dos
--- cinco que a 0003 escreveu (e que a t235 reescreveu para o inglês do
--- envelope). Nenhuma coluna nasce, nenhuma coluna sai, nenhum valor é
--- reescrito na cópia.
+-- One thing only: `event.entity_type` starts admitting `'execution'`, alongside
+-- the five 0003 wrote (and that t235 rewrote into the envelope's English). No
+-- column is born, no column leaves, no value is rewritten in the copy.
 --
--- O que deliberadamente NÃO acontece aqui é a tabela `execution`. A 0003 disse,
--- no próprio cabeçalho, que "não existe tabela 'execução'... a taxonomia nunca
--- listou execução como `entity.type` válido", e a metade da frase que a D21
--- amenda é só a segunda: a rodada ganha um FATO que só o control plane afirma
--- (D1) — `execution.finished` —, e um fato precisa de sujeito. Continua não
--- havendo linha para ler: `execution_id` segue um agrupador INTEGER opaco, e o
--- `finished_at` que a API publica é derivado deste evento em tempo de leitura
--- (`src/repositories/job.ts`), nunca uma coluna.
+-- What deliberately does NOT happen here is the `execution` table. 0003 said,
+-- in its own header, that "there is no 'execution' table... the taxonomy never
+-- listed execution as a valid `entity.type`", and the half of that sentence D21
+-- amends is only the second: the round gains a FACT that only the control plane
+-- asserts (D1) — `execution.finished` — and a fact needs a subject. There is
+-- still no row to read: `execution_id` remains an opaque INTEGER grouper, and
+-- the `finished_at` the API publishes is derived from this event at read time
+-- (`src/repositories/job.ts`), never a column.
 --
--- ## Por que a tabela inteira é reconstruída
+-- ## Why the whole table is rebuilt
 --
--- O SQLite não tem `ALTER TABLE ... ALTER CONSTRAINT`: um CHECK só muda
--- recriando a tabela (cria nova → copia → dropa velha → renomeia), o caminho que
--- a 0010 abriu e a 0019 repetiu. Aqui ele é o curto, como na 0019 e pelo mesmo
--- motivo concreto: ninguém referencia `event`. Não há chave estrangeira
--- apontando para ela — o log é a fonte, e quem o cruza com o resto do banco faz
--- isso por `entity_type`/`entity_id`, que são TEXT soltos de propósito (um log
--- só para seis entidades, e uma delas tem hash por id) —, então não existe o
--- passo de guardar e restaurar referências filhas que a 0010 precisou descobrir
--- na marra.
+-- SQLite has no `ALTER TABLE ... ALTER CONSTRAINT`: a CHECK only changes by
+-- recreating the table (create the new one → copy → drop the old → rename), the
+-- path 0010 opened and 0019 repeated. Here it is the short one, as in 0019 and
+-- for the same concrete reason: nobody references `event`. There is no foreign
+-- key pointing at it — the log is the source, and whoever crosses it with the
+-- rest of the database does so by `entity_type`/`entity_id`, which are loose
+-- TEXT on purpose (one log for six entities, and one of them has a hash for an
+-- id) — so there is no step of saving and restoring child references, the one
+-- 0010 had to find out the hard way.
 --
--- Os três índices caem junto com a tabela e por isso são recriados iguais. O
--- `AUTOINCREMENT` é preservado e os ids são copiados explicitamente, o que
--- importa mais aqui do que em qualquer outra migração deste repositório: o `id`
--- do evento É a ordem do log e a única ordenação total que existe
--- (`specs/events/taxonomy.md`), e um replay depois desta migração tem
--- que reconstruir exatamente o mesmo estado de antes dela. Copiar é append-only
--- honesto: nenhuma linha conta uma história diferente no fim.
+-- The three indexes fall with the table and are therefore recreated identical.
+-- The `AUTOINCREMENT` is preserved and the ids are copied explicitly, which
+-- matters more here than in any other migration of this repository: an event's
+-- `id` IS the order of the log and the only total ordering that exists
+-- (`specs/events/taxonomy.md`), and a replay after this migration has to
+-- rebuild exactly the same state as before it. Copying is honest append-only:
+-- no row tells a different story at the end.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
 CREATE TABLE event_new (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

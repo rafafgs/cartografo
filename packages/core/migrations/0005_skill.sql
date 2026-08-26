@@ -1,42 +1,43 @@
--- 0005_skill — o registro de capacidades (D4, D9).
+-- 0005_skill — the capability registry (D4, D9).
 --
--- Numerada 0005 provisoriamente: outras fichas da onda 2 correm em paralelo e
--- `src/db/migrate.ts` falha alto em número repetido, então renumerar no merge é
--- obrigatório, não cosmético — mesmo precedente já registrado no cabeçalho da
--- 0003.
+-- Numbered 0005 provisionally: other wave-2 tickets run in parallel and
+-- `src/db/migrate.ts` fails loudly on a repeated number, so renumbering at the
+-- merge is mandatory, not cosmetic — the same precedent already recorded in
+-- 0003's header.
 --
--- "A skill with no contract does not enter the registry" (D9) vira aqui uma
--- tabela cujas colunas SÃO os doze campos obrigatórios do manifesto
--- (`specs/formats/skill-manifest.schema.json`), mais o carimbo de
--- quando a skill entrou. Nada de blob genérico: o que o sintetizador consulta é
--- `description` e `role`, o que o runner pina é `id`+`version`+`hash`, e uma
--- coluna por campo é o que deixa essas três leituras serem consulta e não
--- desserialização.
+-- "A skill with no contract does not enter the registry" (D9) becomes, here, a
+-- table whose columns ARE the twelve mandatory fields of the manifest
+-- (`specs/formats/skill-manifest.schema.json`), plus the stamp of when the
+-- skill entered. No generic blob: what the synthesizer queries is
+-- `description` and `role`, what the runner pins is `id`+`version`+`hash`, and
+-- one column per field is what lets those three reads be a query rather than a
+-- deserialization.
 --
--- `id` é a PRIMARY KEY, e é TEXT porque a identidade da skill é o kebab-case do
--- manifesto, não um autoincremento: é por esse nome que o grafo pina o nó
--- (`skill_ref.id`). Registro é create-only nesta ficha — um segundo POST no
--- mesmo id é 409. Reimportação, diff e histórico de versão de skill (o
--- equivalente do par graph/graph_version) ficam para quando existirem dois
--- consumidores, pela regra dos dois consumidores.
+-- `id` is the PRIMARY KEY, and it is TEXT because the skill's identity is the
+-- kebab-case of the manifest, not an autoincrement: that name is how the graph
+-- pins the node (`skill_ref.id`). Registration is create-only in this ticket —
+-- a second POST on the same id is a 409. Reimport, diff and skill version
+-- history (the equivalent of the graph/graph_version pair) wait until two
+-- consumers exist, by the rule of two consumers.
 --
--- Os campos estruturados (`input`, `output`, `preconditions`, `checks`,
--- `permissions`, `source`) moram como JSON em TEXT, do mesmo jeito que
--- `graph_version.snapshot` e `input_request.options`: são documentos do
--- formato, e fatiá-los em tabelas seria travar em schema de banco uma
--- especificação que ainda é produto versionado (t97).
+-- The structured fields (`input`, `output`, `preconditions`, `checks`,
+-- `permissions`, `source`) live as JSON in TEXT, the same way
+-- `graph_version.snapshot` and `input_request.options` do: they are documents
+-- of the format, and slicing them into tables would pin down, in a database
+-- schema, a specification that is still a versioned product (t97).
 --
--- O `CHECK` de `role` é o único enum que o banco impõe: é o campo que decide se
--- o nó produz ou confere, e uma skill de trabalho registrada como portão vira um
--- portão que não confere nada. Os dois valores são os do `node_type` do
--- documento de grafo (`work`, `gate`) — o glossário reusa o nome que o formato
--- já publica em vez de inventar um segundo. O resto da validação (hash
--- conferindo com o conteúdo, pelo menos um check na importação, rede irrestrita
--- recusada, `resultado` na saída de portão) mora em
--- `src/repositories/skill.ts`: são regras sobre o conteúdo do JSON, e SQLite não
--- é onde se explica por que uma delas falhou.
+-- The `CHECK` on `role` is the only enum the database enforces: it is the field
+-- that decides whether the node produces or checks, and a work skill
+-- registered as a gate becomes a gate that checks nothing. The two values are
+-- the graph document's `node_type` values (`work`, `gate`) — the glossary
+-- reuses the name the format already publishes instead of inventing a second
+-- one. The rest of the validation (hash agreeing with the content, at least one
+-- check at import, unrestricted network refused, `resultado` on a gate's
+-- output) lives in `src/repositories/skill.ts`: those are rules about the
+-- content of the JSON, and SQLite is not where one explains why one of them
+-- failed.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
 CREATE TABLE skill (
   id             TEXT PRIMARY KEY,
@@ -50,6 +51,6 @@ CREATE TABLE skill (
   checks         TEXT NOT NULL,   -- JSON array
   permissions    TEXT NOT NULL,   -- JSON
   instructions   TEXT NOT NULL,
-  source         TEXT NOT NULL,   -- JSON: {tipo, repo?, ref?, importado_por?, importado_em?, revisado_por?}
+  source         TEXT NOT NULL,   -- JSON: {type, repo?, ref?, imported_by?, imported_at?, reviewed_by?}
   registered_at  TEXT NOT NULL
 );

@@ -1,11 +1,11 @@
--- 0001_init — tabela de controle do próprio runner de migração.
+-- 0001_init — control table of the migration runner itself.
 --
--- É a única tabela deste scaffold: o schema de domínio (graph, graph_version,
--- proposal, event, session, input_request) entra nas tickets seguintes, na
--- ordem da D6.
+-- The only table of this scaffold: the domain schema (graph, graph_version,
+-- proposal, event, session, input_request) arrives with the tickets that
+-- follow, in D6's order.
 --
--- Nenhuma migração abre transação própria: quem transaciona é
--- `src/db/migrate.ts`, uma transação por migração.
+-- No migration opens a transaction of its own: what transacts is
+-- `src/db/migrate.ts`, one transaction per migration.
 
 CREATE TABLE schema_migrations (
   id         TEXT PRIMARY KEY,

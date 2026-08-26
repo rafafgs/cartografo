@@ -1,48 +1,53 @@
--- 0021_proposta_dedupe_key — sinal repetido reforça a proposta pendente (t246, D21).
+-- 0021_proposta_dedupe_key — a repeated signal strengthens the pending proposal (t246, D21).
 --
--- O `POST /v1/proposals` gravava uma linha `pending` nova a cada chamada, sem
--- perguntar nada. As duas lentes que existem rodam à mão e podem rodar mais de
--- uma vez sobre o mesmo sinal — a de custo dizia isso em voz alta no próprio
--- comentário (`packages/topografo-custo/src/cli.ts`): "não deduplica. Rodar duas
--- vezes sobre a mesma telemetria cria propostas repetidas". A D21
--- (`DECISIONS.md`) fecha essa lacuna no único lugar que consegue valer para todo
--- chamador de uma vez, que é o control plane.
+-- `POST /v1/proposals` wrote a new `pending` row on every call, asking nothing.
+-- The two lenses that exist run by hand and may run more than once over the
+-- same signal — the cost one said so out loud in its own comment
+-- (`packages/topografo-custo/src/cli.ts`): "it does not deduplicate. Running
+-- twice over the same telemetry creates repeated proposals". D21
+-- (`DECISIONS.md`) closes that gap in the one place that can hold for every
+-- caller at once, which is the control plane.
 --
--- - `dedupe_key` é o sha256 canonicalizado da tripla `[lens, target_version,
---   operations]` (`src/domain/hash.ts`, `proposalDedupeKey`). Quem calcula é
---   SEMPRE o servidor: a chave não é aceita no corpo, não é lida de lá e não
---   volta na resposta. `lens` sai de `evidence.lens`, que é onde a lente de
---   custo já a carrega desde a t255; quem não manda lente nenhuma cai no balde
---   `null`, que é a mesma regra de "não clone um repetido idêntico" valendo de
---   graça para ela também.
--- - **`graph_id` não entra na chave**, e não é esquecimento: `target_version` é o
---   hash de conteúdo de UMA versão de UM grafo, então ele já escopa a proposta
---   sozinho. Uma dimensão a mais só daria a impressão de escopo que já existe.
--- - **A ordem das operações conta**, e não é normalizada antes do hash: duas
---   listas com as mesmas operações em ordem diferente são duas propostas. A ordem
---   decide qual documento intermediário é válido no meio da aplicação, e colapsá-la
---   confundiria diffs que não são equivalentes.
+-- - `dedupe_key` is the canonicalized sha256 of the triple `[lens,
+--   target_version, operations]` (`src/domain/hash.ts`, `proposalDedupeKey`).
+--   What computes it is ALWAYS the server: the key is not accepted in the body,
+--   not read from there and not returned in the response. `lens` comes out of
+--   `evidence.lens`, which is where the cost lens has carried it since t255;
+--   whoever sends no lens at all falls into the `null` bucket, which is the
+--   same "do not clone an identical repeat" rule holding for them too, free of
+--   charge.
+-- - **`graph_id` is not part of the key**, and that is not an oversight:
+--   `target_version` is the content hash of ONE version of ONE graph, so it
+--   already scopes the proposal on its own. One more dimension would only give
+--   the impression of a scope that is already there.
+-- - **The order of the operations counts**, and it is not normalized before the
+--   hash: two lists with the same operations in a different order are two
+--   proposals. The order decides which intermediate document is valid halfway
+--   through the application, and collapsing it would conflate diffs that are
+--   not equivalent.
 --
--- O índice é PARCIAL, e é aí que mora a semântica da decisão: o que não pode
--- existir duas vezes é a mesma tripla PENDENTE. Uma tripla que já foi rejeitada,
--- aplicada ou revertida não bloqueia nada — repor o mesmo sinal depois disso abre
--- uma proposta nova, `201`, porque a decisão anterior é passado e o sinal é
--- presente. A alternativa (índice sobre a tabela inteira) tornaria uma rejeição
--- permanente e silenciosa, o que a D21 não pede em lugar nenhum.
+-- The index is PARTIAL, and that is where the decision's semantics live: what
+-- cannot exist twice is the same PENDING triple. A triple that has already been
+-- rejected, applied or reverted blocks nothing — resubmitting the same signal
+-- after that opens a new proposal, `201`, because the earlier decision is past
+-- and the signal is present. The alternative (an index over the whole table)
+-- would make a rejection permanent and silent, which D21 asks for nowhere.
 --
--- Anulável e sem backfill, como `output` na 0020 e `rejection_reason` na 0010:
--- banco de desenvolvimento é recriado (D20), não existe dado de produção, e o
--- próprio SQLite trata NULO como sempre distinto num índice único — várias linhas
--- antigas com `dedupe_key` NULO nunca colidem entre si. Não há valor a inventar
--- para uma proposta escrita antes de alguém estar deduplicando, e inventar um
--- seria gravar no banco um fato que ninguém calculou.
+-- Nullable and without backfill, like `output` in 0020 and `rejection_reason`
+-- in 0010: the development database is recreated (D20), there is no production
+-- data, and SQLite itself treats NULL as always distinct in a unique index —
+-- several old rows with a NULL `dedupe_key` never collide with each other.
+-- There is no value to invent for a proposal written before anybody was
+-- deduplicating, and inventing one would be recording in the database a fact
+-- nobody computed.
 --
--- A coluna é bookkeeping interno: ela não entra na interface `Proposal` de
--- `src/repositories/proposals.ts` nem sai por `toProposal()`.
+-- The column is internal bookkeeping: it does not enter the `Proposal`
+-- interface of `src/repositories/proposals.ts` and does not leave through
+-- `toProposal()`.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE proposal ADD COLUMN dedupe_key TEXT;  -- NULO = escrita antes desta migração, ou sem lente na evidência
+ALTER TABLE proposal ADD COLUMN dedupe_key TEXT;  -- NULL = written before this migration, or with no lens in the evidence
 
 CREATE UNIQUE INDEX proposal_dedupe_key_pending_unique
   ON proposal (dedupe_key)

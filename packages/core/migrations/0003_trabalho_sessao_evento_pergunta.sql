@@ -1,30 +1,32 @@
--- 0003 — job, session, event e input_request.
+-- 0003 — job, session, event and input_request.
 --
--- Numerada 0003, não 0002: t101 (graph/graph_version/proposal) aterrissou na
--- main primeiro e ocupou o 0002. `src/db/migrate.ts` falha alto em número
--- repetido, então a renumeração no merge é obrigatória, não cosmética.
+-- Numbered 0003, not 0002: t101 (graph/graph_version/proposal) landed on main
+-- first and took 0002. `src/db/migrate.ts` fails loudly on a repeated number,
+-- so renumbering at the merge is mandatory, not cosmetic.
 --
--- `event` é a fonte de verdade (t98): append-only, sem update e sem delete.
--- As outras três tabelas são PROJEÇÃO — estado atual, sempre reconstruível a
--- partir do log por `specs/events/reducers/reconstruct-state.mjs`.
--- Quando as duas discordarem, quem está errado é a projeção.
+-- `event` is the source of truth (t98): append-only, no update and no delete.
+-- The other three tables are a PROJECTION — current state, always rebuildable
+-- from the log by `specs/events/reducers/reconstruct-state.mjs`.
+-- When the two disagree, the one that is wrong is the projection.
 --
--- Duas ausências de propósito:
+-- Two absences on purpose:
 --
--- - não existe tabela "execução". `execution_id` é um agrupador INTEGER opaco;
---   a taxonomia nunca listou execução como `entity.type` válido
+-- - there is no "execution" table. `execution_id` is an opaque INTEGER
+--   grouper; the taxonomy never listed execution as a valid `entity.type`
 --   (`specs/events/schemas/envelope.schema.json:41`);
--- - `job.graph_version_id` não tem FK. A tabela `graph_version` é de t101,
---   que corre em paralelo, e o id dela é hash (string, D15) — travar a FK aqui
---   acoplaria a ordem de build das duas fichas sem ganhar nada.
+-- - `job.graph_version_id` has no FK. The `graph_version` table belongs to
+--   t101, which runs in parallel, and its id is a hash (string, D15) — pinning
+--   the FK here would couple the build order of the two tickets and gain
+--   nothing.
 --
--- Duas colunas de `job` nascem em português e continuam assim: `corpo` e
--- `criterios_de_aceite` (0006) não têm linha na §4.2 do glossário, e inventar
--- nome fora do glossário é o contrário do que o t213 existe para fazer.
--- Fechá-las é acrescentar as linhas lá e uma migração curta — ficha própria.
+-- Two columns of `job` are born in Portuguese and stay that way: `corpo` and
+-- `criterios_de_aceite` (0006) have no row in §4.2 of the glossary, and
+-- inventing a name outside the glossary is the opposite of what t213 exists to
+-- do. Closing them means adding those rows there plus a short migration — a
+-- ticket of its own.
 --
--- Nenhuma migração abre transação própria: quem transaciona é
--- `src/db/migrate.ts`, uma transação por migração.
+-- No migration opens a transaction of its own: what transacts is
+-- `src/db/migrate.ts`, one transaction per migration.
 
 CREATE TABLE event (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +53,7 @@ CREATE TABLE job (
   current_node_id   TEXT NOT NULL,
   blocked           INTEGER NOT NULL DEFAULT 0,
   block_reason      TEXT,
-  graph_version_id  TEXT, -- solto de propósito: graph_version é de t101, sem FK para não acoplar ordem de build
+  graph_version_id  TEXT, -- loose on purpose: graph_version is t101's, no FK so the build order stays uncoupled
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL
 );
@@ -68,12 +70,13 @@ CREATE TABLE session (
   working_dir        TEXT NOT NULL,
   prompt             TEXT NOT NULL,
   timeout_seconds    INTEGER,
-  -- Sem CHECK: os valores terminais vêm de `session.finished`, cujo vocabulário
-  -- é da taxonomia de eventos e não desta tabela. `open` é o único que nasce
-  -- aqui, e é o mesmo inglês do evento `session.opened` (glossário §1.6).
+  -- No CHECK: the terminal values come from `session.finished`, whose
+  -- vocabulary belongs to the event taxonomy and not to this table. `open` is
+  -- the only one born here, and it is the same English as the `session.opened`
+  -- event (glossary §1.6).
   status             TEXT NOT NULL DEFAULT 'open',
   exit_code          INTEGER,
-  usage              TEXT, -- JSON; NULL != gravar zeros
+  usage              TEXT, -- JSON; NULL != recording zeros
   opened_at          TEXT NOT NULL,
   finished_at        TEXT
 );

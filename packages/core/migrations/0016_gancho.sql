@@ -1,59 +1,62 @@
--- 0016_gancho — a reação que o próprio grafo declara (t169).
+-- 0016_gancho — the reaction the graph itself declares (t169).
 --
--- A `0008` deu ao control plane o transporte *push* para quem REGISTRA uma
--- assinatura pela API. Esta dá o outro dono possível de uma reação: o próprio
--- documento de grafo. A diferença não é de transporte — os dois fazem POST
--- assinado com o mesmo HMAC e o mesmo backoff — é de QUEM decide, e é ela que
--- justifica uma tabela em vez de reuso de `webhook_delivery`:
+-- `0008` gave the control plane the *push* transport for whoever REGISTERS a
+-- subscription through the API. This one gives a reaction's other possible
+-- owner: the graph document itself. The difference is not one of transport —
+-- both make a signed POST with the same HMAC and the same backoff — it is one
+-- of WHO decides, and that is what justifies a table instead of reusing
+-- `webhook_delivery`:
 --
--- - um gancho não tem etapa de registro. Ele nasce dentro do snapshot da versão
---   de grafo, e some quando uma versão nova o remove — versionado e proponível
---   como qualquer outra parte do grafo (D2, D15);
--- - um gancho não tem fan-out nem cursor. Ele dispara UMA vez, direto do fato
---   que o disparou, dentro da mesma transação que gravou a projeção e o evento
---   (FR18). Não existe `subscription_id` em que pendurá-lo, e um `NULL` nessa
---   coluna seria exatamente a mentira que uma tabela própria evita;
--- - a `url` e o `secret` são COPIADOS para a linha de entrega em vez de lidos
---   do grafo na hora da tentativa. Uma versão nova do grafo pode trocar os dois,
---   e uma entrega em voo precisa terminar contra o destino que valia quando ela
---   foi enfileirada — não contra o que valeria hoje.
+-- - a hook has no registration step. It is born inside the graph version's
+--   snapshot, and disappears when a new version removes it — versioned and
+--   proposable like any other part of the graph (D2, D15);
+-- - a hook has neither fan-out nor cursor. It fires ONCE, straight from the
+--   fact that fired it, inside the same transaction that wrote the projection
+--   and the event (FR18). There is no `subscription_id` to hang it on, and a
+--   `NULL` in that column would be exactly the lie a table of its own avoids;
+-- - the `url` and the `secret` are COPIED onto the delivery row instead of read
+--   from the graph at attempt time. A new version of the graph may change both,
+--   and a delivery in flight has to finish against the destination that held
+--   when it was queued — not against the one that would hold today.
 --
--- `UNIQUE (event_id, hook_id)` é cinto e suspensório, não a chave de
--- idempotência que o fan-out da `0008` precisa: um evento é gravado exatamente
--- uma vez, para sempre, então enfileirar duas vezes já seria bug de outra
--- ordem. O índice existe para que ele nunca vire dado duplicado se acontecer.
+-- `UNIQUE (event_id, hook_id)` is belt and braces, not the idempotency key
+-- `0008`'s fan-out needs: an event is written exactly once, forever, so queuing
+-- twice would already be a bug of another order. The index exists so that it
+-- never becomes duplicated data if it happens.
 --
--- `node_id` é coluna e não derivação: o evento `job.hook_failed` precisa
--- dizer de QUAL nó a reação era, e reabrir o snapshot da versão no instante do
--- esgotamento seria fazer o registro de um incidente depender de uma leitura
--- que pode falhar. A linha carrega tudo que o incidente precisa declarar.
+-- `node_id` is a column and not a derivation: the `job.hook_failed` event needs
+-- to say WHICH node the reaction belonged to, and reopening the version's
+-- snapshot at the moment of exhaustion would make recording an incident depend
+-- on a read that can fail. The row carries everything the incident needs to
+-- declare.
 --
--- `status` tem os mesmos três valores da `0008`, e pela mesma razão: `pending`
--- é a fila, `delivered` é o 2xx que chegou, `exhausted` é a desistência depois do
--- último degrau do backoff. Nada é apagado (D15/D2) — "tentei seis vezes e
--- desisti" é fato de auditoria, e aqui ele também vira evento.
+-- `status` has the same three values as `0008`, and for the same reason:
+-- `pending` is the queue, `delivered` is the 2xx that arrived, `exhausted` is
+-- giving up after the last step of the backoff. Nothing is erased (D15/D2) — "I
+-- tried six times and gave up" is an audit fact, and here it becomes an event
+-- as well.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
 CREATE TABLE hook_delivery (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id        INTEGER NOT NULL,
   execution_id      INTEGER,
   job_id            INTEGER NOT NULL REFERENCES job(id),
-  hook_id           TEXT NOT NULL,          -- id do gancho DENTRO do documento
-  node_id           TEXT NOT NULL,          -- nó cuja entrada/bloqueio disparou
-  graph_version_id  TEXT NOT NULL,          -- solto como job.graph_version_id
+  hook_id           TEXT NOT NULL,          -- id of the hook INSIDE the document
+  node_id           TEXT NOT NULL,          -- node whose entry/block fired it
+  graph_version_id  TEXT NOT NULL,          -- loose, like job.graph_version_id
   event_id          INTEGER NOT NULL REFERENCES event(id),
-  url               TEXT NOT NULL,          -- copiada do grafo no enfileiramento
-  secret            TEXT NOT NULL,          -- chave do HMAC, idem
+  url               TEXT NOT NULL,          -- copied from the graph at queue time
+  secret            TEXT NOT NULL,          -- the HMAC key, likewise
   status            TEXT NOT NULL CHECK (status IN ('pending','delivered','exhausted')),
   attempts          INTEGER NOT NULL DEFAULT 0,
   next_attempt_at   TEXT NOT NULL,
   created_at        TEXT NOT NULL,
   delivered_at      TEXT,
   last_error        TEXT,
-  UNIQUE (event_id, hook_id)                -- defesa em profundidade, não cursor
+  UNIQUE (event_id, hook_id)                -- defence in depth, not a cursor
 );
 
--- A pergunta quente do tick, espelhando idx_webhook_delivery_pending.
+-- The tick's hot question, mirroring idx_webhook_delivery_pending.
 CREATE INDEX idx_hook_delivery_pending ON hook_delivery (status, next_attempt_at);

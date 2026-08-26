@@ -1,55 +1,56 @@
--- 0019_skill_versao — a skill vira linhagem, como o grafo (D22, D15).
+-- 0019_skill_versao — a skill becomes a lineage, like the graph (D22, D15).
 --
--- Numerada 0019 provisoriamente: outras fichas correm em paralelo e
--- `src/db/migrate.ts` falha alto em número repetido, então renumerar no merge é
--- obrigatório, não cosmético — mesmo precedente registrado no cabeçalho da 0003,
--- da 0005 e da 0017 (que conta a terceira vez que isso aconteceu). Nenhuma ordem
--- de dependência: esta só mexe em `skill`.
+-- Numbered 0019 provisionally: other tickets run in parallel and
+-- `src/db/migrate.ts` fails loudly on a repeated number, so renumbering at the
+-- merge is mandatory, not cosmetic — the same precedent recorded in the headers
+-- of 0003, 0005 and 0017 (which tells of the third time it happened). No
+-- dependency order: this one only touches `skill`.
 --
--- A 0005 escreveu, no próprio cabeçalho, o que esta migração vem desfazer:
--- "Registro é create-only nesta ficha — um segundo POST no mesmo id é 409.
--- Reimportação, diff e histórico de versão de skill (o equivalente do par
--- graph/graph_version) ficam para quando existirem dois consumidores, pela regra
--- dos dois consumidores." Os dois consumidores apareceram — melhorar as
--- instruções de uma skill de fábrica e reimportar um bundle já registrado — e a
--- D22 registrou a decisão: "a skill has a stable id and versions (semver plus
--- a content hash)... a node stays pinned by hash (D4) and never resolves 'the
+-- 0005 wrote down, in its own header, what this migration comes to undo:
+-- "Registration is create-only in this ticket — a second POST on the same id is
+-- a 409. Reimport, diff and skill version history (the equivalent of the
+-- graph/graph_version pair) wait until two consumers exist, by the rule of two
+-- consumers." The two consumers turned up — improving the instructions of a
+-- factory skill, and reimporting an already-registered bundle — and D22
+-- recorded the decision: "a skill has a stable id and versions (semver plus a
+-- content hash)... a node stays pinned by hash (D4) and never resolves 'the
 -- latest one'".
 --
--- ## O que muda, e o que deliberadamente não muda
+-- ## What changes, and what deliberately does not
 --
--- - a PRIMARY KEY passa de `id` para `(id, version)`. É a mudança inteira: uma
---   linhagem é o conjunto de linhas que compartilham `id`, do mesmo jeito que
---   `graph_version` é o conjunto de versões que compartilham `graph_id`;
--- - `deprecated_at` entra anulável, sem backfill. NULO = versão viva, e é a
---   verdade para toda linha anterior a esta migração: ninguém aposentou nada.
---   Primeira escrita vence, mesma postura de `registered_at` — aposentar duas
---   vezes não reescreve quando aconteceu;
--- - `hash` NÃO ganha restrição de unicidade, e a ausência é decisão. O hash de
---   conteúdo exclui `id` e `version` de propósito (`src/domain/manifest.ts`:
---   renomear uma skill não muda o que ela faz), então duas linhas de
---   (id, version) DIFERENTES podem legitimamente carregar o mesmo hash — uma
---   versão nova com conteúdo idêntico é inútil, mas não é ilegal, e policiar
---   isso é julgamento humano, não invariante de banco. O que o registro recusa é
---   o contrário: conteúdo DIFERENTE sob uma versão inalterada, e essa recusa
---   mora em `src/repositories/skill.ts`, onde dá para explicar por quê.
+-- - the PRIMARY KEY goes from `id` to `(id, version)`. That is the whole
+--   change: a lineage is the set of rows that share an `id`, the same way
+--   `graph_version` is the set of versions that share a `graph_id`;
+-- - `deprecated_at` arrives nullable, without backfill. NULL = a live version,
+--   and it is the truth for every row older than this migration: nobody retired
+--   anything. First write wins, the same posture as `registered_at` — retiring
+--   twice does not rewrite when it happened;
+-- - `hash` does NOT gain a uniqueness constraint, and the absence is a
+--   decision. The content hash excludes `id` and `version` on purpose
+--   (`src/domain/manifest.ts`: renaming a skill does not change what it does),
+--   so two rows with DIFFERENT (id, version) may legitimately carry the same
+--   hash — a new version with identical content is useless, but it is not
+--   illegal, and policing that is human judgement, not a database invariant.
+--   What the registry refuses is the opposite: DIFFERENT content under an
+--   unchanged version, and that refusal lives in `src/repositories/skill.ts`,
+--   where there is room to explain why.
 --
--- ## Por que a tabela é recriada
+-- ## Why the table is recreated
 --
--- O SQLite não altera a PRIMARY KEY de uma tabela existente — só reconstruindo
--- (cria nova → copia → dropa velha → renomeia), o mesmo caminho que a 0010
--- abriu para trocar um CHECK. Aqui ele é mais curto do que lá por um motivo
--- concreto: ninguém referencia `skill`. Não há chave estrangeira apontando para
--- ela (o pino do nó vive DENTRO do snapshot de `graph_version`, como JSON, que é
--- exatamente o que faz a versão do grafo continuar legível depois de qualquer
--- coisa acontecer no registro), então não há o passo de guardar e restaurar
--- referências filhas que a 0010 precisou descobrir na marra. Nenhum índice cai
--- junto: a 0005 não criou nenhum.
+-- SQLite does not alter an existing table's PRIMARY KEY — only by rebuilding it
+-- (create the new one → copy → drop the old → rename), the same path 0010
+-- opened to change a CHECK. Here it is shorter than there for a concrete
+-- reason: nobody references `skill`. There is no foreign key pointing at it
+-- (the node's pin lives INSIDE `graph_version`'s snapshot, as JSON, which is
+-- exactly what keeps the graph version readable after anything at all happens
+-- in the registry), so there is no step of saving and restoring child
+-- references, the one 0010 had to find out the hard way. No index falls along
+-- with it: 0005 created none.
 --
--- A cópia não muda valor nenhum: cada linha já tem `id` e `version`, e a única
--- coluna nova nasce NULA.
+-- The copy changes no value at all: every row already has an `id` and a
+-- `version`, and the one new column is born NULL.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
 CREATE TABLE skill_new (
   id             TEXT NOT NULL,
@@ -65,7 +66,7 @@ CREATE TABLE skill_new (
   instructions   TEXT NOT NULL,
   source         TEXT NOT NULL,   -- JSON: {type, repo?, ref?, imported_by?, imported_at?, reviewed_by?}
   registered_at  TEXT NOT NULL,
-  deprecated_at  TEXT,            -- NULO = versão viva; primeira escrita vence
+  deprecated_at  TEXT,            -- NULL = a live version; first write wins
   PRIMARY KEY (id, version)
 );
 

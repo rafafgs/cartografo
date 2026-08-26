@@ -1,44 +1,46 @@
--- 0010_sessao_orcamento_silencio — o segundo orçamento da sessão, e a causa da
--- parada (t163).
+-- 0010_sessao_orcamento_silencio — the session's second budget, and the cause of
+-- the stop (t163).
 --
--- Até aqui a sessão tinha um cão de guarda só: `timeout_seconds`, relógio de
--- parede, armado na abertura. Sessão travada com o processo de pé corria o
--- orçamento inteiro — uma hora, no padrão do despacho — sem que nada olhasse
--- para "isto ainda está produzindo alguma coisa?". As duas colunas abaixo são
--- o outro eixo e o que ele deixa como rastro.
+-- Until now the session had a single watchdog: `timeout_seconds`, a wall clock,
+-- armed when it opened. A stuck session with the process still standing ran the
+-- whole budget — an hour, on the dispatch default — with nothing ever asking
+-- "is this still producing anything?". The two columns below are the other axis
+-- and the trace it leaves behind.
 --
--- - `silence_seconds` é o teto de INATIVIDADE com que a sessão foi aberta, em
---   segundos, e é independente de `timeout_seconds` de propósito: os dois
---   medem coisas diferentes. O relógio responde "isto já custou demais"; o
---   silêncio responde "isto parou de acontecer". Uma sessão pode ficar viva e
---   produtiva por uma hora, e outra pode travar em dois minutos com o processo
---   de pé — e só o segundo eixo enxerga a segunda.
--- - `timeout_reason` é qual dos dois mordeu: `wall_clock` ou `silence`. É
---   `CHECK`ada porque um terceiro valor aqui não é dado novo, é erro de quem
---   escreveu — e a projeção é lida por gente decidindo se investiga.
+-- - `silence_seconds` is the INACTIVITY ceiling the session was opened with, in
+--   seconds, and it is independent of `timeout_seconds` on purpose: the two
+--   measure different things. The clock answers "this has cost too much
+--   already"; the silence answers "this stopped happening". A session can stay
+--   alive and productive for an hour, and another can hang in two minutes with
+--   the process still standing — and only the second axis sees the second one.
+-- - `timeout_reason` is which of the two bit: `wall_clock` or `silence`. It is
+--   `CHECK`ed because a third value here is not new data, it is a mistake by
+--   whoever wrote it — and the projection is read by a person deciding whether
+--   to investigate.
 --
--- **Por que a causa é campo e não status.** `session.finished.status` continua
--- com os seis valores que tinha: as duas paradas nossas desembocam em
--- `timed_out`, distinguidas por esta coluna. Crescer o vocabulário de
--- status foi rejeitado uma vez, para estados de cota, com o raciocínio que vale
--- igual aqui — "o motivo real vive no log de eventos, que é append-only e não
--- perde nada" (`docs/formats/engine-adapter.md`, *Rejeitado — `SessionStatus`
--- mais rico*). E `stuck`, que a taxonomia descrevia como "parada por
--- silêncio", nunca foi isso na prática: é o slot de quem não tem slot
--- (`pending`/`running`/`cancelled`). A prosa foi corrigida junto desta ficha.
+-- **Why the cause is a field and not a status.** `session.finished.status`
+-- still has the six values it had: both of our stops end up in `timed_out`,
+-- told apart by this column. Growing the status vocabulary was rejected once,
+-- for quota states, with the reasoning that holds just as well here — "the real
+-- reason lives in the event log, which is append-only and loses nothing"
+-- (`docs/formats/engine-adapter.md`, *Rejected — a richer `SessionStatus`*).
+-- And `stuck`, which the taxonomy described as "stopped by silence", never was
+-- that in practice: it is the slot for whoever has no slot
+-- (`pending`/`running`/`cancelled`). The prose was corrected alongside this
+-- ticket.
 --
--- As duas colunas são anuláveis e sem backfill, como `timeout_seconds` já era:
--- linha anterior a esta migração lê `NULL`/`NULL`, que é exatamente o que ela
--- é — "não declarou política" e "não se aplica". Não há valor a inventar para
--- uma sessão que terminou antes de o segundo cão de guarda existir.
+-- Both columns are nullable and without backfill, as `timeout_seconds` already
+-- was: a row older than this migration reads `NULL`/`NULL`, which is exactly
+-- what it is — "declared no policy" and "does not apply". There is no value to
+-- invent for a session that ended before the second watchdog existed.
 --
--- Os dois VALORES de `timeout_reason` já nasceram em inglês, por serem
--- vocabulário da interface do EngineAdapter, que é inglês inteira e é quem os
--- produz — e é por isso que a t235, que levou para o inglês os valores presos
--- por CHECK do resto do schema, não teve nada a fazer nesta migração.
+-- Both VALUES of `timeout_reason` were born in English, being vocabulary of the
+-- EngineAdapter interface, which is English throughout and is what produces
+-- them — and that is why t235, which took the rest of the schema's
+-- CHECK-pinned values to English, had nothing to do in this migration.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE session ADD COLUMN silence_seconds INTEGER;  -- NULO = sem política própria
+ALTER TABLE session ADD COLUMN silence_seconds INTEGER;  -- NULL = no policy of its own
 ALTER TABLE session ADD COLUMN timeout_reason  TEXT
-  CHECK (timeout_reason IN ('wall_clock', 'silence'));  -- NULO = nenhum cão de guarda mordeu
+  CHECK (timeout_reason IN ('wall_clock', 'silence'));  -- NULL = no watchdog bit

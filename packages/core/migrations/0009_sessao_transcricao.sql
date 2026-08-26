@@ -1,50 +1,51 @@
--- 0009_sessao_transcricao — a saída crua da sessão, guardada para diagnóstico (t159).
+-- 0009_sessao_transcricao — the session's raw output, kept for diagnosis (t159).
 --
--- Fecha o buraco nº 3 da primeira execução de verdade
--- (`notes/2026-08-15-first-execution.md`): "a perna 1 do refinar morreu com
--- exit 1 e trabalho quase pronto, e não há como diagnosticar: o prompt é
--- gravado, a saída não". A `0003` já guarda o `prompt` — o que ENTROU na
--- sessão — e nada guardava o que SAIU dela.
+-- Closes hole nº 3 of the first real execution
+-- (`notes/2026-08-15-first-execution.md`): "leg 1 of the refine node died with
+-- exit 1 and the work nearly done, and there is no way to diagnose it: the
+-- prompt is recorded, the output is not". `0003` already keeps the `prompt` —
+-- what went INTO the session — and nothing kept what came OUT of it.
 --
--- Três colunas aditivas em `session`, sem backfill: linha antiga lê `NULL`/`0`,
--- que é exatamente o que a API reporta com honestidade ("nenhuma transcrição
--- registrada"). Não há valor a inventar para uma sessão que terminou antes
--- desta migração existir.
+-- Three additive columns on `session`, with no backfill: an old row reads
+-- `NULL`/`0`, which is exactly what the API reports honestly ("no transcript
+-- recorded"). There is no value to invent for a session that ended before this
+-- migration existed.
 --
--- - `transcript` é o texto cru que o engine imprimiu, as linhas do `onOutput`
---   juntadas por `\n`. Cru é requisito, não descuido: nem toda linha é um
---   frame estruturado, e "um CLI escreve seu grito de morte em texto puro no
---   meio do stream" (`packages/runner/src/engine/types.ts`, `SessionListener`).
---   Decodificar antes de gravar jogaria fora justamente a parte que interessa
---   quando a sessão morre.
--- - `transcricao_truncada` é 0/1, com teto de 1 MiB aplicado pelo servidor.
---   Quando estoura, o que fica é a CAUDA — o fim do stream é onde mora a
---   evidência de um crash — e a linha nunca cala sobre isso: o par
---   flag + tamanho original é o que separa "a sessão imprimiu 1 MiB" de "a
---   sessão imprimiu 40 MiB e você está lendo o último milésimo".
--- - `transcricao_tamanho_original` é o tamanho em BYTES antes do corte, e é
---   gravado sempre que há transcrição — igual ao tamanho do próprio texto
---   quando não houve truncagem. Bytes e não caracteres porque o teto é de
---   bytes; contar caracteres deixaria uma sessão em UTF-8 pesado passar do
---   teto sem que ninguém percebesse.
+-- - `transcript` is the raw text the engine printed, the `onOutput` lines
+--   joined by `\n`. Raw is a requirement, not carelessness: not every line is a
+--   structured frame, and "a CLI writes its dying scream in plain text in the
+--   middle of the stream" (`packages/runner/src/engine/types.ts`,
+--   `SessionListener`). Decoding before writing would throw away precisely the
+--   part that matters when the session dies.
+-- - `transcricao_truncada` is 0/1, with a 1 MiB ceiling applied by the server.
+--   When it overflows, what survives is the TAIL — the end of the stream is
+--   where the evidence of a crash lives — and the row never keeps quiet about
+--   it: the flag + original size pair is what separates "the session printed
+--   1 MiB" from "the session printed 40 MiB and you are reading the last
+--   thousandth of it".
+-- - `transcricao_tamanho_original` is the size in BYTES before the cut, and it
+--   is written whenever there is a transcript — equal to the size of the text
+--   itself when nothing was truncated. Bytes and not characters because the
+--   ceiling is in bytes; counting characters would let a session in heavy UTF-8
+--   run past the ceiling with nobody noticing.
 --
--- O que esta migração deliberadamente NÃO faz: mexer no envelope do evento.
--- `session.finished` continua carregando `status`/`exit_code`/`usage` e mais
--- nada (`specs/events/schemas/session.finished.schema.json`
--- intocado). Transcrição é material de diagnóstico pendurado na projeção, não
--- fato de que estado de grafo dependa — duplicar um blob capado dentro de
--- `event.data` a cada sessão engorda o log append-only sem tornar nada mais
--- replayável. Quem quer a saída pergunta à sessão, do mesmo jeito que já
--- pergunta pelo `usage`, pelo `working_dir` e pelo `prompt`.
+-- What this migration deliberately does NOT do: touch the event envelope.
+-- `session.finished` still carries `status`/`exit_code`/`usage` and nothing
+-- else (`specs/events/schemas/session.finished.schema.json` untouched). A
+-- transcript is diagnostic material hanging off the projection, not a fact any
+-- graph state depends on — duplicating a capped blob inside `event.data` on
+-- every session fattens the append-only log without making anything more
+-- replayable. Whoever wants the output asks the session, the same way they
+-- already ask it for `usage`, for `working_dir` and for `prompt`.
 --
--- `transcricao_truncada` e `transcricao_tamanho_original` nascem em português e
--- ficam: a §4.2 do glossário registra `transcricao` -> `transcript` e não
--- registra nenhuma das duas, e a t235 não inventa vocabulário fora do
--- glossário. Fechá-las é acrescentar as linhas lá e uma migração curta — ficha
--- própria, como o cabeçalho da 0003 diz de `job.corpo`.
+-- `transcricao_truncada` and `transcricao_tamanho_original` are born in
+-- Portuguese and stay: §4.2 of the glossary records `transcricao` -> `transcript`
+-- and records neither of these two, and t235 does not invent vocabulary outside
+-- the glossary. Closing them means adding those rows there plus a short
+-- migration — a ticket of its own, as 0003's header says of `job.corpo`.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
-ALTER TABLE session ADD COLUMN transcript TEXT;                              -- NULO = nada foi reportado
-ALTER TABLE session ADD COLUMN transcricao_truncada INTEGER NOT NULL DEFAULT 0; -- 0/1, teto de 1 MiB
-ALTER TABLE session ADD COLUMN transcricao_tamanho_original INTEGER;         -- bytes ANTES do corte
+ALTER TABLE session ADD COLUMN transcript TEXT;                              -- NULL = nothing was reported
+ALTER TABLE session ADD COLUMN transcricao_truncada INTEGER NOT NULL DEFAULT 0; -- 0/1, 1 MiB ceiling
+ALTER TABLE session ADD COLUMN transcricao_tamanho_original INTEGER;         -- bytes BEFORE the cut

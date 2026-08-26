@@ -1,65 +1,67 @@
--- 0010_proposta_aprovada — o portão humano entra no vocabulário (t165).
+-- 0010_proposta_aprovada — the human gate enters the vocabulary (t165).
 --
--- A tela oferece Aprovar/Rejeitar desde a `t111`
--- (`packages/tela/src/public/actions.js`), e só oferece Aplicar em `approved`.
--- O banco não conhecia esse estado: o CHECK da `0002` só admitia
--- ('pending', 'applied', 'reverted', 'rejected'), e a rota de aplicar
--- exigia `pending`. O resultado era uma inbox inutilizável — o botão Aplicar
--- aparecia num estado inalcançável. Esta migração é a metade de banco de fechar
--- esse contrato:
+-- The screen has offered Approve/Reject since `t111`
+-- (`packages/tela/src/public/actions.js`), and it only offers Apply on
+-- `approved`. The database did not know that state: `0002`'s CHECK admitted
+-- only ('pending', 'applied', 'reverted', 'rejected'), and the apply route
+-- demanded `pending`. The result was an unusable inbox — the Apply button
+-- appeared in an unreachable state. This migration is the database half of
+-- closing that contract:
 --
---   pending ──aprovar──▶ approved ──aplicar──▶ applied ──reverter──▶ reverted
+--   pending ──approve──▶ approved ──apply──▶ applied ──revert──▶ reverted
 --      │
---      └──rejeitar──▶ rejected
+--      └──reject──▶ rejected
 --
--- Duas mudanças, e nada mais:
+-- Two changes, and nothing more:
 --
--- - `status` ganha `'approved'` no CHECK;
--- - `proposal` ganha `rejection_reason TEXT` (anulável), a justificativa escrita
---   por quem rejeitou. Ela NÃO mora em `result`: aquela coluna já carrega
---   duas histórias que nunca coexistem — o relatório do portão de soundness que
---   reprovou a proposta e o veredito da hipótese (`t112`) — e as três precisam
---   continuar distinguíveis por QUAL coluna conta a história.
+-- - `status` gains `'approved'` in the CHECK;
+-- - `proposal` gains `rejection_reason TEXT` (nullable), the justification
+--   written by whoever rejected it. It does NOT live in `result`: that column
+--   already carries two stories that never coexist — the report of the
+--   soundness gate that failed the proposal and the hypothesis verdict
+--   (`t112`) — and all three have to stay distinguishable by WHICH column
+--   tells the story.
 --
--- Sem backfill, de propósito. As linhas `rejected` que já existem vieram do
--- portão de soundness, não de gente: `rejection_reason = NULL` nelas é a
--- verdade, e a história delas continua em `result`, onde sempre esteve.
+-- No backfill, on purpose. The `rejected` rows that already exist came from the
+-- soundness gate, not from a person: `rejection_reason = NULL` on them is the
+-- truth, and their story stays in `result`, where it always was.
 --
--- ## Por que a tabela inteira é reconstruída, e por que em SEIS passos
+-- ## Why the whole table is rebuilt, and why in SIX steps
 --
--- O SQLite não tem `ALTER TABLE ... ALTER CONSTRAINT`: um CHECK só muda
--- reconstruindo a tabela (cria nova → copia → dropa velha → renomeia). É a
--- primeira vez que este repositório faz isso, e o caminho ingênuo NÃO funciona
--- aqui — foi preciso descobrir na marra:
+-- SQLite has no `ALTER TABLE ... ALTER CONSTRAINT`: a CHECK only changes by
+-- rebuilding the table (create the new one → copy → drop the old → rename).
+-- This is the first time this repository does it, and the naive path does NOT
+-- work here — it had to be found out the hard way:
 --
--- `graph.origin_proposal_id` e `graph_version.proposal_id` referenciam
--- `proposal`. O control plane liga as chaves estrangeiras ANTES de migrar
--- (`applyPragmas` e depois `migrate`, em `src/index.ts`), então o `DROP TABLE`
--- faz um DELETE implícito que viola as duas referências. `PRAGMA foreign_keys`
--- não ajuda: é no-op dentro de transação, e quem transaciona é
--- `src/db/migrate.ts`. E `PRAGMA defer_foreign_keys = ON` — o remédio óbvio, e
--- o que esta migração tentou primeiro — TAMBÉM não resolve: o contador de
--- violações adiadas sobe no DELETE implícito e o `RENAME` não o abaixa (ele não
--- insere linha nenhuma), então a transação simplesmente morre no fecho em vez de
--- morrer no meio. Um banco com uma única proposta já aplicada não migrava.
+-- `graph.origin_proposal_id` and `graph_version.proposal_id` reference
+-- `proposal`. The control plane turns foreign keys on BEFORE migrating
+-- (`applyPragmas` and then `migrate`, in `src/index.ts`), so the `DROP TABLE`
+-- performs an implicit DELETE that violates both references. `PRAGMA
+-- foreign_keys` does not help: it is a no-op inside a transaction, and what
+-- transacts is `src/db/migrate.ts`. And `PRAGMA defer_foreign_keys = ON` — the
+-- obvious remedy, and what this migration tried first — does NOT solve it
+-- either: the deferred-violation counter goes up on the implicit DELETE and the
+-- `RENAME` does not bring it down (it inserts no row at all), so the
+-- transaction simply dies at the close instead of dying halfway. A database
+-- with a single already-applied proposal would not migrate.
 --
--- Daí os dois passos extras: as referências filhas são guardadas em tabelas
--- temporárias e zeradas ANTES do drop, e restauradas depois do rename. Com
--- ninguém apontando para a tabela no instante do drop, não há violação para
--- adiar nem para resolver. As linhas de `graph`/`graph_version` terminam com
--- exatamente o valor que tinham (os ids são copiados, não regerados), o que
--- mantém o append-only da D15 honesto: nenhuma delas conta uma história
--- diferente no fim da migração.
+-- Hence the two extra steps: the child references are kept in temporary tables
+-- and cleared BEFORE the drop, and restored after the rename. With nobody
+-- pointing at the table at the instant of the drop, there is no violation to
+-- defer and none to resolve. The `graph`/`graph_version` rows end up with
+-- exactly the value they had (the ids are copied, not regenerated), which keeps
+-- D15's append-only honest: none of them tells a different story at the end of
+-- the migration.
 --
--- O índice `proposal_by_graph` cai junto com a tabela e por isso é recriado.
--- O `AUTOINCREMENT` é preservado: com os ids copiados explicitamente, a
--- `sqlite_sequence` continua de onde parou, e uma proposta nova nunca reusa o id
--- de uma antiga — o que importa porque `graph_version.proposal_id` aponta para
--- eles.
+-- The `proposal_by_graph` index falls with the table and is therefore
+-- recreated. The `AUTOINCREMENT` is preserved: with the ids copied explicitly,
+-- `sqlite_sequence` carries on from where it stopped, and a new proposal never
+-- reuses an old one's id — which matters because `graph_version.proposal_id`
+-- points at them.
 --
--- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+-- No migration opens a transaction of its own: what transacts is src/db/migrate.ts.
 
--- 1. guarda quem aponta para uma proposta, e solta os ponteiros
+-- 1. record who points at a proposal, and release the pointers
 CREATE TEMP TABLE reference_graph_version AS
   SELECT id, proposal_id FROM graph_version WHERE proposal_id IS NOT NULL;
 CREATE TEMP TABLE reference_graph AS
@@ -68,7 +70,7 @@ CREATE TEMP TABLE reference_graph AS
 UPDATE graph_version SET proposal_id = NULL WHERE proposal_id IS NOT NULL;
 UPDATE graph SET origin_proposal_id = NULL WHERE origin_proposal_id IS NOT NULL;
 
--- 2. a tabela nova, com o vocabulário novo e a coluna nova
+-- 2. the new table, with the new vocabulary and the new column
 CREATE TABLE proposal_new (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   graph_id            TEXT NOT NULL REFERENCES graph(id),
@@ -80,13 +82,13 @@ CREATE TABLE proposal_new (
                         CHECK (status IN ('pending', 'approved', 'applied', 'reverted', 'rejected')),
   applied_version_id  TEXT REFERENCES graph_version(id),
   revert_reason       TEXT,
-  rejection_reason    TEXT,            -- só o portão humano escreve aqui (t165)
-  result              TEXT,            -- JSON; relatório do portão de soundness, ou veredito da hipótese
+  rejection_reason    TEXT,            -- only the human gate writes here (t165)
+  result              TEXT,            -- JSON; the soundness gate's report, or the hypothesis verdict
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL
 );
 
--- 3. a cópia, com os ids preservados
+-- 3. the copy, with the ids preserved
 INSERT INTO proposal_new (id, graph_id, target_version, operations, evidence, expected_metric,
                           status, applied_version_id, revert_reason, rejection_reason,
                           result, created_at, updated_at)
@@ -95,14 +97,14 @@ SELECT id, graph_id, target_version, operations, evidence, expected_metric,
        result, created_at, updated_at
   FROM proposal;
 
--- 4. a troca
+-- 4. the swap
 DROP TABLE proposal;
 
 ALTER TABLE proposal_new RENAME TO proposal;
 
 CREATE INDEX proposal_by_graph ON proposal (graph_id);
 
--- 5. as referências voltam para exatamente onde estavam
+-- 5. the references go back to exactly where they were
 UPDATE graph_version
    SET proposal_id = (SELECT proposal_id FROM reference_graph_version
                        WHERE reference_graph_version.id = graph_version.id)
@@ -113,6 +115,6 @@ UPDATE graph
                               WHERE reference_graph.id = graph.id)
  WHERE id IN (SELECT id FROM reference_graph);
 
--- 6. e as tabelas de apoio não sobrevivem à migração
+-- 6. and the support tables do not survive the migration
 DROP TABLE reference_graph_version;
 DROP TABLE reference_graph;

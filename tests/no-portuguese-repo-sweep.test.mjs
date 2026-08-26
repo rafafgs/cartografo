@@ -122,7 +122,7 @@ export const GENERATED_ARTIFACTS = Object.freeze(['package-lock.json']);
  * listing nineteen filenames that a pattern already describes would rot on the
  * twentieth.
  */
-const GATE_PATTERNS = Object.freeze([
+export const GATE_PATTERNS = Object.freeze([
   /^packages\/[^/]+\/test\/no-portuguese-[^/]*\.test\.[^/]+$/,
   /^tests\/no-portuguese-[^/]*\.test\.mjs$/,
   /^scripts\/no-portuguese-[^/]*\.mjs$/,

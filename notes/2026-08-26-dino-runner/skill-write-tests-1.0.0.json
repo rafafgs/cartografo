@@ -1,0 +1,252 @@
+{
+  "id": "write-tests",
+  "version": "1.0.0",
+  "hash": "sha256:d1ec11f85ab1fd3d2bfa58d72cd8e9dcebff83479ca9e80a40eaa8d8533aa863",
+  "role": "work",
+  "description": "Turns the acceptance criteria of a refined specification into failing acceptance tests, one per criterion, committed on the work's branch in an isolated checkout — and stops there: no production code, no docs. The next node makes them pass.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "ticket",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ticket": {
+        "type": "object",
+        "required": [
+          "specification",
+          "acceptance_criteria"
+        ],
+        "properties": {
+          "specification": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the refined body; it is the spec, and this session never rewrites it"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "description": "the bucket the `refine` node declares in `contract.produces`: what that node produced for this one"
+      },
+      "project": {
+        "type": "object",
+        "required": [
+          "repo",
+          "test_command",
+          "main_branch",
+          "conventions"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "test_command": {
+            "type": "string",
+            "description": "a single shell line; it is what the deterministic checks interpolate"
+          },
+          "main_branch": {
+            "type": "string",
+            "description": "the branch the work's branch was cut from; the tests-only check diffs against it"
+          },
+          "conventions": {
+            "type": "string"
+          },
+          "canonical_docs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions already answered on this work, so the new session does not reopen what was decided. The key and the two inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "pergunta": {
+              "type": "string"
+            },
+            "resposta": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "branch",
+      "commits",
+      "tests",
+      "red_run",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "branch": {
+        "type": "string",
+        "minLength": 1
+      },
+      "commits": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        }
+      },
+      "tests": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one entry per acceptance criterion that got a test: the criterion's reference, the test's name and the file it lives in",
+        "items": {
+          "type": "object",
+          "required": [
+            "criterion",
+            "test",
+            "file"
+          ],
+          "properties": {
+            "criterion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "test": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "not_testable": {
+        "type": "array",
+        "description": "criteria that got no test, each with the reason; never a silent skip",
+        "items": {
+          "type": "object",
+          "required": [
+            "criterion",
+            "reason"
+          ],
+          "properties": {
+            "criterion": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "red_run": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the tail of the failing test run: the summary line and, for every new test, the reason it fails"
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "refined specification available, with verifiable acceptance criteria",
+    "isolated worktree created, with the work's branch already checked out",
+    "project profile resolved: test command, main branch and conventions known"
+  ],
+  "checks": [
+    {
+      "id": "tests-only-and-committed",
+      "type": "deterministic",
+      "description": "The branch carries at least one commit beyond the main branch, and everything those commits touch is a test file: no production code, no tuning, no docs. It is the whole point of the node, and a command answers it.",
+      "command": "test \"$(git rev-list --count {{input.project.main_branch}}..HEAD)\" -ge 1 && git diff --quiet \"$(git merge-base {{input.project.main_branch}} HEAD)\" HEAD -- . ':(exclude)tests' ':(exclude)test' ':(exclude)__tests__' ':(exclude)*.test.*' ':(exclude)*.spec.*'",
+      "timeout_s": 60
+    },
+    {
+      "id": "red-suite",
+      "type": "deterministic",
+      "description": "The suite is RED when this node ends: tests that already pass pin nothing for the next node. Whether the red is for the right reason is the agentic check below.",
+      "command": "! {{input.project.test_command}}",
+      "timeout_s": 1800
+    },
+    {
+      "id": "clean-tree",
+      "type": "deterministic",
+      "description": "Nothing was left out of the commit: the next node only sees the branch.",
+      "command": "git diff --quiet && git diff --cached --quiet",
+      "timeout_s": 60
+    },
+    {
+      "id": "red-for-the-right-reason",
+      "type": "agentic",
+      "description": "Verifies, by the run and by the diff, that every new test fails for a missing implementation and that every acceptance criterion has a test or a recorded reason. It is the only fact of this skill no command decides on its own.",
+      "instruction": "Run the project's test command in this worktree and read the output. For every test the tests commit adds: does it fail because the implementation is missing — an assertion that does not hold, a symbol, a function or a module that does not exist yet — and not because of a syntax error, a typo, a broken fixture or a wrong import path of an existing module? Then open the diff of the tests commit and the specification's acceptance criteria side by side: does every criterion have a test that would prove it, or an entry in `not_testable` with a reason? A criterion with neither is a silent skip, and that is what this check exists to catch. The evidence is the run and the diff — the session's note is self-reporting and does not support this verdict.",
+      "required_evidence": [
+        "output_of_the_test_command_showing_each_new_test_failing_for_missing_implementation",
+        "diff_of_the_tests_commit",
+        "mapping_from_each_acceptance_criterion_to_its_test_or_to_its_not_testable_reason"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Write the acceptance tests, and nothing else\n\nYour job is to turn the acceptance criteria of ONE refined work item into\nfailing acceptance tests, in an isolated checkout, committed on the work's\nbranch — and to stop there. You implement nothing: the next node makes these\ntests pass, and the clearest thing you can hand it is a red suite that is red\nfor exactly the right reasons.\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n\n{{input.ticket.specification}}\n\n## Where you are\n\nYou are already inside an isolated checkout created for this work alone, with a\nbranch of its own — the current directory is its root, and `git branch\n--show-current` says the name of the branch. It is yours: nothing else runs in\nit, and nothing you do here is visible to anyone until a later node integrates\nit.\n\nBecause of that, three things are absolute:\n\n- **Never switch branches, and never commit onto the project's main branch.**\n- **Never merge, rebase or pull the main branch**, and do not push anything\n  anywhere. Integration is another node, with a session of its own.\n- **Never touch another checkout of this repository**, even if you can see it.\n\nYour write permission holds inside this worktree and nowhere else.\n\n## The rule that defines this node\n\n- **One test per acceptance criterion**, traceable to the criterion it pins —\n  name the test after it, or cite the criterion's reference in a comment on\n  its first line. A criterion that genuinely cannot be pinned by a test gets an\n  entry in `not_testable` with the reason; never a silent skip.\n- **Only test files change.** No production code, no tuning numbers, no docs.\n  A helper may be added if it lives with the tests. If a test needs a symbol,\n  a module or a field that does not exist yet, import or read it anyway: the\n  failure \"is not a function\", \"does not provide an export\", \"undefined\" IS\n  the red the next node needs.\n- **The suite is RED when you finish, for the right reason.** Every new test\n  fails because the implementation is missing — not because of a syntax\n  error, a typo, a broken fixture or a wrong import path of a module that\n  already exists. Run the project's test command ({{input.project.test_command}})\n  and read the failures one by one; fix any test that fails for the wrong\n  reason before you commit.\n- **Existing tests are not yours to edit.** If the specification says an\n  existing test must change, or a new criterion contradicts one, say so in\n  your note and leave it as it is — that is a decision for the next nodes, and\n  the human, not for this one.\n- **Match the project.** Read the existing tests first and follow their\n  structure, helpers and naming; follow the project's conventions\n  ({{input.project.conventions}}) for where tests live.\n\n## Procedure\n\n1. **Read before writing**: the specification's acceptance criteria, the files\n   it cites (read-only: you will not change them), and the existing tests.\n2. **Write the tests**, one per criterion, in as few files as the project's\n   layout suggests — one file per work item is usually right.\n3. **Run the test command** and confirm each new test fails for a missing\n   implementation. Confirm the tests that existed before still pass, unless\n   the specification itself says one of them must change.\n4. **Commit once on your branch**: `test(t{{input.job.id}}): <what the tests\n   pin>`. Leave the tree clean: work that is uncommitted does not reach the\n   next node.\n\n## When something is genuinely stuck\n\nIf **the same problem repeats three times in a row for the same reason**,\nstop: a repeated identical failure says the specification, the environment or\nan assumption is wrong, and burning the budget on it helps nobody. Anything the\nspecification does not settle and that you cannot responsibly guess: prefer a\nsensible default recorded in your note, and ask only when a wrong default would\nbe expensive.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReport what you actually did, not what you intended to do. Return the result in\nthe format this skill's output schema declares:\n\n- `branch` and `commits`: where the tests ended up, and the hash(es) in the\n  order they were created.\n- `tests`: one entry per criterion that got a test — the criterion's\n  reference, the test's name, the file.\n- `not_testable`: every criterion that got no test, each with its reason.\n- `red_run`: the tail of the failing run — the summary line and, for every\n  new test, the reason it fails. It is what lets the next node and the check\n  see the red without trusting your word for it.\n- `note`: one line with what you pinned and every default you took.\n- `gotchas`: what you learned that was not obvious — a fixture quirk, a\n  criterion that had to be read in a particular way, a trap for whoever\n  implements.\n\nYou never return the specification, and you never return implementation: both\nbelong to other nodes. If no test can be written at all, commit nothing and say\nwhy in the `note`.\n",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot"
+  }
+}

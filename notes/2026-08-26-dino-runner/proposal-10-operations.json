@@ -1,0 +1,196 @@
+[
+ {
+  "type": "add_node",
+  "node": {
+   "id": "write_tests",
+   "role": "tester",
+   "node_type": "work",
+   "description": "Turns the acceptance criteria of the specification into failing acceptance tests in the isolated checkout, one per criterion, without touching production code. Hands the branch to development with the tests red.",
+   "skill_ref": {
+    "id": "write-tests",
+    "version": "1.0.0",
+    "hash": "sha256:d1ec11f85ab1fd3d2bfa58d72cd8e9dcebff83479ca9e80a40eaa8d8533aa863"
+   },
+   "contract": {
+    "input_schema": {
+     "type": "object",
+     "required": [
+      "ticket_id",
+      "specification",
+      "acceptance_criteria"
+     ],
+     "properties": {
+      "ticket_id": {
+       "type": "string",
+       "minLength": 1
+      },
+      "specification": {
+       "type": "string",
+       "minLength": 1
+      },
+      "acceptance_criteria": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "output_schema": {
+     "type": "object",
+     "required": [
+      "branch",
+      "commits",
+      "tests",
+      "red_run"
+     ],
+     "properties": {
+      "branch": {
+       "type": "string",
+       "minLength": 1
+      },
+      "commits": {
+       "type": "array",
+       "minItems": 1,
+       "items": {
+        "type": "string"
+       }
+      },
+      "tests": {
+       "type": "array",
+       "items": {
+        "type": "object"
+       }
+      },
+      "not_testable": {
+       "type": "array",
+       "items": {
+        "type": "object"
+       }
+      },
+      "red_run": {
+       "type": "string"
+      }
+     }
+    },
+    "produces": "tests",
+    "checks": [
+     {
+      "type": "deterministic",
+      "command": "test \"$(git rev-list --count {{input.project.main_branch}}..HEAD)\" -ge 1 && git diff --quiet \"$(git merge-base {{input.project.main_branch}} HEAD)\" HEAD -- . ':(exclude)tests' ':(exclude)test' ':(exclude)__tests__' ':(exclude)*.test.*' ':(exclude)*.spec.*'",
+      "description": "The branch carries at least one commit beyond the main branch, and everything those commits touch is a test file: no production code, no tuning, no docs. It is the whole point of the node, and a command answers it."
+     },
+     {
+      "type": "deterministic",
+      "command": "! {{input.project.test_command}}",
+      "description": "The suite is RED when this node ends: tests that already pass pin nothing for the next node. Whether the red is for the right reason is the agentic check below."
+     },
+     {
+      "type": "deterministic",
+      "command": "git diff --quiet && git diff --cached --quiet",
+      "description": "Nothing was left out of the commit: the next node only sees the branch."
+     },
+     {
+      "type": "agentic",
+      "instruction": "Run the project's test command in this worktree and read the output. For every test the tests commit adds: does it fail because the implementation is missing — an assertion that does not hold, a symbol, a function or a module that does not exist yet — and not because of a syntax error, a typo, a broken fixture or a wrong import path of an existing module? Then open the diff of the tests commit and the specification's acceptance criteria side by side: does every criterion have a test that would prove it, or an entry in `not_testable` with a reason? A criterion with neither is a silent skip, and that is what this check exists to catch. The evidence is the run and the diff — the session's note is self-reporting and does not support this verdict.",
+      "required_evidence": true,
+      "description": "Verifies, by the run and by the diff, that every new test fails for a missing implementation and that every acceptance criterion has a test or a recorded reason. It is the only fact of this skill no command decides on its own."
+     }
+    ]
+   }
+  },
+  "inverse": {
+   "type": "remove_node",
+   "node_id": "write_tests"
+  }
+ },
+ {
+  "type": "remove_edge",
+  "edge": {
+   "from": "refine",
+   "to": "develop"
+  },
+  "inverse": {
+   "type": "add_edge",
+   "edge": {
+    "from": "refine",
+    "to": "develop",
+    "condition": "always"
+   }
+  }
+ },
+ {
+  "type": "add_edge",
+  "edge": {
+   "from": "refine",
+   "to": "write_tests",
+   "condition": "always"
+  },
+  "inverse": {
+   "type": "remove_edge",
+   "edge": {
+    "from": "refine",
+    "to": "write_tests"
+   }
+  }
+ },
+ {
+  "type": "add_edge",
+  "edge": {
+   "from": "write_tests",
+   "to": "develop",
+   "condition": "always"
+  },
+  "inverse": {
+   "type": "remove_edge",
+   "edge": {
+    "from": "write_tests",
+    "to": "develop"
+   }
+  }
+ },
+ {
+  "type": "change_node_field",
+  "node_id": "develop",
+  "field": "description",
+  "from": "Implements the specification in an isolated checkout, with the acceptance tests written before the implementation.",
+  "to": "Makes the acceptance tests already on the branch pass — a `write_tests` node committed them, red, before this one — implementing the specification in the same isolated checkout without rewriting the tests.",
+  "inverse": {
+   "type": "change_node_field",
+   "node_id": "develop",
+   "field": "description",
+   "from": "Makes the acceptance tests already on the branch pass — a `write_tests` node committed them, red, before this one — implementing the specification in the same isolated checkout without rewriting the tests.",
+   "to": "Implements the specification in an isolated checkout, with the acceptance tests written before the implementation."
+  }
+ },
+ {
+  "type": "change_node_field",
+  "node_id": "develop",
+  "field": "skill_ref",
+  "from": {
+   "id": "develop-ticket",
+   "version": "1.0.1",
+   "hash": "sha256:646ea312c75ceb326ab0a153abcec7d8bf8b0d7a7ddc8ed3bd6975468d215410"
+  },
+  "to": {
+   "id": "develop-ticket",
+   "version": "1.0.2",
+   "hash": "sha256:285d026f3e6c0166028098c5b61f12522f7138e641c0a2ef6e9fc32237755f9f"
+  },
+  "inverse": {
+   "type": "change_node_field",
+   "node_id": "develop",
+   "field": "skill_ref",
+   "from": {
+    "id": "develop-ticket",
+    "version": "1.0.2",
+    "hash": "sha256:285d026f3e6c0166028098c5b61f12522f7138e641c0a2ef6e9fc32237755f9f"
+   },
+   "to": {
+    "id": "develop-ticket",
+    "version": "1.0.1",
+    "hash": "sha256:646ea312c75ceb326ab0a153abcec7d8bf8b0d7a7ddc8ed3bd6975468d215410"
+   }
+  }
+ }
+]

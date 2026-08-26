@@ -1,0 +1,260 @@
+{
+  "id": "develop-ticket",
+  "version": "1.0.2",
+  "hash": "sha256:285d026f3e6c0166028098c5b61f12522f7138e641c0a2ef6e9fc32237755f9f",
+  "role": "work",
+  "description": "Implements a refined specification in an isolated checkout, with the acceptance tests written and confirmed failing before the implementation, and commits on the work's branch.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "ticket",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ticket": {
+        "type": "object",
+        "required": [
+          "specification",
+          "acceptance_criteria"
+        ],
+        "properties": {
+          "specification": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the refined body; it is the spec, and this session never rewrites it"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "description": "the bucket the `refine` node declares in `contract.produces`: what that node produced for this one"
+      },
+      "project": {
+        "type": "object",
+        "required": [
+          "repo",
+          "test_command",
+          "quality_commands",
+          "conventions"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "test_command": {
+            "type": "string",
+            "description": "a single shell line; it is what the deterministic check interpolates"
+          },
+          "quality_commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "tests, lint, typecheck and whatever else the profile declares; the runner renders the list as a single line, joined by \" && \""
+          },
+          "conventions": {
+            "type": "string"
+          },
+          "canonical_docs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions already answered on this work, so the new session does not reopen what was decided. The key and the two inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "pergunta": {
+              "type": "string"
+            },
+            "resposta": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "tests": {
+        "type": "object",
+        "description": "present only when a `write_tests` node ran before this one: the bucket it declares in `contract.produces`. The acceptance tests are then already committed on the branch, red.",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tests": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "not_testable": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "red_run": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "branch",
+      "commits",
+      "gates",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "branch": {
+        "type": "string",
+        "minLength": 1
+      },
+      "commits": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        }
+      },
+      "gates": {
+        "type": "object",
+        "description": "what the session declares it ran; it is self-reporting and reaches the following steps as context, never as evidence",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        }
+      },
+      "touched_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "unexpected_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "what you touched outside the surface the refinement declared; the scheduling was built on that list, so a surprise here is first-order information"
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "refined specification available, with verifiable acceptance criteria",
+    "isolated worktree created, with the work's branch already checked out",
+    "no other active work whose declared file surface overlaps this one's",
+    "project profile resolved: test command and quality commands known"
+  ],
+  "checks": [
+    {
+      "id": "green-suite",
+      "type": "deterministic",
+      "description": "The project's suite passes in the isolated worktree. A self-check of the session: what proves it again, against the merged tree and with evidence of their own, are the integration and the test gate.",
+      "command": "{{input.project.test_command}}",
+      "timeout_s": 1800
+    },
+    {
+      "id": "green-quality",
+      "type": "deterministic",
+      "description": "Every quality command of the profile — lint, typecheck, whatever else there is — and not only the ones the session thinks it touched.",
+      "command": "{{input.project.quality_commands}}",
+      "timeout_s": 1800
+    },
+    {
+      "id": "clean-tree",
+      "type": "deterministic",
+      "description": "Nothing was left out of the commit. Work that is green and uncommitted is not delivery: the next node only sees the branch.",
+      "command": "git diff --quiet && git diff --cached --quiet",
+      "timeout_s": 60
+    },
+    {
+      "id": "tdd-order",
+      "type": "agentic",
+      "description": "Verifies the TDD order by the branch history, not by the report of whoever developed it. It is the only fact of this skill that no command decides on its own.",
+      "instruction": "Were the acceptance tests committed BEFORE the implementation, did they fail for the right reason, and do they cover the criteria of the specification?\n\nWalk the branch history, from the oldest commit to the newest, and answer with the log in hand: is there a commit that only adds or changes test files and comes before the commit that brings the implementation? Do the tests it adds correspond, one to one, to the acceptance criteria of the specification — or did some criterion end up with no test?\n\nAnd was the red red for the right reason? Run the project's test command with the tree at the tests-only commit and read the output: every new test has to fail for missing implementation — an assertion that does not hold, a symbol, a route or a function that does not exist yet — and not for an import error, a typo, a missing dependency or a broken fixture. A failure for the wrong reason is not a valid red: it gives the same feeling of safety with no proof at all, and that is how an entire feature is born built on top of a mistake.\n\nThe evidence is the history and that output: the commit hashes, the diff of the tests commit and the output of the red run. The session's note and the gates field it filled in are self-reporting and do not support this verdict. A single commit carrying tests and implementation together does not prove the order, and for that reason does not pass.",
+      "required_evidence": [
+        "hash_of_the_tests_commit_and_hash_of_the_implementation_commit",
+        "diff_of_the_tests_commit",
+        "output_of_the_test_command_at_the_tests_only_commit_showing_failure_for_missing_implementation",
+        "mapping_from_each_acceptance_criterion_to_the_test_that_covers_it"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Implement a refined specification\n\nYour job is to implement ONE refined work item, completely, in an isolated\ncheckout, leaving everything committed on its branch and every quality command\ngreen.\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n\n{{input.ticket.specification}}\n\n## Where you are\n\nYou are already inside an isolated checkout created for this work alone, with a\nbranch of its own — the current directory is its root, and `git branch\n--show-current` says the name of the branch. It is yours: nothing else runs in\nit, and nothing you do here is visible to anyone until a later node integrates\nit.\n\nBecause of that, three things are absolute:\n\n- **Never switch branches, and never commit onto the project's main branch.**\n- **Never merge, rebase or pull the main branch**, and do not push anything\n  anywhere. Integration is another node, with a session of its own.\n- **Never touch another checkout of this repository**, even if you can see it.\n\nYour write permission holds inside this worktree and nowhere else.\n\n## The build gate\n\n1. **Read before writing.** Read the specification's acceptance-tests section,\n   the files it cites, and the project's architectural conventions\n   ({{input.project.conventions}}). A spec that cites a path is telling you to\n   open the path.\n2. **Write the acceptance tests FIRST.** Every one the specification lists,\n   before any implementation exists.\n3. **Confirm they fail, and that they fail for the right reason** — missing\n   implementation, not an import error, a typo or a broken fixture. A test that\n   fails for the wrong reason is not a valid red, and moving on from one is how\n   an entire feature gets built on top of a mistake.\n4. **Only then implement**, against the specification and against the project's\n   conventions. Follow the out-of-scope section to the letter: it is a\n   decision, not a suggestion. Where the specification names a file to create\n   or edit, prefer the pattern the project's canonical documents already use.\n5. **Never edit a test to make it pass.** The test is the spec. If a test looks\n   wrong, say so in your note, or ask — do not quietly change it.\n6. **Run every quality command of the project**\n   ({{input.project.quality_commands}}) until all of them are green. Run the\n   whole set at the end, not only the part you think you touched.\n7. **Commit on your branch.** Use `feat(t{{input.job.id}}): <short\n   description>` for a feature and `fix(t{{input.job.id}}): ...` for a bug.\n   Small, meaningful commits are better than one giant one; a separate commit\n   with the failing tests before the implementation is the clearest possible\n   evidence that you wrote them first — and it is exactly what the TDD-order\n   check will look for in the history.\n\n## When the tests are already on the branch\n\nIf `input.tests` is present, a `write_tests` node ran before you: the\nacceptance tests are already committed on your branch, one per criterion, and\nthe suite is red. Then:\n\n- **Read them, and run the test command to see the red with your own eyes**\n  — that replaces steps 2 and 3 above. Do not rewrite, rename, move or\n  duplicate them: they are the spec, exactly as step 5 says.\n- **Add a test only for a criterion `input.tests.not_testable` lists**, and\n  only if you find a way to pin it after all; say so in your note.\n- If one of those tests looks wrong — it fails for a reason other than a\n  missing implementation, or it contradicts the specification — do not fix it\n  quietly: implement what the specification says, leave the test as it is,\n  and put the disagreement in your note (or ask, if the disagreement is the\n  whole ticket). The TDD-order check reads the history: the tests commit is\n  already there, before yours.\n\n## When something is genuinely stuck\n\nIf **the same gate fails three times in a row for the same reason**, stop. Do\nnot keep trying variations: a repeated identical failure is a signal that the\nspecification, the environment or an assumption is wrong, and burning the\nbudget on it helps nobody.\n\nThe same holds for anything the specification does not settle and that you\ncannot responsibly guess. Prefer a sensible default recorded in your note; ask\nonly when a wrong default would be expensive.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReport what you actually did, not what you intended to do. Return the result in\nthe format this skill's output schema declares:\n\n- `branch` and `commits`: where the work ended up, and the hashes in the order\n  they were created.\n- `gates`: what you ran and how it went. It is **a declaration of yours**, not\n  proof — what proves it is the integration, rerunning against the merged tree.\n  Report honestly what ran and what did not.\n- `touched_files` and `unexpected_files`: if you touched a file the\n  specification did not anticipate, say so — the scheduling was built on the\n  declared surface, and a surprise there matters.\n- `note`: one line with what you built and every default you took.\n- `gotchas`: what you learned that was not obvious (a quirk, a wrong\n  assumption, a trap the next work item would fall into).\n\nYou never return the specification: it belongs to the refinement node, and this\nnode does not rewrite it. If the work cannot be implemented at all, commit\nnothing and say why in the `note`.",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot"
+  }
+}

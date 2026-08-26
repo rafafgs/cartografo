@@ -3,7 +3,8 @@
 > A framework that draws, executes and evolves work graphs per problem class.
 > You declare the problem; the system draws the map.
 
-**State: it runs; what it has not yet shown is that it learns.** What is in this
+**State: it runs, and the loop has closed once; what it has not yet shown is
+that the loop makes the next round better.** What is in this
 repository today is a control plane, a runner, a screen and the two factory
 graphs D14 asks for — and on 2026-08-18 both of those graphs closed a real
 traversal on their own.
@@ -22,12 +23,27 @@ gate never reached, again with no operator
 What has NOT been shown is the other half, the one the whole meta-layer rests
 on. **The learning loop stands at n=1**: one complete traversal on version A of
 one bundle, no version B, the human gate at the proposal never exercised, and
-**no A/B measurement of any proposal exists**. The round that was to produce it
+**no A/B measurement of any proposal existed** until the round of 2026-08-26,
+below. The round that was to produce it
 was stopped after the account's own quota killed the same node twice
 ([`notes/2026-08-18-n3-round.md`](notes/2026-08-18-n3-round.md)). The evaluator
 proposes and a human decides, as principle 5 says; whether what it proposes
 makes the next round better is an open question in this repository, not a
 settled one.
+
+**On 2026-08-26 the loop closed once, end to end**
+([`notes/2026-08-26-dino-runner-a-b.md`](notes/2026-08-26-dino-runner-a-b.md)).
+A browser game grew through three traversals of the software graph (version A,
+no operator, one human gate answered at the screen); the two surveyors read
+those executions and deposited nine proposals; one proposal — a `write_tests`
+node with a skill of its own, registered and pinned — was approved and applied
+at the human gate; and a fourth traversal ran on the version B born from it and
+was measured node by node against A, from the control plane's own telemetry.
+What the measurement says is the honest limit: the new node made `develop`
+shorter and cheaper (353 s and 28k output tokens, against 544 s / 48k and
+1054 s / 91k on A) and cost about what it saved (527 s / 48k of its own), with
+one job on B against three on A. The loop closes; whether it improves the next
+round is still the open question — now with a number attached.
 
 Origin: a conversation of 2026-08-14 about graph engineering, during the
 production of article O001 of the newsletter (repository `substack-agentes`).

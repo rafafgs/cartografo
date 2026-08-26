@@ -1,0 +1,630 @@
+{
+  "problem_class": "dino-runner",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Software delivery — dino-runner (factory graph 1 pointed at the T-Rex runner)",
+    "description": "Factory graph 1 (D14): the flowpilot flow expressed in this format. One node per activity state; flowpilot's queue states (to_refine, to_develop, to_integrate, to_test, to_deploy) do not become nodes — they are the controller's scheduling plumbing, not the topology of the work. The edges follow ALLOWED_TRANSITIONS with those queues collapsed, including the test → develop rework cycle. Variant of 2026-08-26 for the dino-runner game: same five nodes, edges and pinned skills; only `project` points at <operator-home>/dino-runner. Version B (2026-08-26): a write_tests node between refine and develop; develop pinned to develop-ticket 1.0.2.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "manual port of flowpilot (D17: behavioural reference, with no code dependency)"
+  },
+  "nodes": [
+    {
+      "id": "refine",
+      "role": "architect",
+      "node_type": "work",
+      "description": "Turns the request into a specification: functional requirements, touched files, acceptance criteria and negative scope.",
+      "skill_ref": {
+        "id": "refine-ticket",
+        "version": "1.0.1",
+        "hash": "sha256:79667013229d5e5095c0eef985ef6759e154d444fcb247c9c25aa0181c37d735"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "request"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request": {
+              "type": "string",
+              "minLength": 1
+            },
+            "project_profile": {
+              "type": "string"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "specification",
+            "acceptance_criteria",
+            "touched_files",
+            "note"
+          ],
+          "properties": {
+            "specification": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "touched_files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "out_of_scope": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "model_tier": {
+              "type": "string",
+              "enum": [
+                "standard",
+                "strong"
+              ],
+              "description": "the model strength the work asks for; never a model and never a named vendor"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line with what the session decided and every default it took; it is what makes a default reviewable"
+            },
+            "gotchas": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "produces": "ticket",
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Is every acceptance criterion verifiable by a concrete test, and does the list of touched files exist in the repository? Attach the verified path of each file cited.",
+            "required_evidence": true,
+            "description": "An unverifiable acceptance criterion is refinement's most expensive defect: it contaminates every step that follows."
+          }
+        ]
+      }
+    },
+    {
+      "id": "write_tests",
+      "role": "tester",
+      "node_type": "work",
+      "description": "Turns the acceptance criteria of the specification into failing acceptance tests in the isolated checkout, one per criterion, without touching production code. Hands the branch to development with the tests red.",
+      "skill_ref": {
+        "id": "write-tests",
+        "version": "1.0.0",
+        "hash": "sha256:d1ec11f85ab1fd3d2bfa58d72cd8e9dcebff83479ca9e80a40eaa8d8533aa863"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "specification",
+            "acceptance_criteria"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "specification": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "branch",
+            "commits",
+            "tests",
+            "red_run"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commits": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "tests": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "not_testable": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "red_run": {
+              "type": "string"
+            }
+          }
+        },
+        "produces": "tests",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test \"$(git rev-list --count {{input.project.main_branch}}..HEAD)\" -ge 1 && git diff --quiet \"$(git merge-base {{input.project.main_branch}} HEAD)\" HEAD -- . ':(exclude)tests' ':(exclude)test' ':(exclude)__tests__' ':(exclude)*.test.*' ':(exclude)*.spec.*'",
+            "description": "The branch carries at least one commit beyond the main branch, and everything those commits touch is a test file: no production code, no tuning, no docs. It is the whole point of the node, and a command answers it."
+          },
+          {
+            "type": "deterministic",
+            "command": "! {{input.project.test_command}}",
+            "description": "The suite is RED when this node ends: tests that already pass pin nothing for the next node. Whether the red is for the right reason is the agentic check below."
+          },
+          {
+            "type": "deterministic",
+            "command": "git diff --quiet && git diff --cached --quiet",
+            "description": "Nothing was left out of the commit: the next node only sees the branch."
+          },
+          {
+            "type": "agentic",
+            "instruction": "Run the project's test command in this worktree and read the output. For every test the tests commit adds: does it fail because the implementation is missing — an assertion that does not hold, a symbol, a function or a module that does not exist yet — and not because of a syntax error, a typo, a broken fixture or a wrong import path of an existing module? Then open the diff of the tests commit and the specification's acceptance criteria side by side: does every criterion have a test that would prove it, or an entry in `not_testable` with a reason? A criterion with neither is a silent skip, and that is what this check exists to catch. The evidence is the run and the diff — the session's note is self-reporting and does not support this verdict.",
+            "required_evidence": true,
+            "description": "Verifies, by the run and by the diff, that every new test fails for a missing implementation and that every acceptance criterion has a test or a recorded reason. It is the only fact of this skill no command decides on its own."
+          }
+        ]
+      }
+    },
+    {
+      "id": "develop",
+      "role": "developer",
+      "node_type": "work",
+      "description": "Makes the acceptance tests already on the branch pass — a `write_tests` node committed them, red, before this one — implementing the specification in the same isolated checkout without rewriting the tests.",
+      "skill_ref": {
+        "id": "develop-ticket",
+        "version": "1.0.2",
+        "hash": "sha256:285d026f3e6c0166028098c5b61f12522f7138e641c0a2ef6e9fc32237755f9f"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "specification",
+            "acceptance_criteria"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "specification": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "branch",
+            "commits"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commits": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "unexpected_files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "produces": "artifact",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "{{input.project.test_command}}",
+            "description": "The project's suite passes in the work's isolated checkout."
+          },
+          {
+            "type": "deterministic",
+            "command": "{{input.project.quality_commands}}",
+            "description": "Every quality command the profile declares, and not only the ones the session thinks it touched."
+          },
+          {
+            "type": "deterministic",
+            "command": "git diff --quiet && git diff --cached --quiet",
+            "description": "Nothing was left out of the commit: the next node only sees the branch."
+          },
+          {
+            "type": "agentic",
+            "instruction": "Were the acceptance tests committed before the implementation, and do they cover the criteria of the specification? Attach the hashes of both commits and the diff of the tests commit.",
+            "required_evidence": true,
+            "description": "Verifies the TDD order by the history, not by the report of whoever developed it."
+          }
+        ]
+      }
+    },
+    {
+      "id": "integrate",
+      "role": "integrator",
+      "node_type": "work",
+      "description": "Brings the branch onto the main line and reverifies the suite against the already integrated tree.",
+      "skill_ref": {
+        "id": "integrate-branch",
+        "version": "1.0.1",
+        "hash": "sha256:e5d9a64ccfc7c278dc2ed3fd7a457774c0636af14d76795cafd8d23f29315910"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "branch"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "merge_commit"
+          ],
+          "properties": {
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resolved_conflicts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "produces": "artifact",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "{{input.project.test_command}}",
+            "description": "The suite passes on the merged tree, not only on the isolated branch."
+          },
+          {
+            "type": "deterministic",
+            "command": "{{input.project.quality_commands}}",
+            "description": "The flow's last deterministic station: the test gate reruns none of it."
+          },
+          {
+            "type": "deterministic",
+            "command": "git diff --quiet && git diff --cached --quiet",
+            "description": "No leftovers of a half-finished merge hidden in the tree."
+          }
+        ]
+      }
+    },
+    {
+      "id": "test",
+      "role": "tester",
+      "node_type": "gate",
+      "description": "Exercises the delivered behaviour against the acceptance criteria and routes: approved moves on to deployment, rework goes back to development.",
+      "skill_ref": {
+        "id": "alpha-test",
+        "version": "1.0.5",
+        "hash": "sha256:18be65c9f7c13ff831fb01bf53d29233a38268dc304f89ea56f1b9eb37cc5ba6"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "acceptance_criteria",
+            "merge_commit"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "resultado",
+            "outcome",
+            "verdicts"
+          ],
+          "properties": {
+            "resultado": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "rework"
+              ],
+              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The KEY is the protocol's and is spelled the way the runner and the control plane reserve it; the VALUES are THIS graph's — the `condition` of an edge leaving `test` — which is why the label is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/graph.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
+            },
+            "outcome": {
+              "enum": [
+                "approved",
+                "rework",
+                "escalate"
+              ]
+            },
+            "verdicts": {
+              "type": "array",
+              "minItems": 1,
+              "description": "one per acceptance criterion, with the evidence THIS gate produced; a criterion that was not exercised gets an honest entry, never a skipped one",
+              "items": {
+                "type": "object",
+                "required": [
+                  "ref",
+                  "verdict",
+                  "evidence"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "enum": [
+                      "passed",
+                      "failed",
+                      "not_exercised"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "bugs": {
+              "type": "array",
+              "description": "what the walkthrough found; the severity is what lets the executor schedule the fix",
+              "items": {
+                "type": "object",
+                "required": [
+                  "severity",
+                  "title",
+                  "criterion",
+                  "repro"
+                ],
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "simple",
+                      "complex"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "criterion": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repro": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Run the delivered behaviour and check each acceptance criterion against the real application. Attach the output of every run; the developer's report does not count as evidence.",
+            "required_evidence": true,
+            "description": "An agentic gate verifies with evidence of its own (learning note, 2026-08-14)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "deploy",
+      "role": "deployer",
+      "node_type": "work",
+      "description": "Publishes what was approved and closes the traversal.",
+      "skill_ref": {
+        "id": "verify-release",
+        "version": "1.0.1",
+        "hash": "sha256:4ba085f8f429356305c3b0ed5e76f010493deeefd587b095418aca5569a4efe4"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "merge_commit"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "release",
+            "deployed_at"
+          ],
+          "properties": {
+            "release": {
+              "type": "string",
+              "minLength": 1
+            },
+            "deployed_at": {
+              "type": "string"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "git -C {{input.project.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
+            "description": "The reference exists as a commit: without it, \"does not contain\" would be indistinguishable from \"I do not know\"."
+          },
+          {
+            "type": "deterministic",
+            "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artifact.merge_commit}} {{input.referencia.commit}}",
+            "description": "The whole question of the step: the work's merge commit is an ancestor of the published reference."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "refine",
+      "to": "write_tests",
+      "condition": "always",
+      "description": "the refined specification goes to whoever writes its acceptance tests first (proposal from the flow lens over execution 2, 2026-08-26)."
+    },
+    {
+      "from": "write_tests",
+      "to": "develop",
+      "condition": "always",
+      "description": "the branch with the red acceptance tests goes to development."
+    },
+    {
+      "from": "develop",
+      "to": "integrate",
+      "condition": "always",
+      "description": "flowpilot: developing -> to_integrate -> integrating."
+    },
+    {
+      "from": "integrate",
+      "to": "test",
+      "condition": "always",
+      "description": "flowpilot: integrating -> to_test -> testing."
+    },
+    {
+      "from": "test",
+      "to": "deploy",
+      "condition": "approved",
+      "description": "flowpilot: testing -> to_deploy -> deploying."
+    },
+    {
+      "from": "test",
+      "to": "develop",
+      "condition": "rework",
+      "description": "flowpilot: testing -> to_develop, the alpha test's rework cycle."
+    }
+  ],
+  "initial_node": "refine",
+  "final_nodes": [
+    "deploy"
+  ],
+  "custom_fields": [],
+  "project": {
+    "repo": "<operator-home>/dino-runner",
+    "main_branch": "main",
+    "test_command": "npm test",
+    "install_command": "npm ci",
+    "quality_commands": [
+      "npm test",
+      "npm run lint",
+      "npm run build"
+    ],
+    "conventions": "dino-runner: a T-Rex runner for the browser — pure rules plus a canvas, plain ES modules, Node >= 20, node:test, NO dependencies (do not add any). Read docs/TICKETS.md and docs/ARCHITECTURE.md first; DECISIONS.md says what was chosen and what is deliberately absent. The rules live in src/game.js and must not know a browser exists: no window, document, timers or Math.random — `npm run lint` refuses them. The renderer (src/render.js) only draws; the page (index.html) turns keys into an intent {jump, duck, restart} (edge-triggered) and runs a fixed 60 Hz loop. Take ALL randomness from rand(state) in src/rng.js (a Math.random() breaks every replay test); numbers go in src/tuning.js, never inline. A rule ticket is: a change in src/game.js (plus its tuning numbers), tests under tests/ (one file per ticket is fine), and the new state fields documented in docs/ARCHITECTURE.md. Tests first: one commit that adds the failing tests, then the commit with the rule. Gates before a ticket is done: npm test && npm run lint && npm run build; and look at it headless: npm run play -- --ticks 300 --every 60. Commit messages in English, prefixed with the type and the ticket (e.g. 'test(t1): ...', 'feat(t1): ...'). Docs in English. Move the ticket to Done in docs/TICKETS.md and amend DECISIONS.md D5 in the same commit as the rule.",
+    "canonical_docs": [
+      "README.md",
+      "docs/TICKETS.md",
+      "docs/ARCHITECTURE.md",
+      "DECISIONS.md"
+    ],
+    "ledger_files": [
+      "docs/TICKETS.md",
+      "docs/ARCHITECTURE.md",
+      "DECISIONS.md",
+      "src/tuning.js"
+    ],
+    "application": {
+      "running": false,
+      "address": "none; see absence_reason",
+      "absence_reason": "a static browser page with no server of its own: the game is index.html plus ES modules in the checkout. Exercise the rules headless, with evidence of your own: `npm run play -- --ticks 600 --every 100 --seed <n>` in the test bench, or a `node -e`/`node --input-type=module -e` probe that imports src/game.js and drives step() with scripted intents and prints the state. `npm run serve -- --port 5182` serves the page at http://127.0.0.1:5182/ if you need to fetch it. A criterion that needs a human eye on the canvas goes to the founder as an input-request."
+    }
+  }
+}

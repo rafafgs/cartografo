@@ -1,0 +1,60 @@
+===== flow lens exec 3 — 19:55:11Z
+[surveyor] verifyCli: {"available":true,"version":"2.1.246 (Claude Code)","authenticated":true}
+[surveyor] execution 3 · control plane http://127.0.0.1:4317 · workdir /var/folders/2l/k1c8tzw94033hx7n7vtddhl80000gq/T/cartografo-surveyor-PuJhPB
+[surveyor] execution 3: 22 events under version sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+[surveyor] bottleneck: develop (1565740ms, 1 question(s)), over events 51, 53, 54, 55, 56, 58, 60, 61
+[surveyor] session ended as "completed" (exit 0)
+[surveyor] proposal 7 created as "pending"
+
+===== proposal =====
+proposal.id:      7
+status:           pending
+graph:            dino-runner
+target_version:   sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+gargalo:          develop
+evidencia:        {"lens":"flow","fonte":"topografo/fluxo","execution_id":3,"graph_version_id":"sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d","node_id":"develop","agent_ms":1054432,"blocked_ms":508165,"queue_ms":3143,"total_ms":1565740,"input_requests":1,"event_ids":[51,53,54,55,56,58,60,61],"by_node":[{"node_id":"develop","agent_ms":1054432,"blocked_ms":508165,"queue_ms":3143,"total_ms":1565740,"input_requests":1,"event_ids":[51,53,54,55,56,58,60,61]},{"node_id":"refine","agent_ms":724724,"blocked_ms":0,"queue_ms":0,"total_ms":724724,"input_requests":0,"event_ids":[
+metrica_esperada: {"nome":"agent_ms:develop","direcao":"cai","de":1054432,"para":843546}
+====================
+
+[surveyor] the proposal is pending in the book; applying it is a human decision
+===== exit  — 19:55:59Z
+===== flow lens exec 1 — 19:55:59Z
+[surveyor] verifyCli: {"available":true,"version":"2.1.246 (Claude Code)","authenticated":true}
+[surveyor] execution 1 · control plane http://127.0.0.1:4317 · workdir /var/folders/2l/k1c8tzw94033hx7n7vtddhl80000gq/T/cartografo-surveyor-6pv7Ln
+[surveyor] execution 1: 16 events under version sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+[surveyor] bottleneck: refine (323240ms, 0 question(s)), over events 7, 8
+[surveyor] session ended as "completed" (exit 0)
+[surveyor] proposal 8 created as "pending"
+
+===== proposal =====
+proposal.id:      8
+status:           pending
+graph:            dino-runner
+target_version:   sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+gargalo:          refine
+evidencia:        {"lens":"flow","fonte":"topografo/fluxo","execution_id":1,"graph_version_id":"sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d","node_id":"refine","agent_ms":323240,"blocked_ms":0,"queue_ms":0,"total_ms":323240,"input_requests":0,"event_ids":[7,8],"by_node":[{"node_id":"refine","agent_ms":323240,"blocked_ms":0,"queue_ms":0,"total_ms":323240,"input_requests":0,"event_ids":[7,8]},{"node_id":"test","agent_ms":285041,"blocked_ms":0,"queue_ms":3109,"total_ms":288150,"input_requests":0,"event_ids":[17,19,20]},{"node_id":"develop","agent_ms":160075,"blocked_ms
+metrica_esperada: {"nome":"agent_ms:refine","direcao":"cai","de":323240,"para":258592}
+====================
+
+[surveyor] the proposal is pending in the book; applying it is a human decision
+===== exit  — 19:56:41Z
+===== flow lens exec 2 — 19:56:41Z
+[surveyor] verifyCli: {"available":true,"version":"2.1.246 (Claude Code)","authenticated":true}
+[surveyor] execution 2 · control plane http://127.0.0.1:4317 · workdir /var/folders/2l/k1c8tzw94033hx7n7vtddhl80000gq/T/cartografo-surveyor-VZTjrF
+[surveyor] execution 2: 16 events under version sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+[surveyor] bottleneck: develop (546960ms, 0 question(s)), over events 30, 32, 33
+[surveyor] session ended as "completed" (exit 0)
+[surveyor] proposal 9 created as "pending"
+
+===== proposal =====
+proposal.id:      9
+status:           pending
+graph:            dino-runner
+target_version:   sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d
+gargalo:          develop
+evidencia:        {"lens":"flow","fonte":"topografo/fluxo","execution_id":2,"graph_version_id":"sha256:303eb81dea799075ad2c4ed82de36728e525810239277405f6fdf266f6ef112d","node_id":"develop","agent_ms":543840,"blocked_ms":0,"queue_ms":3120,"total_ms":546960,"input_requests":0,"event_ids":[30,32,33],"by_node":[{"node_id":"develop","agent_ms":543840,"blocked_ms":0,"queue_ms":3120,"total_ms":546960,"input_requests":0,"event_ids":[30,32,33]},{"node_id":"refine","agent_ms":524634,"blocked_ms":0,"queue_ms":0,"total_ms":524634,"input_requests":0,"event_ids":[28,29]},{"node_id":"test","agent_ms":231366,
+metrica_esperada: {"nome":"agent_ms:develop","direcao":"cai","de":543840,"para":435072}
+====================
+
+[surveyor] the proposal is pending in the book; applying it is a human decision
+===== exit  — 19:57:37Z

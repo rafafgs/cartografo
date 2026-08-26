@@ -139,7 +139,20 @@ export const ALLOWED_SEGMENTS = Object.freeze([]);
 /** An opening or closing code fence, and the run of backticks that makes it. */
 const FENCE = /^\s*(`{3,})/;
 
-/** A backtick span, of any backtick run length, within one line. */
+/**
+ * A backtick span, of any backtick run length, within one line.
+ *
+ * Within one line ON PURPOSE, and this is not the bug it looks like. Widening
+ * `.` to `[\s\S]` so a wrapped span is still one span was tried and reverted:
+ * a single unbalanced backtick anywhere above then pairs across the line
+ * break and INVERTS every pairing after it, blanking the gaps between spans
+ * instead of the spans. Three flagged lines became six, and the three new ones
+ * were correctly marked quotations the line-scoped matcher had always handled.
+ * Per line, an odd backtick spoils its own line and nothing else.
+ *
+ * The cost is a real constraint on prose: a quotation that must survive
+ * (D24) is kept inside one line, or the matcher cannot see that it is marked.
+ */
 const SPAN = /(`+)(.+?)\1/g;
 
 /** A JSON string whose whole content is a URL or a bare dotted hostname. */

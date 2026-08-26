@@ -223,6 +223,14 @@ export const TOUCHABLE = Object.freeze([
   'notes/2026-08-25-t303-closing-note.md',
   'notes/2026-08-25-t305-closing-note.md',
   'notes/2026-08-25-t306-closing-note.md',
+  // Incident fix, 2026-08-26, direct on main: three Portuguese quotations this
+  // note keeps ON PURPOSE were flagged by the document-tree gate, because the
+  // backtick spans marking them WRAPPED and that matcher is line-scoped. Each
+  // quotation now sits on one line; not one character of quoted text changed,
+  // and nothing redacted was reintroduced. See the SPAN comment in
+  // `tests/no-portuguese-document-tree.test.mjs` for why the matcher was not
+  // widened instead.
+  'notes/2026-08-25-t309-closing-note.md',
 ]);
 
 /** Every `.md` under `notes/`, repo-relative, in directory order. */

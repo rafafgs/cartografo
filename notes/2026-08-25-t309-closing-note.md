@@ -90,13 +90,15 @@ Both the ticket named, plus one it did not:
   returns a terminal status after `onFinished` has run" — **and the line
   reference was stale too**: both cited
   `docs/formats/engine-adapter.md:778`, where the invariant now sits at `:844`.
-- **New:** `synthesizer/prompt.ts` quoted README principle 3 as *"sem contrato o
-  sintetizador compõe por alucinação"*. `README.md:304` has said "with no
-  contract, the synthesizer composes by hallucination" since it was translated.
+- **New:** `synthesizer/prompt.ts` quoted README principle 3 in Portuguese:
+  `"sem contrato o sintetizador compõe por alucinação"`. `README.md:304` has
+  said "with no contract, the synthesizer composes by hallucination" since it
+  was translated.
 
 Both permission files (`engine/permission-policy.ts`,
-`dispatch/parse-permission-denial.ts`) cited a section as `"Permissões da
-sessão"`; it is `### The session's permissions` (`:318`) today.
+`dispatch/parse-permission-denial.ts`) cited a section as
+`"Permissões da sessão"`; it is `### The session's permissions` (`:318`)
+today.
 
 ## FR3 — nine rationale sites, and the claim that had already expired
 

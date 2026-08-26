@@ -63,11 +63,11 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   const report = validateItems([
     {
       ref: 'a',
-      title: 'Migração 0005',
-      body: 'Cria as duas tabelas do intake.',
-      acceptance_criteria: ['a migração roda do zero'],
+      title: 'Migration 0005',
+      body: 'Creates the two intake tables.',
+      acceptance_criteria: ['the migration runs from zero'],
     },
-    { ref: 'b', title: 'Rota de confirmação' },
+    { ref: 'b', title: 'Confirmation route' },
   ]);
 
   assert.equal(report.valid, true, asText(report));
@@ -75,16 +75,16 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   assert.deepEqual(report.items, [
     {
       ref: 'a',
-      title: 'Migração 0005',
-      body: 'Cria as duas tabelas do intake.',
-      acceptance_criteria: ['a migração roda do zero'],
+      title: 'Migration 0005',
+      body: 'Creates the two intake tables.',
+      acceptance_criteria: ['the migration runs from zero'],
       fields: null,
       tier: null,
       depends_on: [],
     },
     {
       ref: 'b',
-      title: 'Rota de confirmação',
+      title: 'Confirmation route',
       // The optional ones are normalized, and `null` is not `[]`: "no acceptance
       // criteria yet" and "declared as none" are different statements, and the
       // node that refines is the one that turns the first into the second.
@@ -113,16 +113,16 @@ test('t168 — fields is accepted when well shaped, and an absent one normalizes
 
   const report = validateItems([
     {
-      ref: 'tese',
-      title: 'Comprar a tese do cobre',
-      fields: { premise_source: 'relatório trimestral', downside: -12.5, upside: 40 },
+      ref: 'thesis',
+      title: 'Buy the copper thesis',
+      fields: { premise_source: 'quarterly report', downside: -12.5, upside: 40 },
     },
-    { ref: 'outra', title: 'Sem campo nenhum' },
+    { ref: 'other', title: 'No field at all' },
   ]);
 
   assert.equal(report.valid, true, asText(report));
   assert.deepEqual(report.items[0].fields, {
-    premise_source: 'relatório trimestral',
+    premise_source: 'quarterly report',
     downside: -12.5,
     upside: 40,
   });
@@ -140,7 +140,7 @@ test('t168 — an item whose fields is not a map of scalars is rejected', async 
     { ref: 'a', title: 'valor aninhado', fields: { downside: { valor: 12 } } },
     { ref: 'b', title: 'lista no lugar de mapa', fields: ['downside'] },
     { ref: 'c', title: 'texto no lugar de mapa', fields: 'downside=12' },
-    { ref: 'd', title: 'este está bom', fields: { downside: 12 } },
+    { ref: 'd', title: 'this one is fine', fields: { downside: 12 } },
   ]);
 
   assert.equal(report.valid, false);
@@ -157,7 +157,7 @@ test('t168 — an item whose fields is not a map of scalars is rejected', async 
  *
  * `tier` is the narrowest possible instance of a policy surface: it says what a
  * work item costs to RUN, never which edge it takes. The graph stays frozen
- * (README princípio 2), and `docs/spec/graph.md:401-403`'s deliberate omission
+ * (README principle 2), and `docs/spec/graph.md:401-403`'s deliberate omission
  * of flowpilot's topology shortcuts is not reopened by it.
  *
  * The rule that matters most here is the one the absent case pins: absence is
@@ -170,9 +170,9 @@ test('t175 — tier accepts the two declared values, and an absent one normalize
   const { validateItems } = await loadIntake();
 
   const report = validateItems([
-    { ref: 'renomear', title: 'Renomear uma variável', tier: 'trivial' },
+    { ref: 'rename', title: 'Rename a variable', tier: 'trivial' },
     { ref: 'feature', title: 'A feature inteira, do zero', tier: 'standard' },
-    { ref: 'sem-triagem', title: 'Ninguém triou esta' },
+    { ref: 'no-triage', title: 'Nobody triaged this one' },
   ]);
 
   assert.equal(report.valid, true, asText(report));
@@ -189,10 +189,10 @@ test('t175 — a tier outside the two declared values is invalid_field', async (
   const { validateItems } = await loadIntake();
 
   const report = validateItems([
-    { ref: 'a', title: 'urgência não é tier', tier: 'urgent' },
-    { ref: 'b', title: 'nem número', tier: 2 },
-    { ref: 'c', title: 'nem string vazia', tier: '' },
-    { ref: 'd', title: 'este está bom', tier: 'standard' },
+    { ref: 'a', title: 'urgency is not a tier', tier: 'urgent' },
+    { ref: 'b', title: 'not a number either', tier: 2 },
+    { ref: 'c', title: 'not an empty string either', tier: '' },
+    { ref: 'd', title: 'this one is fine', tier: 'standard' },
   ]);
 
   assert.equal(report.valid, false);
@@ -224,7 +224,7 @@ test('AT3 — an item without a title (absent or empty) is rejected, and both sh
   const report = validateItems([
     { ref: 'a' },
     { ref: 'b', title: '   ' },
-    { ref: 'c', title: 'este está bom' },
+    { ref: 'c', title: 'this one is fine' },
   ]);
 
   assert.equal(report.valid, false);
@@ -243,7 +243,7 @@ test('AT3 — an item without a title (absent or empty) is rejected, and both sh
 test('AT3 — an item without a ref, or not an object at all, is rejected', async () => {
   const { validateItems } = await loadIntake();
 
-  const report = validateItems([{ title: 'sem ref' }, 'não sou um objeto']);
+  const report = validateItems([{ title: 'no ref' }, 'I am not an object']);
 
   assert.equal(report.valid, false);
   assert.deepEqual(codes(report), ['missing_required_field', 'invalid_item']);
@@ -270,9 +270,9 @@ test('AT3 — body, acceptance_criteria and depends_on are checked when present'
 
   const report = validateItems([
     { ref: 'a', title: 'body errado', body: 42 },
-    { ref: 'b', title: 'critério vazio', acceptance_criteria: ['bom', '  '] },
-    { ref: 'c', title: 'critérios não são lista', acceptance_criteria: 'um texto só' },
-    { ref: 'd', title: 'dependência não é lista', depends_on: 'a' },
+    { ref: 'b', title: 'empty criterion', acceptance_criteria: ['fine', '  '] },
+    { ref: 'c', title: 'criteria are not a list', acceptance_criteria: 'just some text' },
+    { ref: 'd', title: 'dependency is not a list', depends_on: 'a' },
   ]);
 
   assert.equal(report.valid, false);
@@ -350,16 +350,16 @@ test('AT6 — a valid DAG of 3+ levels is accepted', async () => {
   const { validateItems } = await loadIntake();
 
   const report = validateItems([
-    { ref: 'migracao', title: 'a migração' },
-    { ref: 'dominio', title: 'o validador', depends_on: ['migracao'] },
-    { ref: 'repositorio', title: 'o repositório', depends_on: ['migracao', 'dominio'] },
-    { ref: 'rotas', title: 'as rotas', depends_on: ['repositorio'] },
-    { ref: 'doc', title: 'a especificação', depends_on: ['rotas', 'dominio'] },
+    { ref: 'migration', title: 'the migration' },
+    { ref: 'domain', title: 'the validator', depends_on: ['migration'] },
+    { ref: 'repository', title: 'the repository', depends_on: ['migration', 'domain'] },
+    { ref: 'routes', title: 'the routes', depends_on: ['repository'] },
+    { ref: 'doc', title: 'the spec', depends_on: ['routes', 'domain'] },
   ]);
 
   assert.equal(report.valid, true, asText(report));
   assert.equal(report.items.length, 5);
-  assert.deepEqual(report.items[2].depends_on, ['migracao', 'dominio']);
+  assert.deepEqual(report.items[2].depends_on, ['migration', 'domain']);
 });
 
 test('AT6 — a diamond is a DAG, not a cycle', async () => {
@@ -470,10 +470,10 @@ test('t255 — an item written with the retired Portuguese keys is refused, neve
   // which is exactly what makes the refusal honest instead of silent.
   const report = validateItems([
     {
-      ref: 'migracao',
-      titulo: 'Migração 0005',
-      corpo: 'As duas tabelas.',
-      criterios_de_aceite: ['roda do zero'],
+      ref: 'migration',
+      titulo: 'Migration 0005',
+      corpo: 'The two tables.',
+      criterios_de_aceite: ['runs from zero'],
       depende_de: [],
     },
   ]);
@@ -489,10 +489,10 @@ test('t255 — an item written with the retired Portuguese keys is refused, neve
   // every optional field read rather than dropped.
   const renamed = validateItems([
     {
-      ref: 'migracao',
-      title: 'Migração 0005',
-      body: 'As duas tabelas.',
-      acceptance_criteria: ['roda do zero'],
+      ref: 'migration',
+      title: 'Migration 0005',
+      body: 'The two tables.',
+      acceptance_criteria: ['runs from zero'],
       fields: { area: 'intake' },
       tier: 'standard',
       depends_on: [],
@@ -502,10 +502,10 @@ test('t255 — an item written with the retired Portuguese keys is refused, neve
   assert.equal(renamed.valid, true, asText(renamed));
   assert.deepEqual(renamed.items, [
     {
-      ref: 'migracao',
-      title: 'Migração 0005',
-      body: 'As duas tabelas.',
-      acceptance_criteria: ['roda do zero'],
+      ref: 'migration',
+      title: 'Migration 0005',
+      body: 'The two tables.',
+      acceptance_criteria: ['runs from zero'],
       fields: { area: 'intake' },
       tier: 'standard',
       depends_on: [],

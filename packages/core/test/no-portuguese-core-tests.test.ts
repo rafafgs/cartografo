@@ -97,9 +97,68 @@ export function scannedFiles(): string[] {
  * intent. A line that moves breaks this list loudly, and somebody re-reads the
  * exception instead of inheriting it — which is the whole point.
  */
-const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze(
-  [],
-);
+const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
+  {
+    file: 'sessions.test.ts',
+    line: 365,
+    reason: 'a route D18 RETIRED, asserted to answer 404; translating it would prove a route that never existed is gone',
+  },
+  {
+    file: 'sessions.test.ts',
+    line: 366,
+    reason: 'the same retired route, on the read verb',
+  },
+  {
+    file: 'sessions.test.ts',
+    line: 367,
+    reason: 'the retired finish route, spelled the way D18 retired it',
+  },
+  {
+    file: 'sessions.test.ts',
+    line: 1822,
+    reason: "the input property of the bets red-team gate at 1.0.0; the fixture's own docstring pins that version's names on purpose",
+  },
+  {
+    file: 'input-requests.test.ts',
+    line: 119,
+    reason: '`src/repositories/input-request.ts:265` WRITES this block reason; the assertion has to spell it the way the control plane does',
+  },
+  {
+    file: 'input-requests.test.ts',
+    line: 152,
+    reason: 'the same block reason, handed to the block route',
+  },
+  {
+    file: 'input-requests.test.ts',
+    line: 482,
+    reason: 'a route D18 RETIRED, asserted to answer 404',
+  },
+  {
+    file: 'input-requests.test.ts',
+    line: 897,
+    reason: 'the same block reason `src/repositories/input-request.ts:265` writes, read back off the projection',
+  },
+  {
+    file: 'input-requests.test.ts',
+    line: 916,
+    reason: 'the same block reason, in the event payload',
+  },
+  {
+    file: 'proposal-routes.test.ts',
+    line: 14,
+    reason: 'an English sentence that QUOTES the frozen hypothesis keys `src/routes/proposals.ts:744-745` names',
+  },
+  {
+    file: 'proposal-routes.test.ts',
+    line: 16,
+    reason: 'the same sentence, listing the rest of the frozen shape',
+  },
+  {
+    file: 'proposal-routes.test.ts',
+    line: 939,
+    reason: 'an English sentence that quotes the wire key it asserts on, the way `src/repositories/proposals.ts:548` spells it',
+  },
+]);
 
 /** Any of these means the line around it is Portuguese. */
 const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
@@ -355,6 +414,40 @@ const PROTOCOL_TOKENS = new RegExp(
 );
 
 /**
+ * Wire keys still spelled in Portuguese, masked ONLY where they are a key.
+ *
+ * A whole-file sweep cannot tell `depois: 0.1` — the frozen hypothesis field
+ * `src/routes/proposals.ts:744` reads off the body — from `depois da queda`,
+ * which is a Portuguese sentence in a fixture title. The difference is
+ * POSITION, and position is something a regex can see: a key is followed by a
+ * colon and a value is not. So the mask below blanks these six words when they
+ * head a property and leaves them alone everywhere else, which is why
+ * `merge_commit: 'depois'` still goes red — the value there is prose that
+ * happens to be one word long.
+ *
+ * Each of the six is a name the source really writes:
+ *
+ * - `antes`, `depois` — `src/repositories/proposals.ts:548-549` declares both
+ *   on the hypothesis outcome, and `src/routes/proposals.ts:750-751` reads
+ *   `execucao_id`/`depois` off the request body. The header of that route file
+ *   calls the vocabulary frozen (FR5) in so many words.
+ * - `fonte`, `observacao` — the two halves of an `evidencia` payload:
+ *   `packages/runner/src/surveyor/proposal.ts:131` declares
+ *   `FlowEvidence.fonte`, and `docs/spec/screen-graph-editor.md:74` documents
+ *   `{"fonte": …, "observacao": …}` as what the graph screen sends.
+ * - `pergunta`, `resposta` — the two keys of every entry of
+ *   `input.perguntas_respondidas`, built by `src/domain/context.ts:266-267`
+ *   and by `src/routes/jobs.ts:127-128`.
+ *
+ * Built from a list of strings rather than written as a regex literal, for the
+ * reason {@link PROTOCOL_TOKENS} is.
+ */
+const WIRE_KEYS = new RegExp(
+  `\\b(?:${['antes', 'depois', 'fonte', 'observacao', 'pergunta', 'resposta'].join('|')})\\s*:`,
+  'g',
+);
+
+/**
  * Node and skill ids this repository reuses as illustration, everywhere.
  *
  * `triagem` is the one that needs saying: it is the entry node of the
@@ -406,7 +499,10 @@ function blank(text: string): string {
  * @returns Every offending token found, or an empty list.
  */
 export function offendersIn(text: string): string[] {
-  let masked = text.replace(PROTOCOL_TOKENS, blank).replace(ILLUSTRATIVE_IDS, blank);
+  let masked = text
+    .replace(WIRE_KEYS, blank)
+    .replace(PROTOCOL_TOKENS, blank)
+    .replace(ILLUSTRATIVE_IDS, blank);
   for (const span of MACHINE_NAMES) masked = masked.replace(span, blank);
 
   const offenders: string[] = [];

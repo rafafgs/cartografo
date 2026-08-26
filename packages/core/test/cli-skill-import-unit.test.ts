@@ -52,7 +52,7 @@ function sourceFile(t: TestHook, contents: string, name = 'SKILL.md'): string {
 }
 
 /** A `SKILL.md` with the frontmatter the derivation reads. */
-function skillSource(frontmatter: string, body = 'Faça o trabalho.\n'): string {
+function skillSource(frontmatter: string, body = 'Do the work.\n'): string {
   return `---\n${frontmatter}\n---\n\n${body}`;
 }
 
@@ -77,34 +77,34 @@ function scanOptions(source: string, url: string, output?: string) {
 /* ------------------------------------------------------------ pure parts */
 
 test('the frontmatter is read flat, and a malformed one is refused loudly', () => {
-  const read = splitFrontmatter('---\nname: uma-skill\ndescription: "com aspas"\n\nsem_dois_pontos\n: sem chave\n---\n\n\nO corpo.\n');
+  const read = splitFrontmatter('---\nname: a-skill\ndescription: "with quotes"\n\nno_colon\n: no key\n---\n\n\nThe body.\n');
 
-  assert.deepEqual(read.frontmatter, { name: 'uma-skill', description: 'com aspas' });
-  assert.equal(read.body, 'O corpo.\n', 'the blank lines after the block belong to the block');
+  assert.deepEqual(read.frontmatter, { name: 'a-skill', description: 'with quotes' });
+  assert.equal(read.body, 'The body.\n', 'the blank lines after the block belong to the block');
 
-  assert.throws(() => splitFrontmatter('# Sem frontmatter\n'), UsageError);
-  assert.throws(() => splitFrontmatter('---\nname: uma-skill\n'), UsageError);
+  assert.throws(() => splitFrontmatter('# No frontmatter\n'), UsageError);
+  assert.throws(() => splitFrontmatter('---\nname: a-skill\n'), UsageError);
 });
 
 test('kebabCase strips accents, punctuation and the dashes it would end on', () => {
-  assert.equal(kebabCase('Revisão de Código'), 'revisao-de-codigo');
+  assert.equal(kebabCase('Résumé Review'), 'resume-review');
   assert.equal(kebabCase('  --npm run test!!  '), 'npm-run-test');
-  assert.equal(kebabCase('já-assim'), 'ja-assim');
+  assert.equal(kebabCase('naïve-already'), 'naive-already');
   assert.equal(kebabCase('!!!'), '', 'a name that yields nothing yields nothing, not a guess');
 });
 
 test('only a command quoted inside a fenced block becomes a check', () => {
   const checks = deriveChecks(
     [
-      'Rode a suíte (`npm test`) e confirme as falhas.',
+      'Run the suite (`npm test`) and confirm the failures.',
       '',
       '```bash',
-      '# um comentário não é comando',
+      '# a comment is not a command',
       '',
       'npm test',
       'npm test!',
       'npm test',
-      'git commit -m "nada disso"',
+      'git commit -m "none of that"',
       'cd /tmp',
       'pytest -q',
       '```',
@@ -128,14 +128,14 @@ test('only a command quoted inside a fenced block becomes a check', () => {
     ['deterministic'],
     'a derived check is always the deterministic kind',
   );
-  assert.deepEqual(deriveChecks('sem fence nenhuma\n'), []);
+  assert.deepEqual(deriveChecks('no fence at all\n'), []);
 });
 
 /* -------------------------------------------------------------- scan-skill */
 
 test('a role that is neither work nor gate never becomes a draft', async (t) => {
   const plane = await startFakeControlPlane(t, emptyRegistry);
-  const source = sourceFile(t, skillSource('name: uma-skill'));
+  const source = sourceFile(t, skillSource('name: a-skill'));
 
   await assert.rejects(
     capture(() => runScanSkill({ ...scanOptions(source, plane.url), role: 'juiz' })),
@@ -148,7 +148,7 @@ test('a source with no usable name is refused before the registry is asked', asy
   const plane = await startFakeControlPlane(t, emptyRegistry);
 
   await assert.rejects(
-    capture(() => runScanSkill(scanOptions(sourceFile(t, skillSource('description: sem nome')), plane.url))),
+    capture(() => runScanSkill(scanOptions(sourceFile(t, skillSource('description: no name')), plane.url))),
     (error: unknown) => error instanceof UsageError && /has no "name"/.test(error.message),
   );
   await assert.rejects(
@@ -165,14 +165,14 @@ test('a source that cannot be read is a message, not a stack trace', async (t) =
   const plane = await startFakeControlPlane(t, emptyRegistry);
 
   await assert.rejects(
-    capture(() => runScanSkill(scanOptions('/nao/existe/SKILL.md', plane.url))),
+    capture(() => runScanSkill(scanOptions('/does/not/exist/SKILL.md', plane.url))),
     (error: unknown) => error instanceof UsageError && /could not read/.test(error.message),
   );
 });
 
 test('a registry that does not answer 200 stops the scan', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({ status: 503 }));
-  const source = sourceFile(t, skillSource('name: uma-skill'));
+  const source = sourceFile(t, skillSource('name: a-skill'));
 
   const run = await capture(() => runScanSkill(scanOptions(source, plane.url)));
 
@@ -183,14 +183,14 @@ test('a registry that does not answer 200 stops the scan', async (t) => {
 test('an id already registered is a human decision, not an overwrite', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 200,
-    body: { skills: ['nem objeto', { id: 'uma-skill' }] },
+    body: { skills: ['nem objeto', { id: 'a-skill' }] },
   }));
-  const source = sourceFile(t, skillSource('name: Uma Skill'));
+  const source = sourceFile(t, skillSource('name: A Skill'));
 
   const run = await capture(() => runScanSkill(scanOptions(source, plane.url)));
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /id "uma-skill" is already registered/);
+  assert.match(run.stderr, /id "a-skill" is already registered/);
   assert.match(run.stderr, /a collision is a human decision \(D4\)/);
 
   // t215, FR8: the refusal STAYS — `scan-skill` derives from a fresh `SKILL.md`,
@@ -205,19 +205,19 @@ test('an id already registered is a human decision, not an overwrite', async (t)
 test('the draft leaves a placeholder wherever a human has to decide', async (t) => {
   const plane = await startFakeControlPlane(t, emptyRegistry);
   const area = temporaryArea(t, 'cartografo-t212-draft-');
-  const output = path.join(area, 'pasta', 'nova', 'uma-skill.manifest.json');
+  const output = path.join(area, 'folder', 'new', 'a-skill.manifest.json');
   const source = sourceFile(
     t,
-    skillSource('name: Uma Skill\ndescription: faz uma coisa', 'Rode:\n\n```bash\nnpm test\n```\n'),
+    skillSource('name: A Skill\ndescription: does a thing', 'Run:\n\n```bash\nnpm test\n```\n'),
   );
 
   const run = await capture(() => runScanSkill({ ...scanOptions(source, plane.url, output), role: 'gate' }));
 
   assert.equal(run.code, 0);
   const draft = JSON.parse(readFileSync(output, 'utf8')) as Record<string, unknown>;
-  assert.equal(draft.id, 'uma-skill');
+  assert.equal(draft.id, 'a-skill');
   assert.equal(draft.role, 'gate', 'the role is the flag, verbatim');
-  assert.equal(draft.description, 'faz uma coisa');
+  assert.equal(draft.description, 'does a thing');
   assert.deepEqual(draft.input, { $comment: 'revisor humano escreve o JSON Schema aqui' });
   assert.deepEqual(draft.permissions, {
     filesystem: { read: ['**'], write: [] },
@@ -235,7 +235,7 @@ test('the draft leaves a placeholder wherever a human has to decide', async (t) 
 test('a source with no derivable check says so, because the registry refuses one', async (t) => {
   const plane = await startFakeControlPlane(t, emptyRegistry);
   const area = temporaryArea(t, 'cartografo-t212-draft-');
-  const source = sourceFile(t, skillSource('name: sem-check', 'Só prosa, nenhum comando.\n'));
+  const source = sourceFile(t, skillSource('name: no-check', 'Just prose, no command.\n'));
 
   const previous = process.cwd();
   process.chdir(area);
@@ -247,8 +247,8 @@ test('a source with no derivable check says so, because the registry refuses one
   assert.match(run.stdout, /checks derived\s+0/);
   assert.match(run.stdout, /no check could be derived/);
   assert.equal(
-    JSON.parse(readFileSync(path.join(area, 'sem-check.manifest.json'), 'utf8')).id,
-    'sem-check',
+    JSON.parse(readFileSync(path.join(area, 'no-check.manifest.json'), 'utf8')).id,
+    'no-check',
     'without --out the draft is named after the id, where the command was run',
   );
 });
@@ -265,7 +265,7 @@ test('a manifest file that is not a manifest never opens a gate', async (t) => {
   writeFileSync(list, '["nem manifesto"]', 'utf8');
 
   await assert.rejects(
-    capture(() => runProposeSkill({ path: path.join(area, 'nao-existe.json'), url: plane.url })),
+    capture(() => runProposeSkill({ path: path.join(area, 'does-not-exist.json'), url: plane.url })),
     (error: unknown) => error instanceof UsageError && /could not read/.test(error.message),
   );
   await assert.rejects(
@@ -284,10 +284,10 @@ test('the approval is opened on the job, never auto-approvable', async (t) => {
     request.path === '/v1/jobs' ? { status: 201, body: { id: 77 } } : { status: 201, body: { id: 91 } },
   );
   const area = temporaryArea(t, 'cartografo-t212-propose-');
-  const manifest = path.join(area, 'uma-skill.manifest.json');
+  const manifest = path.join(area, 'a-skill.manifest.json');
   writeFileSync(
     manifest,
-    JSON.stringify({ id: 'uma-skill', origin: { repo: 'exemplo/skills', ref: 'a1b2c3d' } }),
+    JSON.stringify({ id: 'a-skill', origin: { repo: 'exemplo/skills', ref: 'a1b2c3d' } }),
     'utf8',
   );
 
@@ -317,15 +317,15 @@ test('a manifest with no id and no origin is described as what it is', async (t)
 
 test('a control plane that refuses the job or the approval stops the proposal', async (t) => {
   const area = temporaryArea(t, 'cartografo-t212-propose-');
-  const manifest = path.join(area, 'uma-skill.json');
-  writeFileSync(manifest, JSON.stringify({ id: 'uma-skill' }), 'utf8');
+  const manifest = path.join(area, 'a-skill.json');
+  writeFileSync(manifest, JSON.stringify({ id: 'a-skill' }), 'utf8');
 
   const noJob = await startFakeControlPlane(t, () => ({ status: 500 }));
   const first = await capture(() => runProposeSkill({ path: manifest, url: noJob.url }));
   assert.equal(first.code, 1);
   assert.match(first.stderr, /refused the import job \(HTTP 500\)/);
 
-  const jobWithoutId = await startFakeControlPlane(t, () => ({ status: 201, body: { sem: 'id' } }));
+  const jobWithoutId = await startFakeControlPlane(t, () => ({ status: 201, body: { without: 'id' } }));
   const second = await capture(() => runProposeSkill({ path: manifest, url: jobWithoutId.url }));
   assert.equal(second.code, 1);
 
@@ -356,13 +356,13 @@ function answered(answer: string, id = 91): Record<string, unknown> {
   };
 }
 
-const APPROVED_MANIFEST = { id: 'uma-skill', version: '0.1.0', hash: 'sha256:abc' };
+const APPROVED_MANIFEST = { id: 'a-skill', version: '0.1.0', hash: 'sha256:abc' };
 
 test('a gate nobody answered registers nothing', async (t) => {
   const pending = await startFakeControlPlane(t, () =>
     queue([
       { id: 1, kind: 'approval', status: 'pending', answer: null },
-      { id: 2, kind: 'esclarecimento', status: 'answered', answer: 'qualquer coisa' },
+      { id: 2, kind: 'question', status: 'answered', answer: 'anything at all' },
     ]),
   );
 
@@ -383,18 +383,18 @@ test('a queue that does not come back as a queue stops the registration', async 
   assert.equal(first.code, 1);
   assert.match(first.stderr, /HTTP 500 for the gate of job 77/);
 
-  const shapeless = await startFakeControlPlane(t, () => ({ status: 200, body: { sem: 'input_requests' } }));
+  const shapeless = await startFakeControlPlane(t, () => ({ status: 200, body: { without: 'input_requests' } }));
   const second = await capture(() => runRegisterSkill({ jobId: 77, url: shapeless.url }));
   assert.equal(second.code, 1);
 });
 
 test('a refusal is a refusal, with or without a reason written on it', async (t) => {
   const withReason = await startFakeControlPlane(t, () =>
-    queue([answered('rejeitar: as instruções pedem uma credencial')]),
+    queue([answered('rejeitar: the instructions ask for a credential')]),
   );
   const first = await capture(() => runRegisterSkill({ jobId: 77, url: withReason.url }));
   assert.equal(first.code, 1);
-  assert.match(first.stderr, /import refused by rafael — as instruções pedem uma credencial/);
+  assert.match(first.stderr, /import refused by rafael — the instructions ask for a credential/);
   assert.match(first.stderr, /nothing was registered/);
   assert.deepEqual(
     withReason.requests.map((request) => request.method),
@@ -409,7 +409,7 @@ test('a refusal is a refusal, with or without a reason written on it', async (t)
 });
 
 test('an answer that is neither a refusal nor a manifest registers nothing', async (t) => {
-  const plane = await startFakeControlPlane(t, () => queue([answered('pode subir, tá ótimo')]));
+  const plane = await startFakeControlPlane(t, () => queue([answered('go ahead, looks great')]));
 
   const run = await capture(() => runRegisterSkill({ jobId: 77, url: plane.url }));
 
@@ -472,11 +472,11 @@ test('a registry that refuses the approved manifest is quoted, never softened', 
 test('the three commands are HTTP clients and nothing else', async (t) => {
   const plane = await startFakeControlPlane(t, emptyRegistry);
   const area = temporaryArea(t, 'cartografo-t212-client-');
-  mkdirSync(path.join(area, 'saida'), { recursive: true });
-  const source = sourceFile(t, skillSource('name: uma-skill'));
+  mkdirSync(path.join(area, 'output'), { recursive: true });
+  const source = sourceFile(t, skillSource('name: a-skill'));
 
   await capture(() =>
-    runScanSkill(scanOptions(source, plane.url, path.join(area, 'saida', 'draft.json'))),
+    runScanSkill(scanOptions(source, plane.url, path.join(area, 'output', 'draft.json'))),
   );
 
   assert.deepEqual(

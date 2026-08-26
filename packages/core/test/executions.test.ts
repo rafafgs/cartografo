@@ -113,7 +113,7 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
 
   // Execution 8, same version: must not leak into the report of 7.
   await createJob(ctx, {
-    title: 'de outra execução',
+    title: 'from another execution',
     entry_node_id: 'entrada',
     execution_id: 8,
     graph_version_id: 'v1',
@@ -189,7 +189,7 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
 
   // Eight is created BEFORE seven on purpose: the response is ordered by
   // `execucao_id`, not by the order the jobs came in.
-  await createJob(ctx, { title: 'só da oito', entry_node_id: 'entrada', execution_id: 8 });
+  await createJob(ctx, { title: 'only from eight', entry_node_id: 'entrada', execution_id: 8 });
 
   const blocked = await createJob(ctx, {
     title: 'travado',
@@ -203,9 +203,9 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   });
 
   // A job with no execution: falls into the `null` group instead of vanishing.
-  await createJob(ctx, { title: 'sem rodada', entry_node_id: 'entrada' });
+  await createJob(ctx, { title: 'no round', entry_node_id: 'entrada' });
 
-  await request(ctx, 'POST', `/v1/jobs/${blocked.id}/blocks`, { reason: 'esperando gente' });
+  await request(ctx, 'POST', `/v1/jobs/${blocked.id}/blocks`, { reason: 'waiting for people' });
 
   const ask = async (jobId: number): Promise<InputRequest> => {
     const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
@@ -275,28 +275,28 @@ test('t167 — the execution report counts the questions each node raised', asyn
   // Two jobs of the same round: one asks twice from `revisar`, the other once
   // from `redigir`. A third node exists in nobody's question at all.
   const twice = await createJob(ctx, {
-    title: 'trava duas vezes na revisão',
+    title: 'jams twice in the review',
     entry_node_id: 'revisar',
     execution_id: 1670,
   });
-  await ask(twice.id, 'sigo com a nota curta?');
+  await ask(twice.id, 'do I go on with the short note?');
   await request(ctx, 'POST', `/v1/jobs/${twice.id}/unblocks`, {});
-  await ask(twice.id, 'e o título, mantenho?');
+  await ask(twice.id, 'and the title, do I keep it?');
 
   const once = await createJob(ctx, {
-    title: 'trava uma vez na redação',
+    title: 'jams once in the drafting',
     entry_node_id: 'redigir',
     execution_id: 1670,
   });
-  await ask(once.id, 'qual fonte vale?');
+  await ask(once.id, 'which source counts?');
 
   // Another round, same nodes: nothing of it may leak into this report.
   const elsewhere = await createJob(ctx, {
-    title: 'de outra rodada',
+    title: 'from another round',
     entry_node_id: 'revisar',
     execution_id: 1671,
   });
-  await ask(elsewhere.id, 'pergunta de outra rodada');
+  await ask(elsewhere.id, 'a question from another round');
 
   const response = await request<{
     execution_id: number;
@@ -350,13 +350,13 @@ interface ExecutionLog {
 /**
  * Seeds one execution with all three event-bearing entities.
  *
- * The surveyor's numbers cross `trabalho`, `sessao` and `pergunta` — time in
+ * The surveyor's numbers cross `job`, `session` and `input_request` — time in
  * node, time blocked, questions per node — so a log that only proves one of
  * them proves nothing about the query this ticket needs.
  */
 async function seedExecution(ctx: TestContext, executionId: number): Promise<Job> {
   const job = await createJob(ctx, {
-    title: `travessia da execução ${executionId}`,
+    title: `crossing of execution ${executionId}`,
     entry_node_id: 'redigir',
     execution_id: executionId,
     graph_version_id: 'sha256:t110',
@@ -383,7 +383,7 @@ async function seedExecution(ctx: TestContext, executionId: number): Promise<Job
     job_id: job.id,
     session_id: session.body.id,
     kind: 'question',
-    question: 'sigo com a nota curta?',
+    question: 'do I go on with the short note?',
     auto_approvable: true,
   });
 
@@ -553,14 +553,14 @@ async function runFinalNode(ctx: TestContext, jobId: number): Promise<void> {
     node_id: 'revisar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'revisa e encerra',
+    prompt: 'review and close',
   });
   assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
 
   const finished = await request(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
     status: 'completed',
     exit_code: 0,
-    output: { outcome: 'passou', evidencia: 'a nota responde ao tema declarado' },
+    output: { outcome: 'pass', evidence: 'the note answers the stated theme' },
   });
   assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
 }
@@ -590,8 +590,8 @@ test('t245 AT1 — execution.finished fires exactly once, on the last job to arr
   const ctx = await startControlPlane(t);
   const version = await registerMinimalGraph(ctx);
 
-  const first = await travellerOf(ctx, 245, version, 'nota que anda primeiro');
-  const second = await travellerOf(ctx, 245, version, 'nota que anda depois');
+  const first = await travellerOf(ctx, 245, version, 'note that walks first');
+  const second = await travellerOf(ctx, 245, version, 'note that walks after');
 
   await arrive(ctx, first.id);
   assert.deepEqual(
@@ -657,10 +657,10 @@ test('t245 AT2 — GET /v1/executions and GET /v1/executions/:id report finished
     return response.body;
   };
 
-  const arriving = await travellerOf(ctx, 2450, version, 'nota que chega');
-  const alsoArriving = await travellerOf(ctx, 2450, version, 'a outra nota que chega');
+  const arriving = await travellerOf(ctx, 2450, version, 'note that arrives');
+  const alsoArriving = await travellerOf(ctx, 2450, version, 'the other note that arrives');
   // A second round, still in flight: the end of the first says nothing about it.
-  const inFlight = await travellerOf(ctx, 2451, version, 'nota de outra rodada');
+  const inFlight = await travellerOf(ctx, 2451, version, 'note from another round');
 
   assert.equal((await rowOf(2450)).finished_at, null, 'nobody arrived yet');
   assert.equal((await detailOf(2450)).finished_at, null);
@@ -819,8 +819,8 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
   const stream = await openStream(ctx, 'type=execution.finished', t);
   assert.equal(stream.status, 200, 'the type is in the taxonomy, so the filter is accepted');
 
-  const first = await travellerOf(ctx, 2452, version, 'nota que anda primeiro');
-  const second = await travellerOf(ctx, 2452, version, 'nota que anda depois');
+  const first = await travellerOf(ctx, 2452, version, 'note that walks first');
+  const second = await travellerOf(ctx, 2452, version, 'note that walks after');
   await arrive(ctx, first.id);
   await settle();
   // The length, and not `deepEqual(messages, [])`: node's own types read that
@@ -946,13 +946,13 @@ test('t264 AT3 — metrics-by-version reports sessions, tokens and agent time pe
   const ctx = await startControlPlane(t);
 
   const redigir = await createJob(ctx, {
-    title: 'trabalho que redige',
+    title: 'job that drafts',
     entry_node_id: 'redigir',
     execution_id: 2642,
     graph_version_id: 'v264',
   });
   const revisar = await createJob(ctx, {
-    title: 'trabalho que revisa',
+    title: 'job that reviews',
     entry_node_id: 'revisar',
     execution_id: 2642,
     graph_version_id: 'v264',
@@ -960,7 +960,7 @@ test('t264 AT3 — metrics-by-version reports sessions, tokens and agent time pe
 
   // Another round, same version and same nodes: none of it may leak in.
   const elsewhere = await createJob(ctx, {
-    title: 'de outra rodada',
+    title: 'from another round',
     entry_node_id: 'redigir',
     execution_id: 2643,
     graph_version_id: 'v264',
@@ -1038,13 +1038,13 @@ test('t264 AT3 — a session with no node, or a job with no version, lands in a 
   const ctx = await startControlPlane(t);
 
   const declared = await createJob(ctx, {
-    title: 'trabalho que declara versão',
+    title: 'job that declares a version',
     entry_node_id: 'redigir',
     execution_id: 2644,
     graph_version_id: 'v264',
   });
   const versionless = await createJob(ctx, {
-    title: 'trabalho sem versão declarada',
+    title: 'job with no declared version',
     entry_node_id: 'redigir',
     execution_id: 2644,
   });

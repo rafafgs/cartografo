@@ -245,8 +245,8 @@ async function getGraph(address: string, id: string): Promise<Graph> {
 }
 
 const EVIDENCE = {
-  fonte: 'telemetria',
-  observacao: 'duas travessias com retrabalho depois da revisão',
+  fonte: 'telemetry',
+  observacao: 'two crossings with rework after the review',
 };
 const EXPECTED_METRIC = { nome: 'retrabalho_por_travessia', direcao: 'cai', de: 0.4, para: 0.1 };
 
@@ -308,8 +308,8 @@ function newNode(): GraphNode {
   return {
     id: 'checar_fatos',
     role: 'revisor',
-    node_type: 'trabalho',
-    description: 'Confere cada afirmação da nota contra a fonte citada.',
+    node_type: 'work',
+    description: 'Checks each claim of the note against the cited source.',
     skill_ref: {
       id: ADDED_NODE_SKILL.id as string,
       version: ADDED_NODE_SKILL.version as string,
@@ -330,7 +330,7 @@ function newNode(): GraphNode {
         {
           type: 'deterministic',
           command: 'test -s checagem.md',
-          description: 'O relatório de checagem existe e não está vazio.',
+          description: 'The check report exists and is not empty.',
         },
       ],
     },
@@ -403,7 +403,7 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
   const { document, graph, version } = await registerBase(address);
   assert.ok(
     !Object.hasOwn(requireNode(document, 'revisar'), 'escalation_policy'),
-    'the base fixture declares nothing: absent is the default this ficha keeps',
+    'the base fixture declares nothing: absent is the default this ticket keeps',
   );
 
   const proposal = await createProposal(address, graph.id, version.id, [
@@ -470,14 +470,14 @@ test('AT12 — reverting restores the pointer and the history stays whole', asyn
   assert.ok(newVersion !== undefined);
 
   const reversion = await post(address, `/v1/proposals/${proposal.id}/revert`, {
-    reason: 'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
+    reason: 'the new node doubled the crossing time without touching the rework',
   });
   const body = await jsonBody<ApplyResponse>(reversion);
   assert.equal(reversion.status, 200, JSON.stringify(body));
   assert.equal(body.proposal.status, 'reverted');
   assert.equal(
     body.proposal.revert_reason,
-    'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
+    'the new node doubled the crossing time without touching the rework',
   );
 
   const after = await getGraph(address, graph.id);
@@ -868,7 +868,7 @@ async function recordWorkUnderVersion(
   versionId: string,
 ): Promise<void> {
   const response = await post(address, '/v1/jobs', {
-    title: 'travessia da rodada seguinte',
+    title: 'crossing of the next round',
     entry_node_id: 'redigir',
     execution_id: executionId,
     graph_version_id: versionId,
@@ -1200,7 +1200,7 @@ test('t165 AT4 — rejecting with a reason writes rejection_reason and leaves re
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
-  const reason = 'o nó novo repete a checagem que o portão de teste já faz';
+  const reason = 'the new node repeats the check the test gate already does';
   const response = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason });
   const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
@@ -1221,7 +1221,7 @@ test('t165 AT4 — rejecting with a reason writes rejection_reason and leaves re
   assert.equal(apply.status, 409);
   assert.equal((await jsonBody<{ error: string }>(apply)).error, 'proposal_not_approved');
 
-  const twice = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason: 'de novo' });
+  const twice = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason: 'again' });
   assert.equal(twice.status, 409);
   assert.equal((await jsonBody<{ error: string }>(twice)).error, 'proposal_not_pending');
   assert.equal(
@@ -1275,7 +1275,7 @@ test('t165 AT6 — the read routes expose rejection_reason', async (t) => {
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
-  const reason = 'a evidência é de uma execução única, sem base de comparação';
+  const reason = 'the evidence comes from a single execution, with no basis for comparison';
   assert.equal((await post(address, `/v1/proposals/${proposal.id}/reject`, { reason })).status, 200);
 
   assert.equal(
@@ -1412,7 +1412,7 @@ test('t166 AT — applying an engine change writes a new version and moves the p
 /*                                                                            */
 /* D22 puts it as one sentence: moving a node's pin to another version of the  */
 /* same skill is a change to the map like any other (D15), and it is refused   */
-/* when the hash does not exist in the registry. Until this ficha the second   */
+/* when the hash does not exist in the registry. Until this ticket the second  */
 /* half of that sentence was not enforced anywhere in                          */
 /* the apply path — `domain/graph.ts` is pure and takes no `db` — so a         */
 /* proposal could point a node at content nobody ever registered, apply        */
@@ -1438,7 +1438,7 @@ function skillManifest(
     version,
     hash: '',
     role: 'gate',
-    description: 'Confere a nota e roteia a travessia.',
+    description: 'Checks the note and routes the crossing.',
     input: { type: 'object', properties: { texto: { type: 'string' } } },
     output: {
       type: 'object',
@@ -1450,7 +1450,7 @@ function skillManifest(
       {
         id: 'nota-existe',
         type: 'deterministic',
-        description: 'A nota existe e não está vazia.',
+        description: 'The note exists and is not empty.',
         command: 'test -s nota.md',
       },
     ],
@@ -1751,7 +1751,7 @@ test('t246 AT-D4 — a triple that left pending never blocks a fresh proposal', 
   assert.equal(first.status, 201);
 
   const rejection = await post(address, `/v1/proposals/${first.proposal.id}/reject`, {
-    reason: 'o nó novo repete a checagem que o portão de teste já faz',
+    reason: 'the new node repeats the check the test gate already does',
   });
   assert.equal(rejection.status, 200);
   assert.equal((await getProposal(address, first.proposal.id)).status, 'rejected');
@@ -1784,7 +1784,7 @@ test('t246 AT-D5 — a proposal nobody repeated keeps evidence exactly as it was
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
 
-  // The non-dedup path is unchanged from before this ficha, and that is what keeps
+  // The non-dedup path is unchanged from before this ticket, and that is what keeps
   // every other `createProposal()` in this file passing untouched: evidence
   // becomes a list only from the SECOND occurrence on, never on the first.
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
@@ -1805,7 +1805,7 @@ test('t246 AT-D5 — a proposal nobody repeated keeps evidence exactly as it was
 /* that is what a proposal IS. A removed producer, a swapped pin or a new node */
 /* each move the answer, so the target's stored one says nothing about the     */
 /* result — the check runs again, and what comes out is stored honestly.       */
-/* Neither outcome adds a refusal here: the enforcement point of the ficha is  */
+/* Neither outcome adds a refusal here: the enforcement point of the ticket is */
 /* `POST /v1/jobs`, and this route's refusals are the ones it already had.     */
 /* -------------------------------------------------------------------------- */
 
@@ -1839,7 +1839,7 @@ function contractManifest(
       {
         id: 'fixture-check',
         type: 'deterministic',
-        description: 'A nota existe e não está vazia.',
+        description: 'The note exists and is not empty.',
         command: 'test -s nota.md',
       },
     ],
@@ -1907,7 +1907,7 @@ test('t283 — an applied proposal whose result is resolved and invalid is store
   const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   const body = await jsonBody<ApplyResponse>(response);
 
-  // It APPLIES. Adding a pre-write refusal here is out of this ficha's scope:
+  // It APPLIES. Adding a pre-write refusal here is out of this ticket's scope:
   // the version is stored with the honest state, and `POST /v1/jobs` is where
   // that state bites.
   assert.equal(response.status, 200, JSON.stringify(body));

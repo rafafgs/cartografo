@@ -240,6 +240,13 @@ export const TOUCHABLE = Object.freeze([
   'notes/2026-08-25-t300-closing-note.md',
   'notes/2026-08-26-t311-closing-note.md',
   'notes/2026-08-26-t316-closing-note.md',
+  // t328: the same incident as the t309 entry above, one note later. The
+  // quotation of `docs/spec/graph.md`'s stale edge — the finding t328 was
+  // partly built on — was marked with backtick spans that WRAPPED, so the
+  // line-scoped matcher never saw the mark and `para` was read as prose. The
+  // quotation now sits on one line. Not one character of quoted text changed,
+  // and nothing redacted was reintroduced.
+  'notes/2026-08-26-t314-closing-note.md',
 ]);
 
 /** Every `.md` under `notes/`, repo-relative, in directory order. */

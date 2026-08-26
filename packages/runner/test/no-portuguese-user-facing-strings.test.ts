@@ -110,11 +110,14 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
   // repository the traversal builds. t314 translated it: a fixture repository is
   // still this project's prose, and "not text printed to an operator" excused the
   // audience rather than the language.
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 404,
-    reason: 'a `motivo` sent to the API as data, which the tela renders in Portuguese (t133)',
-  },
+  // `run-graph-traversal.mjs:404` used to be here too — the block reason the
+  // driver sends when a crossing ends. t327 translated it: the excuse was that
+  // the screen rendered it in Portuguese, and the screen has not done that since
+  // D24. Data this project authors is this project's prose wherever it is read.
+  //
+  // Nothing is pinned here now, and an empty list is the honest state rather
+  // than a hole: every remaining exception in this file is a VERBATIM quotation,
+  // which is the one thing D24 allows through.
 ]);
 
 /**

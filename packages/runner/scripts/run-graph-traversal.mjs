@@ -401,7 +401,7 @@ async function main() {
   // to start next to — and the reason is written down, because that is what
   // whoever finds the job blocked will want to read.
   await api(url, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
-    reason: `travessia da execução ${plan.execucao_id} concluída`,
+    reason: `crossing of execution ${plan.execucao_id} finished`,
   });
 
   // The evidence is read back from the control plane, never asserted from here.

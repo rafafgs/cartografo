@@ -20,12 +20,12 @@
  *
  * ## What is scanned, and the one thing that is not
  *
- * Every tracked path except `package-lock.json` ({@link GENERATED_ARTIFACTS}).
- * That is a scope boundary and not an exception: npm writes that file, npm
- * rewrites it on every install, and its ninety-four hits are third-party
- * `.com`/`.org` URLs in dependency metadata this project does not author. The
- * same kind of boundary `git ls-files` itself already draws around what is
- * gitignored.
+ * Every tracked path except the two in {@link GENERATED_ARTIFACTS}. That is a
+ * scope boundary and not an exception: npm writes `package-lock.json` and
+ * rewrites it on every install, and a captured engine transcript was written by
+ * the engine and only recorded here. Neither is prose this project authored,
+ * which is the same kind of boundary `git ls-files` itself already draws around
+ * what is gitignored — and it is why the exception list is still two.
  *
  * ## The reading, which is strategy and not exemption
  *
@@ -37,9 +37,14 @@
  * - **the gloss** — `(literally "…")`, D24's own convention for the one span
  *   where the original is supposed to survive. Cut first, so that a marked
  *   quotation is never read;
- * - **backtick spans**, every file — `` `condicao` `` mid-sentence is the name
- *   of a field, not a word of the sentence (t299's cut, shared out of
- *   `scripts/no-portuguese-prose.mjs` by this ticket's FR3);
+ * - **backtick spans**, where a backtick is MARKUP — `` `condicao` ``
+ *   mid-sentence is the name of a field, not a word of the sentence (t299's
+ *   cut, shared out of `scripts/no-portuguese-prose.mjs` by t314's FR3). Where
+ *   it is markup and where it is not is the whole of t327: prose in `.md`, and
+ *   comments only in everything else ({@link codeLinesOf}), because in code a
+ *   backtick opens a template literal and in JSON it is a character of the
+ *   value. Reading either of those as markup blanked the sentence inside it,
+ *   and three real ones were sitting there;
  * - **fenced blocks**, `.md` only — where the JSON of the graph document, the
  *   DDL of the migrations and the frames of a session live (t299 again);
  * - **whole-string URLs and hostnames**, `.json`/`.jsonl` — `com` is a
@@ -105,14 +110,41 @@ import {
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /**
- * Generated artefacts this project does not author (FR2).
+ * Artefacts this project did not author (FR2, and t327 for the second entry).
  *
- * A scope boundary, not a member of {@link EXCEPTIONS}: the entries here are
- * not this project's prose at all. `package-lock.json` is npm's, rewritten on
- * every `npm install`, and every one of its ninety-four hits is a third-party
- * `.com`/`.org` URL in dependency metadata.
+ * A scope boundary, not a member of {@link EXCEPTIONS}, and the difference is
+ * the whole reason there are still exactly two exceptions: an exception says a
+ * file's prose is spared, a boundary says the prose was never this project's to
+ * write. Nothing here is authored text, so nothing here is a hole where an
+ * inconvenient translation could hide.
+ *
+ * - `package-lock.json` is npm's, rewritten on every `npm install`, and every
+ *   one of its ninety-four hits is a third-party `.com`/`.org` URL in
+ *   dependency metadata.
+ * - `packages/runner/test/fixtures/codex-input-request.jsonl` is a captured
+ *   transcript of a real credentialed engine run. Codex wrote it, this project
+ *   only recorded it, and rewriting a recording falsifies the evidence — which
+ *   is not a new reading: t312 pinned line 4 of this very file for exactly that
+ *   reason, after an earlier bulk pass rewrote it and had to be reverted
+ *   byte-for-byte (`notes/2026-08-25-t312-closing-note.md`). D24 was read
+ *   against this file once, deliberately, and reversing that reading is a
+ *   decision somebody records rather than a translation somebody performs. The
+ *   same rule keeps `DEFAULT_ANSWERED_BY` (`packages/screen/src/pages.ts:68`)
+ *   and the historical notes as they are: a record is not prose.
+ *
+ * t327's body named this file for translation, written without sight of that
+ * pin. The premise was wrong, not the scope — see AT6, which is what keeps this
+ * entry from outliving its subject.
+ *
+ * The coverage this gives up is bounded, and deliberately so: the whole file
+ * stops being read here, but `packages/runner/test/no-portuguese-runner-tests.test.ts`
+ * still reads it and excuses only line 4, so anything NEW written into it is
+ * still caught by a sibling.
  */
-export const GENERATED_ARTIFACTS = Object.freeze(['package-lock.json']);
+export const GENERATED_ARTIFACTS = Object.freeze([
+  'package-lock.json',
+  'packages/runner/test/fixtures/codex-input-request.jsonl',
+]);
 
 /**
  * The four filename shapes a language gate is usually given.
@@ -291,15 +323,81 @@ const WIRE_KEYS = Object.freeze([
   /\.(?:de|para)\b/g,
   // the tail of a shape description: `{nome, direcao, de, para}`
   /\b(?:de|para)(?=\s*[}\]])/g,
+  // a field echoed beside its value, the shape a log line writes:
+  // `declared de=0.4, para=0.1`. The five per-package sweeps already mask this
+  // position, as `/\b[A-Za-z_][A-Za-z0-9_]*=/g`
+  // (`packages/core/test/no-portuguese-user-facing-strings.test.ts:125-126`,
+  // and its four siblings under the same comment). Narrowed to the two frozen
+  // names here, because those sweeps read a collected literal and this one
+  // reads whole lines, where a general `word=` would blank prose beside it.
+  /\b(?:de|para)=/g,
 ]);
+
+/**
+ * The lines of a source file, with the marking convention applied to comments
+ * and to nothing else (FR1).
+ *
+ * A backtick means two different things, and until this function existed the
+ * gate knew one of them. In Markdown, and in the doc comments this repository
+ * writes in Markdown's dialect, it is MARKUP: `condicao` mid-sentence is the
+ * name of a field being quoted and not a word of the sentence, so blanking it
+ * is right. In JavaScript and TypeScript it is SYNTAX — it opens a template
+ * literal — and a template literal is one of the two places a whole sentence
+ * actually lives. Reading syntax as markup blanked the sentence, which left the
+ * sweep blind in the one region where prose is most likely to be found: code
+ * and data, not documents.
+ *
+ * So the cut turns on position, the way every other cut here does. Inside a
+ * comment the span is blanked; outside one the line is handed on byte for byte
+ * and its backticks are never delimiters. The block-comment state is carried
+ * from line to line the way {@link proseOf} carries a fence, because a block
+ * comment opened on one line is still open on the next.
+ *
+ * Whole-line and regex-shaped on purpose, at the precision of
+ * {@link MACHINE_NAMES} and {@link WIRE_KEYS} next door rather than of a lexer.
+ * The one shape it does not attempt is a comment trailing code on the same
+ * line, which reads here as code. That gap fails in the safe direction: a
+ * quotation written that way goes loudly red, where the bug this replaces let a
+ * sentence pass silently.
+ *
+ * @param {string} contents The file, whole.
+ * @returns {string[]} One entry per line, comment spans blanked, code intact.
+ */
+export function codeLinesOf(contents) {
+  const read = [];
+  let open = false;
+
+  for (const raw of contents.split('\n')) {
+    const line = raw.replace(GLOSS, '');
+    const trimmed = line.trim();
+    const opener = trimmed.startsWith('/*');
+    const closed = line.includes('*/');
+    const marked = open || opener || trimmed.startsWith('//');
+
+    if (open || opener) open = !closed;
+
+    read.push(marked ? withoutSpans(line) : line);
+  }
+
+  return read;
+}
 
 /**
  * The lines of one file as this gate reads them, prose intact and rest blanked.
  *
+ * Three readings, chosen by extension (FR2), because a backtick does not mean
+ * the same thing in all three: `.md` is prose with fences and spans
+ * ({@link proseOf}); `.json` and `.jsonl` have no comment and no markup at all,
+ * so a line is read as it stands; everything else is source, where only a
+ * comment carries the marking convention ({@link codeLinesOf}).
+ *
+ * The masking below runs on all three, unchanged: it turns on shapes that
+ * cannot be a sentence, and that is true whatever the file is.
+ *
  * Blanked rather than dropped, so the index of a line in the result is still
  * its number in the file and a failure can name it.
  *
- * @param {string} relativePath Repo-relative path, which chooses two cuts.
+ * @param {string} relativePath Repo-relative path, which chooses the reading.
  * @param {string} contents The file, whole.
  * @returns {string[]} One entry per line of the input.
  */
@@ -307,10 +405,10 @@ export function linesToScan(relativePath, contents) {
   const extension = path.extname(relativePath);
   const json = extension === '.json' || extension === '.jsonl';
 
-  const lines =
-    extension === '.md'
-      ? proseOf(contents)
-      : contents.split('\n').map((line) => withoutSpans(line.replace(GLOSS, '')));
+  let lines;
+  if (extension === '.md') lines = proseOf(contents);
+  else if (json) lines = contents.split('\n').map((line) => line.replace(GLOSS, ''));
+  else lines = codeLinesOf(contents);
 
   return lines.map((line) => {
     let masked = json ? line.replace(HOSTNAME_VALUE, (match) => `"${blank(match.slice(2))}"`) : line;
@@ -554,6 +652,10 @@ test('AT4 — the wire mask turns on position, and prose is not a position', () 
     "for (const key of ['de', 'para']) validate(key);",
     'edges[0].para = 1;',
     'the shape {nome, direcao: "sobe"|"cai", de, para} is frozen',
+    // The `key=value` echo a log line writes: the same two frozen names, in a
+    // position the five per-package sweeps already mask and this one did not
+    // (FR3, FR7).
+    'log(`measured ${name} = ${after} (declared de=${metric.de}, para=${metric.para})`);',
   ]) {
     assert.deepEqual(
       offendersIn(path, `${machine}\n`),
@@ -565,12 +667,140 @@ test('AT4 — the wire mask turns on position, and prose is not a position', () 
   for (const prose of [
     '// A decision written para somebody who was not in the room.',
     "const title = 'uma nota para o revisor';",
+    // The same shape as the masked case above, one word different: the mask is
+    // on the `=`, and a bare stopword beside it is still a stopword.
+    'log(`written para the reviewer (declared de=${metric.de}, para=${metric.para})`);',
   ]) {
     assert.ok(
       offendersIn(path, `${prose}\n`).length > 0,
       `the mask excused a word position, which is where Portuguese hides: ${prose}`,
     );
   }
+});
+
+/**
+ * The doc-comment quotations this reading must keep passing (AC3, FR5).
+ *
+ * Five, and each one was verified against the file that carries it rather than
+ * copied out of a ticket: the sixth the ticket first listed, `concluído`, is
+ * not in a comment at all but in a `test()` title, which is a plain string
+ * literal and therefore one of the three sentences this fix UNCOVERS.
+ *
+ * Located by searching for the term, never by line number, so that an unrelated
+ * edit above it moves the pin instead of breaking it. Both comment shapes are
+ * represented, because {@link codeLinesOf} tracks them differently: the first
+ * four sit in a block comment and the last in a line comment.
+ */
+const PINNED_QUOTATIONS = Object.freeze([
+  Object.freeze({ file: 'packages/cost-surveyor/src/policy.ts', term: '`Políticas`' }),
+  Object.freeze({ file: 'packages/cost-surveyor/src/policy.ts', term: '`topógrafo`' }),
+  Object.freeze({ file: 'packages/core/src/domain/similarity.ts', term: '`migração`' }),
+  Object.freeze({ file: 'packages/core/src/repositories/job.ts', term: '`"três"`' }),
+  Object.freeze({
+    file: 'packages/runner/scripts/spike-two-engine-traversal.mjs',
+    term: '`grafo_versao`',
+  }),
+]);
+
+test('AC3 — every quotation a doc comment marks still passes, and still exists', () => {
+  for (const { file, term } of PINNED_QUOTATIONS) {
+    const { contents } = readTracked(file);
+
+    const carrying = contents
+      .split('\n')
+      .map((line, index) => (line.includes(term) ? index + 1 : 0))
+      .filter((number) => number > 0);
+
+    assert.ok(
+      carrying.length > 0,
+      `${file} no longer carries ${term}. A pin that outlives its subject is ` +
+        'silently green, which is worse than red: fix the term or drop the entry',
+    );
+
+    const reported = offendersIn(file, contents).filter((entry) =>
+      carrying.some((number) => entry.startsWith(`${file}:${String(number)}:`)),
+    );
+
+    assert.deepEqual(
+      reported,
+      [],
+      `a term marked inside a doc comment is a name being quoted, not a word of ` +
+        `the sentence:\n${reported.join('\n')}`,
+    );
+  }
+});
+
+test('AC4 — a backtick is read as whatever the file it sits in means by it', () => {
+  const code = 'packages/runner/scripts/example.mjs';
+  const data = 'packages/runner/test/fixtures/example.jsonl';
+
+  // (a) In JavaScript a backtick opens a template literal, and a template
+  // literal is one of the two places a whole sentence lives. Read as markup it
+  // was blanked, which is the hole this ticket closes.
+  const template = 'await block(job, { reason: `travessia da execução ${plan.id} concluída` });\n';
+
+  assert.deepEqual(
+    offendersIn(code, template).map((entry) => entry.split(' — ')[0]),
+    [`${code}:1: diacritic "ç"`],
+    'a template literal is syntax, not markup: its backticks delimit a string',
+  );
+
+  // (b) In a comment the convention holds, and it has to hold in both shapes,
+  // because the five quotations pinned above are split across them.
+  assert.deepEqual(
+    offendersIn(code, '// the field `execução` is answered by the control plane.\n'),
+    [],
+    'a marked term in a line comment is a name being quoted, as it always was',
+  );
+
+  assert.deepEqual(
+    offendersIn(
+      code,
+      '/**\n * The field `execução` is answered by the control plane.\n */\n',
+    ),
+    [],
+    'a block comment carries its state across lines, the way a fence does',
+  );
+
+  // (c) In JSON a backtick is a character of the value. A run of three read as
+  // a fence opening, and everything after it on the line went unread — which is
+  // how a whole recorded conversation sat inside a fixture unseen.
+  const embedded =
+    '{"type":"item.completed","item":{"text":' +
+    '"```input-request\\n{\\"question\\":\\"Qual número deve ser reservado?\\"}\\n```"}}';
+
+  assert.deepEqual(
+    offendersIn(data, `${embedded}\n`).map((entry) => entry.split(' — ')[0]),
+    [`${data}:1: diacritic "ú"`],
+    'a backtick run inside a JSON string value is data, and never a fence',
+  );
+});
+
+test('AT6 — the recording is still a recording, and still not read here', () => {
+  const transcript = 'packages/runner/test/fixtures/codex-input-request.jsonl';
+
+  assert.ok(
+    GENERATED_ARTIFACTS.includes(transcript),
+    'the boundary is what keeps AT1 green without rewriting a captured run',
+  );
+
+  const { contents } = readTracked(transcript);
+
+  // A boundary that outlives its subject is the hole this gate exists to
+  // refuse. If the recording is ever legitimately re-captured in English, this
+  // fails, and the honest answer is to drop the entry rather than keep a name
+  // in a list nobody is watching.
+  assert.ok(
+    DIACRITIC.test(contents),
+    `${transcript} carries no Portuguese any more: drop it from GENERATED_ARTIFACTS ` +
+      'instead of spending a boundary on a file that no longer needs one',
+  );
+
+  assert.deepEqual(
+    offendersIn(transcript, contents),
+    [],
+    'what a third party wrote and this project only recorded is not this project’s prose',
+  );
 });
 
 test('AT5 — the exception list has exactly two entries, each with a reason', () => {

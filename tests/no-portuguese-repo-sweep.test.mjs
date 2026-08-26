@@ -20,12 +20,12 @@
  *
  * ## What is scanned, and the one thing that is not
  *
- * Every tracked path except `package-lock.json` ({@link GENERATED_ARTIFACTS}).
- * That is a scope boundary and not an exception: npm writes that file, npm
- * rewrites it on every install, and its ninety-four hits are third-party
- * `.com`/`.org` URLs in dependency metadata this project does not author. The
- * same kind of boundary `git ls-files` itself already draws around what is
- * gitignored.
+ * Every tracked path except the two in {@link GENERATED_ARTIFACTS}. That is a
+ * scope boundary and not an exception: npm writes `package-lock.json` and
+ * rewrites it on every install, and a captured engine transcript was written by
+ * the engine and only recorded here. Neither is prose this project authored,
+ * which is the same kind of boundary `git ls-files` itself already draws around
+ * what is gitignored — and it is why the exception list is still two.
  *
  * ## The reading, which is strategy and not exemption
  *
@@ -110,14 +110,41 @@ import {
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /**
- * Generated artefacts this project does not author (FR2).
+ * Artefacts this project did not author (FR2, and t327 for the second entry).
  *
- * A scope boundary, not a member of {@link EXCEPTIONS}: the entries here are
- * not this project's prose at all. `package-lock.json` is npm's, rewritten on
- * every `npm install`, and every one of its ninety-four hits is a third-party
- * `.com`/`.org` URL in dependency metadata.
+ * A scope boundary, not a member of {@link EXCEPTIONS}, and the difference is
+ * the whole reason there are still exactly two exceptions: an exception says a
+ * file's prose is spared, a boundary says the prose was never this project's to
+ * write. Nothing here is authored text, so nothing here is a hole where an
+ * inconvenient translation could hide.
+ *
+ * - `package-lock.json` is npm's, rewritten on every `npm install`, and every
+ *   one of its ninety-four hits is a third-party `.com`/`.org` URL in
+ *   dependency metadata.
+ * - `packages/runner/test/fixtures/codex-input-request.jsonl` is a captured
+ *   transcript of a real credentialed engine run. Codex wrote it, this project
+ *   only recorded it, and rewriting a recording falsifies the evidence — which
+ *   is not a new reading: t312 pinned line 4 of this very file for exactly that
+ *   reason, after an earlier bulk pass rewrote it and had to be reverted
+ *   byte-for-byte (`notes/2026-08-25-t312-closing-note.md`). D24 was read
+ *   against this file once, deliberately, and reversing that reading is a
+ *   decision somebody records rather than a translation somebody performs. The
+ *   same rule keeps `DEFAULT_ANSWERED_BY` (`packages/screen/src/pages.ts:68`)
+ *   and the historical notes as they are: a record is not prose.
+ *
+ * t327's body named this file for translation, written without sight of that
+ * pin. The premise was wrong, not the scope — see AT6, which is what keeps this
+ * entry from outliving its subject.
+ *
+ * The coverage this gives up is bounded, and deliberately so: the whole file
+ * stops being read here, but `packages/runner/test/no-portuguese-runner-tests.test.ts`
+ * still reads it and excuses only line 4, so anything NEW written into it is
+ * still caught by a sibling.
  */
-export const GENERATED_ARTIFACTS = Object.freeze(['package-lock.json']);
+export const GENERATED_ARTIFACTS = Object.freeze([
+  'package-lock.json',
+  'packages/runner/test/fixtures/codex-input-request.jsonl',
+]);
 
 /**
  * The four filename shapes a language gate is usually given.
@@ -746,6 +773,33 @@ test('AC4 — a backtick is read as whatever the file it sits in means by it', (
     offendersIn(data, `${embedded}\n`).map((entry) => entry.split(' — ')[0]),
     [`${data}:1: diacritic "ú"`],
     'a backtick run inside a JSON string value is data, and never a fence',
+  );
+});
+
+test('AT6 — the recording is still a recording, and still not read here', () => {
+  const transcript = 'packages/runner/test/fixtures/codex-input-request.jsonl';
+
+  assert.ok(
+    GENERATED_ARTIFACTS.includes(transcript),
+    'the boundary is what keeps AT1 green without rewriting a captured run',
+  );
+
+  const { contents } = readTracked(transcript);
+
+  // A boundary that outlives its subject is the hole this gate exists to
+  // refuse. If the recording is ever legitimately re-captured in English, this
+  // fails, and the honest answer is to drop the entry rather than keep a name
+  // in a list nobody is watching.
+  assert.ok(
+    DIACRITIC.test(contents),
+    `${transcript} carries no Portuguese any more: drop it from GENERATED_ARTIFACTS ` +
+      'instead of spending a boundary on a file that no longer needs one',
+  );
+
+  assert.deepEqual(
+    offendersIn(transcript, contents),
+    [],
+    'what a third party wrote and this project only recorded is not this project’s prose',
   );
 });
 

@@ -55,11 +55,11 @@ const SIMILARITY_ARTIFACT = 'src/domain/similarity.ts';
 
 const FULL_BODY = {
   kind: 'question',
-  question: 'Renumerar a migração para 0003?',
-  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  options: ['Renumerar para 0003', 'Manter 0002'],
-  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
-  default_answer: 'Manter 0002',
+  question: 'Renumber the migration to 0003?',
+  context: 't101 runs in parallel and owns the same numbering space.',
+  options: ['Renumber to 0003', 'Keep 0002'],
+  recommendation: 'Keep 0002 and renumber only if it collides at the merge.',
+  default_answer: 'Keep 0002',
   auto_approvable: true,
 };
 
@@ -87,7 +87,7 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    title: 'que pergunta',
+    title: 'one that asks',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -171,13 +171,13 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
 /* future auto-answer gate reads, and the grouping `perguntas_por_no` counts.  */
 /* -------------------------------------------------------------------------- */
 
-test('t167 — the created pergunta is stamped with the node the job is standing on', async (t) => {
+test('t167 — the created input request is stamped with the node the job is standing on', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    title: 'que pergunta de um nó específico',
+    title: 'one that asks from a specific node',
     entry_node_id: 'redigir',
     execution_id: 167,
   });
@@ -221,7 +221,7 @@ test('t167 — a job with no current node stamps node_id null, never a guess', a
   const ctx = await startControlPlane(t);
 
   const job = await createJob(ctx, {
-    title: 'que pergunta sem nó nenhum',
+    title: 'one that asks with no node at all',
     entry_node_id: 'redigir',
     execution_id: 167,
   });
@@ -261,7 +261,7 @@ test('t106 — PATCH /answer unblocks the job, with the actor of whoever answere
     ctx,
     'PATCH',
     `/v1/input-requests/${created.body.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
   assert.equal(answered.status, 200);
 
@@ -300,7 +300,7 @@ test('t106 — PATCH /auto-resolution unblocks with an actor that is not a user'
     ctx,
     'PATCH',
     `/v1/input-requests/${created.body.id}/auto-resolution`,
-    { answer: 'Manter 0002', based_on: 'default_answer' },
+    { answer: 'Keep 0002', based_on: 'default_answer' },
   );
   assert.equal(resolved.status, 200);
 
@@ -336,13 +336,13 @@ test('AT12 — PATCH /v1/input-requests/:id/answer records the human answer', as
     ctx,
     'PATCH',
     `/v1/input-requests/${created.body.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, 'answered');
   assert.equal(response.body.source, 'user');
-  assert.equal(response.body.answer, 'Manter 0002');
+  assert.equal(response.body.answer, 'Keep 0002');
   assert.equal(response.body.answered_by, 'rafael');
   assert.ok(!Number.isNaN(Date.parse(response.body.answered_at ?? '')));
 
@@ -351,7 +351,7 @@ test('AT12 — PATCH /v1/input-requests/:id/answer records the human answer', as
     events.map((event) => event.type),
     ['input_request.created', 'input_request.answered'],
   );
-  assert.deepEqual(events[1].data, { answer: 'Manter 0002', answered_by: 'rafael' });
+  assert.deepEqual(events[1].data, { answer: 'Keep 0002', answered_by: 'rafael' });
   assert.equal(events[1].actor.type, 'user', 'the answer came from a person');
 });
 
@@ -371,13 +371,13 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
     ctx,
     'PATCH',
     `/v1/input-requests/${created.body.id}/auto-resolution`,
-    { answer: 'Manter 0002', based_on: 'default_answer' },
+    { answer: 'Keep 0002', based_on: 'default_answer' },
   );
 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, 'answered');
   assert.equal(response.body.source, 'auto');
-  assert.equal(response.body.answer, 'Manter 0002');
+  assert.equal(response.body.answer, 'Keep 0002');
 
   const events = getEventsByEntity(ctx.db, 'input_request', created.body.id);
   assert.deepEqual(
@@ -385,7 +385,7 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
     ['input_request.created', 'input_request.auto_resolved'],
   );
   assert.deepEqual(events[1].data, {
-    answer: 'Manter 0002',
+      answer: 'Keep 0002',
     based_on: 'default_answer',
   });
   assert.notEqual(
@@ -407,9 +407,9 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
     ctx,
     'PATCH',
     `/v1/input-requests/${pending.body.id}/auto-resolution`,
-    { answer: 'seja lá o que for', based_on: 'palpite' },
+    { answer: 'whatever it may be', based_on: 'a hunch' },
   );
-  assert.equal(invalid.status, 400, 'baseada_em is a closed enum');
+  assert.equal(invalid.status, 400, 'based_on is a closed enum');
 });
 
 test('AT14 — GET /v1/input-requests?status=pending&execution_id=7 gives enough to answer', async (t) => {
@@ -417,12 +417,12 @@ test('AT14 — GET /v1/input-requests?status=pending&execution_id=7 gives enough
   const ctx = await startControlPlane(t);
 
   const ofSeven = await createJob(ctx, {
-    title: 'da sete',
+    title: 'from seven',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
   const ofEight = await createJob(ctx, {
-    title: 'da oito',
+    title: 'from eight',
     entry_node_id: 'entrada',
     execution_id: 8,
   });
@@ -499,12 +499,12 @@ test('t107 AT3 — GET /v1/input-requests?job_id= slices by job inside the same 
   // Same execution on both: the slice this test charges for is the JOB one,
   // which is what the screen's timeline needs to find the waits.
   const watched = await createJob(ctx, {
-    title: 'o que a tela abre',
+    title: 'the one the screen opens',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
   const neighbour = await createJob(ctx, {
-    title: 'o outro da mesma rodada',
+    title: 'the other one of the same round',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -523,7 +523,7 @@ test('t107 AT3 — GET /v1/input-requests?job_id= slices by job inside the same 
   const neighbours = await ask(neighbour.id);
 
   await request(ctx, 'PATCH', `/v1/input-requests/${answered.id}/answer`, {
-    answer: 'Manter 0002',
+      answer: 'Keep 0002',
     answered_by: 'rafael',
   });
 
@@ -622,7 +622,7 @@ test('AT4 — with no answered input request in the project, precedents is an em
   const ctx = await startControlPlane(t);
 
   const job = await createJob(ctx, { title: 'x', entry_node_id: 'entrada' });
-  const pending = await askQuestion(ctx, job.id, 'Renumerar a migração para 0004?');
+  const pending = await askQuestion(ctx, job.id, 'Renumber the migration to 0004?');
 
   const response = await precedentsOf(ctx, pending.id);
   assert.equal(response.status, 200, '"found nothing" is 200 with an empty list, never 404 nor 500');
@@ -638,12 +638,12 @@ test('AT5 — the precedent is the similar answered one, and the query never inc
   const similar = await askAndAnswer(
     ctx,
     job.id,
-    'Renumerar a migração para 0003?',
-    'Manter 0002',
+    'Renumber the migration to 0003?',
+    'Keep 0002',
   );
-  await askAndAnswer(ctx, job.id, 'Qual engine adapter usar no despacho?', 'Claude Code');
+  await askAndAnswer(ctx, job.id, 'Which engine adapter goes in dispatch?', 'Claude Code');
 
-  const queried = await askQuestion(ctx, job.id, 'Renumerar a migração para 0004?');
+  const queried = await askQuestion(ctx, job.id, 'Renumber the migration to 0004?');
 
   const response = await precedentsOf(ctx, queried.id);
   assert.equal(response.status, 200);
@@ -656,8 +656,8 @@ test('AT5 — the precedent is the similar answered one, and the query never inc
   const [precedent] = response.body.precedents;
   assert.ok(precedent.similarity > 0, 'the score is what makes the ranking auditable');
   assert.ok(precedent.similarity <= 1);
-  assert.equal(precedent.question, 'Renumerar a migração para 0003?');
-  assert.equal(precedent.answer, 'Manter 0002', 'a precedent is there to show WHAT was decided');
+  assert.equal(precedent.question, 'Renumber the migration to 0003?');
+  assert.equal(precedent.answer, 'Keep 0002', 'a precedent is there to show WHAT was decided');
   assert.equal(precedent.source, 'user');
   assert.equal(precedent.answered_by, 'rafael');
   assert.equal(precedent.kind, 'question');
@@ -670,7 +670,7 @@ test('AT5 — the precedent is the similar answered one, and the query never inc
     ctx,
     'PATCH',
     `/v1/input-requests/${queried.id}/answer`,
-    { answer: 'Renumerar para 0004', answered_by: 'rafael' },
+    { answer: 'Renumber to 0004', answered_by: 'rafael' },
   );
   assert.equal(closed.status, 200);
 
@@ -686,16 +686,16 @@ test('AT6 — an answered one from another project is never a precedent, not eve
   requireArtifacts(...ARTIFACTS, SIMILARITY_ARTIFACT);
   const ctx = await startControlPlane(t);
 
-  const text = 'Renumerar a migração para 0003?';
+  const text = 'Renumber the migration to 0003?';
 
   const otherJob = await createJob(ctx, {
-    title: 'de outro projeto',
+    title: 'from another project',
     entry_node_id: 'entrada',
     project_id: 42,
   });
-  const theirs = await askAndAnswer(ctx, otherJob.id, text, 'Manter 0002');
+  const theirs = await askAndAnswer(ctx, otherJob.id, text, 'Keep 0002');
 
-  const mine = await createJob(ctx, { title: 'meu', entry_node_id: 'entrada' });
+  const mine = await createJob(ctx, { title: 'mine', entry_node_id: 'entrada' });
   const queried = await askQuestion(ctx, mine.id, text);
 
   const response = await precedentsOf(ctx, queried.id);
@@ -724,12 +724,12 @@ test('AT7 — limite cuts from the top of the ranking, and a value above the cei
   const closest = await askAndAnswer(
     ctx,
     job.id,
-    'Renumerar a migração para 0003?',
-    'Manter 0002',
+    'Renumber the migration to 0003?',
+    'Keep 0002',
   );
-  const further = await askAndAnswer(ctx, job.id, 'Renumerar tudo?', 'Não renumerar');
+  const further = await askAndAnswer(ctx, job.id, 'Renumber everything?', 'Do not renumber');
 
-  const queried = await askQuestion(ctx, job.id, 'Renumerar a migração para 0004?');
+  const queried = await askQuestion(ctx, job.id, 'Renumber the migration to 0004?');
 
   const both = await precedentsOf(ctx, queried.id);
   assert.equal(both.status, 200);
@@ -788,13 +788,13 @@ test('t149 AT1 — answering the same input request twice is a 409, and the firs
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, { title: 'x', entry_node_id: 'entrada' });
-  const created = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+  const created = await askQuestion(ctx, job.id, 'Renumber the migration to 0003?');
 
   const first = await request<InputRequest>(
     ctx,
     'PATCH',
     `/v1/input-requests/${created.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
   assert.equal(first.status, 200);
 
@@ -802,7 +802,7 @@ test('t149 AT1 — answering the same input request twice is a 409, and the firs
     ctx,
     'PATCH',
     `/v1/input-requests/${created.id}/answer`,
-    { answer: 'Renumerar para 0003', answered_by: 'outra-pessoa' },
+    { answer: 'Renumber to 0003', answered_by: 'somebody-else' },
   );
   assert.equal(retry.status, 409, 'the second answer is a conflict, never a silent overwrite');
   assert.equal(retry.body.error, 'conflict');
@@ -814,7 +814,7 @@ test('t149 AT1 — answering the same input request twice is a 409, and the firs
   // The decision that stands is the FIRST one: an answer already acted upon
   // (the job went back to the queue) cannot be rewritten by whoever retried.
   const stored = await readBack(ctx, job.id, created.id);
-  assert.equal(stored.answer, 'Manter 0002');
+  assert.equal(stored.answer, 'Keep 0002');
   assert.equal(stored.answered_by, 'rafael');
   assert.equal(stored.source, 'user');
   assert.equal(stored.answered_at, first.body.answered_at);
@@ -833,13 +833,13 @@ test('t149 AT2 — /auto-resolution over an already answered input request is a 
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, { title: 'x', entry_node_id: 'entrada' });
-  const created = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+  const created = await askQuestion(ctx, job.id, 'Renumber the migration to 0003?');
 
   const answered = await request<InputRequest>(
     ctx,
     'PATCH',
     `/v1/input-requests/${created.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
   assert.equal(answered.status, 200);
 
@@ -849,7 +849,7 @@ test('t149 AT2 — /auto-resolution over an already answered input request is a 
     ctx,
     'PATCH',
     `/v1/input-requests/${created.id}/auto-resolution`,
-    { answer: 'Manter 0002', based_on: 'default_answer' },
+    { answer: 'Keep 0002', based_on: 'default_answer' },
   );
   assert.equal(auto.status, 409);
   assert.equal(auto.body.error, 'conflict');
@@ -877,12 +877,12 @@ test('t149 AT3 — a stale answer never unblocks a job that is waiting on anothe
 
   const job = await createJob(ctx, { title: 'x', entry_node_id: 'entrada' });
 
-  const first = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+  const first = await askQuestion(ctx, job.id, 'Renumber the migration to 0003?');
   const answered = await request<InputRequest>(
     ctx,
     'PATCH',
     `/v1/input-requests/${first.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
   assert.equal(answered.status, 200);
 
@@ -891,7 +891,7 @@ test('t149 AT3 — a stale answer never unblocks a job that is waiting on anothe
 
   // The job asks something ELSE and stops again. This is the state the retry
   // must not touch.
-  const second = await askQuestion(ctx, job.id, 'Qual engine adapter usar no despacho?');
+  const second = await askQuestion(ctx, job.id, 'Which engine adapter goes in dispatch?');
   const blockedAgain = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
   assert.equal(blockedAgain.body.blocked, true);
   assert.equal(blockedAgain.body.block_reason, `aguardando resposta da pergunta ${second.id}`);
@@ -900,7 +900,7 @@ test('t149 AT3 — a stale answer never unblocks a job that is waiting on anothe
     ctx,
     'PATCH',
     `/v1/input-requests/${first.id}/answer`,
-    { answer: 'Manter 0002', answered_by: 'rafael' },
+    { answer: 'Keep 0002', answered_by: 'rafael' },
   );
   assert.equal(retry.status, 409);
   assert.equal(retry.body.error, 'conflict');

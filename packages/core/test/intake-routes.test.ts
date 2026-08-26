@@ -5,7 +5,7 @@
  * (once per class), breaking work down produces TICKETS (every execution). This
  * file exercises the second one end to end — draft, amend, discard, and the
  * human confirmation gate that is the only path from "a proposed breakdown" to
- * `trabalho` rows on the graph.
+ * `job` rows on the graph.
  *
  * The batch runs against the class registered from factory bundle 1
  * (`factory-graphs/software-development/graph.json`), with no editing:
@@ -205,8 +205,8 @@ test('AT7 — a class with no registered base graph is 404 and writes nothing', 
 
   const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
     class: 'classe-que-ninguem-registrou',
-    request: 'um pedido qualquer',
-    items: [{ ref: 'a', title: 'uma ficha' }],
+    request: 'some request or other',
+    items: [{ ref: 'a', title: 'a ticket' }],
   });
 
   assert.equal(response.status, 404);
@@ -221,16 +221,16 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
 
   const response = await request<DraftResponse>(ctx, 'POST', '/v1/intake', {
     class: CLASS,
-    request: 'dar ao intake uma API de duas fases',
+    request: 'give intake a two-phase API',
     execution_id: 7,
     items: [
       {
-        ref: 'migracao',
-        title: 'Migração 0005',
-        body: 'Colunas novas em trabalho e as duas tabelas do intake.',
-        acceptance_criteria: ['a migração roda do zero'],
+        ref: 'migration',
+        title: 'Migration 0005',
+        body: 'New columns on job and the two intake tables.',
+        acceptance_criteria: ['the migration runs from zero'],
       },
-      { ref: 'rotas', title: 'Rotas de rascunho e confirmação' },
+      { ref: 'routes', title: 'Draft and confirmation routes' },
     ],
   });
 
@@ -244,9 +244,9 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
   assert.equal(draft.created_jobs, null, 'nothing is created until somebody confirms');
   assert.deepEqual(
     draft.items.map((item) => item.ref),
-    ['migracao', 'rotas'],
+    ['migration', 'routes'],
   );
-  assert.deepEqual(draft.items[0].acceptance_criteria, ['a migração roda do zero']);
+  assert.deepEqual(draft.items[0].acceptance_criteria, ['the migration runs from zero']);
   assert.equal(draft.items[1].body, null);
   assert.deepEqual(draft.items[1].depends_on, []);
 
@@ -268,7 +268,7 @@ test('AT9 — a malformed item is 400 with the WHOLE list of problems and writes
     items: [
       { ref: 'a', title: '' },
       { ref: 'a', title: 'ref repetido' },
-      { ref: 'c', title: 'depende do nada', depends_on: ['fantasma'] },
+      { ref: 'c', title: 'depends on nothing', depends_on: ['ghost'] },
     ],
   });
 
@@ -296,8 +296,8 @@ test('t255 — an item sent with the retired Portuguese keys is refused, never h
 
   const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
     class: CLASS,
-    request: 'um lote na grafia antiga',
-    items: [{ ref: 'migracao', titulo: 'Migração 0005', corpo: 'as duas tabelas' }],
+    request: 'a batch in the old spelling',
+    items: [{ ref: 'migration', titulo: 'Migration 0005', corpo: 'the two tables' }],
   });
 
   assert.equal(response.status, 400, 'the old spelling is not a synonym of the new one');
@@ -315,7 +315,7 @@ test('AT9 — class and request are required', async (t) => {
   await registerFactoryGraph(ctx);
 
   for (const body of [
-    { request: 'sem classe', items: [{ ref: 'a', title: 'x' }] },
+    { request: 'no class', items: [{ ref: 'a', title: 'x' }] },
     { class: CLASS, items: [{ ref: 'a', title: 'x' }] },
     { class: CLASS, request: '   ', items: [{ ref: 'a', title: 'x' }] },
   ]) {
@@ -326,7 +326,7 @@ test('AT9 — class and request are required', async (t) => {
 
   const withoutItems = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
     class: CLASS,
-    request: 'sem itens',
+    request: 'no items',
   });
   assert.equal(withoutItems.status, 400);
   assert.equal(withoutItems.body.error, 'invalid_items');
@@ -339,19 +339,19 @@ test('AT10 — PATCH replaces items while pending, and is 409 once the draft is 
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'primeira ideia' }] });
+  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'first idea' }] });
 
   const amended = await request<DraftResponse>(ctx, 'PATCH', `/v1/intake/${draft.id}`, {
     items: [
-      { ref: 'a', title: 'ideia melhor' },
-      { ref: 'b', title: 'e mais uma', depends_on: ['a'] },
+      { ref: 'a', title: 'better idea' },
+      { ref: 'b', title: 'and one more', depends_on: ['a'] },
     ],
   });
   assert.equal(amended.status, 200);
   assert.equal(amended.body.draft.status, 'pending');
   assert.deepEqual(
     amended.body.draft.items.map((item) => item.title),
-    ['ideia melhor', 'e mais uma'],
+    ['better idea', 'and one more'],
     'the list is REPLACED, not merged',
   );
   assert.deepEqual(amended.body.draft.items[1].depends_on, ['a']);
@@ -380,13 +380,13 @@ test('AT10 — PATCH replaces items while pending, and is 409 once the draft is 
   assert.equal(late.status, 409);
   assert.equal(late.body.error, 'draft_not_pending');
 
-  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'descartável' }] });
+  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'discardable' }] });
   assert.equal(
     (await request(ctx, 'POST', `/v1/intake/${discarded.id}/discards`, {})).status,
     200,
   );
   const overDiscarded = await request<ErrorResponse>(ctx, 'PATCH', `/v1/intake/${discarded.id}`, {
-    items: [{ ref: 'a', title: 'também tarde' }],
+    items: [{ ref: 'a', title: 'late as well' }],
   });
   assert.equal(overDiscarded.status, 409);
   assert.equal(overDiscarded.body.error, 'draft_not_pending');
@@ -399,8 +399,8 @@ test('AT11 — discarding closes the draft, twice is 409, and no job is ever cre
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', title: 'ficha que não vai existir' },
-      { ref: 'b', title: 'nem esta', depends_on: ['a'] },
+      { ref: 'a', title: 'a ticket that will never exist' },
+      { ref: 'b', title: 'nor this one', depends_on: ['a'] },
     ],
   });
 
@@ -421,7 +421,7 @@ test('AT11 — discarding closes the draft, twice is 409, and no job is ever cre
   );
   assert.equal(afterwards.status, 409, 'a discarded draft can never be confirmed');
 
-  assert.equal(countJobs(ctx), 0, 'no trabalho is created for a discarded draft');
+  assert.equal(countJobs(ctx), 0, 'no job is created for a discarded draft');
   assert.equal(dependencyRows(ctx).length, 0);
 });
 
@@ -435,11 +435,11 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
     items: [
       {
         ref: 'a',
-        title: 'Primeira ficha',
-        body: 'O corpo preliminar da primeira.',
-        acceptance_criteria: ['npm test passa', 'npm run lint passa'],
+        title: 'First ticket',
+        body: 'The preliminary body of the first.',
+        acceptance_criteria: ['npm test passes', 'npm run lint passes'],
       },
-      { ref: 'b', title: 'Segunda ficha' },
+      { ref: 'b', title: 'Second ticket' },
     ],
   });
 
@@ -458,7 +458,7 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
   );
 
   const jobs = response.body.jobs;
-  assert.equal(jobs.length, 2, 'one trabalho per item, all of them in the answer');
+  assert.equal(jobs.length, 2, 'one job per item, all of them in the answer');
   assert.deepEqual(
     response.body.draft.created_jobs,
     { a: jobs[0].id, b: jobs[1].id },
@@ -474,16 +474,16 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
     assert.equal(job.blocked, false, 'declaring a dependency does not block anybody (FR14)');
   }
 
-  assert.equal(jobs[0].title, 'Primeira ficha');
-  assert.equal(jobs[0].body, 'O corpo preliminar da primeira.');
-  assert.deepEqual(jobs[0].acceptance_criteria, ['npm test passa', 'npm run lint passa']);
+  assert.equal(jobs[0].title, 'First ticket');
+  assert.equal(jobs[0].body, 'The preliminary body of the first.');
+  assert.deepEqual(jobs[0].acceptance_criteria, ['npm test passes', 'npm run lint passes']);
   assert.equal(jobs[1].body, null, 'an item with no body stores null, not an empty string');
   assert.equal(jobs[1].acceptance_criteria, null);
 
   const board = await request<{ jobs: JobWithContent[] }>(ctx, 'GET', '/v1/jobs');
   assert.equal(board.status, 200);
   assert.equal(board.body.jobs.length, 2, 'the projection has the same two');
-  assert.equal(board.body.jobs[0].body, 'O corpo preliminar da primeira.');
+  assert.equal(board.body.jobs[0].body, 'The preliminary body of the first.');
   assert.deepEqual(dependencyRows(ctx), [], 'no dependency was declared in this batch');
 });
 
@@ -504,9 +504,9 @@ test('t175 — confirming a mixed-tier batch carries each item tier onto its own
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'renomear', title: 'Renomear a coluna', tier: 'trivial' },
+      { ref: 'rename', title: 'Rename the column', tier: 'trivial' },
       { ref: 'feature', title: 'A feature inteira', tier: 'standard' },
-      { ref: 'sem-triagem', title: 'Ninguém triou esta' },
+      { ref: 'no-triage', title: 'Nobody triaged this one' },
     ],
   });
 
@@ -546,8 +546,8 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', title: 'depende', depends_on: ['b'] },
-      { ref: 'b', title: 'é dependido' },
+      { ref: 'a', title: 'depends', depends_on: ['b'] },
+      { ref: 'b', title: 'is depended on' },
     ],
   });
 
@@ -606,8 +606,8 @@ test('AT14 — confirming twice is 409 and does not duplicate anything', async (
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', title: 'uma só vez', depends_on: ['b'] },
-      { ref: 'b', title: 'a outra' },
+      { ref: 'a', title: 'only once', depends_on: ['b'] },
+      { ref: 'b', title: 'the other one' },
     ],
   });
 
@@ -648,9 +648,9 @@ test('AT15 — job.created of a confirmed job carries body and acceptance_criter
     items: [
       {
         ref: 'a',
-        title: 'Ficha com conteúdo',
-        body: 'O que ela pede, em prosa.',
-        acceptance_criteria: ['o teste de aceite existe'],
+        title: 'Ticket with content',
+        body: 'What it asks for, in prose.',
+        acceptance_criteria: ['the acceptance test exists'],
       },
     ],
   });
@@ -669,10 +669,10 @@ test('AT15 — job.created of a confirmed job carries body and acceptance_criter
   const created = timeline.body.events.find((event) => event.type === 'job.created');
   assert.ok(created !== undefined, 'the creation is in the log');
   assert.deepEqual(created.data, {
-    title: 'Ficha com conteúdo',
+    title: 'Ticket with content',
     entry_node_id: entryNode(),
-    body: 'O que ela pede, em prosa.',
-    acceptance_criteria: ['o teste de aceite existe'],
+    body: 'What it asks for, in prose.',
+    acceptance_criteria: ['the acceptance test exists'],
     fields: null,
     // The batch this test confirms declared no tier (t175), and an item nobody
     // triaged reaches the log as an explicit `null` — the same normalization
@@ -693,11 +693,11 @@ test('t168 — confirming a draft carries each item\'s fields into the job and i
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const filled = { premise_source: 'relatório trimestral 2026Q2', downside: -12.5, upside: 40 };
+  const filled = { premise_source: 'quarterly report 2026Q2', downside: -12.5, upside: 40 };
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', title: 'A tese do cobre', fields: filled },
-      { ref: 'b', title: 'Sem campo nenhum' },
+      { ref: 'a', title: 'The copper thesis', fields: filled },
+      { ref: 'b', title: 'No field at all' },
     ],
   });
   assert.deepEqual(draft.items[0].fields, filled, 'the draft already stores them');
@@ -740,8 +740,8 @@ test('AT16 — confirming a draft creates no graph version and moves no pointer'
   const draft = await createDraft(ctx, {
     request: 'o pedido inteiro, em linguagem natural',
     items: [
-      { ref: 'a', title: 'Primeira', depends_on: ['b'] },
-      { ref: 'b', title: 'Segunda' },
+      { ref: 'a', title: 'First', depends_on: ['b'] },
+      { ref: 'b', title: 'Second' },
       { ref: 'c', title: 'Terceira', depends_on: ['a'] },
     ],
   });
@@ -859,8 +859,8 @@ test('t139 — a malformed actor on the confirmation is 400 validation_failed, n
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', title: 'a primeira', depends_on: ['b'] },
-      { ref: 'b', title: 'a segunda' },
+      { ref: 'a', title: 'the first', depends_on: ['b'] },
+      { ref: 'b', title: 'the second' },
     ],
   });
 
@@ -907,7 +907,7 @@ test('t139 — the confirmation and POST /v1/jobs refuse the same actor in the s
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'uma ficha' }] });
+  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'a ticket' }] });
 
   const confirmation = await request<ValidationFailure>(
     ctx,
@@ -916,7 +916,7 @@ test('t139 — the confirmation and POST /v1/jobs refuse the same actor in the s
     { actor: MALFORMED_ACTOR },
   );
   const job = await request<ValidationFailure>(ctx, 'POST', '/v1/jobs', {
-    title: 'uma ficha à mão',
+    title: 'a ticket by hand',
     entry_node_id: entryNode(),
     actor: MALFORMED_ACTOR,
   });
@@ -936,7 +936,7 @@ test('t180 — the intake refusals are English prose in the one envelope', async
   await registerFactoryGraph(ctx);
 
   const missing = await request<{ error: string; message: string }>(ctx, 'POST', '/v1/intake', {
-    items: [{ ref: 'a', title: 'uma ficha' }],
+    items: [{ ref: 'a', title: 'a ticket' }],
   });
   assert.equal(missing.status, 400);
   assert.equal(missing.body.error, 'missing_required_field', 'the code is frozen (FR2)');

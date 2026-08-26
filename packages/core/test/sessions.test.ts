@@ -75,7 +75,7 @@ async function openBareSession(ctx: TestContext): Promise<Session> {
     execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo e conte o que aconteceu',
+    prompt: 'do something and report what happened',
   });
   assert.equal(response.status, 201);
   return response.body;
@@ -94,7 +94,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    title: 'com sessão',
+    title: 'with a session',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -105,7 +105,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
     working_dir: '/Users/rafael/cartografo-ticket-102',
-    prompt: 'Refine o trabalho 102 contra as convenções do projeto.',
+    prompt: 'Refine job 102 against the project conventions.',
     timeout_seconds: 5400,
   });
 
@@ -130,7 +130,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
     working_dir: '/Users/rafael/cartografo-ticket-102',
-    prompt: 'Refine o trabalho 102 contra as convenções do projeto.',
+    prompt: 'Refine job 102 against the project conventions.',
     timeout_seconds: 5400,
     // The second budget (t163). Declared by nobody here, so it normalizes to
     // null — "this session states no inactivity policy", which is what every
@@ -149,7 +149,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
       execution_id: 7,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
-      prompt: 'faça algo',
+      prompt: 'do something',
     });
     assert.equal(response.status, 201);
     return response.body;
@@ -227,7 +227,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
  * is the ENGINE's own word (`reasoning_extraction` is what t198 measured), so it
  * travels as an open string; the kind is ours, so its set is closed.
  *
- * Nothing is promoted to the session projection by this ficha (Out of Scope):
+ * Nothing is promoted to the session projection by this ticket (Out of Scope):
  * what a reader has is this event, and — when the cap or the refusal stops the
  * work — the job's own `block_reason`.
  */
@@ -337,9 +337,9 @@ test('AT10 — GET /v1/sessions?execution_id=7 returns only that execution\'s se
     return response.body;
   };
 
-  const one = await open(7, 'da sete');
-  const other = await open(7, 'também da sete');
-  await open(8, 'da oito');
+  const one = await open(7, 'from seven');
+  const other = await open(7, 'also from seven');
+  await open(8, 'from eight');
 
   const response = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
   assert.equal(response.status, 200);
@@ -357,7 +357,7 @@ test('t127 — the old Portuguese session paths no longer exist', async (t) => {
     execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo',
+    prompt: 'do something',
   });
   assert.equal(created.status, 201);
 
@@ -383,12 +383,12 @@ test('t107 AT2 — GET /v1/sessions?job_id= slices by job inside the same execut
   // Both jobs live in the SAME execution: that is what makes this test prove
   // the new filter, and not the `execucao_id` that already existed.
   const watched = await createJob(ctx, {
-    title: 'o que a tela abre',
+    title: 'the one the screen opens',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
   const neighbour = await createJob(ctx, {
-    title: 'o outro da mesma rodada',
+    title: 'the other one of the same round',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -404,9 +404,9 @@ test('t107 AT2 — GET /v1/sessions?job_id= slices by job inside the same execut
     return response.body;
   };
 
-  const first = await openSessionFor(watched.id, 'primeira passada');
-  const second = await openSessionFor(watched.id, 'segunda passada');
-  const neighbours = await openSessionFor(neighbour.id, 'do vizinho');
+  const first = await openSessionFor(watched.id, 'first pass');
+  const second = await openSessionFor(watched.id, 'second pass');
+  const neighbours = await openSessionFor(neighbour.id, 'from the neighbour');
 
   const response = await request<{ sessions: Session[] }>(
     ctx,
@@ -453,7 +453,7 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    title: 'com skill de terceiro',
+    title: 'with a third-party skill',
     entry_node_id: 'entrada',
     execution_id: 9,
   });
@@ -462,7 +462,7 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
     job_id: job.id,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo sem rede',
+    prompt: 'do something with no network',
   });
   assert.equal(opened.status, 201);
   const session = opened.body;
@@ -515,7 +515,7 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
  *
  * Deliberately different from `DEFAULT_PROJECT` (1, `repositories/common.ts`):
  * with the two equal, the bug this test exists for — falling back to the
- * default because the `trabalho` join found nothing — would pass unnoticed.
+ * default because the `job` join found nothing — would pass unnoticed.
  */
 const OTHER_PROJECT = 42;
 
@@ -530,7 +530,7 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
       execution_id: 7,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
-      prompt: 'uma sessão de descoberta, sem trabalho dono',
+      prompt: 'a discovery session, with no owning job',
     });
     assert.equal(response.status, 201);
     assert.equal(response.body.job_id, null, 'the case under test is the job-less session');
@@ -565,7 +565,7 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
     ctx,
     'POST',
     `/v1/sessions/${denied.id}/permission-denials`,
-    { resource: 'network', tool: 'WebFetch', reason: 'sem rede nesta sessão' },
+    { resource: 'network', tool: 'WebFetch', reason: 'no network in this session' },
   );
   assert.equal(denial.status, 200);
 
@@ -587,7 +587,7 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    title: 'de outro projeto',
+    title: 'from another project',
     entry_node_id: 'entrada',
     project_id: OTHER_PROJECT,
     execution_id: 9,
@@ -600,7 +600,7 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
     project_id: 999,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo pelo trabalho',
+    prompt: 'do something for the job',
   });
   assert.equal(opened.status, 201);
 
@@ -629,7 +629,7 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
     execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo',
+    prompt: 'do something',
   });
   assert.equal(opened.status, 201);
   const session = opened.body;
@@ -693,7 +693,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
     execution_id: 9,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'faça algo',
+    prompt: 'do something',
   });
   assert.equal(opened.status, 201);
 
@@ -721,7 +721,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
   const unknown = await request(ctx, 'POST', '/v1/sessions/98765/permission-denials', {
     resource: 'network',
     tool: 'WebFetch',
-    reason: 'a sessão não existe',
+    reason: 'the session does not exist',
   });
   assert.equal(unknown.status, 404);
 });
@@ -734,7 +734,7 @@ test('t159 AT1 — a small transcript is stored verbatim, and the projection and
 
   // With an accent in it on purpose: what is reported is the size in BYTES, and
   // an all-ASCII sample would let a character count pass as one.
-  const output = 'lendo a ficha…\nerro: não achei o arquivo\nsaindo com 1\n';
+  const output = 'reading the ticket…\nerror: I did not find the file\nexiting with 1\n';
   const bytes = Buffer.byteLength(output, 'utf8');
   assert.notEqual(bytes, output.length, 'the sample has to be multi-byte to prove anything');
 
@@ -765,7 +765,7 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
 
   // ASCII, so byte length and character length coincide and the arithmetic
   // below is the test's own, not the implementation's.
-  const tail = '\nfatal: o engine morreu aqui, e ISTO precisa sobreviver\n';
+  const tail = '\nfatal: the engine died here, and THIS has to survive\n';
   const output = 'x'.repeat(TRANSCRIPT_CAP_BYTES) + tail;
   assert.equal(Buffer.byteLength(output, 'utf8'), output.length, 'the sample has to be ASCII');
 
@@ -933,10 +933,10 @@ test('t159 AT5 — the transcript stays OUT of the session.finished event', asyn
     status: 'completed',
     exit_code: 0,
     usage: USAGE,
-    transcript: 'a saída inteira da sessão, que o log NÃO carrega',
+    transcript: 'the whole session output, which the log does NOT carry',
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.transcript, 'a saída inteira da sessão, que o log NÃO carrega');
+  assert.equal(finished.body.transcript, 'the whole session output, which the log does NOT carry');
 
   const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.deepEqual(
@@ -982,7 +982,7 @@ test('t163 — POST /v1/sessions persists and returns the silence budget', async
     execution_id: 163,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'trabalhe e vá falando',
+    prompt: 'work and keep talking',
     timeout_seconds: 5400,
     silence_seconds: 900,
   });
@@ -1208,13 +1208,13 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   });
 
   const jobOne = await createJob(ctx, {
-    title: 'ficha na v1',
+    title: 'ticket on v1',
     entry_node_id: 'implementar',
     execution_id: EXECUTION,
     graph_version_id: V1,
   });
   const jobTwo = await createJob(ctx, {
-    title: 'ficha na v2',
+    title: 'ticket on v2',
     entry_node_id: 'implementar',
     execution_id: EXECUTION,
     graph_version_id: V2,
@@ -1254,7 +1254,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
     node_id: 'revisar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'sessão que morreu sem reportar nada',
+    prompt: 'a session that died reporting nothing',
   });
   await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.body.id}/finish`, {
     status: 'failed',
@@ -1368,7 +1368,7 @@ const MINIMAL_GRAPH = path.join(
  * The session projection with the column this ticket adds.
  *
  * Local to this file, like `JobWithTier` in `jobs.test.ts`: `support.ts` carries
- * what every ficha shares, and whoever adds a field declares it where the
+ * what every ticket shares, and whoever adds a field declares it where the
  * assertions are.
  */
 interface SessionWithOutput extends Session {
@@ -1442,13 +1442,13 @@ async function registerNoteSkill(
     version: '1.0.0',
     hash: `sha256:${'0'.repeat(64)}`,
     role: 'work',
-    description: 'Redige uma nota curta a partir do tema declarado.',
-    input: { type: 'object', properties: { tema: { type: 'string' } } },
+    description: 'Drafts a short note from the stated theme.',
+    input: { type: 'object', properties: { theme: { type: 'string' } } },
     output: NOTE_OUTPUT_SCHEMA,
     preconditions: [],
     checks: [],
     permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
-    instructions: '# Redigir nota\n\nEscreva sobre {{input.tema}}.',
+    instructions: '# Draft the note\n\nWrite about {{input.theme}}.',
     origin: { type: 'native' },
   };
   manifest.hash = contentHash(manifest);
@@ -1523,7 +1523,7 @@ test('t253 AT1 — an output matching the node\'s skill schema is stored and rou
 
   const versionId = await registerGraphPinningNoteSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'com saída estruturada',
+    title: 'with structured output',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1566,7 +1566,7 @@ test('t253 AT2 — an output that does NOT match still closes the session', asyn
 
   const versionId = await registerGraphPinningNoteSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'com saída torta',
+    title: 'with crooked output',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1653,7 +1653,7 @@ test('t268 AT — a session that reported nothing at all is accepted, vacuously'
 
   const versionId = await registerGraphPinningNoteSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'sem relato nenhum',
+    title: 'with no report at all',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1686,7 +1686,7 @@ test('t253 AT3 — a session with no resolvable node stores its output unvalidat
   // No job at all: there is no graph to ask, which is the shape every dispatch
   // had before graphs existed (`resolve-node.ts`: `null` is not a defect).
   const bare = await openBareSession(ctx);
-  const anything = { qualquer: { forma: [1, 2, 3] }, sem_schema: true };
+  const anything = { whatever: { shape: [1, 2, 3] }, no_schema: true };
   const finishedBare = await request<SessionWithOutput>(
     ctx,
     'PATCH',
@@ -1697,7 +1697,7 @@ test('t253 AT3 — a session with no resolvable node stores its output unvalidat
   assert.deepEqual(finishedBare.body.output, anything, 'stored verbatim: nothing to check it against');
 
   // A job with no `graph_version_id`: same answer, for the same reason.
-  const job = await createJob(ctx, { title: 'sem grafo', entry_node_id: 'redigir' });
+  const job = await createJob(ctx, { title: 'no graph', entry_node_id: 'redigir' });
   const session = await openNodeSession(ctx, job.id);
   const finished = await request<SessionWithOutput>(
     ctx,
@@ -1739,7 +1739,7 @@ test('t253 FR1 — an output that is not an object is refused before anything is
   const ctx = await startControlPlane(t);
 
   const session = await openBareSession(ctx);
-  for (const output of ['a nota', 42, ['uma', 'lista']]) {
+  for (const output of ['the note', 42, ['a', 'list']]) {
     const response = await request<{ error: string; details: string[] }>(
       ctx,
       'PATCH',
@@ -1799,9 +1799,9 @@ const THESIS_OUTPUT_SCHEMA = {
 /** What a red team reports when the thesis did not survive it. */
 const THESIS_REPORT = {
   outcome: 'fail',
-  objecoes: ['a série histórica não cobre o ano que decide a tese'],
-  contra_evidencia_pesquisada: ['relatório do setor de 2025: o número citado é de outra base'],
-  nota: 'a tese não sobreviveu ao red team',
+  objecoes: ['the historical series does not cover the year that decides the thesis'],
+  contra_evidencia_pesquisada: ['sector report from 2025: the number cited is from another base'],
+  nota: 'the thesis did not survive the red team',
 };
 
 /**
@@ -1818,7 +1818,7 @@ async function registerThesisSkill(
     version: '1.0.0',
     hash: `sha256:${'0'.repeat(64)}`,
     role: 'gate',
-    description: 'Red team da tese: procura contra-evidência e decide se ela sobrevive.',
+    description: 'Red team of the thesis: hunts counter-evidence and decides whether it survives.',
     input: { type: 'object', properties: { tese: { type: 'string' } } },
     output: THESIS_OUTPUT_SCHEMA,
     preconditions: [],
@@ -1828,13 +1828,13 @@ async function registerThesisSkill(
       {
         id: 'contra-evidencia-propria',
         type: 'agentic',
-        instruction: 'Cada objeção cita evidência que você foi buscar, e não releitura da tese?',
-        required_evidence: ['a fonte de cada contra-evidência pesquisada'],
-        description: 'Julgamento com evidência própria.',
+        instruction: 'Does each objection cite evidence you went out to find, and not a re-reading of the thesis?',
+        required_evidence: ['the source of each counter-evidence researched'],
+        description: 'Judgement with evidence of its own.',
       },
     ],
     permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: true } },
-    instructions: '# Derrubar tese\n\nAtaque {{input.tese}} com evidência própria.',
+    instructions: '# Red-team the thesis\n\nAttack {{input.tese}} with evidence of your own.',
     origin: { type: 'native' },
   };
   manifest.hash = contentHash(manifest);
@@ -1881,7 +1881,7 @@ async function registerGraphRoutingOnThesisSkill(ctx: TestContext): Promise<stri
   // red team killed still has to land somewhere, or `terminates` fails.
   const archive = JSON.parse(JSON.stringify(nodes[1])) as Record<string, unknown>;
   archive.id = 'arquivar';
-  archive.description = 'Arquiva a tese morta e encerra a travessia.';
+  archive.description = 'Archives the dead thesis and closes the crossing.';
   nodes.push(archive);
 
   document.edges = [
@@ -1889,13 +1889,13 @@ async function registerGraphRoutingOnThesisSkill(ctx: TestContext): Promise<stri
       from: 'redigir',
       to: 'revisar',
       condition: 'sobrevive',
-      description: 'A tese aguentou o red team.',
+      description: 'The thesis held up against the red team.',
     },
     {
       from: 'redigir',
       to: 'arquivar',
       condition: 'morta',
-      description: 'A tese não aguentou.',
+      description: 'The thesis did not hold up.',
     },
   ];
   document.final_nodes = ['revisar', 'arquivar'];
@@ -1921,7 +1921,7 @@ test('t269 AT1 — a closed schema takes the report the routing label rides in',
 
   const versionId = await registerGraphRoutingOnThesisSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'tese que morreu',
+    title: 'a thesis that died',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1971,7 +1971,7 @@ test('t269 AT2 — the log does not carry the routing label either', async (t) =
 
   const versionId = await registerGraphRoutingOnThesisSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'tese que morreu, no log',
+    title: 'a thesis that died, in the log',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -2012,7 +2012,7 @@ test('t269 AT3 — a `resultado` that is not a label is refused exactly as befor
 
   const versionId = await registerGraphRoutingOnThesisSkill(ctx);
   const job = await createJob(ctx, {
-    title: 'tese com rota ilegível',
+    title: 'a thesis with an unreadable route',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -2040,7 +2040,7 @@ test('t269 AT3 — a `resultado` that is not a label is refused exactly as befor
       `resultado ${JSON.stringify(resultado)} is not a label, and the closed schema refuses it`,
     );
     // The only key the schema does not know is `resultado`: this list IS the
-    // refusal naming it, in the words ajv already used before this ficha
+    // refusal naming it, in the words ajv already used before this ticket
     // (t253 AT2 pins them verbatim).
     assert.deepEqual(finished.body.output_schema_error, [
       'output must NOT have additional properties',

@@ -48,7 +48,7 @@ const GRAPH_ROUTES = 'src/routes/graphs.ts';
  * The job projection with the column t175 adds.
  *
  * Local to this file, like `JobWithContent` in `intake-routes.test.ts`: the
- * shared `Job` of `support.ts` carries the columns every ficha shares, and
+ * shared `Job` of `support.ts` carries the columns every ticket shares, and
  * whoever adds one declares it where they assert on it.
  */
 interface JobWithTier extends Job {
@@ -140,7 +140,7 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
 /* -------------------------------------------------------------------------- */
 /* t262 — a final node that pins a skill is not done just for being arrived at. */
 /*                                                                             */
-/* Until this ficha `concluido` was `final_nodes.includes(no_atual)` and        */
+/* Until this ticket `concluido` was `final_nodes.includes(no_atual)` and       */
 /* nothing else, so the traveller was declared finished the instant it LANDED   */
 /* on the last node — and the skill that node pins never got a session, because */
 /* the controller's candidate list drops a `completed` job before the runner    */
@@ -148,7 +148,7 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
 /* real crossing of the bets bundle found it on `registro-monitoramento`.       */
 /*                                                                             */
 /* The rule below keys on `skill_ref` PRESENCE and never on `node_type`:        */
-/* `docs/spec/graph.md` §2 says a portão is "nó como qualquer outro", and this  */
+/* `docs/spec/graph.md` §2 says a gate is "a node like any other", and this     */
 /* fixture's own final node is a gate that pins a real skill.                   */
 /* -------------------------------------------------------------------------- */
 
@@ -158,23 +158,23 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
  * A gate's outcome vocabulary is not this file's to choose: the registry
  * demands exactly `pass`/`fail`/`escalate_human`
  * (`src/repositories/skill.ts`, `checkGateOutcome`), so the executor can route.
- * `evidencia` rides along because an agentic gate verifies with evidence of its
+ * `evidence` rides along because an agentic gate verifies with evidence of its
  * own (D9) — and because a report that omits it is what AT-3 needs refused.
  */
 const REVIEW_OUTPUT_SCHEMA = {
   type: 'object',
-  required: ['outcome', 'evidencia'],
+  required: ['outcome', 'evidence'],
   additionalProperties: false,
   properties: {
     outcome: { enum: ['pass', 'fail', 'escalate_human'] },
-    evidencia: { type: 'string', minLength: 1 },
+    evidence: { type: 'string', minLength: 1 },
   },
 };
 
 /** A report the schema above accepts, whole. */
 const CONFORMING_REPORT = {
   outcome: 'pass',
-  evidencia: 'a nota responde ao tema declarado, no segundo parágrafo',
+  evidence: 'the note answers the stated theme, in the second paragraph',
 };
 
 /**
@@ -194,20 +194,20 @@ async function registerReviewSkill(
     version: '1.0.0',
     hash: '',
     role: 'gate',
-    description: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    input: { type: 'object', properties: { tema: { type: 'string' } } },
+    description: 'Checks the note against the stated theme and closes the crossing.',
+    input: { type: 'object', properties: { theme: { type: 'string' } } },
     output: REVIEW_OUTPUT_SCHEMA,
     preconditions: [],
     checks: [
       {
         id: 'nota-existe',
         type: 'deterministic',
-        description: 'A nota existe e não está vazia.',
+        description: 'The note exists and is not empty.',
         command: 'test -s nota.md',
       },
     ],
     permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
-    instructions: '# Revisar nota\n\nConfira a nota contra o tema.',
+    instructions: '# Review the note\n\nCheck the note against the theme.',
     origin: { type: 'native' },
   };
   manifest.hash = manifestHash(manifest);
@@ -304,7 +304,7 @@ test('AT1 — POST /v1/jobs creates the job and records job.created', async (t) 
   const ctx = await startControlPlane(t);
 
   const response = await request<Job>(ctx, 'POST', '/v1/jobs', {
-    title: 'Entidades e API: trabalho, sessão, evento e pergunta',
+    title: 'Entities and API: job, session, event and input request',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
@@ -330,7 +330,7 @@ test('AT1 — POST /v1/jobs creates the job and records job.created', async (t) 
   assert.ok(['user', 'agent', 'system'].includes(event.actor.type));
   assert.ok(!Number.isNaN(Date.parse(event.occurred_at)), 'occurred_at is ISO 8601');
   assert.deepEqual(event.data, {
-    title: 'Entidades e API: trabalho, sessão, evento e pergunta',
+    title: 'Entities and API: job, session, event and input request',
     entry_node_id: 'entrada',
     // The intake (t122) added two optional fields to the type's contract. A job
     // created by hand declares neither, and the payload normalizes them to an
@@ -364,7 +364,7 @@ test('t175 — POST /v1/jobs round-trips tier through the projection and the fac
   const ctx = await startControlPlane(t);
 
   const response = await request<JobWithTier>(ctx, 'POST', '/v1/jobs', {
-    title: 'Renomear uma variável',
+    title: 'Rename a variable',
     entry_node_id: 'entrada',
     tier: 'trivial',
   });
@@ -394,7 +394,7 @@ test('t175 — a tier outside the two declared values is refused before any writ
   const ctx = await startControlPlane(t);
 
   const refused = await request<{ erro: string }>(ctx, 'POST', '/v1/jobs', {
-    title: 'urgência não é tier',
+    title: 'urgency is not a tier',
     entry_node_id: 'entrada',
     tier: 'urgent',
   });
@@ -412,16 +412,16 @@ test('AT2 — POST /v1/jobs/:id/transitions walks the graph and records job.tran
   const job = await createJob(ctx, { title: 'andar', entry_node_id: 'entrada' });
 
   const first = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
-    to_node_id: 'implementacao',
+    to_node_id: 'implementar',
   });
   assert.equal(first.status, 200);
-  assert.equal(first.body.current_node_id, 'implementacao');
+  assert.equal(first.body.current_node_id, 'implementar');
 
   const second = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
-    to_node_id: 'revisao',
+    to_node_id: 'revisar',
   });
   assert.equal(second.status, 200);
-  assert.equal(second.body.current_node_id, 'revisao');
+  assert.equal(second.body.current_node_id, 'revisar');
 
   const transitions = (await timeline(ctx, job.id)).filter(
     (event) => event.type === 'job.transitioned',
@@ -429,10 +429,10 @@ test('AT2 — POST /v1/jobs/:id/transitions walks the graph and records job.tran
   assert.equal(transitions.length, 2);
   assert.deepEqual(
     transitions[0].data,
-    { from_node_id: null, to_node_id: 'implementacao' },
+    { from_node_id: null, to_node_id: 'implementar' },
     'on the first transition the job leaves the entry node: de_no_id is null',
   );
-  assert.deepEqual(transitions[1].data, { from_node_id: 'implementacao', to_node_id: 'revisao' });
+  assert.deepEqual(transitions[1].data, { from_node_id: 'implementar', to_node_id: 'revisar' });
 });
 
 test('AT3 — block and unblock move the flag and record both events', async (t) => {
@@ -442,11 +442,11 @@ test('AT3 — block and unblock move the flag and record both events', async (t)
   const job = await createJob(ctx, { title: 'parar', entry_node_id: 'entrada' });
 
   const blocked = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
-    reason: 'esperando resposta do humano',
+    reason: 'waiting for the human to answer',
   });
   assert.equal(blocked.status, 200);
   assert.equal(blocked.body.blocked, true);
-  assert.equal(blocked.body.block_reason, 'esperando resposta do humano');
+  assert.equal(blocked.body.block_reason, 'waiting for the human to answer');
   assert.equal(blocked.body.current_node_id, 'entrada', 'blocking does not move the job across nodes');
 
   const unblocked = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/unblocks`, {});
@@ -465,7 +465,7 @@ test('AT3 — block and unblock move the flag and record both events', async (t)
   // `consecutive_failures` is null for every block but the one the failure cap
   // itself raises (t265): a block somebody asked for has no streak behind it.
   assert.deepEqual(flags[0].data, {
-    reason: 'esperando resposta do humano',
+    reason: 'waiting for the human to answer',
     consecutive_failures: null,
   });
   assert.deepEqual(flags[1].data, {}, 'the fact is the fall of the flag itself: no payload');
@@ -475,13 +475,13 @@ test('AT4 — PATCH /v1/jobs/:id amends the title and records only the field NAM
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'título velho', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'old title', entry_node_id: 'entrada' });
 
   const response = await request<Job>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
-    title: 'título novo, com segredo dentro',
+    title: 'new title, with a secret inside',
   });
   assert.equal(response.status, 200);
-  assert.equal(response.body.title, 'título novo, com segredo dentro');
+  assert.equal(response.body.title, 'new title, with a secret inside');
 
   const amendments = (await timeline(ctx, job.id)).filter(
     (event) => event.type === 'job.amended',
@@ -498,7 +498,7 @@ test('t157 — PATCH /v1/jobs/:id without a usable title is 422, never a 500', a
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'título velho', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'old title', entry_node_id: 'entrada' });
   const before = countEvents(ctx);
 
   // `changed_fields: ['title']` is well-formed whatever comes in the body, so
@@ -532,7 +532,7 @@ test('t157 — PATCH /v1/jobs/:id without a usable title is 422, never a 500', a
   assert.equal(countEvents(ctx), before, 'a refused amendment records no job.amended');
   assert.equal(
     (await readJob(ctx, job.id)).title,
-    'título velho',
+    'old title',
     'and it does not touch the row either',
   );
 });
@@ -542,16 +542,16 @@ test('AT5 — GET /v1/jobs returns the current board, with a per-execution filte
   const ctx = await startControlPlane(t);
 
   const one = await createJob(ctx, {
-    title: 'na execução 7, versão v1',
+    title: 'in execution 7, version v1',
     entry_node_id: 'entrada',
     execution_id: 7,
     graph_version_id: 'v1',
   });
-  await request(ctx, 'POST', `/v1/jobs/${one.id}/transitions`, { to_node_id: 'implementacao' });
-  await request(ctx, 'POST', `/v1/jobs/${one.id}/blocks`, { reason: 'travou' });
+  await request(ctx, 'POST', `/v1/jobs/${one.id}/transitions`, { to_node_id: 'implementar' });
+  await request(ctx, 'POST', `/v1/jobs/${one.id}/blocks`, { reason: 'jammed' });
 
   const two = await createJob(ctx, {
-    title: 'na execução 8',
+    title: 'in execution 8',
     entry_node_id: 'entrada',
     execution_id: 8,
   });
@@ -562,7 +562,7 @@ test('AT5 — GET /v1/jobs returns the current board, with a per-execution filte
 
   const board = all.body.jobs.find((row) => row.id === one.id);
   assert.ok(board !== undefined);
-  assert.equal(board.current_node_id, 'implementacao');
+  assert.equal(board.current_node_id, 'implementar');
   assert.equal(board.blocked, true);
   assert.equal(board.execution_id, 7);
   assert.equal(board.graph_version_id, 'v1');
@@ -580,24 +580,24 @@ test('AT6 — GET /v1/jobs/:id/events is the timeline, in id order', async (t) =
   const ctx = await startControlPlane(t);
 
   const job = await createJob(ctx, {
-    title: 'com sessão e pergunta',
+    title: 'with a session and an input request',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
   const neighbour = await createJob(ctx, {
-    title: 'o do lado, que não pode vazar',
+    title: 'the neighbour, which may not leak',
     entry_node_id: 'entrada',
     execution_id: 7,
   });
 
-  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'refinamento' });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'refinar' });
 
   const session = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
     job_id: job.id,
-    node_id: 'refinamento',
+    node_id: 'refinar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'refine o trabalho',
+    prompt: 'refine the job',
   });
   assert.equal(session.status, 201);
 
@@ -605,7 +605,7 @@ test('AT6 — GET /v1/jobs/:id/events is the timeline, in id order', async (t) =
     job_id: job.id,
     session_id: session.body.id,
     kind: 'question',
-    question: 'renumerar a migração?',
+    question: 'renumber the migration?',
     auto_approvable: false,
   });
   assert.equal(inputRequest.status, 201);
@@ -614,8 +614,8 @@ test('AT6 — GET /v1/jobs/:id/events is the timeline, in id order', async (t) =
   await request(ctx, 'POST', '/v1/sessions', {
     job_id: neighbour.id,
     engine: 'claude-code',
-    working_dir: '/tmp/vizinho',
-    prompt: 'outra coisa',
+    working_dir: '/tmp/neighbour',
+    prompt: 'something else',
   });
 
   const events = await timeline(ctx, job.id);
@@ -650,13 +650,13 @@ test('AT7 — transition/block against a nonexistent job is 404 and records no e
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'o único', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'the only one', entry_node_id: 'entrada' });
   const before = countEvents(ctx);
 
   const missing = job.id + 999;
   for (const [routePath, body] of [
-    [`/v1/jobs/${missing}/transitions`, { to_node_id: 'implementacao' }],
-    [`/v1/jobs/${missing}/blocks`, { reason: 'travou' }],
+    [`/v1/jobs/${missing}/transitions`, { to_node_id: 'implementar' }],
+    [`/v1/jobs/${missing}/blocks`, { reason: 'jammed' }],
     [`/v1/jobs/${missing}/unblocks`, {}],
   ] as const) {
     const response = await request(ctx, 'POST', routePath, body);
@@ -675,13 +675,13 @@ test('FR3 — a body without a required field answers 400 and records no event',
 
   const before = countEvents(ctx);
 
-  const withoutEntryNode = await request(ctx, 'POST', '/v1/jobs', { title: 'sem nó de entrada' });
+  const withoutEntryNode = await request(ctx, 'POST', '/v1/jobs', { title: 'no entry node' });
   assert.equal(withoutEntryNode.status, 400);
 
   const withoutTitle = await request(ctx, 'POST', '/v1/jobs', { entry_node_id: 'entrada' });
   assert.equal(withoutTitle.status, 400);
 
-  const job = await createJob(ctx, { title: 'válido', entry_node_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'valid', entry_node_id: 'entrada' });
   const afterValid = countEvents(ctx);
 
   const withoutTarget = await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {});
@@ -694,11 +694,11 @@ test('FR3 — a body without a required field answers 400 and records no event',
   assert.equal(afterValid, before + 1, 'only the valid job recorded an event');
 });
 
-test('t152 — a job with no graph version is never reported as concluído', async (t) => {
+test('t152 — a job with no graph version is never reported as completed', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'recém-nascido', entry_node_id: 'redigir' });
+  const job = await createJob(ctx, { title: 'newborn', entry_node_id: 'redigir' });
   const projection = await readJob(ctx, job.id);
 
   assert.equal(projection.graph_version_id, null);
@@ -709,7 +709,7 @@ test('t152 — a job with no graph version is never reported as concluído', asy
   );
 });
 
-test('t262 AT-1 — arriving at a final node that pins a skill is not enough to be concluído', async (t) => {
+test('t262 AT-1 — arriving at a final node that pins a skill is not enough to be completed', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
   const versionId = await registerMinimalGraph(ctx);
@@ -750,7 +750,7 @@ test('t262 AT-2 — a conforming report on the final node completes the job, on 
   const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a nota que foi revisada de verdade',
+    title: 'the note that really was reviewed',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -778,13 +778,13 @@ test('t262 AT-3 — a report the schema refuses leaves the job an ordinary candi
   const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const refused = await createJob(ctx, {
-    title: 'a revisão que reportou torto',
+    title: 'the review that reported crooked',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
   await request(ctx, 'POST', `/v1/jobs/${refused.id}/transitions`, { to_node_id: 'revisar' });
   // `escala` is the graph fixture's own vocabulary, not the registry's, and
-  // `evidencia` is missing: the registered schema refuses it, `finishSession`
+  // `evidence` is missing: the registered schema refuses it, `finishSession`
   // stores `output: null` and records the reason in the event (t253).
   await runSessionOn(ctx, refused.id, 'revisar', { outcome: 'escala' });
 
@@ -793,11 +793,11 @@ test('t262 AT-3 — a report the schema refuses leaves the job an ordinary candi
   assert.equal(
     afterRefusal.blocked,
     false,
-    'and it does not block either: capping repeated failed attempts is t265, not this ficha',
+    'and it does not block either: capping repeated failed attempts is t265, not this ticket',
   );
 
   const silent = await createJob(ctx, {
-    title: 'a revisão que não reportou nada',
+    title: 'the review that reported nothing',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -813,13 +813,13 @@ test('t262 AT-3 — a report the schema refuses leaves the job an ordinary candi
   assert.equal(afterSilence.blocked, false);
 });
 
-test('t262 AT-4 — a blocked job is not concluído, even parked on a finished final node', async (t) => {
+test('t262 AT-4 — a blocked job is not completed, even parked on a finished final node', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
   const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a nota que travou no fim',
+    title: 'the note that jammed at the end',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -828,7 +828,7 @@ test('t262 AT-4 — a blocked job is not concluído, even parked on a finished f
   assert.equal((await readJob(ctx, job.id)).completed, true, 'it finished before blocking');
 
   const blocked = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
-    reason: 'a revisão parou esperando alguém',
+    reason: 'the review stopped waiting for someone',
   });
   assert.equal(blocked.status, 200);
 
@@ -841,13 +841,13 @@ test('t262 AT-4 — a blocked job is not concluído, even parked on a finished f
   );
 });
 
-test('t262 AT-4 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', async (t) => {
+test('t262 AT-4 — GET /v1/jobs reports the same completed as GET /v1/jobs/:id', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
   const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const arrived = await createJob(ctx, {
-    title: 'chegou ao fim',
+    title: 'arrived at the end',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -855,14 +855,14 @@ test('t262 AT-4 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id
   await runSessionOn(ctx, arrived.id, 'revisar', CONFORMING_REPORT);
 
   const standing = await createJob(ctx, {
-    title: 'parado no nó final, sem ter rodado',
+    title: 'parked on the final node, never having run',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
   await request(ctx, 'POST', `/v1/jobs/${standing.id}/transitions`, { to_node_id: 'revisar' });
 
   const walking = await createJob(ctx, {
-    title: 'ainda no meio',
+    title: 'still in the middle',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -891,7 +891,7 @@ test('t262 AT-4 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id
   );
 });
 
-test('t262 AT-5 — a final node with no skill_ref at all is concluído on arrival, as before', async (t) => {
+test('t262 AT-5 — a final node with no skill_ref at all is completed on arrival, as before', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
 
@@ -929,7 +929,7 @@ test('t262 AT-5 — a final node with no skill_ref at all is concluído on arriv
   });
 
   const job = await createJob(ctx, {
-    title: 'a nota de um snapshot sem pino no nó final',
+    title: 'the note of a snapshot with no pin on the final node',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -948,7 +948,7 @@ test('t262 AT-6 — the round finishes on the final node\'s session, not only on
   const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const job = await createJob(ctx, {
-    title: 'o único trabalho da rodada',
+    title: 'the only job of the round',
     entry_node_id: 'redigir',
     execution_id: 2620,
     graph_version_id: versionId,
@@ -979,7 +979,7 @@ test('t262 AT-6 — the round finishes on the final node\'s session, not only on
   assert.ok(
     announced !== null,
     'PATCH /v1/sessions/:id/finish is now the THIRD moment a job can become ' +
-      'concluído, and it has to announce the round like the other two do (FR4)',
+      'completed, and it has to announce the round like the other two do (FR4)',
   );
 
   const events = await request<{ events: Event[] }>(ctx, 'GET', '/v1/executions/2620/events');
@@ -1004,9 +1004,9 @@ test('t168 — POST /v1/jobs stores and returns fields; omitted, it comes back n
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const filled = { premise_source: 'relatório trimestral 2026Q2', downside: -12.5, upside: 40 };
+  const filled = { premise_source: 'quarterly report 2026Q2', downside: -12.5, upside: 40 };
   const response = await request<JobProjection>(ctx, 'POST', '/v1/jobs', {
-    title: 'a tese do cobre',
+    title: 'the copper thesis',
     entry_node_id: 'triagem',
     fields: filled,
   });
@@ -1026,7 +1026,7 @@ test('t168 — POST /v1/jobs stores and returns fields; omitted, it comes back n
     'a job born with content has that content as part of the fact (t122 discipline)',
   );
 
-  const bare = await createJob(ctx, { title: 'sem campo', entry_node_id: 'triagem' });
+  const bare = await createJob(ctx, { title: 'no field', entry_node_id: 'triagem' });
   assert.equal(
     (await readJob(ctx, bare.id)).fields,
     null,
@@ -1040,7 +1040,7 @@ test('t168 — leaving a node that demands a field is refused while it is empty'
   const versionId = await registerGraphDemandingField(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a tese sem fonte',
+    title: 'the thesis with no source',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1085,7 +1085,7 @@ test('t168 — the same transition goes through once PATCH fills the field', asy
   const versionId = await registerGraphDemandingField(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a tese que ganhou fonte',
+    title: 'the thesis that gained a source',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1096,7 +1096,7 @@ test('t168 — the same transition goes through once PATCH fills the field', asy
   );
 
   const amended = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
-    fields: { premise_source: 'relatório trimestral 2026Q2, página 12' },
+    fields: { premise_source: 'quarterly report 2026Q2, page 12' },
   });
   assert.equal(amended.status, 200);
 
@@ -1116,7 +1116,7 @@ test('t168 — PATCH /v1/jobs/:id amends fields, and an empty body is still a 42
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
-  const job = await createJob(ctx, { title: 'a tese', entry_node_id: 'triagem' });
+  const job = await createJob(ctx, { title: 'the thesis', entry_node_id: 'triagem' });
 
   const empty = await request<{ error: string; details: string[] }>(
     ctx,
@@ -1133,14 +1133,14 @@ test('t168 — PATCH /v1/jobs/:id amends fields, and an empty body is still a 42
   assert.equal(broken.status, 422, 'a fields that is not a map of scalars is refused too');
 
   const response = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
-    fields: { premise_source: 'relatório trimestral', downside: -12.5 },
+    fields: { premise_source: 'quarterly report', downside: -12.5 },
   });
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.fields, {
-    premise_source: 'relatório trimestral',
+    premise_source: 'quarterly report',
     downside: -12.5,
   });
-  assert.equal(response.body.title, 'a tese', 'amending one field does not touch the other');
+  assert.equal(response.body.title, 'the thesis', 'amending one field does not touch the other');
 
   const amendments = (await timeline(ctx, job.id)).filter(
     (event) => event.type === 'job.amended',
@@ -1152,13 +1152,13 @@ test('t168 — PATCH /v1/jobs/:id amends fields, and an empty body is still a 42
     'the log names what was touched, never the new content',
   );
   assert.ok(
-    !JSON.stringify(amendments[0].data).includes('trimestral'),
+    !JSON.stringify(amendments[0].data).includes('quarterly'),
     'and the values the person typed stay out of the audit record',
   );
 
   const both = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
-    title: 'a tese, revisada',
-    fields: { premise_source: 'outra fonte' },
+    title: 'the thesis, revised',
+    fields: { premise_source: 'another source' },
   });
   assert.equal(both.status, 200);
   const last = (await timeline(ctx, job.id))
@@ -1238,7 +1238,7 @@ async function registerGraphWithBuckets(ctx: TestContext): Promise<string> {
     from: 'revisar',
     to: 'publicar',
     condition: 'aprovado',
-    description: 'A nota aprovada segue para publicação.',
+    description: 'The approved note goes on to publication.',
   });
   document.final_nodes = ['publicar'];
   await resolvePins(ctx, document);
@@ -1295,7 +1295,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
-    title: 'Nota sobre a projeção de contexto',
+    title: 'A note about the context projection',
     body: 'o pedido bruto',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
@@ -1303,8 +1303,8 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
   });
 
   await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-1', texto: 'primeiro corte' });
-  await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass', evidencia: 'confere' });
-  await runNode(ctx, job.id, 'publicar', 'completed', { url: 'https://exemplo/nota-1' });
+  await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass', evidence: 'checks out' });
+  await runNode(ctx, job.id, 'publicar', 'completed', { url: 'https://example/nota-1' });
   // Neither of these two is a fact about the graph: one failed, and one is still
   // running. Their reports must not reach the projection.
   await runNode(ctx, job.id, 'redigir', 'failed', { branch: 'nao-conta' });
@@ -1313,14 +1313,14 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
     node_id: 'redigir',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
-    prompt: 'ainda rodando',
+    prompt: 'still running',
   });
   assert.equal(opened.status, 201);
 
   const asked = await request<{ id: number }>(ctx, 'POST', '/v1/input-requests', {
     job_id: job.id,
     kind: 'question',
-    question: 'Publicar hoje?',
+    question: 'Publish today?',
     auto_approvable: false,
   });
   assert.equal(asked.status, 201);
@@ -1328,7 +1328,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
     ctx,
     'PATCH',
     `/v1/input-requests/${asked.body.id}/answer`,
-    { answer: 'Publique amanhã.', answered_by: 'rafael' },
+    { answer: 'Publish tomorrow.', answered_by: 'rafael' },
   );
   assert.equal(answered.status, 200);
 
@@ -1342,7 +1342,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
 
   assert.deepEqual(input.job, {
     id: job.id,
-    title: 'Nota sobre a projeção de contexto',
+    title: 'A note about the context projection',
     body: 'o pedido bruto',
   });
   assert.deepEqual(input.project, {
@@ -1351,13 +1351,13 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
   });
   assert.deepEqual(
     input.artefato,
-    { branch: 'nota-1', texto: 'primeiro corte', url: 'https://exemplo/nota-1' },
+    { branch: 'nota-1', texto: 'primeiro corte', url: 'https://example/nota-1' },
     'the bucket accumulates across the gate that declares none',
   );
   assert.equal(input.outcome, 'pass', 'the gate merged at the top level');
-  assert.equal(input.evidencia, 'confere');
+  assert.equal(input.evidence, 'checks out');
   assert.deepEqual(input.perguntas_respondidas, [
-    { id: String(asked.body.id), pergunta: 'Publicar hoje?', resposta: 'Publique amanhã.' },
+    { id: String(asked.body.id), pergunta: 'Publish today?', resposta: 'Publish tomorrow.' },
   ]);
   assert.equal(
     JSON.stringify(input).includes('nao-conta'),
@@ -1432,8 +1432,8 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
 /* t270 Half A — the route projects the job's own walk at `input.traversal`.    */
 /*                                                                             */
 /* The walk is a fact about the LOG, and only the control plane owns the log    */
-/* (D1). Until this ficha nothing published it: `registrar-travessia`, the last */
-/* node of the bets bundle, names `{{input.nos_executados}}` and                */
+/* (D1). Until this ticket nothing published it: `registrar-travessia`, the     */
+/* last node of the bets bundle, names `{{input.nos_executados}}` and           */
 /* `{{input.data_de_registro}}`, both failed closed, and the second real bets   */
 /* crossing was unblocked by a person patching scalars into `fields` by hand.   */
 /*                                                                             */
@@ -1472,7 +1472,7 @@ test('t270 AT — a job that never transitioned has visited nothing yet', async 
 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
-    title: 'parada no nó de entrada',
+    title: 'parked on the entry node',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1496,7 +1496,7 @@ test('t270 AT — the walk is the entry node plus every node it left behind', as
 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
-    title: 'travessia de três nós',
+    title: 'a crossing of three nodes',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1527,7 +1527,7 @@ test('t270 AT — two sessions on one node are two entries, in closing order', a
 
   const versionId = await registerGraphWithBuckets(ctx);
   const job = await createJob(ctx, {
-    title: 'retrabalho no mesmo nó',
+    title: 'rework on the same node',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1639,7 +1639,7 @@ test('t265 AT5 — three failed sessions on the same node block the job, with th
   const versionId = await registerMinimalGraph(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a nota cujas sessões não param de falhar',
+    title: 'the note whose sessions never stop failing',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1672,7 +1672,7 @@ test('t265 AT5 — a session that worked resets the streak', async (t) => {
   const versionId = await registerMinimalGraph(ctx);
 
   const job = await createJob(ctx, {
-    title: 'a nota que falhou, funcionou e falhou de novo',
+    title: 'the note that failed, worked and failed again',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1701,7 +1701,7 @@ test('t265 AT5 — a graph that declares max_consecutive_failures: 1 blocks on t
   const versionId = await registerGraphWithFailureCap(ctx, 1);
 
   const job = await createJob(ctx, {
-    title: 'a nota de uma classe que não dá segunda chance',
+    title: 'the note of a class that gives no second chance',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1723,13 +1723,13 @@ test('t265 AT5 — a job already blocked does not get a second block', async (t)
   const versionId = await registerGraphWithFailureCap(ctx, 1);
 
   const job = await createJob(ctx, {
-    title: 'a nota que já estava parada por outro motivo',
+    title: 'the note already parked for another reason',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
 
   const halted = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
-    reason: 'este nó não tem a quem perguntar, e a sessão travou',
+    reason: 'this node has nobody to ask, and the session jammed',
   });
   assert.equal(halted.status, 200);
 
@@ -1739,7 +1739,7 @@ test('t265 AT5 — a job already blocked does not get a second block', async (t)
   assert.equal(stopped.blocked, true);
   assert.equal(
     stopped.block_reason,
-    'este nó não tem a quem perguntar, e a sessão travou',
+    'this node has nobody to ask, and the session jammed',
     'the reason a person is already reading may not be overwritten by a second owner',
   );
   assert.equal((await blocks(ctx, job.id)).length, 1, 'one flag, one owner, one event');
@@ -1751,7 +1751,7 @@ test('t265 AT5 — a refused session is not counted by the cap: it blocks on its
   const versionId = await registerGraphWithFailureCap(ctx, 1);
 
   const job = await createJob(ctx, {
-    title: 'a nota cuja sessão o engine recusou',
+    title: 'the note whose session the engine refused',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1800,7 +1800,7 @@ test('t296 AT2 — quota sessions leave the job unblocked; plain failures still 
   const versionId = await registerGraphWithFailureCap(ctx, cap);
 
   const throttled = await createJob(ctx, {
-    title: 'a nota cujas sessões bateram no limite da conta',
+    title: 'the note whose sessions hit the account limit',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1820,7 +1820,7 @@ test('t296 AT2 — quota sessions leave the job unblocked; plain failures still 
   );
 
   const broken = await createJob(ctx, {
-    title: 'a nota cujas sessões falham de verdade',
+    title: 'the note whose sessions really do fail',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1881,7 +1881,7 @@ test('t283 — a job named on an unchecked version is refused with 409, and noth
   const before = countEvents(ctx);
 
   const response = await request<JobRefusal>(ctx, 'POST', '/v1/jobs', {
-    title: 'uma nota contra um grafo que ninguém conferiu',
+    title: 'a note against a graph nobody checked',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1943,7 +1943,7 @@ test('t283 — a job named on a failed version is refused with its own code', as
   });
 
   const response = await request<JobRefusal>(ctx, 'POST', '/v1/jobs', {
-    title: 'uma nota contra um grafo reprovado',
+    title: 'a note against a refused graph',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1987,12 +1987,12 @@ test('t283 — a graph_version_id that resolves to nothing is still ungated', as
   // another control plane), and the gate has nothing to read. Refusing here
   // would be inventing a verdict out of an absence.
   const job = await createJob(ctx, {
-    title: 'texto solto, como sempre foi',
+    title: 'loose text, as it always was',
     entry_node_id: 'redigir',
     graph_version_id: `sha256:${'a'.repeat(64)}`,
   });
   assert.equal(job.graph_version_id, `sha256:${'a'.repeat(64)}`);
 
-  const withNone = await createJob(ctx, { title: 'sem grafo nenhum', entry_node_id: 'redigir' });
+  const withNone = await createJob(ctx, { title: 'no graph at all', entry_node_id: 'redigir' });
   assert.equal(withNone.graph_version_id, null);
 });

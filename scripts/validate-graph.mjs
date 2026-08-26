@@ -58,7 +58,7 @@ import { readFileSync } from 'node:fs';
  * The KEYS match `packages/core/src/domain/graph.ts`'s `RULES` so the two
  * byte-for-byte siblings read the same side by side; the VALUES are what the
  * reports compare on, so they move in the same delivery on both sides or not
- * at all (t230, glossário §5.4).
+ * at all (t230, glossary §5.4).
  */
 export const RULES = Object.freeze({
   REACHABLE: 'reachable',

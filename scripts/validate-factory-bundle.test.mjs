@@ -134,8 +134,8 @@ test('AT3b — the same items in another order fail the bundle', () => {
 
 test('AT3c — the prose of an agentic item is free to differ from the check', () => {
   const bundle = editGraph(bundleCopy(), 'refine', (list) => {
-    list[0].instruction = 'Pergunta reescrita neste formato, com outras palavras.';
-    list[0].description = 'Outra redação da mesma prova.';
+    list[0].instruction = 'Same question asked in a different shape, in other words.';
+    list[0].description = 'Another wording of the very same proof.';
   });
 
   const report = validateBundle(bundle);

@@ -63,9 +63,9 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   const report = validateItems([
     {
       ref: 'a',
-      title: 'Migração 0005',
-      body: 'Colunas novas em trabalho e as duas tabelas do intake.',
-      acceptance_criteria: ['a migração roda do zero'],
+      title: 'Migration 0005',
+      body: 'New columns on the job table and the two intake tables.',
+      acceptance_criteria: ['the migration runs from scratch'],
     },
     { ref: 'b', title: 'Confirmation route' },
   ]);
@@ -75,9 +75,9 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
   assert.deepEqual(report.items, [
     {
       ref: 'a',
-      title: 'Migração 0005',
-      body: 'Colunas novas em trabalho e as duas tabelas do intake.',
-      acceptance_criteria: ['a migração roda do zero'],
+      title: 'Migration 0005',
+      body: 'New columns on the job table and the two intake tables.',
+      acceptance_criteria: ['the migration runs from scratch'],
       fields: null,
       tier: null,
       depends_on: [],

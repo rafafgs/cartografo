@@ -219,8 +219,8 @@ const ASKS = JSON.stringify([
       question: 'Does acceptance criterion 3 hold for the error path?',
       context: 'The specification only mentions the happy path.',
       options: ['It holds for both', 'Only for the happy one'],
-      recommendation: 'Vale para os dois.',
-      default: 'Vale para os dois',
+      recommendation: 'It holds for both.',
+      default: 'It holds for both',
     }),
   },
   { stream: 'stdout', text: '```' },
@@ -340,7 +340,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   assert.equal(pending.length, 1, 'exactly one question is waiting on a person');
 
   await api(baseUrl, token, 'PATCH', `/v1/input-requests/${pending[0].id}/answer`, {
-    answer: 'Vale para os dois.',
+    answer: 'It holds for both.',
     answered_by: 'rafael',
   });
 

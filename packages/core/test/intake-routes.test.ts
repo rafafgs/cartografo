@@ -225,10 +225,10 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
     execution_id: 7,
     items: [
       {
-        ref: 'migracao',
-        title: 'Migração 0005',
-        body: 'Colunas novas em trabalho e as duas tabelas do intake.',
-        acceptance_criteria: ['a migração roda do zero'],
+        ref: 'migration',
+        title: 'Migration 0005',
+        body: 'New columns on the job table and the two intake tables.',
+        acceptance_criteria: ['the migration runs from scratch'],
       },
       { ref: 'routes', title: 'Draft and confirmation routes' },
     ],
@@ -244,9 +244,9 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
   assert.equal(draft.created_jobs, null, 'nothing is created until somebody confirms');
   assert.deepEqual(
     draft.items.map((item) => item.ref),
-    ['migracao', 'routes'],
+    ['migration', 'routes'],
   );
-  assert.deepEqual(draft.items[0].acceptance_criteria, ['a migração roda do zero']);
+  assert.deepEqual(draft.items[0].acceptance_criteria, ['the migration runs from scratch']);
   assert.equal(draft.items[1].body, null);
   assert.deepEqual(draft.items[1].depends_on, []);
 

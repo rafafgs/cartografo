@@ -526,7 +526,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
     url: 'https://example.invalid/hook',
     secret: SECRET,
   });
-  recordJobCreated(ctx.db, 1, 'para esgotar');
+  recordJobCreated(ctx.db, 1, 'to exhaust the schedule');
 
   // Six attempts in total: the first one, plus one per step of the schedule.
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {

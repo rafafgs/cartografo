@@ -602,7 +602,7 @@ function skillManifest(version: string, instructions: string): Record<string, un
       {
         id: 'nota-existe',
         type: 'deterministic',
-        description: 'A nota existe e não está vazia.',
+        description: 'The note exists and is not empty.',
         command: 'test -s nota.md',
       },
     ],

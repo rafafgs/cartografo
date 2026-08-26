@@ -626,7 +626,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
     "POST",
     "/v1/jobs",
     {
-      title: "ticket com skill de terceiro",
+      title: "job carrying a third-party skill",
       entry_node_id: "implementar",
       execution_id: 9,
     },
@@ -1008,7 +1008,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     "POST",
     "/v1/jobs",
     {
-      title: "ticket despachada com credencial",
+      title: "job dispatched with a credential",
       entry_node_id: "implementar",
       execution_id: 147,
     },

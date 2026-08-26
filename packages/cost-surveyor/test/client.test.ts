@@ -110,9 +110,11 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
       },
     ],
     evidence: { lens: 'cost' as const },
-    // The candidate's keys are English since t255; what `expected_metric` CARRIES
-    // is the frozen hypothesis shape, which is why it reads Portuguese inside.
-    expected_metric: { nome: 'tokens_total do nó "redigir"', direcao: 'cai', de: 5000, para: 1000 },
+    // The candidate's keys are English since t255. What `expected_metric` CARRIES
+    // is the frozen hypothesis shape, so its KEYS stay Portuguese — `nome`,
+    // `direcao`, `de`, `para` are what the control plane validates on. The free
+    // -text `nome` VALUE is not frozen and reads English since t314.
+    expected_metric: { nome: 'tokens_total of node "redigir"', direcao: 'cai', de: 5000, para: 1000 },
   };
 
   const { calls, doFetch } = spy({ proposal: { id: 42, status: 'pendente' } });

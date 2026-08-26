@@ -252,78 +252,16 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     reason:
       'the retired filter names, as the EXPECTED output of the sweep under test',
   },
-  {
-    file: 'intake-routes.test.ts',
-    line: 228,
-    reason:
-      'user-SUBMITTED content, kept in Portuguese by t313: `docs/spec/intake.md` §2 prints this exact item to show intake accepts an item in any language, and `tests/t313-docs-specs-drift.test.mjs` AT7 asserts this file still submits it',
-  },
-  {
-    file: 'intake-routes.test.ts',
-    line: 229,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'intake-routes.test.ts',
-    line: 230,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'intake-routes.test.ts',
-    line: 231,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'intake-routes.test.ts',
-    line: 247,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'intake-routes.test.ts',
-    line: 249,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 66,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 67,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 68,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 78,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 79,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
-  {
-    file: 'domain-intake.test.ts',
-    line: 80,
-    reason:
-      "the same t313-pinned item, whose parts have to agree with the spec's §2 example",
-  },
+  // **The twelve intake pins are gone (t314).** Six on `intake-routes.test.ts`
+  // and six on `domain-intake.test.ts`, all excusing the same submitted item —
+  // `Migração 0005` and its body and criterion. Their stated reason was that
+  // `tests/t313-docs-specs-drift.test.mjs` AT7 asserted these two files still
+  // submitted it, which made one gate the reason another file could not be
+  // translated. The founder's ruling on t314 is that a circular pair like that
+  // is a defect in the pair. The fixtures read English now, AT7 dropped the
+  // cross-check, and `docs/spec/intake.md` §2 keeps its example on the reason
+  // that was always the real one: a submitted item is USER content, and D24
+  // governs the prose this project writes.
 ]);
 
 /** Any of these means the line around it is Portuguese. */

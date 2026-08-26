@@ -113,19 +113,22 @@ test('AT1 — the cost-surveyor CLI seeds its sessions with an English prompt', 
   assert.deepEqual(diacriticLines(source), [], `${FILES.cli} still carries Portuguese`);
 });
 
-test('AT2 — the frozen t255 expected_metric shape is untouched, and is the only Portuguese left', () => {
+test('AT2 — the frozen t255 expected_metric shape is untouched, and nothing around it is Portuguese', () => {
   const source = read('client');
   const lines = source.split('\n');
-  const marked = diacriticLines(source);
 
-  assert.deepEqual(
-    marked.length,
-    1,
-    `${FILES.client} should carry Portuguese on exactly one line, found ${marked.length}`,
-  );
+  // Until t314 this asserted the file carried Portuguese on EXACTLY one line —
+  // the `expected_metric` fixture — and that the line was the wire shape. Half
+  // of that was right and half was a pin: the four frozen KEYS carry no
+  // diacritic and never did, so what the detector was actually finding was the
+  // free-text `nome` VALUE, `'tokens_total do nó "redigir"'`, which is not
+  // frozen and is not a wire name. t314 translated the value. What is left to
+  // assert is the real claim, from both sides: the keys are still there, and no
+  // line of the file is Portuguese any more.
+  assert.deepEqual(diacriticLines(source), [], `${FILES.client} still carries Portuguese`);
 
-  const frozen = lines[marked[0] - 1];
-  assert.match(frozen, /expected_metric:/, 'the one Portuguese line has to be the wire shape');
+  const frozen = lines.find((line) => line.includes('expected_metric:'));
+  assert.ok(frozen !== undefined, 'the frozen hypothesis fixture is gone from this suite');
   for (const fragment of ['nome:', 'direcao:', 'de: 5000', 'para: 1000']) {
     assert.ok(
       frozen.includes(fragment),

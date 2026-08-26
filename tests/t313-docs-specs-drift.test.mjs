@@ -379,26 +379,22 @@ test('AT6 — the six corrected specs carry no Portuguese diacritic either', () 
   }
 });
 
-test('AT7 — intake.md keeps the submitted-content example its fixtures reuse', () => {
+test('AT7 — intake.md keeps its submitted-content example, on its own reason', () => {
   const document = spec('intake.md');
 
-  // Not an oversight and not a leftover: intake accepts an item in any language,
-  // and this example is the same item three test files submit as realistic user
-  // content. Translating it here would leave the spec describing a request the
-  // suite never makes. If those fixtures ever move, this exception lapses with
-  // them — which is why the fixtures are read here rather than trusted.
-  const fixtures = [
-    'packages/core/test/domain-intake.test.ts',
-    'packages/core/test/intake-routes.test.ts',
-  ];
-
-  for (const fixture of fixtures) {
-    assert.ok(
-      read(fixture).includes('Migração 0005'),
-      `${fixture} no longer submits the example this exception exists for`,
-    );
-  }
-
+  // Not an oversight and not a leftover: intake accepts an item in ANY language,
+  // and a submitted item is USER content — it is not prose this project writes,
+  // which is the whole of what D24 governs. The example is what a request in
+  // some other language actually looks like on the wire, and translating it
+  // would leave the spec illustrating the one case that needs no illustrating.
+  //
+  // **The fixture cross-check that used to be here is gone (t314).** It asserted
+  // that `packages/core/test/domain-intake.test.ts` and `intake-routes.test.ts`
+  // still submitted this exact Portuguese item, which made this gate the reason
+  // those two fixtures could not be translated — one gate holding another file
+  // in Portuguese, on a justification ("the suite makes this request") that was
+  // never the real one. t314 translated the fixtures and dropped the check. The
+  // reason above stands on its own and needs no fixture to prop it up.
   for (const kept of [
     '"Migração 0005"',
     '"Colunas novas em trabalho e as duas tabelas do intake."',

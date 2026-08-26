@@ -19,7 +19,7 @@
  *   dead link and a dead command are different failures to read.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
- * (`specs/formats/skill-manifest.md`, "Identificação" section),
+ * (`specs/formats/skill-manifest.md`, "Identification" section),
  * rather than imported from the validator: if the test reused the
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.

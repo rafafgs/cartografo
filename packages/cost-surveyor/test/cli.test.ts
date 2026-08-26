@@ -112,7 +112,7 @@ async function seedSession(
     node_id: nodeId,
     engine: 'claude-code',
     working_dir: '/tmp/t114',
-    prompt: `trabalhar o nó ${nodeId}`,
+    prompt: `work node ${nodeId}`,
   })) as { id: number };
 
   await call(baseUrl, `/v1/sessions/${session.id}/finish`, 'PATCH', {

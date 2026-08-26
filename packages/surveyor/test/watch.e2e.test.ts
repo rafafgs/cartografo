@@ -154,14 +154,14 @@ const VALID_OPERATIONS = [
     type: 'change_node_field',
     node_id: 'revisar',
     field: 'description',
-    from: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    to: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+    from: 'Checks the note against the declared theme and closes the crossing.',
+    to: 'Checks the note against the declared theme, with a three-item checklist.',
     inverse: {
       type: 'change_node_field',
       node_id: 'revisar',
       field: 'description',
-      from: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-      to: 'Confere a nota contra o tema declarado e encerra a travessia.',
+      from: 'Checks the note against the declared theme, with a three-item checklist.',
+      to: 'Checks the note against the declared theme and closes the crossing.',
     },
   },
 ];

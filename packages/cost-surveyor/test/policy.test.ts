@@ -128,7 +128,7 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
     tokenCeiling: 1000,
     tierFactor: 3,
     tierMinNodes: 3,
-    currentDescription: (graphVersionId, nodeId) => `descrição de ${nodeId} em ${graphVersionId}`,
+    currentDescription: (graphVersionId, nodeId) => `description of ${nodeId} at ${graphVersionId}`,
   });
 
   assert.ok(
@@ -144,7 +144,7 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
     assert.equal(operation.type, 'change_node_field');
     assert.equal(operation.field, 'description');
     assert.equal(operation.node_id, candidate.node_id);
-    assert.equal(operation.from, `descrição de ${candidate.node_id} em sha256:v1`);
+    assert.equal(operation.from, `description of ${candidate.node_id} at sha256:v1`);
     assert.notEqual(operation.to, operation.from, 'the recommendation has to change something');
     assert.ok(
       String(operation.to).startsWith(String(operation.from)),
@@ -245,7 +245,7 @@ test('t234 — every operation example of the spec is the operation the policy e
 
   const [candidate] = evaluatePolicies([row('implementar', 5000)], {
     tokenCeiling: 1000,
-    currentDescription: () => 'descrição atual',
+    currentDescription: () => 'current description',
   });
   assert.ok(candidate !== undefined, 'the scenario has to produce a candidate to compare against');
   const emitted = candidate.operations[0];

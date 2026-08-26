@@ -12,9 +12,10 @@
  * what a machine can read off the source with no judgement — the id, the
  * description, the body, the commands quoted inside fenced blocks — and leaves an
  * explicit placeholder everywhere a human has to decide: `input` and `output`
- * are never guessed from prose ("onde a prosa não diz, o revisor decide... nunca
- * se infere em silêncio"), `permissions` come in at the safe default and are only
- * ever widened by a recorded human decision, and `role` is the `--role` flag
+ * are never guessed from prose ("where the prose does not say, the reviewer
+ * decides... it is never inferred in silence"), `permissions` come in at the safe
+ * default and are only ever widened by a recorded human decision, and `role` is
+ * the `--role` flag
  * verbatim, because a "work" skill registered as a gate is a gate that checks
  * nothing.
  *

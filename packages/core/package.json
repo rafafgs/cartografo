@@ -1,7 +1,7 @@
 {
   "name": "cartografo",
   "version": "0.1.0",
-  "description": "Control plane do cartografo: dono do SQLite embarcado e da API REST/JSON (D1, D17).",
+  "description": "The cartografo control plane: sole owner of the embedded SQLite database and of the REST/JSON API (D1, D17).",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

@@ -2,7 +2,7 @@
   "name": "cartografo-monorepo",
   "version": "0.0.0",
   "private": true,
-  "description": "Monorepo do cartografo: control plane (packages/core), runner (packages/runner) e screen (packages/screen).",
+  "description": "The cartografo monorepo: control plane (packages/core), runner (packages/runner) and screen (packages/screen).",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

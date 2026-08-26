@@ -554,6 +554,10 @@ test('AT4 — the wire mask turns on position, and prose is not a position', () 
     "for (const key of ['de', 'para']) validate(key);",
     'edges[0].para = 1;',
     'the shape {nome, direcao: "sobe"|"cai", de, para} is frozen',
+    // The `key=value` echo a log line writes: the same two frozen names, in a
+    // position the five per-package sweeps already mask and this one did not
+    // (FR3, FR7).
+    'log(`measured ${name} = ${after} (declared de=${metric.de}, para=${metric.para})`);',
   ]) {
     assert.deepEqual(
       offendersIn(path, `${machine}\n`),
@@ -565,12 +569,113 @@ test('AT4 — the wire mask turns on position, and prose is not a position', () 
   for (const prose of [
     '// A decision written para somebody who was not in the room.',
     "const title = 'uma nota para o revisor';",
+    // The same shape as the masked case above, one word different: the mask is
+    // on the `=`, and a bare stopword beside it is still a stopword.
+    'log(`written para the reviewer (declared de=${metric.de}, para=${metric.para})`);',
   ]) {
     assert.ok(
       offendersIn(path, `${prose}\n`).length > 0,
       `the mask excused a word position, which is where Portuguese hides: ${prose}`,
     );
   }
+});
+
+/**
+ * The doc-comment quotations this reading must keep passing (AC3, FR5).
+ *
+ * Five, and each one was verified against the file that carries it rather than
+ * copied out of a ticket: the sixth the ticket first listed, `concluído`, is
+ * not in a comment at all but in a `test()` title, which is a plain string
+ * literal and therefore one of the three sentences this fix UNCOVERS.
+ *
+ * Located by searching for the term, never by line number, so that an unrelated
+ * edit above it moves the pin instead of breaking it. Both comment shapes are
+ * represented, because {@link codeLinesOf} tracks them differently: the first
+ * four sit in a block comment and the last in a line comment.
+ */
+const PINNED_QUOTATIONS = Object.freeze([
+  Object.freeze({ file: 'packages/cost-surveyor/src/policy.ts', term: '`Políticas`' }),
+  Object.freeze({ file: 'packages/cost-surveyor/src/policy.ts', term: '`topógrafo`' }),
+  Object.freeze({ file: 'packages/core/src/domain/similarity.ts', term: '`migração`' }),
+  Object.freeze({ file: 'packages/core/src/repositories/job.ts', term: '`"três"`' }),
+  Object.freeze({
+    file: 'packages/runner/scripts/spike-two-engine-traversal.mjs',
+    term: '`grafo_versao`',
+  }),
+]);
+
+test('AC3 — every quotation a doc comment marks still passes, and still exists', () => {
+  for (const { file, term } of PINNED_QUOTATIONS) {
+    const { contents } = readTracked(file);
+
+    const carrying = contents
+      .split('\n')
+      .map((line, index) => (line.includes(term) ? index + 1 : 0))
+      .filter((number) => number > 0);
+
+    assert.ok(
+      carrying.length > 0,
+      `${file} no longer carries ${term}. A pin that outlives its subject is ` +
+        'silently green, which is worse than red: fix the term or drop the entry',
+    );
+
+    const reported = offendersIn(file, contents).filter((entry) =>
+      carrying.some((number) => entry.startsWith(`${file}:${String(number)}:`)),
+    );
+
+    assert.deepEqual(
+      reported,
+      [],
+      `a term marked inside a doc comment is a name being quoted, not a word of ` +
+        `the sentence:\n${reported.join('\n')}`,
+    );
+  }
+});
+
+test('AC4 — a backtick is read as whatever the file it sits in means by it', () => {
+  const code = 'packages/runner/scripts/example.mjs';
+  const data = 'packages/runner/test/fixtures/example.jsonl';
+
+  // (a) In JavaScript a backtick opens a template literal, and a template
+  // literal is one of the two places a whole sentence lives. Read as markup it
+  // was blanked, which is the hole this ticket closes.
+  const template = 'await block(job, { reason: `travessia da execução ${plan.id} concluída` });\n';
+
+  assert.deepEqual(
+    offendersIn(code, template).map((entry) => entry.split(' — ')[0]),
+    [`${code}:1: diacritic "ç"`],
+    'a template literal is syntax, not markup: its backticks delimit a string',
+  );
+
+  // (b) In a comment the convention holds, and it has to hold in both shapes,
+  // because the five quotations pinned above are split across them.
+  assert.deepEqual(
+    offendersIn(code, '// the field `execução` is answered by the control plane.\n'),
+    [],
+    'a marked term in a line comment is a name being quoted, as it always was',
+  );
+
+  assert.deepEqual(
+    offendersIn(
+      code,
+      '/**\n * The field `execução` is answered by the control plane.\n */\n',
+    ),
+    [],
+    'a block comment carries its state across lines, the way a fence does',
+  );
+
+  // (c) In JSON a backtick is a character of the value. A run of three read as
+  // a fence opening, and everything after it on the line went unread — which is
+  // how a whole recorded conversation sat inside a fixture unseen.
+  const embedded =
+    '{"type":"item.completed","item":{"text":' +
+    '"```input-request\\n{\\"question\\":\\"Qual número deve ser reservado?\\"}\\n```"}}';
+
+  assert.deepEqual(
+    offendersIn(data, `${embedded}\n`).map((entry) => entry.split(' — ')[0]),
+    [`${data}:1: diacritic "ú"`],
+    'a backtick run inside a JSON string value is data, and never a fence',
+  );
 });
 
 test('AT5 — the exception list has exactly two entries, each with a reason', () => {

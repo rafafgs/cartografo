@@ -102,11 +102,12 @@ The proxy's refusal is a `403` with the same `{error, message}` envelope as the
 not rendered text):
 
 ```json
-{"error": "origem_nao_confiavel", "message": "this proxy only forwards writes that started on the screen's own page — …"}
+{"error": "untrusted_origin", "message": "this proxy only forwards writes that started on the screen's own page — …"}
 ```
 
-The form's refusal is the screen's ordinary `403` error page, in Portuguese like
-all the others: `origem não confiável`.
+The form's refusal is the screen's ordinary `403` error page, in English like all
+the others since `t310`. Its title is `untrusted origin`, and under it:
+`This form only accepts submissions that started on this page. Reload and try again.`
 
 What is left — no `Sec-Fetch-Site`, no `Origin` and no browser signature — is
 `curl`, a script or Node's own `fetch`, and it passes **on purpose**: the

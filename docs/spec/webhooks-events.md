@@ -313,7 +313,7 @@ curl -sS -X POST http://127.0.0.1:4317/v1/webhooks \
 And a round happening on the other side:
 
 ```
-#129 job.created {"title":"rodada de demonstração","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
+#129 job.created {"title":"demo round","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
 #130 job.transitioned {"from_node_id":null,"to_node_id":"refinar"}
 #131 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```

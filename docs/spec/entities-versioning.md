@@ -279,15 +279,15 @@ Every document that enters the database — registered directly or produced by a
 proposal — goes through the same pair of checks, which is the TypeScript port of
 `t96`'s reference validator ([`graph.md` §6](graph.md)):
 
-- `validarEstrutura` — shape and referential integrity (`{valido, erros}`);
-- `validarSoundness` — the four workflow-net rules, in the order `alcançável`,
-  `termina`, `aresta_com_condicao`, `no_com_contrato` (`{valido, violacoes}`).
+- `validateStructure` — shape and referential integrity (`{valid, errors}`);
+- `validateSoundness` — the four workflow-net rules, in the order `reachable`,
+  `terminates`, `edge_with_condition`, `node_with_contract` (`{valid, violations}`).
 
 The report returned in the `422` is exactly
 [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs)'s — the same
 codes, the same targets, the same order. The parity between the two validators is
 locked down by a test over every fixture in `schema/examples/`
-([`test/dominio-grafo.test.ts`](../../packages/core/test/dominio-grafo.test.ts)):
+([`test/domain-graph.test.ts`](../../packages/core/test/domain-graph.test.ts)):
 the script lives outside the package's publishable tree, so the duplication is
 deliberate — and watched.
 

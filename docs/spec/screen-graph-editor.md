@@ -71,8 +71,8 @@ proposal is a **hypothesis** (D15). A person dragging a node is making no
 hypothesis at all, so both fields are fixed and inert:
 
 ```json
-{ "evidencia": { "fonte": "tela-configuracao", "observacao": "edição manual via tela de configuração do grafo" },
-  "metrica_esperada": { "nome": "edição manual (sem métrica)", "direcao": "sobe", "de": 0, "para": 0 } }
+{ "evidencia": { "fonte": "graph-configuration-screen", "observacao": "manual edit through the graph configuration screen" },
+  "metrica_esperada": { "nome": "manual edit (no metric)", "direcao": "sobe", "de": 0, "para": 0 } }
 ```
 
 Inventing a number to satisfy the field would be worse than admitting the gap.
@@ -85,7 +85,7 @@ in this flow calls.
 ## 3. What cannot be changed on a node that already exists
 
 `id`, `node_type` and `engine` appear on the card, **read-only**, with the phrase
-`remova e recrie o nó para mudar isso` beside them. It is not an interface
+`remove and re-create the node to change this` beside them. It is not an interface
 limitation:
 
 - `id` and `node_type` are the node's identity. An edge, the telemetry and an old
@@ -138,19 +138,19 @@ that away exactly the way a line diff throws away a semantic diff.
 
 | Answer | What the page shows |
 |---|---|
-| `422 grafo_invalido` | One line per entry of `estrutura.erros` (the `mensagem` as it came, written by the core) and one per rule in `soundness.violacoes`, naming the node or edge in `alvo`. |
-| `422 operacao_inaplicavel` | `mensagem` as it came: it already speaks of the snapshot ("node X does not exist"). |
-| `422 versao_sem_efeito` | `mensagem` as it came: the result is a snapshot that already exists in the lineage. |
-| `409 proposta_desatualizada` | `a base do grafo mudou enquanto você editava`, plus a **Reload** button. No silent rebase: redoing the diff is the decision of whoever was editing. |
+| `422 invalid_graph` | One line per entry of `structure.errors` (the `message` as it came, written by the core) and one per rule in `soundness.violations`, naming the node or edge in `target`. |
+| `422 inapplicable_operation` | `message` as it came: it already speaks of the snapshot ("node X does not exist"). |
+| `422 version_without_effect` | `message` as it came: the result is a snapshot that already exists in the lineage. |
+| `409 stale_proposal` | `the graph base moved while you were editing`, plus a **Reload** button. No silent rebase: redoing the diff is the decision of whoever was editing. |
 
 The four soundness rules become these sentences:
 
 | Rule | Line |
 |---|---|
-| `alcançável` | `o nó "X" não é alcançável a partir do nó inicial: falta uma aresta que chegue até ele` |
-| `termina` | `do nó "X" não há caminho até um nó final: quem cair nele não conclui a travessia` |
-| `aresta_com_condicao` | `a aresta A → B está sem condição: uma transição sem rótulo é um caminho que o executor não sabe quando tomar` |
-| `no_com_contrato` | `o nó "X" não declara skill_ref e contract completos: sem contrato não há como verificar o que ele produziu` |
+| `reachable` | `node "X" is not reachable from the initial node: an edge that arrives at it is missing` |
+| `terminates` | `from node "X" there is no path to a final node: whoever lands on it never finishes the traversal` |
+| `edge_with_condition` | `edge A → B has no condition: a transition with no label is a path the executor does not know when to take` |
+| `node_with_contract` | `node "X" does not declare a complete skill_ref and contract: with no contract there is no way to verify what it produced` |
 
 The mapping lives in
 [`src/public/graph-soundness.js`](../../packages/screen/src/public/graph-soundness.js),
@@ -224,7 +224,7 @@ Every item is another ticket's declared scope, not an oversight:
   there is no semantic operation for any of them; growing the vocabulary is
   additive and waits for the rule of two consumers.
 - **Variant lineages** (D13) — this editor aims at base graphs.
-- **Concurrency beyond `409 proposta_desatualizada`** — no lock, no live
+- **Concurrency beyond `409 stale_proposal`** — no lock, no live
   collaboration, no automatic rebase.
 - **Real-time updates** (polling, websocket) — the page moves when whoever is on
   it acts, like the rest of the screen.

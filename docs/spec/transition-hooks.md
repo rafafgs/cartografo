@@ -73,7 +73,7 @@ had to be touched.
         "url": "https://meu-servico.exemplo/cartografo",
         "secret_ref": "gancho-revisao"
       },
-      "description": "Avisa o revisor de plantão quando uma nota chega para revisão."
+      "description": "Tells the on-duty reviewer when a note arrives for review."
     }
   ]
 }

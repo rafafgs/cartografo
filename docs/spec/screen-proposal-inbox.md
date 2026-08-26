@@ -36,13 +36,13 @@ of its own, with two jobs:
 The browser talks only to the origin the page came from; the screen is still one
 more HTTP client of the public API. Nothing on the core's boundary changes.
 
-**Verbatim is literal, and for a reason.** `409 proposta_nao_pendente` and
+**Verbatim is literal, and for a reason.** `409 proposal_not_pending` and
 `422 invalid_graph` are **answers** the inbox needs to show, not errors the proxy
 may rewrite into "something went wrong". The only answer the proxy invents is the
 one for a control plane that is down:
 
 ```json
-{ "error": "control_plane_indisponivel", "message": "não deu para falar com o control plane em http://127.0.0.1:4317 — rode `npx cartografo` primeiro (ou aponte outro endereço com CARTOGRAFO_URL)" }
+{ "error": "control_plane_unavailable", "message": "could not reach the control plane at http://127.0.0.1:4317 — run `npx cartografo` first (or point somewhere else with CARTOGRAFO_URL)" }
 ```
 
 `502`, with the same `error` / `message` pair every error response of the core
@@ -152,10 +152,10 @@ Every proposal offers exactly the actions valid for the status it is in:
 
 | Status | Actions | Reason required? |
 |---|---|---|
-| `pendente` | Approve, Reject | only Reject |
-| `aprovada` | Apply | no |
-| `aplicada` | Revert | yes |
-| `revertida`, `rejeitada` | — (read-only) | — |
+| `pending` | Approve, Reject | only Reject |
+| `approved` | Apply | no |
+| `applied` | Revert | yes |
+| `reverted`, `rejected` | — (read-only) | — |
 | anything else | — (read-only) | — |
 
 The last row is the one that matters most: the core owns the status vocabulary
@@ -166,8 +166,8 @@ is worse than one button fewer.
 
 Where the reason is required, the field appears with its question in a visible
 `<label>`, tied to the input by `for`/`id`
-(`Por que esta hipótese não vale a pena?`,
-`Por que a versão aplicada está sendo abandonada?`). Not a placeholder: a
+(`Why is this hypothesis not worth it?`,
+`Why is the applied version being abandoned?`). Not a placeholder: a
 placeholder is a hint, it disappears on the first character typed and it is not a
 reliable accessible name — and this is precisely the page's field that asks for a
 written justification. Pinned in
@@ -179,7 +179,7 @@ The rule lives in a pure function, `resolveActionsForStatus`
 Node even though it runs in the browser.
 
 After a successful action **only that row changes** — the new status and, on
-`aplicar`, the returned `grafo_versao`. No page reload. An unsuccessful action
+`apply`, the returned `graph_version`. No page reload. An unsuccessful action
 shows `error: message` on the row itself; the whole list only reloads on the
 "Refresh" button (there is no polling and no websocket at this stage).
 
@@ -196,22 +196,25 @@ vocabulary of §3 of
 
 | Operation | Line |
 |---|---|
-| `add_node` | `+ nó "red_team" (tipo portao)` |
-| `remove_node` | `- nó "revisar_manual"` |
-| `add_edge` | `+ aresta testar → red_team (condição: aprovado)` |
-| `remove_edge` | `- aresta testar → implantar` |
-| `change_node_field` | `~ nó "implementar": campo "papel" de "fazer" para "conferir"` |
-| an unknown type | `? operação de tipo desconhecido ("mover_no")` |
-| a malformed entry | `? operação malformada` |
-| an empty or absent `operacoes` | `nenhuma alteração` |
+| `add_node` | `+ node "red_team" (type gate)` |
+| `remove_node` | `- node "manual_review"` |
+| `add_edge` | `+ edge test → red_team (condition: approved)` |
+| `remove_edge` | `- edge test → deploy` |
+| `change_node_field` | `~ node "implement": field "role" from "do" to "check"` |
+| an unknown type | `? operation of unknown type ("move_node")` |
+| a malformed entry | `? malformed operation` |
+| an empty or absent `operations` | `no change` |
 
-An object value (a whole `contrato` in a `change_node_field`) comes out as
+An object value (a whole `contract` in a `change_node_field`) comes out as
 compact JSON truncated at 60 characters: it is the **value** that changes, not
 the operation, and hiding it would make `change_node_field` impossible to judge.
 
 The type's name is what the operation carries on the wire (English,
-`glossario-wire.md` §3); the rendered line is still in Portuguese, word for word.
-What moved was the key, not the text a person reads before approving.
+`glossario-wire.md` §3), and the rendered line went English later, with the rest
+of the screen's copy (`t310`). The two halves moved for unrelated reasons — one
+is a wire format, the other is the sentence a person approves a change by — and
+the one thing still passed through untranslated is an edge's `condition` VALUE,
+which is free text somebody typed into the graph document.
 
 Nothing here throws. The operations come from a topografo this screen has never
 seen, and a strange line is a bad render — an exception is the whole page blank.

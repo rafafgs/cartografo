@@ -277,26 +277,28 @@ the complete flow runs against the class registered from factory bundle 1, and
 the list of versions before and after is compared whole. Also run by hand against
 the factory graph, with no edit at all to the document — the transcript below was
 re-recorded in a fresh run on 2026-08-17, against the recreated database D20 asks
-for, and that is why it speaks English from beginning to end:
+for. Its labels are the operator's own; its values are what that run returned,
+kept verbatim, which is why the item refs and the entry node still read as the
+bundle spelled them that day (`refinar` is `refine` now):
 
 ```
 POST /v1/graphs -> 201
 POST /v1/intake -> 201 status: pending
 POST /v1/intake/:id/confirmations -> 201
-trabalhos criados: {"migracao":1,"dominio":2,"rotas":3}
-nós de entrada: refinar, refinar, refinar
-graph_version_id dos trabalhos: sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f
+jobs created: {"migracao":1,"dominio":2,"rotas":3}
+entry nodes: refinar, refinar, refinar
+graph_version_id of the jobs: sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f
 
-=== GET /v1/graphs/software-development/versions (ANTES e DEPOIS) ===
+=== GET /v1/graphs/software-development/versions (BEFORE and AFTER) ===
 {"versions":[{"id":"sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f",
               "graph_id":"software-development","parent_version":null,
               "source":"manual","proposal_id":null,
               "created_at":"2026-08-17T11:12:37.705Z"}]}
 
-mesma lista? true
+same list? true
 
-eventos do trabalho "rotas": job.created, job.dependency_declared
-data da dependência: {"depends_on_job_id":2}
+events of job "rotas": job.created, job.dependency_declared
+payload of the dependency: {"depends_on_job_id":2}
 ```
 
 No route of this layer calls `registerBaseGraph`, `insertVersion` or

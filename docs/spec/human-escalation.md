@@ -154,12 +154,12 @@ What crosses from one session to the next is the **prompt**. For every question
 of that job that has already been answered, the dispatch assembles:
 
 ```
-## O que você já perguntou, e o que responderam
+## What you already asked, and what came back
 
-Isto já foi decidido. Não pergunte de novo: siga a resposta.
+This is decided. Do not ask again: follow the answer.
 
-- **Você perguntou:** <the question>
-  **<who> respondeu:** <the answer>
+- **You asked:** <the question>
+  **<who> replied:** <the answer>
 ```
 
 Without that block, the redispatched session trips over the same doubt and asks

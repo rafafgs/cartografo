@@ -280,10 +280,16 @@ test('AT5 — screen-graph-editor.md corrects its copy and keeps its frozen keys
     'the spec still quotes the retired phrase',
   );
 
-  assert.ok(document.includes('`stale_proposal`'), 'the 409 the editor really handles');
+  // The answer table spells a row as `<status> <code>` in one span, so the code
+  // is asserted inside its own row rather than as a span of its own.
+  const staleRow = document
+    .split('\n')
+    .find((line) => line.startsWith('| `409 ') && line.includes('stale_proposal'));
+
+  assert.ok(staleRow !== undefined, 'no `409` row of the answer table names `stale_proposal`');
   assert.ok(
-    document.includes('`the graph base moved while you were editing`'),
-    'the line the page really shows on a stale base',
+    staleRow.includes('`the graph base moved while you were editing`'),
+    `the 409 row does not carry the line the page really shows:\n${staleRow}`,
   );
   for (const retired of ['proposta_desatualizada', 'a base do grafo mudou enquanto você editava']) {
     assert.equal(document.includes(retired), false, `the spec still quotes \`${retired}\``);

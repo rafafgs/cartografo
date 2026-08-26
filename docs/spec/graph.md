@@ -513,7 +513,7 @@ Every verification is of one of two types:
 ```
 ```json
 { "tipo": "agentico",
-  "instrucao": "Rode o comportamento e confira cada critério de aceite. Anexe a saída.",
+  "instrucao": "Run the behaviour and check every acceptance criterion. Attach the output.",
   "evidencia_obrigatoria": true,
   "descricao": "…" }
 ```

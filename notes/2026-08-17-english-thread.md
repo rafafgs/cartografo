@@ -18,7 +18,7 @@ This note closes the series.
 
 | Surface | What changed | Ficha |
 |---|---|---|
-| The glossary | The single map, `docs/spec/glossario-wire.md`: one row per term, with the file it lives in today | t213 |
+| The glossary | The single map, `docs/spec/glossary-wire.md`: one row per term, with the file it lives in today | t213 |
 | The API and its errors | The JSON's fields and query parameters, the two error envelopes converged, the refusal codes | t226 |
 | Events | Type names, envelope keys, entity and actor types, `data` keys, and the schemas of `especificacoes/eventos/schemas/` renamed alongside | t227 |
 | Proposal operations | `add_node`, `remove_edge`, `change_node_field` and the keys they carry | t228 |
@@ -74,7 +74,7 @@ next run.
   queries.
 - `spec-database-citations.test.ts` — the specifications' schema citations,
   resolved against a database the migrations really build.
-- `glossario-wire-docs.test.ts` (t231) — the specifications' event, route and
+- `glossary-wire-docs.test.ts` (t231) — the specifications' event, route and
   flag citations, and the links to `especificacoes/eventos/schemas/`.
 
 The last one is the only one that reads Markdown, and its rule is narrow on

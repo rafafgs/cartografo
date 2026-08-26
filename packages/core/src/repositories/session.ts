@@ -17,7 +17,7 @@
  * between the two, which renamed nothing a client could see.
  *
  * Two columns stayed behind, and had to: `transcricao_truncada` and
- * `transcricao_tamanho_original` have no row in `docs/spec/glossario-wire.md`
+ * `transcricao_tamanho_original` have no row in `docs/spec/glossary-wire.md`
  * §4.2 — it registers `transcricao` and neither of its siblings — so moving them
  * is a migration, not a rename. They keep their spelling on {@link SessionRow},
  * and {@link toSession} builds `transcript_truncated` and
@@ -156,7 +156,7 @@ interface SessionRow
  *
  * Nothing is aliased any more, the two residual names least of all: an alias
  * over `transcricao_truncada` would invent a schema spelling
- * `glossario-wire.md` §4.2 does not carry, which is what the glossary exists to
+ * `glossary-wire.md` §4.2 does not carry, which is what the glossary exists to
  * prevent. {@link toSession} builds the two English names instead.
  */
 const COLUMNS = `

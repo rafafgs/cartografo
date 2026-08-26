@@ -597,7 +597,7 @@ test('t208 — USAGE names --declared-runner-cap and no longer promises simultan
   );
 
   // ...and the wire field it feeds is named the way the wire spells it since
-  // t226 (`docs/spec/glossario-wire.md` §1.5). The help text is where somebody
+  // t226 (`docs/spec/glossary-wire.md` §1.5). The help text is where somebody
   // goes to find out what the server is being told, so a name it retired sends
   // them looking for a field no route has (t254, FR4).
   assert.match(USAGE, /runner_cap/, 'the help names the body field the flag fills');

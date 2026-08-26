@@ -16,7 +16,7 @@
  *
  * The operation keys (`type`, `node`, `node_id`, `edge`, `field`, `from`, `to`,
  * `inverse`) are the wire format the core owns, and they speak
- * `docs/spec/glossario-wire.md` §3 since D20's third child (t228). This page
+ * `docs/spec/glossary-wire.md` §3 since D20's third child (t228). This page
  * mirrors that vocabulary exactly: what it builds goes to `POST /v1/proposals`
  * untouched, so a mirror one word out of step is a browser that posts 400s.
  */

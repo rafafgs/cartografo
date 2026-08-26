@@ -24,7 +24,7 @@
  *   list. A runner dispatches sessions; it has no business registering keys.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1): the path segment is `:name`, the body
+ * (`docs/spec/glossary-wire.md` §1): the path segment is `:name`, the body
  * carries `value`, and what comes back is `{name, created_at, revoked_at}` —
  * what `repositories/hook-secrets.ts` returns, handed back untouched (t289).
  * There used to be a `toHookSecret` wrapper around every read there, translating

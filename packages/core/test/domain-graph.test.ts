@@ -11,7 +11,7 @@
  * That parity is why the report keys, codes and rule labels move in LOCKSTEP:
  * this test compares the two reports with `deepEqual`, so a key renamed on one
  * side and not the other fails here on the next run. D20's fifth child (t230)
- * moved them to English out of `docs/spec/glossario-wire.md` §5.3/5.4, both
+ * moved them to English out of `docs/spec/glossary-wire.md` §5.3/5.4, both
  * files in the same delivery — which is why the fixtures below are read with
  * `nodes`/`edges` and the report with `errors`/`violations`, one vocabulary
  * from the document all the way out to the 422.

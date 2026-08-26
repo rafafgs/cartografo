@@ -14,7 +14,7 @@
  * judgements is exactly what `domain-operations.test.ts` already warns about.
  *
  * The emitted vocabulary is English since D20's third child (t228): every
- * operation comes out spelling `docs/spec/glossario-wire.md` §3 — `type`,
+ * operation comes out spelling `docs/spec/glossary-wire.md` §3 — `type`,
  * `node`, `node_id`, `edge`, `field`, `from`, `to`, `inverse` — in the same
  * fixed emission order as before.
  */

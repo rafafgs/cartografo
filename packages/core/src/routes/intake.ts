@@ -17,7 +17,7 @@
  * dispatches no session and knows no engine.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1), and since t227 so is the one exception
+ * (`docs/spec/glossary-wire.md` §1), and since t227 so is the one exception
  * that survived it: `POST /intake/:id/confirmations` writes EVENTS through
  * `confirmDraft`, so its body carries `actor` and its `type`/`ref` — the event
  * envelope, D20's second child.

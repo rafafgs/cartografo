@@ -36,7 +36,7 @@
  * sorts keys, not array positions.
  *
  * The whole emitted vocabulary is English since D20's third child (t228): the
- * type names and the operation's own keys speak `docs/spec/glossario-wire.md`
+ * type names and the operation's own keys speak `docs/spec/glossary-wire.md`
  * §3, and the document fragments the operations carry had already moved with
  * t178. See the note at the top of `domain/operations.ts`.
  */

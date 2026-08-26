@@ -116,7 +116,7 @@ without citing an id is an opinion, not evidence. `by_node` travels with it so
 that "why THIS node?" is answerable without running anything again.
 
 The keys above have been English since `t264`
-([`glossario-wire.md` §5.6](glossario-wire.md)): until then the flow lens was the
+([`glossary-wire.md` §5.6](glossary-wire.md)): until then the flow lens was the
 only one still writing Portuguese inside `evidence`, and the cost lens had
 already migrated in `t255`. A hypothesis opened BEFORE that ticket names
 `tempo_agente_ms:<no>`, and `measureForExpectedMetric` answers `null` for it —

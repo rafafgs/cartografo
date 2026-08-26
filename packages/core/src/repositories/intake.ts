@@ -66,7 +66,7 @@ export interface Draft {
    * and the note that used to sit here — that no child of D20 renames them and
    * the glossary maps none of them — is what t255 removed: they are fields of the
    * JSON of `POST /v1/intake`, which is exactly what D20's text migrates. They
-   * are mapped in `glossario-wire.md` §1.1 and §1.4 now.
+   * are mapped in `glossary-wire.md` §1.1 and §1.4 now.
    */
   items: DraftItem[];
   status: DraftStatus;
@@ -91,7 +91,7 @@ const COLUMNS = `
 `;
 
 /**
- * The three statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
+ * The three statuses a `?status=` filter may name (`glossary-wire.md` §1.6).
  *
  * `migrations/0006_intake.sql` holds them in a `CHECK`, and since D20's fifth
  * child (t235) that `CHECK` is already English — so the list validates a filter

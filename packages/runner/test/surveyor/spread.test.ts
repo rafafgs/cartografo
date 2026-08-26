@@ -166,7 +166,7 @@ test('t239 AT4 — the command line of measure-executions takes one metric and a
  * for the same reason: this is an operational command a person types by hand,
  * so its usage and its refusals are user-facing text, not wire vocabulary.
  * `execution_id` and `metric` are what the flow lens already spells in English
- * (`docs/spec/glossario-wire.md` §5.6, `outcome.ts:MEASURES`).
+ * (`docs/spec/glossary-wire.md` §5.6, `outcome.ts:MEASURES`).
  */
 test('t239 AT5 — the usage and the refusals of measure-executions are in English', async () => {
   const { MEASURE_USAGE, parseMeasureArguments } = await loadSpread();

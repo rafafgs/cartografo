@@ -44,7 +44,7 @@
  * process, and can die without the control plane noticing — that is the proof,
  * and not just the promise, that it is one more client of the public API.
  *
- * The route paths are English since t230, out of `docs/spec/glossario-wire.md`
+ * The route paths are English since t230, out of `docs/spec/glossary-wire.md`
  * §5.1. They used to be exempt for being the product's own URL surface rather
  * than an identifier (t133, AC3); D20 names `/quadro` and `/perguntas` among
  * what it moves, which supersedes that exemption for exactly these six paths.

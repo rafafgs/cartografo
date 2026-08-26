@@ -1,11 +1,11 @@
 /**
  * D24 gate: the wire glossary's PROSE is English, its data cells are not (t281).
  *
- * `docs/spec/glossario-wire.md` is the one document of D24's series that could
+ * `docs/spec/glossary-wire.md` is the one document of D24's series that could
  * not simply be translated. It is a map of RETIRED names, so its `today`/
  * `becomes` cells have to keep citing the Portuguese spellings forever — that is
  * the historical record the five per-package wire sweeps check code against, and
- * `glossario-wire-docs.test.ts` excludes the file from its own citation sweep for
+ * `glossary-wire-docs.test.ts` excludes the file from its own citation sweep for
  * exactly that reason. Everything AROUND those cells is ordinary prose, and D24
  * moves it to English like every other document.
  *
@@ -31,7 +31,7 @@
  * What is left is titles, paragraphs and list items — the positions where the
  * document is talking rather than citing, and the only positions D24 moves.
  *
- * Complement, not substitute, of `glossario-wire.test.ts`: that one guards the
+ * Complement, not substitute, of `glossary-wire.test.ts`: that one guards the
  * document's STRUCTURE (one glossary table per section, no colliding
  * replacements, the English header row of FR2) and never reads a sentence.
  */
@@ -43,7 +43,7 @@ import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossary-wire.md');
 const GLOSSARY_LABEL = path.relative(REPO_ROOT, GLOSSARY);
 
 /** A Portuguese diacritic. No English word in this repository carries one. */

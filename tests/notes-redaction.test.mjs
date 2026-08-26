@@ -231,6 +231,15 @@ export const TOUCHABLE = Object.freeze([
   // `tests/no-portuguese-document-tree.test.mjs` for why the matcher was not
   // widened instead.
   'notes/2026-08-25-t309-closing-note.md',
+  // t326: the five notes whose citation of the wire glossary had to move with
+  // the file, the same mechanical reason as the t121 block above. None was
+  // redacted by t307, and t326 changed nothing in them but the one filename
+  // inside a path citation — the document itself was renamed, not edited.
+  'notes/2026-08-17-english-thread.md',
+  'notes/2026-08-25-t296-closing-note.md',
+  'notes/2026-08-25-t300-closing-note.md',
+  'notes/2026-08-26-t311-closing-note.md',
+  'notes/2026-08-26-t316-closing-note.md',
 ]);
 
 /** Every `.md` under `notes/`, repo-relative, in directory order. */

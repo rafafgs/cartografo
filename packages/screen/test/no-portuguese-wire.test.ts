@@ -3,7 +3,7 @@
  *
  * Port of `packages/core/test/no-portuguese-wire.test.ts`, the same way
  * `no-portuguese-identifiers.test.ts` is a port of the core's — one gate per
- * package, each reading the rows of `docs/spec/glossario-wire.md` that belong to
+ * package, each reading the rows of `docs/spec/glossary-wire.md` that belong to
  * it, instead of one file reaching across package boundaries.
  *
  * The rows that belong here are `surface = routes-cli-report`, and they land
@@ -170,7 +170,7 @@ export function reportHits(source: string, terms: readonly GlossaryTerm[]): stri
   return hits.sort();
 }
 
-test('t230 — the screen serves the English paths of glossario-wire.md §5.1, and nothing else', () => {
+test('t230 — the screen serves the English paths of glossary-wire.md §5.1, and nothing else', () => {
   const terms = routeTerms();
 
   const hits = ROUTE_FILES.flatMap((relative) => {
@@ -184,11 +184,11 @@ test('t230 — the screen serves the English paths of glossario-wire.md §5.1, a
   assert.deepEqual(
     hits,
     [],
-    `Portuguese route paths still served (D20, glossario-wire.md §5.1):\n${hits.join('\n')}`,
+    `Portuguese route paths still served (D20, glossary-wire.md §5.1):\n${hits.join('\n')}`,
   );
 });
 
-test('t230 — the soundness renderer reads the English report of glossario-wire.md §5.3/5.4', () => {
+test('t230 — the soundness renderer reads the English report of glossary-wire.md §5.3/5.4', () => {
   const full = path.join(PACKAGE_ROOT, REPORT_FILE);
   assert.ok(existsSync(full), `artifact does not exist: ${REPORT_FILE}`);
 
@@ -199,7 +199,7 @@ test('t230 — the soundness renderer reads the English report of glossario-wire
   assert.deepEqual(
     hits,
     [],
-    `Portuguese report vocabulary still read (D20, glossario-wire.md §5.3/5.4):\n${hits.join('\n')}`,
+    `Portuguese report vocabulary still read (D20, glossary-wire.md §5.3/5.4):\n${hits.join('\n')}`,
   );
 });
 

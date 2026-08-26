@@ -11,7 +11,7 @@
  * is forbidden by AC1. Therefore every candidate is advisory — a recommendation
  * appended to the node's `description`, with the real numbers in `evidence`.
  *
- * The candidate's own keys are English since t255 (glossario-wire.md §5.5), and
+ * The candidate's own keys are English since t255 (glossary-wire.md §5.5), and
  * its `expected_metric` is the hypothesis shape `POST /proposals/:id/outcome`
  * reads — the two halves of what the v2 review found still Portuguese and still
  * unclosable here.

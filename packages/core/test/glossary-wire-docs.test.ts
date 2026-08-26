@@ -39,7 +39,7 @@
  *
  * `README.md` is out of the scanned set: its upgrade note quotes the retired
  * spelling next to the one that replaced it, on purpose, for a reader coming
- * from a version before t235. `docs/spec/glossario-wire.md` is out for the same
+ * from a version before t235. `docs/spec/glossary-wire.md` is out for the same
  * reason squared — a map of retired names is written in retired names.
  *
  * ## The second sweep: links that go nowhere
@@ -60,7 +60,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /** The one mapping document, relative to the repository root. */
-const GLOSSARY = path.join('docs', 'spec', 'glossario-wire.md');
+const GLOSSARY = path.join('docs', 'spec', 'glossary-wire.md');
 
 /** Documents that quote the retired vocabulary on purpose; see the header. */
 const NOT_SWEPT = ['README.md', GLOSSARY];
@@ -338,7 +338,7 @@ test('FR1 — every wire name the specifications quote is the one the code publi
   assert.deepEqual(
     hits,
     [],
-    `a specification still cites the pre-D20 wire (glossario-wire.md §2.1/§5.1/§5.2):\n${hits.join('\n')}`,
+    `a specification still cites the pre-D20 wire (glossary-wire.md §2.1/§5.1/§5.2):\n${hits.join('\n')}`,
   );
 });
 

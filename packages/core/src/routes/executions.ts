@@ -15,7 +15,7 @@
  * derived from that event at read time (`repositories/job.ts`), never stored.
  *
  * The response field names are English since t226
- * (`docs/spec/glossario-wire.md` §1), and since t286 they are also the names the
+ * (`docs/spec/glossary-wire.md` §1), and since t286 they are also the names the
  * two repositories hand back — nothing here translates on the way out. The
  * EVENTS inside `events` keep their own envelope, which is the taxonomy's and
  * therefore D20's second child.

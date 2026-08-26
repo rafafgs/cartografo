@@ -22,7 +22,7 @@
  * (`src/routes/events.ts:104-120`). One catalogue, two consumers.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1): the body declares `project_id`, `url`,
+ * (`docs/spec/glossary-wire.md` §1): the body declares `project_id`, `url`,
  * `secret` and `filter_types`, and since t290 the columns, the repository's
  * `NewSubscription` and those four words are all the same four words.
  *

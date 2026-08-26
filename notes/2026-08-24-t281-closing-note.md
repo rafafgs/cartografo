@@ -1,6 +1,6 @@
 # t281 closing note — the wire glossary in English
 
-**Subject:** `docs/spec/glossario-wire.md` and the files that parse it, the
+**Subject:** `docs/spec/glossary-wire.md` and the files that parse it, the
 first and narrowest of D24's series 2/3, split from the original t281 on
 2026-08-24.
 **Commits:** `3735fc6` (tests, red at 3), `fb284e6` (translation and
@@ -71,11 +71,11 @@ the translation falsified.
 | File | Outcome | Why |
 |---|---|---|
 | `packages/test-support/src/glossary.ts` | edited | `HEADER_CELL` `'hoje'` → `'today'`, the literal section mode uses to drop the table's own header row; four doc comments quoting `superfície`, `hoje`, the `### 5.2` heading and the ` / ` convention sentence |
-| `packages/core/test/glossario-wire.test.ts` | edited | `TABLE_MARKER` `'superficie'` → `'surface'`, three header-row fixtures, two doc comments |
+| `packages/core/test/glossary-wire.test.ts` | edited | `TABLE_MARKER` `'superficie'` → `'surface'`, three header-row fixtures, two doc comments |
 | `packages/core/test/glossary-terms.ts` | edited (comments only) | Parsing re-read, not assumed: it selects rows by surface tag and by section number, so a header row never reaches `termOf` and no code change was needed. Three doc comments moved |
-| `packages/core/test/glossario-wire-docs.test.ts` | edited (comment only) | One doc comment quoting the `### 2.1 Nomes de tipo` heading. Its selection is by surface AND section, so header rows never matched; its exclusion of this document from its own citation sweep is still correct and untouched |
+| `packages/core/test/glossary-wire-docs.test.ts` | edited (comment only) | One doc comment quoting the `### 2.1 Nomes de tipo` heading. Its selection is by surface AND section, so header rows never matched; its exclusion of this document from its own citation sweep is still correct and untouched |
 | `packages/core/test/no-portuguese-wire.test.ts` | edited (comments only) | Quoted the closing section's Portuguese title, `superfície = …` twice, and a `hoje`/`vira` pair in an allow-list comment |
-| `packages/runner/test/no-portuguese-wire.test.ts` | edited (comments only) | `superfície = …` twice, plus two `glossario-wire.md:791` citations (see below) |
+| `packages/runner/test/no-portuguese-wire.test.ts` | edited (comments only) | `superfície = …` twice, plus two `glossary-wire.md:791` citations (see below) |
 | `packages/tela/test/no-portuguese-wire.test.ts` | edited (comment only) | One `superfície = routes-cli-report` |
 | `packages/topografo/test/no-portuguese-wire.test.ts` | edited (comment only) | One `"hoje → vira"` |
 | `packages/topografo-custo/test/no-portuguese-wire.test.ts` | confirmed unaffected | Reads §5.2 and §5.5 by section number, never by column name, and quotes nothing of this document's prose. Its `"flags de CLI"` quote is of **D20** in `DECISIONS.md`, which is still Portuguese and belongs to a sibling ticket |
@@ -86,11 +86,11 @@ the translation falsified.
 | File | Outcome | Why |
 |---|---|---|
 | `packages/core/test/spec-database-citations.test.ts` | edited (comments only) | A third independent reader of the document, missing from the ticket's list. Its parser filters `cells[0] === 'events'`, so header rows never reached it, but three doc comments described the `hoje`/`vira` cells by name |
-| `packages/runner/scripts/close-surveyor-outcome.mjs` | edited (comment only) | Cited `docs/spec/glossario-wire.md:791` — a production script, not a test, and the only non-test file in the audit |
+| `packages/runner/scripts/close-surveyor-outcome.mjs` | edited (comment only) | Cited `docs/spec/glossary-wire.md:791` — a production script, not a test, and the only non-test file in the audit |
 
 ## The `:791` citations, and why they were re-pointed and not deleted
 
-Three sites cited `glossario-wire.md:791`: the two runner files above and a
+Three sites cited `glossary-wire.md:791`: the two runner files above and a
 second site inside `packages/runner/test/no-portuguese-wire.test.ts`. FR9 says
 to check whether a citation is true before rewriting it, and this one was: line
 791 was the §5.6 bullet freezing `{nome, direcao, de, para}` as
@@ -127,7 +127,7 @@ Four, all recorded rather than quietly decided:
    being translated by a sibling ticket anyway. **This is the one place a
    reviewer might reasonably want the opposite call.**
 4. **The D18 sentence that was left standing.** The paragraph about
-   `glossario-wire-docs.test.ts` ends "the prose around them stays Portuguese,
+   `glossary-wire-docs.test.ts` ends "the prose around them stays Portuguese,
    which is what D18 decided". That was checked against the tree before it was
    rewritten, per FR9, and it is still literally true: every specification that
    gate sweeps is still Portuguese today. It was translated word for word and
@@ -149,7 +149,7 @@ D18. Verified to bite on the pre-translation text and to pass on the new one.
 ## Gotchas
 
 - **`TABLE_MARKER` is not one check among six — it is the switch for all of
-  them.** `glossario-wire.test.ts` recognizes a glossary table by its first
+  them.** `glossary-wire.test.ts` recognizes a glossary table by its first
   header cell. Under a mismatched marker the file parses ZERO tables and every
   structural assertion passes vacuously. That is why the D24 test asserts the
   marker before it asserts anything about the document, and why the co-change

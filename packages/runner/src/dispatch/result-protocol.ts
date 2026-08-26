@@ -43,7 +43,7 @@
  * fence, `ROUTE_LABEL_KEY` in `packages/core/src/domain/graph.ts` owns the key,
  * and `session.ts` reads it back to route the work. Renaming either is a
  * wire-format migration across every package, every factory bundle and
- * `docs/spec/graph.md` — tracked in `docs/spec/glossario-wire.md`, and not
+ * `docs/spec/graph.md` — tracked in `docs/spec/glossary-wire.md`, and not
  * something a translation gets to do on the way past.
  */
 

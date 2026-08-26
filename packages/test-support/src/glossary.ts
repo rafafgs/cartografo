@@ -1,5 +1,5 @@
 /**
- * The one parser of `docs/spec/glossario-wire.md`'s tables (t287, FR1).
+ * The one parser of `docs/spec/glossary-wire.md`'s tables (t287, FR1).
  *
  * Five per-package wire gates ask the same document the same question — which
  * Portuguese terms does my surface still owe a rename? — and until t287 each of
@@ -63,7 +63,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /** The one mapping document every wire gate reads. */
-export const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+export const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossary-wire.md');
 
 /** `### 5.2 Command line` → `5.2`. */
 const SECTION_HEADING = /^#{2,4}\s+(\d+(?:\.\d+)*)\s/;

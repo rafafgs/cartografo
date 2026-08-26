@@ -38,7 +38,7 @@ import { StreamDeniedError } from './stream.ts';
  * Usage text. The same on `--help` (stdout) and on a usage error (stderr).
  *
  * English from the first line, and with nothing to migrate: `watch`, `--lens`
- * and `--dry-run` were never spelled any other way, so `docs/spec/glossario-wire.md`
+ * and `--dry-run` were never spelled any other way, so `docs/spec/glossary-wire.md`
  * gains no row for this command (D20).
  */
 export const USAGE = `usage: cartografo-surveyor watch --url <url> --token <token> [options]

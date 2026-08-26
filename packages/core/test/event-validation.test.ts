@@ -9,7 +9,7 @@
  * drift the header of that file exists to prevent.
  *
  * Since t227 the event-type strings, the envelope keys and the payload keys are
- * the English ones of `docs/spec/glossario-wire.md` §2 — and the last block of
+ * the English ones of `docs/spec/glossary-wire.md` §2 — and the last block of
  * this file is the gate on that: the old Portuguese spellings are not accepted
  * "as well", they are unknown.
  */

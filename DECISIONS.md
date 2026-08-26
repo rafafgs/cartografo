@@ -196,7 +196,7 @@ tables and columns, the screen routes (`/quadro`, `/perguntas`…), the CLI flag
 `soundness.violacoes`).
 
 Decision: all of it migrates to English, with a glossary on the record
-(`docs/spec/glossario-wire.md`), **before the repository opens (D7)** and before
+(`docs/spec/glossary-wire.md`), **before the repository opens (D7)** and before
 the tickets that touch those surfaces (t196, t197, t200), so that the work is not
 done twice. Existing development databases are **recreated** (there is no
 production data; a data migration only if data worth keeping shows up).

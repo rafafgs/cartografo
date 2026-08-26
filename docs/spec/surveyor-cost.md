@@ -170,7 +170,7 @@ by design (D15):
 ```
 
 The candidate's keys have spoken English since t255
-([the glossary](glossario-wire.md) §5.5); the CONTENT of `expected_metric` is
+([the glossary](glossary-wire.md) §5.5); the CONTENT of `expected_metric` is
 still `{nome, direcao, de, para}` because that is the frozen hypothesis format of
 [`domain/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) — and that
 is exactly why it is here. Until t255 this lens invented a metric of its own — a

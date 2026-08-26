@@ -11,7 +11,7 @@
  *
  * That parity is also the rule for the report's own vocabulary. This report IS
  * the wire format of the 422, and t230 — the fifth child of D20 — moved its
- * keys, codes and rule labels to the English of `docs/spec/glossario-wire.md`
+ * keys, codes and rule labels to the English of `docs/spec/glossary-wire.md`
  * §5.3/5.4, in the same delivery as the reference validator. A key renamed here
  * and not there is exactly what `deepEqual` catches.
  *

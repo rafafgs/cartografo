@@ -16,7 +16,7 @@
  * name in the error.
  *
  * The field names below are the control plane's wire format — English since
- * t226 (`docs/spec/glossario-wire.md` §1). This file MIRRORS that format, it
+ * t226 (`docs/spec/glossary-wire.md` §1). This file MIRRORS that format, it
  * does not own it: the interfaces are declared here so a missing field breaks
  * at the boundary, with the route name in the error, and they move whenever the
  * API moves.

@@ -217,16 +217,16 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
       'the RETIRED entity type, asserted to be REFUSED; translating it would refuse a name no envelope ever carried',
   },
   {
-    file: 'glossario-wire-docs.test.ts',
+    file: 'glossary-wire-docs.test.ts',
     line: 383,
     reason:
       'a retired name in prose position, undelimited: the one shape that citation sweep has to ignore, and this line is its evidence',
   },
   {
-    file: 'glossario-wire.test.ts',
+    file: 'glossary-wire.test.ts',
     line: 123,
     reason:
-      'the retired header cells of `docs/spec/glossario-wire.md`; a map of retired names is written in retired names',
+      'the retired header cells of `docs/spec/glossary-wire.md`; a map of retired names is written in retired names',
   },
   {
     file: 'glossary-terms.ts',
@@ -689,8 +689,8 @@ const WIRE_KEYS = new RegExp(
 /**
  * The pre-D20/D24 spellings, masked only where the line is QUOTING one.
  *
- * `glossario-wire.test.ts`, `glossario-wire-docs.test.ts` and
- * `glossary-terms.ts` are gates over `docs/spec/glossario-wire.md`, which is a
+ * `glossary-wire.test.ts`, `glossary-wire-docs.test.ts` and
+ * `glossary-terms.ts` are gates over `docs/spec/glossary-wire.md`, which is a
  * map of RETIRED names — and a map of retired names is written in retired
  * names. Their term lists, their fixture glossary rows and their assertion
  * messages all spell `trabalho`, `grafo`, `pergunta` and `codigo` because that

@@ -73,7 +73,7 @@
  * which is a differently shaped problem, and it is not what t198 hit.
  *
  * Since t226 every field and every status/reason value on this wire is English
- * (`docs/spec/glossario-wire.md` §1.5/§1.6), and since t235 so is the column
+ * (`docs/spec/glossary-wire.md` §1.5/§1.6), and since t235 so is the column
  * behind them. What was still in between was `repositories/leases.ts`'s
  * `toLease`/`toGrantResult`, which renamed KEYS on the way out and nothing else;
  * t290 deleted both, so what this file returns is what the repository handed it.

@@ -210,7 +210,7 @@ compact JSON truncated at 60 characters: it is the **value** that changes, not
 the operation, and hiding it would make `change_node_field` impossible to judge.
 
 The type's name is what the operation carries on the wire (English,
-`glossario-wire.md` §3), and the rendered line went English later, with the rest
+`glossary-wire.md` §3), and the rendered line went English later, with the rest
 of the screen's copy (`t310`). The two halves moved for unrelated reasons — one
 is a wire format, the other is the sentence a person approves a change by — and
 the one thing still passed through untranslated is an edge's `condition` VALUE,

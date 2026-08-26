@@ -28,7 +28,7 @@
  *
  * English per D18, measure names included since t264: they are payload keys of
  * `metrica_esperada` and of `FlowMetrics`, which is exactly what makes them the
- * flow lens's wire (`docs/spec/glossario-wire.md` §5.6). A hypothesis opened
+ * flow lens's wire (`docs/spec/glossary-wire.md` §5.6). A hypothesis opened
  * before that rename names `tempo_agente_ms:<no>`, which this list no longer
  * knows — and the honest answer to a name from a vocabulary this code does not
  * carry is the `null` below, not a number read off the wrong column.

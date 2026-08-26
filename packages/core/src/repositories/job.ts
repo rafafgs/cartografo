@@ -18,7 +18,7 @@
  * real name from everything above it.
  *
  * Two columns did not come along, and could not: `corpo` and
- * `criterios_de_aceite` have no row in `docs/spec/glossario-wire.md` §4.2, so
+ * `criterios_de_aceite` have no row in `docs/spec/glossary-wire.md` §4.2, so
  * renaming them is a migration and a glossary entry rather than a rename. They
  * keep their spelling on {@link JobRow}, and {@link toJob} is the one place that
  * translates — two fields in one direction, where the alias used to do fourteen
@@ -169,7 +169,7 @@ interface JobRow
  * column does, so the list IS the column list. The two names the glossary never
  * mapped — `corpo` and `criterios_de_aceite` — are not aliased either;
  * {@link toJob} builds `body` and `acceptance_criteria` off them explicitly,
- * because an alias here would invent a schema name `glossario-wire.md` §4.2 does
+ * because an alias here would invent a schema name `glossary-wire.md` §4.2 does
  * not carry, which is the one thing the glossary exists to prevent. Closing that
  * gap belongs to a migration, not to this file.
  */

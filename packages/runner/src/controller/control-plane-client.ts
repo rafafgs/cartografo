@@ -19,7 +19,7 @@
  * t102's server.
  *
  * The FIELD NAMES of this file are the wire, and went English with t226
- * (`docs/spec/glossario-wire.md` §1). The method and class names followed with
+ * (`docs/spec/glossary-wire.md` §1). The method and class names followed with
  * t304, which is the follow-up ticket the header used to point at: the file
  * itself was renamed from `cliente-controle.ts`, and every exported symbol with
  * it. Two spellings did not move, and neither is a name: `execucao_id` and

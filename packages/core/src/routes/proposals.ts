@@ -271,7 +271,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
  * Which lens is proposing, as the evidence declares it (t246, FR2).
  *
  * `evidence.lens` and not a top-level wire field, because that is where the cost
- * lens has carried it since t255 (`glossario-wire.md` §5.5) and where the flow
+ * lens has carried it since t255 (`glossary-wire.md` §5.5) and where the flow
  * lens gained it with this ficha. A top-level field would have meant widening
  * `EntradaDeProposta` in the runner's client for a value the evidence already
  * holds.

@@ -36,7 +36,7 @@
  * Everything else here is English, and the REPORT is the newest half of that.
  * Its keys, codes and rule-name values (`valid`, `errors`, `violations`, `code`,
  * `message`, `target`, `rule`, `structure`) moved with t230, the fifth child of
- * D20, out of `docs/spec/glossario-wire.md` §5.3/5.4. That parity above is why
+ * D20, out of `docs/spec/glossary-wire.md` §5.3/5.4. That parity above is why
  * it moved in LOCKSTEP with the port, in one delivery: the test compares the two
  * reports whole, so a key renamed on one side and not the other fails there,
  * loudly, on the next run.

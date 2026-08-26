@@ -92,7 +92,7 @@ own. What gives the list teeth is AT3's third assertion: every entry has to name
 segment the tree really has. The day t282 renames one, the entry goes stale, the
 gate reds, and the reason text gets read by whoever is standing there.
 
-**`docs/spec/glossario-wire.md` is content-carved-out**, which FR8 did not
+**`docs/spec/glossary-wire.md` is content-carved-out**, which FR8 did not
 mention. It is permanently t281's, its rows are written in retired Portuguese
 names by design, and t299's sweep carves it out for the same reason. Its path
 segments are still read; only its lines are spared.

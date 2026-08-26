@@ -10,7 +10,7 @@
  * `job.corpo`, `job.criterios_de_aceite`, `session.transcricao_truncada` and
  * `session.transcricao_tamanho_original` are COLUMNS that are still spelled in
  * Portuguese in SQLite. D20's fourth child left them behind because
- * `docs/spec/glossario-wire.md` §4.2 has no row for any of the four, and
+ * `docs/spec/glossary-wire.md` §4.2 has no row for any of the four, and
  * inventing a spelling the glossary does not hold is the one thing the glossary
  * exists to prevent. Renaming them is a migration and a glossary entry, and it
  * is a ticket of its own.

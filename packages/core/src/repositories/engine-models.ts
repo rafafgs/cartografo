@@ -42,7 +42,7 @@ export interface EngineModel {
    * Where the entry came from: the CLI answered, or the adapter knew.
    *
    * Neither the key nor the two values translate any more — the column is
-   * `source` (`glossario-wire.md` §4.2) and the values already were the
+   * `source` (`glossary-wire.md` §4.2) and the values already were the
    * `EngineAdapter`'s own vocabulary, on the same terms as `timeout_reason`'s
    * `wall_clock`/`silence`.
    */

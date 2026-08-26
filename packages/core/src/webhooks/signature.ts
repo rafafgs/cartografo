@@ -35,7 +35,7 @@ import { createHmac } from 'node:crypto';
  * English since t255, and it is the last thing on this wire that was not: a
  * header name is as much published vocabulary as a JSON key, and no child of
  * D20 ever looked at one — the five surface tickets each swept keys, values,
- * routes and flags. `glossario-wire.md` §1.7 carries the row now, so the next
+ * routes and flags. `glossary-wire.md` §1.7 carries the row now, so the next
  * sweep sees it.
  */
 export const SIGNATURE_HEADER = 'x-cartografo-signature';

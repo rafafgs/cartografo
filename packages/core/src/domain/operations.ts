@@ -23,7 +23,7 @@
  *   operation; nobody applies it yet.
  *
  * The whole vocabulary is English since D20's third child (t228,
- * `docs/spec/glossario-wire.md` §3): the five type names (`add_node`, …), the
+ * `docs/spec/glossary-wire.md` §3): the five type names (`add_node`, …), the
  * operation's OWN keys (`node`, `node_id`, `edge`, `field`, the before/after
  * pair `from`/`to`, `inverse`) and the validation report (`valid`, `errors`,
  * `code`, `message`). What an operation CARRIES had already moved with the

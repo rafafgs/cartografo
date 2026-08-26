@@ -16,7 +16,7 @@
  * the experiment rather than closing it with a zero.
  *
  * English per D18, measure names included since t264: they are payload keys of
- * the flow lens, and the lens's vocabulary is `docs/spec/glossario-wire.md`
+ * the flow lens, and the lens's vocabulary is `docs/spec/glossary-wire.md`
  * §5.6. What still does not move is the `execucao_id` of the outcome BODY —
  * that one is the frozen hypothesis shape, and the last test here says so.
  */

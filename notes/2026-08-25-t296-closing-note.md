@@ -130,7 +130,7 @@ Scope of both this ficha and t265.
   the proxy the ficha chose, and it is what the tests assert. If it reads as too
   weak in use, rendering `failure_kind` where the session table already renders
   `status` is a small separate ficha.
-- **No glossary row.** `docs/spec/glossario-wire.md` maps retired Portuguese
+- **No glossary row.** `docs/spec/glossary-wire.md` maps retired Portuguese
   spellings to English ones; `engine_refusal` never needed a row and neither
   does `quota` — there is no Portuguese predecessor to retire.
 - **`docs/spec/runner-and-controller.md` was not updated.** It narrates t265's

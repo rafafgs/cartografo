@@ -16,7 +16,7 @@
  *
  * Since t226 the three bodies are the one envelope of the whole `/v1` surface —
  * `{error, message}` — and the three codes are the rows the same ticket added to
- * `docs/spec/glossario-wire.md` §1.4 under FR6, following the `invalid_X` /
+ * `docs/spec/glossary-wire.md` §1.4 under FR6, following the `invalid_X` /
  * `missing_X` naming that section already used. These are the only refusals
  * EVERY client can receive, which is why they are pinned by value here and not
  * merely by status.

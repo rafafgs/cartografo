@@ -23,7 +23,7 @@
  *
  * The report's keys (`structure`, `errors`, `soundness`, `violations`, `rule`,
  * `target`, `message`) and the rule names are the wire format of the 422, and
- * speak English since t230 (`docs/spec/glossario-wire.md` §5.3/5.4) — in
+ * speak English since t230 (`docs/spec/glossary-wire.md` §5.3/5.4) — in
  * lockstep on both sides of the parity between `packages/core` and
  * `scripts/validate-graph.mjs`. Every LINE this file writes out of them is
  * product copy, and speaks English for a different reason and since a different

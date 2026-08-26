@@ -9,7 +9,7 @@
  * - `packages/cost-surveyor/test/client.test.ts` builds an `expected_metric`
  *   whose `{nome, direcao, de, para}` is the frozen hypothesis shape of t255,
  *   documented at `docs/spec/surveyor-cost.md` §5.5 and
- *   `docs/spec/glossario-wire.md`. The candidate's own keys read English; what
+ *   `docs/spec/glossary-wire.md`. The candidate's own keys read English; what
  *   the field CARRIES is wire, and translating wire would desynchronize the
  *   test from the contract it exercises.
  * - `tests/factory-graph-1.test.mjs` quotes, inside a comment, the retired

@@ -861,7 +861,7 @@ function scratchHitsInFile(relative: string): string[] {
  *
  * AT5 grounds each ban by reading the file that owns the field. That works for
  * an invention, because an invention has no history. A rename does, and this
- * repository already keeps the register of it: `docs/spec/glossario-wire.md` is
+ * repository already keeps the register of it: `docs/spec/glossary-wire.md` is
  * the table of what every wire name was and what it became, row by row, with the
  * file that defines it. So a ban here cites a ROW, and the day the glossary
  * stops carrying it the ground test fails and names the ban to lift.
@@ -1667,7 +1667,7 @@ test('t322 — every name AT7 bans is a rename some document really recorded', (
   // and names the ban to lift instead of leaving a sweep refusing a live name.
   const repoRoot = path.resolve(TEST_ROOT, '..', '..', '..');
   const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
-  const glossary = read('docs/spec/glossario-wire.md');
+  const glossary = read('docs/spec/glossary-wire.md');
   const schema = read('schema/graph.schema.json');
   const synthesize = read('packages/runner/src/synthesizer/synthesize.ts');
 
@@ -1677,7 +1677,7 @@ test('t322 — every name AT7 bans is a rename some document really recorded', (
         assert.match(
           glossary,
           new RegExp(`^\\|[^|]*\\|\\s*\`${entry.stale}\`\\s*\\|\\s*\`${entry.live}\`\\s*\\|`, 'm'),
-          `glossario-wire.md has no row retiring \`${entry.stale}\` for \`${entry.live}\`; AT7 is banning a name on a rename nobody recorded`,
+          `glossary-wire.md has no row retiring \`${entry.stale}\` for \`${entry.live}\`; AT7 is banning a name on a rename nobody recorded`,
         );
         break;
 
@@ -1781,7 +1781,7 @@ test('t322 — AT7 reads what the six sweeps before it have no way of seeing', (
 test('t322 — AT7 reads a name and not a slice of a longer one', () => {
   // The two boundaries `\b` gets wrong, and both are real names of this wire:
   // `depende_de_trabalho_id` is the intake item's dependency key
-  // (glossario-wire.md §4) and `lease_nao_ativa` is a refusal code of
+  // (glossary-wire.md §4) and `lease_nao_ativa` is a refusal code of
   // `POST /v1/leases`. A sweep that read either as a hit would be unusable in
   // the files that legitimately carry them.
   for (const text of [

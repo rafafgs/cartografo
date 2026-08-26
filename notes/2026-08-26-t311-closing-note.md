@@ -45,7 +45,7 @@ at all**, so no diacritic-based sweep will ever see them:
 
 | column | born in | why it stayed |
 |---|---|---|
-| `job.corpo` | `0006_intake.sql` | no row in `docs/spec/glossario-wire.md` §4.2 |
+| `job.corpo` | `0006_intake.sql` | no row in `docs/spec/glossary-wire.md` §4.2 |
 | `job.criterios_de_aceite` | `0006_intake.sql` | same |
 | `session.transcricao_truncada` | `0009_sessao_transcricao.sql` | §4.2 maps `transcricao` -> `transcript` and neither of these two |
 | `session.transcricao_tamanho_original` | `0009_sessao_transcricao.sql` | same |

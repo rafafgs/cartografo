@@ -17,7 +17,7 @@
  *
  * English per D18; the payload keys (`classes`, `graph_version`, `skills`) are
  * the API's own wire format, which D20 took to English as well — t226 translated
- * them here (`docs/spec/glossario-wire.md`).
+ * them here (`docs/spec/glossary-wire.md`).
  */
 
 import assert from 'node:assert/strict';

@@ -6,14 +6,14 @@
  * D16's "graph living as data in the database" criterion — a synthetic fixture
  * would not prove that.
  *
- * Since t226 the JSON is English, per `docs/spec/glossario-wire.md` §1: the
+ * Since t226 the JSON is English, per `docs/spec/glossary-wire.md` §1: the
  * migration columns are still `classe`/`linhagem_tipo`/`criado_em` (renaming
  * them is D20's fourth child), and `repositories/graphs.ts`'s `toGraph` is the
  * boundary between the two. What is asserted here is the wire, so the
  * expectations below are the English side of that boundary.
  *
  * The `structure`/`soundness` report riding inside the 422 speaks English too
- * since t230 — D20's fifth child, `docs/spec/glossario-wire.md` §5.3/5.4 — and
+ * since t230 — D20's fifth child, `docs/spec/glossary-wire.md` §5.3/5.4 — and
  * the assertions on it are the pin. It moved as one unit with
  * `scripts/validate-graph.mjs`, because `domain-graph.test.ts` `deepEqual`s the
  * two reports against each other.

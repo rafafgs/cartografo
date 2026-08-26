@@ -1,7 +1,7 @@
 /**
  * D20 gate: no Portuguese term of the API surface survives on the wire (t226, FR9).
  *
- * The glossary's own placeholder for this file (`docs/spec/glossario-wire.md`,
+ * The glossary's own placeholder for this file (`docs/spec/glossary-wire.md`,
  * "What this glossary does not decide") says the wire gate arrives "once there
  * is an English wire to check". t226 is the ticket that built it, scoped to
  * exactly the surface it migrates (`api`), and each child since has widened it
@@ -441,7 +441,7 @@ export function wireHits(
     .sort();
 }
 
-test('FR9 — every /v1 body speaks the English wire vocabulary of glossario-wire.md §1', () => {
+test('FR9 — every /v1 body speaks the English wire vocabulary of glossary-wire.md §1', () => {
   const terms = apiTerms();
   const files = scannedFiles();
   assert.ok(files.length > 10, `the sweep found only ${files.length} files; it is not walking the routes`);
@@ -457,7 +457,7 @@ test('FR9 — every /v1 body speaks the English wire vocabulary of glossario-wir
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still on the wire (D20, glossario-wire.md §1):\n${hits.join('\n')}`,
+    `Portuguese still on the wire (D20, glossary-wire.md §1):\n${hits.join('\n')}`,
   );
 });
 
@@ -563,7 +563,7 @@ test('FR5 — the hypothesis exemption is scoped to its file and to its own word
   );
 });
 
-test('t230 — the graph validation report speaks the English of glossario-wire.md §5.3/5.4', () => {
+test('t230 — the graph validation report speaks the English of glossary-wire.md §5.3/5.4', () => {
   const terms = reportTerms();
 
   const hits = REPORT_FILES.flatMap((relative) =>
@@ -578,7 +578,7 @@ test('t230 — the graph validation report speaks the English of glossario-wire.
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still in the validation report (D20, glossario-wire.md §5):\n${hits.join('\n')}`,
+    `Portuguese still in the validation report (D20, glossary-wire.md §5):\n${hits.join('\n')}`,
   );
 });
 

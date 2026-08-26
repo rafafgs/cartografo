@@ -50,7 +50,7 @@ one column. §5.6 is that leftover, found by the first real crossing
 The last row is the child that closes D20: every surface's CODE already had a
 gate of its own when it started (one `no-portuguese-wire.test.ts` per package,
 plus the event, operation and database gates), and what was missing was the
-paper. `packages/core/test/glossario-wire-docs.test.ts` reads §2.1, §5.1 and
+paper. `packages/core/test/glossary-wire-docs.test.ts` reads §2.1, §5.1 and
 §5.2 of this file at run time and refuses any of those spellings inside a
 backtick span or a fenced block in the specifications — the prose around them
 stays Portuguese, which is what D18 decided.
@@ -89,7 +89,7 @@ and masks exactly what this document maps — the value on the wire.
   table row's name, not of the block around it: `erro` points at `error:` and
   `mensagem` points at the `message:` right below, even when the two sit in the
   same body. A comma separates independent lines; a hyphen is a block, and one
-  line of it writing the name is enough. `glossario-wire.test.ts` resolves the
+  line of it writing the name is enough. `glossary-wire.test.ts` resolves the
   citations of the files it lists (the ones t255 wrote, which were born wrong
   for having been copied out of the ticket's text instead of re-read in the
   tree); the other ~139 have no gate yet and have drifted — whoever follows one

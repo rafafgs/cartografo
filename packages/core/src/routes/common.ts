@@ -17,7 +17,7 @@
  * Since t226 this is the ONE error envelope of the whole `/v1` surface. Two
  * competed until D20: this `{error, details}` and the `{erro, mensagem, …}` the
  * domain routes wrote by hand. The glossary left the choice to this ticket
- * (`docs/spec/glossario-wire.md` §1.4) and the answer is `{error, message?,
+ * (`docs/spec/glossary-wire.md` §1.4) and the answer is `{error, message?,
  * details?}` with the route's own context as SIBLING properties — `id`,
  * `status`, `class` — never folded into `details`. `refusal` below is how the
  * files that used to build the second shape write the first one.
@@ -60,7 +60,7 @@ import { ValidationError } from '../db/event-validation.ts';
  *
  * `message` is one sentence for a person; `details` is the machine-readable list
  * of everything wrong at once. A refusal carries either, both or neither — what
- * it always carries is `error`, the code from `glossario-wire.md` §1.4.
+ * it always carries is `error`, the code from `glossary-wire.md` §1.4.
  */
 export interface ErrorResponse {
   error: string;
@@ -175,7 +175,7 @@ export function conflict(reply: FastifyReply, detail: string): ErrorResponse {
  *
  * @param reply Fastify reply, marked with the status.
  * @param status HTTP status of the refusal.
- * @param error Code from `docs/spec/glossario-wire.md` §1.4.
+ * @param error Code from `docs/spec/glossary-wire.md` §1.4.
  * @param message One sentence for whoever has to fix the call.
  * @param extra Route-specific context, as sibling properties.
  * @returns The body to return.

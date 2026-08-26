@@ -99,7 +99,7 @@ Five, recorded rather than quietly decided.
    the qualifier moved — `topografo-custo.md` → `topografo-cost.md`,
    `topografo-fluxo.md` → `topografo-flow.md`.
 2. **`tela` → `screen`, but only in prose.** The wire glossary's mapping
-   (`glossario-wire.md` §5) settles the word, so the documents and their file
+   (`glossary-wire.md` §5) settles the word, so the documents and their file
    names are `screen`. What did NOT move: `cartografo-tela`, the bin;
    `CARTOGRAFO_TELA_PORT` and `CARTOGRAFO_TELA_TOKEN`, the environment; the
    `packages/tela` path; and `respondido_por: "tela"`, a value the screen really

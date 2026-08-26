@@ -4,7 +4,7 @@
  *
  * Port of `packages/core/test/no-portuguese-wire.test.ts`, the same way
  * `no-portuguese-identifiers.test.ts` is a port of the core's: one gate per
- * package, each reading the rows of `docs/spec/glossario-wire.md` that belong to
+ * package, each reading the rows of `docs/spec/glossary-wire.md` that belong to
  * it. The rows that belong here are `surface = routes-cli-report` — the flag
  * half of §5.2, since the routes are the screen's and the report is the core's.
  *
@@ -148,7 +148,7 @@
  * The exemptions those three files need are the same kind as the ones above, and
  * two vocabularies account for all of them. `.nome` in the close command is the
  * metric object's OWN key, frozen hypothesis vocabulary D20 does not unfreeze
- * (`glossario-wire.md:796`), and the whole point of that command is to read it.
+ * (`glossary-wire.md:796`), and the whole point of that command is to read it.
  * `.titulo` and `.execucao_id` in the traversal driver — and the two messages and
  * the usage line that spell them — are the keys of the PLAN FILE that driver
  * takes as input: an operator-authored document of its own, not a body of the
@@ -268,7 +268,7 @@ const MANUAL_PROOF_FILES = [
  * Kept out of {@link DERIVED_FIELDS} on purpose: `evidencia` and
  * `metrica_esperada` are ALSO two keys of the runner-internal `SurveyorResult`,
  * which `src/surveyor/cli.mjs` prints under their own names and which
- * `glossario-wire.md` §5.6 records as staying — so a sweep that carried them
+ * `glossary-wire.md` §5.6 records as staying — so a sweep that carried them
  * over every client file would be demanding a rename the glossary refuses.
  */
 const PROPOSAL_FIELDS: ReadonlyArray<GlossaryTerm> = Object.freeze([
@@ -355,7 +355,7 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
     reason:
       'the same runner-internal result, in the manual proof of the same module: ' +
       '`proposeFlowImprovement` answers `{gargalo, evidencia, metrica_esperada, ' +
-      'proposta}`, and `glossario-wire.md` §5.6 records those four as staying — ' +
+      'proposta}`, and `glossary-wire.md` §5.6 records those four as staying — ' +
       'what came off the wire is the proposal INSIDE it, and every read of THAT ' +
       'is swept (t266)',
   },
@@ -364,7 +364,7 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
     span: '.nome',
     reason:
       'the metric object’s OWN key, which is the frozen hypothesis vocabulary of ' +
-      '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossario-wire.md:796`, ' +
+      '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossary-wire.md:796`, ' +
       'a format D20 does not unfreeze. The WRAPPER is `expected_metric` and t285 ' +
       'fixed that read; what is inside it does not move (t285, Out of Scope)',
   },
@@ -699,7 +699,7 @@ test('t230 — the intake and synthesizer commands take the English flags of §5
   assert.deepEqual(
     hits,
     [],
-    `Portuguese CLI flags still typed (D20, glossario-wire.md §5.2):\n${hits.join('\n')}`,
+    `Portuguese CLI flags still typed (D20, glossary-wire.md §5.2):\n${hits.join('\n')}`,
   );
 });
 
@@ -824,7 +824,7 @@ test('t254 — the client commands read and print the English fields the wire re
   assert.deepEqual(
     hits,
     [],
-    `a client still reads or prints a Portuguese wire field (D20, glossario-wire.md §1):\n${hits.join('\n')}`,
+    `a client still reads or prints a Portuguese wire field (D20, glossary-wire.md §1):\n${hits.join('\n')}`,
   );
 });
 
@@ -837,7 +837,7 @@ test('t266 — the surveyor manual proof reads the English fields the wire reall
     hits,
     [],
     'the manual proof still reads or prints a Portuguese wire field, so it dies against a real ' +
-      `control plane (D20, glossario-wire.md §1/§4.2):\n${hits.join('\n')}`,
+      `control plane (D20, glossary-wire.md §1/§4.2):\n${hits.join('\n')}`,
   );
 });
 

@@ -13,7 +13,7 @@
  * `class`/`project_id` on the wire. The table dates to t122 and neither t226's
  * migration nor t231's citation sweep touched it.
  *
- * t231's sweep could not have caught it. `glossario-wire-docs.test.ts` reads the
+ * t231's sweep could not have caught it. `glossary-wire-docs.test.ts` reads the
  * glossary's §2.1, §5.1 and §5.2 — event names, screen routes, CLI flags — and
  * an API error code lives in §1.4, on rows nothing reads. Widening THAT gate is
  * not what this ticket does: §1.4 also fails documents it does not own

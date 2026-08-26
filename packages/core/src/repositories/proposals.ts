@@ -144,7 +144,7 @@ function hydrate(row: RawRow): Proposal {
 }
 
 /**
- * The five statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
+ * The five statuses a `?status=` filter may name (`glossary-wire.md` §1.6).
  *
  * `migrations/0010_proposta_aprovada.sql` holds them in a `CHECK`, and since
  * D20's fifth child (t235) that `CHECK` spells them in English — so there is

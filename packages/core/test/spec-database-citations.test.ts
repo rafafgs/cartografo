@@ -2,7 +2,7 @@
  * FR11 gate: four spec documents cite the schema the migrations build (t236, t237).
  *
  * The t229 pass moved these documents' DDL and their table/column citations to
- * the English of `glossario-wire.md` §4, and it walked past three spots. One
+ * the English of `glossary-wire.md` §4, and it walked past three spots. One
  * sentence of `entities-versioning.md` §5 still said the fork's column was
  * `grafo.origem_proposta_id`, of a type quoted as `INTEGER REFERENCES proposta(id)`,
  * when the schema called all three something else (t236). Then the t237 round
@@ -84,11 +84,11 @@
  * this paragraph used to describe, which was to widen `SWEPT` once
  * `screen-graph-editor.md`'s `grafo_versao.id` had a ticket of its own.
  *
- * `glossario-wire.md` is the one document of that set left out, and it is the
+ * `glossary-wire.md` is the one document of that set left out, and it is the
  * exception that proves the rule: a map FROM the retired names TO the ones that
  * replaced them is written, cell by cell, in retired names. Sweeping it would
  * ask the glossary to stop being a glossary. Its sibling gate
- * `glossario-wire-docs.test.ts` leaves it out for the same reason.
+ * `glossary-wire-docs.test.ts` leaves it out for the same reason.
  */
 
 import assert from 'node:assert/strict';
@@ -105,7 +105,7 @@ import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts } from './support.ts';
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /** Where the event names live, so a dotted span can be told from a citation. */
-const GLOSSARY = 'docs/spec/glossario-wire.md';
+const GLOSSARY = 'docs/spec/glossary-wire.md';
 
 /**
  * The documents this gate owns, relative to the repository root.

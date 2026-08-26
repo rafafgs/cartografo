@@ -13,7 +13,7 @@
  *
  * The vocabulary is English on both halves since D20's third child (t228): the
  * operation-type names, the operation's own keys and the validation report speak
- * `docs/spec/glossario-wire.md` §3, and the document fragments an operation
+ * `docs/spec/glossary-wire.md` §3, and the document fragments an operation
  * carries have spoken English since t178. A Portuguese-keyed operation is no
  * longer an older spelling of the same thing — it is an unknown type.
  */

@@ -3,7 +3,7 @@
  *
  * D20 splits the D18 wire rename into six surface tickets — API/errors, events,
  * proposal operations, database, routes/CLI/report, docs and gate — and this
- * file guards the artifact all six read from: `docs/spec/glossario-wire.md`.
+ * file guards the artifact all six read from: `docs/spec/glossary-wire.md`.
  * Without one registered mapping, each of those tickets invents its own English
  * name for the same Portuguese term, and the rename ends with two vocabularies
  * instead of one.
@@ -61,7 +61,7 @@ import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossary-wire.md');
 const GLOSSARY_LABEL = path.relative(REPO_ROOT, GLOSSARY);
 
 /**

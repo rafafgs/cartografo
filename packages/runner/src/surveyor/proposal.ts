@@ -29,7 +29,7 @@
  * nothing. "Nothing to propose" is a valid, silent outcome.
  *
  * English per D18. The proposal's outer keys went English with t226 and the
- * OPERATIONS with t228 (`docs/spec/glossario-wire.md` §3) — mirror validator and
+ * OPERATIONS with t228 (`docs/spec/glossary-wire.md` §3) — mirror validator and
  * session prompt together, because a prompt teaching the old spelling would
  * produce exactly the 400 the mirror exists to prevent. What travels INSIDE
  * `evidence` followed with t264 (§5.6), for the reason t255 set on the cost

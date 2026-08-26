@@ -18,7 +18,7 @@
  * now, exactly as `POST /v1/runners` already treats re-pairing.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1): a report declares `models`, each with
+ * (`docs/spec/glossary-wire.md` §1): a report declares `models`, each with
  * `model_id`, `label` and `source`. The two VALUES of `source` were already
  * English and stay so — they are the `EngineAdapter`'s vocabulary, produced by
  * the adapter, on the same terms as `timeout_reason`'s `wall_clock`/`silence`.

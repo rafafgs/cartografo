@@ -22,7 +22,7 @@
  * gets a `403` before this file runs.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1): the pairing body declares `name`, and what
+ * (`docs/spec/glossary-wire.md` §1): the pairing body declares `name`, and what
  * comes back is the repository's own row. Since t290 there is nothing between
  * the two — `registerRunner` returns a `Runner` spelled exactly the way the
  * columns are, so this file hands it back untouched instead of through a

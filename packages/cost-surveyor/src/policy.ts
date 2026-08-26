@@ -70,7 +70,7 @@ export const MARKER = '[cost-surveyor]';
  * The keys are §3's since t228. What surrounds this operation — `Candidate`'s
  * `operations`/`evidence`/`expected_metric`, its `type` discriminator, `node_id`
  * and `graph_version_id` — went English with t255 and has a section of its own
- * (`glossario-wire.md` §5.5). It used to say here that this was "this module's
+ * (`glossary-wire.md` §5.5). It used to say here that this was "this module's
  * own vocabulary, which D20 does not touch"; it travels inside
  * `POST /v1/proposals`, so it was always the wire.
  */
@@ -197,7 +197,7 @@ function recommendationOperation(
  * The one place in this package where the two vocabularies meet: what comes in
  * is an `IdentifiedCostRow` (`cost.ts`, the layer below, whose field names this
  * ticket leaves alone) and what goes out is the wire's, English since t255 and
- * mapped in `glossario-wire.md` §5.5.
+ * mapped in `glossary-wire.md` §5.5.
  */
 function buildCandidate(
   row: IdentifiedCostRow,

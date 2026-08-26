@@ -4,7 +4,7 @@
  *
  * Port of `packages/core/test/no-portuguese-wire.test.ts`, the same way
  * `no-portuguese-identifiers.test.ts` is a port of the screen's: one gate per
- * package, each reading the rows of `docs/spec/glossario-wire.md` that belong to
+ * package, each reading the rows of `docs/spec/glossary-wire.md` that belong to
  * it. Two selections belong here, and they are read off the document by SECTION,
  * so a row added there is a term checked here on the next run:
  *
@@ -156,7 +156,7 @@ test('t230 — the cost lens takes the English command line of D20 §5.2', () =>
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still typed at this command (D20, glossario-wire.md §5.2):\n${hits.join('\n')}`,
+    `Portuguese still typed at this command (D20, glossary-wire.md §5.2):\n${hits.join('\n')}`,
   );
 });
 
@@ -172,7 +172,7 @@ test('t255 — the candidate this lens posts takes the English keys of §5.5', (
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still on the candidate (D20, glossario-wire.md §5.5):\n${hits.join('\n')}`,
+    `Portuguese still on the candidate (D20, glossary-wire.md §5.5):\n${hits.join('\n')}`,
   );
 });
 

@@ -68,7 +68,7 @@ export interface InputRequest {
    * Where the decision came from: `user` or `auto`.
    *
    * Both the key and the value went English with t227 and t235
-   * (`glossario-wire.md` §4.2 and §1.6); the column's own `CHECK` now spells the
+   * (`glossary-wire.md` §4.2 and §1.6); the column's own `CHECK` now spells the
    * same two words, so this field is the column, passed through.
    */
   source: string | null;
@@ -101,7 +101,7 @@ function toInputRequest(row: InputRequestRow): InputRequest {
 }
 
 /**
- * The two statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
+ * The two statuses a `?status=` filter may name (`glossary-wire.md` §1.6).
  *
  * There were three maps here — status, kind and source — and D20's fifth child
  * (t235) retired all three by rewriting migration `0003`: the column's `CHECK`

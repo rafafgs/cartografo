@@ -27,7 +27,7 @@
  * client.
  *
  * The payload field names are the API's own. D18 left them in Portuguese and D20
- * took them to English, which t226 applied here (`docs/spec/glossario-wire.md`);
+ * took them to English, which t226 applied here (`docs/spec/glossary-wire.md`);
  * the route paths and the identifiers were already English. The one thing that
  * did NOT move is `GraphMetadata` below — a key of the graph document's own
  * format, not of the wire, as its comment records.

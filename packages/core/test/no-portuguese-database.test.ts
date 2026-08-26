@@ -3,7 +3,7 @@
  *
  * Sibling of `no-portuguese-wire.test.ts`, scoped to the database instead of to
  * the wire. The vocabulary is not re-declared here: `glossary-terms.ts` reads it
- * out of `docs/spec/glossario-wire.md` at run time and `migrate.test.ts` reads
+ * out of `docs/spec/glossary-wire.md` at run time and `migrate.test.ts` reads
  * the same list, so this sweep and the one over the built schema cannot drift.
  *
  * t229 renamed the NAMES and left every CHECK-constrained VALUE in Portuguese;
@@ -247,7 +247,7 @@ export function databaseHits(source: string, terms: readonly Term[]): string[] {
   return termHits(sqlOnly(source), terms);
 }
 
-test('FR10 — every query speaks the English schema of glossario-wire.md §4 and §1.6', () => {
+test('FR10 — every query speaks the English schema of glossary-wire.md §4 and §1.6', () => {
   const terms = databaseTerms();
   const files = scannedFiles();
   assert.ok(files.length > 10, `the sweep found only ${files.length} files; it is not walking src/`);
@@ -261,7 +261,7 @@ test('FR10 — every query speaks the English schema of glossario-wire.md §4 an
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still in a SQL position (D20, glossario-wire.md §4 and §1.6):\n${hits.join('\n')}`,
+    `Portuguese still in a SQL position (D20, glossary-wire.md §4 and §1.6):\n${hits.join('\n')}`,
   );
 });
 

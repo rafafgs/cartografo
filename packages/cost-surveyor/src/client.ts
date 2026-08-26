@@ -12,13 +12,13 @@
  *
  * The PATH was already English (D18, t127); since t226 the body KEYS are too
  * (`sessions`, `jobs`, `graph_version`, `proposal`) — that is the API child of
- * D20, applying `docs/spec/glossario-wire.md` §1.
+ * D20, applying `docs/spec/glossary-wire.md` §1.
  *
  * What `expected_metric` CARRIES is a different matter and does not move: that
  * blob is `domain/hypothesis.ts`'s frozen shape (`{nome, direcao, de, para}`),
  * which no D20 child unfreezes — see `policy.ts`. `evidence` carries the cost
  * lens's own object, and THAT one moved: its keys went English with t255
- * (`glossario-wire.md` §5.5), which is what turned the mapping in `cli.ts` from
+ * (`glossary-wire.md` §5.5), which is what turned the mapping in `cli.ts` from
  * a translation into a same-name pass-through.
  *
  * There is no `POST /v1/proposals/:id/apply` here, and the absence is the rule:

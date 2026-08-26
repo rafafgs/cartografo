@@ -35,7 +35,7 @@
  *
  * English per D18/D20: what a person types and what a person reads are English,
  * and `metric`/`execution_id` are already the flow lens's spelling
- * (`docs/spec/glossario-wire.md` §5.6, {@link MEASURES}).
+ * (`docs/spec/glossary-wire.md` §5.6, {@link MEASURES}).
  */
 
 import { DEFAULT_URL, ENV_TOKEN } from './command-line.ts';

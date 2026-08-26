@@ -31,7 +31,7 @@
  *
  * English per D18, the metric names of {@link NodeMetric} included since t264.
  * They are payload keys of `proposal.evidence` and land in the book that way, so
- * a glossary row is exactly what they needed — `docs/spec/glossario-wire.md`
+ * a glossary row is exactly what they needed — `docs/spec/glossary-wire.md`
  * §5.6 now carries one for each. t227 did leave them alone on purpose, and that
  * purpose expired when t255 migrated the sibling lens (§5.5): two lenses writing
  * two languages into the same column is the one outcome D20 exists to prevent.

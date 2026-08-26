@@ -61,7 +61,7 @@ exists so that one item can cite another, and it dies at confirmation, when ever
 `ref` becomes a real `job.id`.
 
 The item's keys have spoken English since t255
-([the glossary](glossario-wire.md) §1.1): they travel in the body of
+([the glossary](glossary-wire.md) §1.1): they travel in the body of
 `POST /v1/intake`, which is what D20 calls "the fields and query parameters of
 the API's JSON". Nothing answers to the old spelling — an item with `titulo`
 comes back as `missing_required_field`, because `title` is the required one.
@@ -234,7 +234,7 @@ Registered in [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
 | `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `404` · `409 draft_not_pending` · `404 unknown_graph` · `400 validation_failed` |
 
 The codes, the keys and the filters above have spoken English since t226
-([the glossary](glossario-wire.md) §1.4), and this table only found that out in
+([the glossary](glossary-wire.md) §1.4), and this table only found that out in
 t258's alpha round: it belongs to t122, and neither the API's migration nor
 t231's citation sweep came through here — §1.4 is precisely the glossary section
 that sweep does not read. What holds the table to account now is

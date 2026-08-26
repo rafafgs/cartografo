@@ -70,7 +70,7 @@ the class without being able to enumerate it — correctly, since the enumeratio
 would have been stale.
 
 Two of them were worse than a broken fixture, because they were the reading
-apparatus of another gate: `packages/core/test/glossario-wire-docs.test.ts`'s
+apparatus of another gate: `packages/core/test/glossary-wire-docs.test.ts`'s
 `SCHEMA_DIR = path.join('specs', 'eventos', 'schemas')` and
 `markdownUnder(path.join('docs', 'formatos'))`. A gate whose input directory
 does not exist reads nothing and reports nothing wrong.

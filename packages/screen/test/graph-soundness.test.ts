@@ -21,7 +21,7 @@
  *
  * The report's keys (`structure`, `errors`, `soundness`, `violations`, `rule`,
  * `target`, `message`) and the four rule names are the wire format of the 422,
- * and speak English since t230 (`docs/spec/glossario-wire.md` §5.3/5.4). The
+ * and speak English since t230 (`docs/spec/glossary-wire.md` §5.3/5.4). The
  * LINES this module writes out of them are product copy, and moved separately:
  * t310 translated them, so both halves read English now for two unrelated
  * reasons — one a wire format, the other the text a person is refused with.

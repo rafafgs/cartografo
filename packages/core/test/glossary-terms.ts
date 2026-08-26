@@ -6,7 +6,7 @@
  * questions are the same one: does a Portuguese name the glossary retired still
  * stand? Declaring the vocabulary twice is how the two start disagreeing about
  * what "retired" means, so it is declared here once and read out of
- * `docs/spec/glossario-wire.md` at run time — a row added there is a term
+ * `docs/spec/glossary-wire.md` at run time — a row added there is a term
  * checked by both on the next run.
  *
  * ## Which rows
@@ -47,7 +47,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /** The one mapping document, and the label a failure quotes. */
-export const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+export const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossary-wire.md');
 export const GLOSSARY_LABEL = path.relative(REPO_ROOT, GLOSSARY);
 
 /** The surface that owns the schema's names. */

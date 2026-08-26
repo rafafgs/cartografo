@@ -8,7 +8,7 @@
  * t96: the soundness gate has to reject the proposal BEFORE the new version
  * exists.
  *
- * Since t226 the JSON is English (`docs/spec/glossario-wire.md` §1) — with ONE
+ * Since t226 the JSON is English (`docs/spec/glossary-wire.md` §1) — with ONE
  * island that is deliberately not, and this file is where it is pinned. The
  * hypothesis vocabulary of `domain/hypothesis.ts` does not move: the outcome
  * route still takes `{execucao_id, depois}`, `?veredito=` still filters on

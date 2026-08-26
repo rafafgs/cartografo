@@ -425,7 +425,7 @@ test('t180 — the cycle and missing-field problems are reported in English', as
 /* `GET /v1/intake/:id`. So they are the wire, and they are English.           */
 /* -------------------------------------------------------------------------- */
 
-test('t255 — the codes and the problem shape are the English of glossario-wire.md §1.4', async () => {
+test('t255 — the codes and the problem shape are the English of glossary-wire.md §1.4', async () => {
   const { PROBLEM_CODES, validateItems } = await loadIntake();
 
   assert.deepEqual(

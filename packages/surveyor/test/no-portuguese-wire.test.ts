@@ -2,7 +2,7 @@
  * D20 gate: the command line of the watcher is English (t247, AT9).
  *
  * Port of `packages/cost-surveyor/test/no-portuguese-wire.test.ts`, narrowed
- * to the one section of `docs/spec/glossario-wire.md` this package has a
+ * to the one section of `docs/spec/glossary-wire.md` this package has a
  * surface on:
  *
  * - **§5.2**, what a person TYPES — every flag, plus the subcommand, which is
@@ -94,7 +94,7 @@ test('t247 — the watcher takes the English command line of D20 §5.2', () => {
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still typed at this command (D20, glossario-wire.md §5.2):\n${hits.join('\n')}`,
+    `Portuguese still typed at this command (D20, glossary-wire.md §5.2):\n${hits.join('\n')}`,
   );
 });
 

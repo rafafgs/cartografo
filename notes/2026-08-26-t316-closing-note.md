@@ -58,7 +58,7 @@ Both surviving sites are deliberate, and both are now pinned by
 
 - **`client.test.ts:115`** — `expected_metric`'s `{nome, direcao, de, para}` is
   t255's frozen hypothesis shape (`docs/spec/surveyor-cost.md` §5.5,
-  `docs/spec/glossario-wire.md`). The candidate's own keys read English; what
+  `docs/spec/glossary-wire.md`). The candidate's own keys read English; what
   the field carries is wire. AT2 asserts the four fragments are still there AND
   that this is the file's only Portuguese line, so neither a translation nor a
   new leak passes.

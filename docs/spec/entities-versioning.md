@@ -150,7 +150,7 @@ operations, each one with an inverse of its own. It is what makes a proposal
 judgeable ("it adds a red-team gate before deployment") rather than merely
 readable as a patch, and what gives any change a way back.
 
-The vocabulary has travelled the wire in English since D20 (`glossario-wire.md`
+The vocabulary has travelled the wire in English since D20 (`glossary-wire.md`
 §3): the type's name, the operation's keys and the validation report. Nothing
 already written in `proposal.operations` was migrated — the development databases
 are recreated, and an operation still written in Portuguese is an unknown type,

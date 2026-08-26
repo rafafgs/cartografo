@@ -15,7 +15,7 @@
  * projection row nor an event.
  *
  * The field names below are the envelope's and the payloads' wire keys, and
- * since t227 they are the English ones of `docs/spec/glossario-wire.md` §2 —
+ * since t227 they are the English ones of `docs/spec/glossary-wire.md` §2 —
  * D20's second child. The migration columns caught up with D20's FOURTH child
  * (t229): `entity_type`, `actor_type` and `occurred_at` are the column names
  * now. The VALUES inside the first two followed with the FIFTH (t235), which

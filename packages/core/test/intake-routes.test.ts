@@ -283,7 +283,7 @@ test('AT9 — a malformed item is 400 with the WHOLE list of problems and writes
   for (const problem of problems) {
     assert.ok(problem.message.length > 0, 'every problem explains itself');
     // t255 — the report inside the 400 is the API's JSON, so its own keys are
-    // the English of `glossario-wire.md` §1.4, like the graph report's since t230.
+    // the English of `glossary-wire.md` §1.4, like the graph report's since t230.
     assert.deepEqual(Object.keys(problem).sort(), ['code', 'message', 'target']);
   }
   assert.equal(countDrafts(ctx), 0);

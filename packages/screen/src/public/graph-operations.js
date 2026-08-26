@@ -38,7 +38,7 @@
  *
  * The operation keys (`type`, `node`, `node_id`, `edge`, `field`, `from`, `to`,
  * `inverse`) are the format stored in `proposta.operacoes` and returned on the
- * wire, and they speak `docs/spec/glossario-wire.md` §3 since D20's third child
+ * wire, and they speak `docs/spec/glossary-wire.md` §3 since D20's third child
  * (t228). This module has to move in exact lockstep with
  * `packages/core/src/domain/operations.ts`: whatever comes out of here is POSTed
  * untouched, so one key out of step is a `400` on save.

@@ -54,6 +54,42 @@ improves itself between executions, with the human working on the exceptions.
 
 ## How to run it
 
+Two things to know before the first command, because both follow from what this
+is — a local orchestrator that hands a model a terminal — and not from a defect
+in it:
+
+**The agent inherits your whole shell environment.** `buildEnvironment`
+([`packages/runner/src/engine/command.ts`](packages/runner/src/engine/command.ts))
+puts the session's own overrides on top of the environment the server was
+started from and hands the result to the engine process; every variable that was
+in that shell goes with it, including credentials for services that have nothing
+to do with this one. Start the server from a shell scoped to what the work needs,
+the way you would for anything you are about to give a terminal to.
+
+**Session transcripts are stored as the agent printed them.** The `transcript`
+column ([`packages/core/src/repositories/session.ts`](packages/core/src/repositories/session.ts))
+keeps the session's output whole, under a byte ceiling with a
+`transcript_truncated` flag (t159), and nothing redacts, scrubs or masks it on
+the way in: if a command echoed a credential, that credential is at rest in
+`.cartografo/cartografo.db`. Treat that file the way you treat a shell history or
+a CI log.
+
+Neither is closed by a list of allowed tool names.
+[`packages/runner/src/engine/permission-policy.ts`](packages/runner/src/engine/permission-policy.ts)
+says in its own header where its enforcement stops — `Bash` is the part no list
+of names closes, and the policy calls itself best-effort in what the engine
+offers rather than process isolation — and
+[`docs/formats/engine-adapter.md`](docs/formats/engine-adapter.md) writes the
+residual gap down under "The session's permissions". Both are worth reading
+before you decide what to point this at.
+
+What is already closed, so the line is drawn where it actually falls: the control
+plane listens on `127.0.0.1` by default and opening the port to the network is a
+decision you take (below); every `/v1/*` route sits behind one credential gate
+registered on the whole scope
+([`packages/core/src/auth.ts`](packages/core/src/auth.ts), t124); and the
+database keeps only the hash of that credential, never the credential (step 2).
+
 Below is the fast path: three commands to a registered graph, and a fourth that
 puts a runner behind them. For the slower way round — the same commands, plus
 putting a real piece of work on the graph and reading the system when that work

@@ -15,7 +15,7 @@
     "build": "npm run build --workspaces --if-present",
     "start": "npm run start --workspace cartografo",
     "test": "node scripts/run-all-tests.mjs",
-    "lint": "eslint . && node scripts/check-single-writer.mjs && node scripts/check-bin-dependencies.mjs",
+    "lint": "eslint . && node scripts/check-single-writer.mjs && node scripts/check-bin-dependencies.mjs && node scripts/check-readme-disclosure.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

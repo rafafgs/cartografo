@@ -18,6 +18,11 @@ section instead and come back here at step 5.
 For what the product is meant to be, rather than how to run it, read
 [`docs/what-cartografo-is.md`](what-cartografo-is.md).
 
+Before the first command below, read the block that opens
+[`README.md`'s "How to run it"](../README.md#how-to-run-it): it states what you
+are handing to the agent when you start the server, and this page does not repeat
+it.
+
 ---
 
 ## 1. Install

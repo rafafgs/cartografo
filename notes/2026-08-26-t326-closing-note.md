@@ -39,8 +39,8 @@ reds this gate instead of quietly widening its blind spot.
 
 ## What moved, file by file
 
-**Three renames (`git mv`, 100% similarity, zero content change).** The document,
-`packages/core/test/glossary-wire.test.ts` and
+**Three renames (`git mv`, 100% similarity, zero content change in that
+commit).** The document, `packages/core/test/glossary-wire.test.ts` and
 `packages/core/test/glossary-wire-docs.test.ts`. Committed on their own before a
 single citation moved, which is the whole point: t305's closing note recorded
 that combining a rename with a content rewrite destroys git's rename detection,
@@ -70,8 +70,9 @@ of all six packages. No logic in any of them.
 
 **Untouched on purpose:**
 
-- **The document's contents.** 838 lines before, 838 after; AT3 pins the number.
-  This is what let every line citation into it survive without re-checking.
+- **The document's prose, tables and structure.** 838 lines before, 838 after;
+  AT3 pins the number. Two lines of it did change, and that is the one place
+  this ticket departed from its own FR1 — see the section below.
 - **`RETIRED_SPEC_DOCUMENTS`** in `decisions-rename-integrity.test.mjs`. It is
   the frozen record of t299's own rename table, and t299's table never named
   this document — so it does not grow, the same rule that already keeps
@@ -90,17 +91,50 @@ of all six packages. No logic in any of them.
 Both verified against the file after the rename, not merely re-pointed, and both
 are now a durable assertion (AT4) rather than a read somebody did once:
 
-- **`:796`** is `- **The CONTENT of \`metrica_esperada\` stays \`{nome, direcao, de, para}\`** —`,
-  which is exactly the frozen hypothesis format its three citations claim
-  (`packages/runner/test/no-portuguese-wire.test.ts` twice,
-  `packages/runner/scripts/close-surveyor-outcome.mjs` once).
-- **`:791`** is `- **\`total_ms\` and \`lens\` are already English.** Nothing to map.`
-  — the sentence the t281 note cites three times.
+**`:796`**, quoted whole — the frozen hypothesis format its three citations claim
+(`packages/runner/test/no-portuguese-wire.test.ts` twice,
+`packages/runner/scripts/close-surveyor-outcome.mjs` once):
+
+```
+- **The CONTENT of `metrica_esperada` stays `{nome, direcao, de, para}`** —
+```
+
+**`:791`**, the sentence the t281 note cites three times:
+
+```
+- **`total_ms` and `lens` are already English.** Nothing to map.
+```
 
 The t281 note's `:791` was **not** "repaired" to `:796`. That note's own text
 dates its claim to what was true while t281 ran, before the translation grew the
 document and pushed the same sentence down five lines. Fixing the number would
 misrepresent exactly the history the note was written to preserve.
+
+## Where FR1 had to bend: the document cites its own two parser suites
+
+FR1 says the document stays "byte-for-byte identical". It could not, and the
+reason is that the document does not only get cited — it cites back. Two of its
+sentences name the two test files this ticket renamed:
+
+- line 53, on `packages/core/test/glossary-wire-docs.test.ts` reading §2.1, §5.1
+  and §5.2 at run time;
+- line 92, on `packages/core/test/glossary-wire.test.ts` resolving the citations
+  of the files it lists.
+
+Leaving those two would have left the document pointing at two files that no
+longer exist — precisely the failure this ticket was written to end, and a
+direct violation of its own AT2 and of FR8, which says to repoint every
+remaining citation across the declared set (the document is in that set).
+
+**The default taken: repoint them, and treat FR1's real requirement as the
+reason it gives rather than its literal words.** FR1 justifies itself as "what
+keeps every line anchor into it valid without re-checking content, only the
+filename." Both edits are same-line substitutions at lines 53 and 92, far above
+the two cited lines, so no line moved: 838 before, 838 after, and AT4 confirms
+`:791` and `:796` still read exactly what their six citations claim. The
+property FR1 exists to protect is fully intact; only the byte-identity claim is
+not. The diff on the document is two lines, both a filename swap, and nothing
+else.
 
 ## Three of the five predicted reds could not happen
 

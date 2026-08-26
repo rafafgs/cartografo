@@ -76,13 +76,22 @@
  * that list's own `AT2 — every enumerated language gate exists` refuses an entry
  * a naming pattern already covers.
  *
- * ## The one thing here that is pinned PRESENT
+ * ## The two blocks pinned PRESENT
  *
- * `docs/spec/intake.md` §7 is a captured transcript, re-run on 2026-08-17 and
- * "kept verbatim" by the document's own prose. AT3 pins its stale spellings as
- * still there, the same shape `packages/core/test/no-portuguese-core-tests.test.ts`
- * uses for excused lines: editing a quoted proof run would misrepresent what
- * that run produced.
+ * {@link EXCUSED_BLOCKS}, and neither is a skip. `docs/spec/intake.md` §7 is a
+ * captured transcript, re-run on 2026-08-17 and "kept verbatim" by the
+ * document's own prose: editing a quoted proof run would misrepresent what that
+ * run produced. §2's item example is USER content — intake accepts an item in
+ * ANY language, and D24 governs the prose this project writes, so an English
+ * example there would illustrate the one case that needs no illustrating. The
+ * second is not this ticket's finding: `tests/t313-docs-specs-drift.test.mjs`
+ * AT7 pinned it first, t314 re-litigated it and deliberately kept it, and t328's
+ * body was written as though the question were open. It was not.
+ *
+ * AT3 pins both, the same shape `packages/core/test/no-portuguese-core-tests.test.ts`
+ * uses for excused lines. Stating them as cases is the point: a block that is
+ * merely absent from the inventory looks exactly like a block nobody noticed,
+ * and a block nobody noticed is what this whole ticket is about.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
@@ -92,7 +101,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { DIACRITIC, STOPWORD } from '../scripts/no-portuguese-prose.mjs';
+import { DIACRITIC, FENCE, STOPWORD } from '../scripts/no-portuguese-prose.mjs';
 import { GATE_PATTERNS } from './no-portuguese-repo-sweep.test.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -400,21 +409,58 @@ export const INVENTORY = Object.freeze([
 ]);
 
 /**
- * The transcript `docs/spec/intake.md` §7 keeps verbatim, and its stale words.
+ * The two fenced blocks that stay Portuguese, each on a reason somebody recorded.
  *
- * Not an oversight and not a line nobody got round to: the document says, in its
- * own prose above the block, that the values are "what that run returned, kept
- * verbatim" and that "`refinar` is `refine` now". Correcting the spelling would
- * make the block claim a run that never happened.
+ * Neither is a skip. Both are D24 applied correctly rather than excused, which
+ * is why they are stated here as cases instead of being left as the absence of
+ * an inventory entry — an absence looks identical to an oversight, and this
+ * ticket exists because of what a previous absence hid.
  *
- * The range is the fence's contents, exclusive of the two fence lines.
+ * `from`/`to` are the fence's CONTENTS, exclusive of the two fence lines, and
+ * AT3 checks the fences are still where the range says before believing
+ * anything else.
+ *
+ * `assertedIn` names the file that carries the presence claim, and it is not
+ * always the document. §7's claim is about the document's own text and lives
+ * here. §2's claim belongs to `tests/t313-docs-specs-drift.test.mjs` AT7, which
+ * had it first, so what this gate reads there is that the PIN still exists — if
+ * a later ticket retires AT7, this goes red and names the decision instead of
+ * letting §2 drift on nobody's authority.
  */
-export const VERBATIM_TRANSCRIPT = Object.freeze({
-  file: 'docs/spec/intake.md',
-  from: 285,
-  to: 301,
-  kept: Object.freeze(['refinar', '"migracao"', '"dominio"', '"rotas"']),
-});
+export const EXCUSED_BLOCKS = Object.freeze([
+  Object.freeze({
+    name: "intake.md §7's captured transcript",
+    file: 'docs/spec/intake.md',
+    from: 285,
+    to: 301,
+    kept: Object.freeze(['refinar', '"migracao"', '"dominio"', '"rotas"']),
+    assertedIn: 'docs/spec/intake.md',
+    reason:
+      'the document says, in its own prose above the block, that the values are "what that run ' +
+      'returned, kept verbatim" and that "`refinar` is `refine` now". Correcting the spelling ' +
+      'would make the block claim a run that never happened (FR3)',
+  }),
+  Object.freeze({
+    name: "intake.md §2's submitted item",
+    file: 'docs/spec/intake.md',
+    from: 50,
+    to: 55,
+    kept: Object.freeze([
+      '"Migração 0005"',
+      '"Colunas novas em trabalho e as duas tabelas do intake."',
+      '"a migração roda do zero"',
+    ]),
+    assertedIn: 'tests/t313-docs-specs-drift.test.mjs',
+    reason:
+      'intake accepts an item in ANY language, so a submitted item is USER content, and D24 ' +
+      'governs the prose this project writes. An English example there would illustrate the one ' +
+      'case that needs no illustrating. t328 was written as if this were open; it was already ' +
+      'settled, and the founder confirmed it on 2026-08-26. The whole block is held and not ' +
+      'half of it: `"ref": "migracao"` and `"depends_on": ["dominio"]` carry no diacritic and ' +
+      'the owning gate cannot see them, but they are fields of the same submitted item, and a ' +
+      'half-translated payload is worse than either whole one (FR2)',
+  }),
+]);
 
 /** One file's lines, off disk, with the trailing newline's empty entry kept. */
 function linesOf(relativePath) {
@@ -511,31 +557,38 @@ test('AT2 — every pinned line, read raw rather than fence-blanked, is clean', 
   );
 });
 
-test('AT3 — intake.md §7 keeps its captured transcript, stale spellings and all', () => {
-  const lines = linesOf(VERBATIM_TRANSCRIPT.file);
-  const block = lines.slice(VERBATIM_TRANSCRIPT.from - 1, VERBATIM_TRANSCRIPT.to).join('\n');
+test('AT3 — the two excused blocks are still there, and no pin reaches into them', () => {
+  for (const block of EXCUSED_BLOCKS) {
+    const lines = linesOf(block.file);
 
-  // The fence has to still be where the range says it is, or the range is
-  // pinning somebody else's lines and the assertions below mean nothing.
-  assert.equal(lines[VERBATIM_TRANSCRIPT.from - 2], '```', 'the transcript fence moved');
-  assert.equal(lines[VERBATIM_TRANSCRIPT.to], '```', 'the transcript fence moved');
+    // The fences have to still be where the range says they are, or the range
+    // is describing somebody else's lines and nothing below means anything.
+    // Matched rather than compared: §7's opener is bare and §2's is ```json,
+    // and which info string a fence carries is not what this is checking.
+    assert.ok(FENCE.test(lines[block.from - 2]), `the fence above ${block.name} moved`);
+    assert.ok(FENCE.test(lines[block.to]), `the fence below ${block.name} moved`);
 
-  for (const kept of VERBATIM_TRANSCRIPT.kept) {
-    assert.ok(
-      block.includes(kept),
-      `the captured transcript lost ${kept}: its values are what that run returned, and ` +
-        'a run does not get re-spelled after the fact',
-    );
+    // Read from wherever the presence claim actually lives: the document for
+    // §7, the gate that owns the decision for §2.
+    const claim = linesOf(block.assertedIn).join('\n');
+
+    for (const kept of block.kept) {
+      assert.ok(
+        claim.includes(kept),
+        `${block.assertedIn} no longer carries ${kept} for ${block.name}. If that is on ` +
+          `purpose, the decision moved and this case has to move with it — ${block.reason}`,
+      );
+    }
+
+    // And no pin of this ticket reaches inside.
+    for (const entry of INVENTORY) {
+      const inside =
+        entry.file === block.file && entry.line >= block.from && entry.line <= block.to;
+      assert.equal(inside, false, `the inventory edits ${block.name} at line ${String(entry.line)}`);
+    }
   }
 
-  // And no pin of this ticket reaches into it.
-  for (const entry of INVENTORY) {
-    const inside =
-      entry.file === VERBATIM_TRANSCRIPT.file &&
-      entry.line >= VERBATIM_TRANSCRIPT.from &&
-      entry.line <= VERBATIM_TRANSCRIPT.to;
-    assert.equal(inside, false, `the inventory edits the verbatim transcript at line ${String(entry.line)}`);
-  }
+  assert.equal(EXCUSED_BLOCKS.length, 2, 'a third excused block is a decision, not an edit');
 });
 
 test('AT4 — this gate is named the way the repo-wide sweep spares a gate', () => {

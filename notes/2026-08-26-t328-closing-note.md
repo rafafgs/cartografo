@@ -1,20 +1,25 @@
-# t328 — three buckets, thirty-five lines, and one example the ticket cannot have
+# t328 — three buckets, thirty-five lines, and a premise that was wrong
 
 **Date:** 2026-08-26 · **Branch:** `ticket-328` · **Subject:** the example
 payloads inside fenced blocks, classified against the source rather than against
-what they look like — and the discovery that the ticket's headline fix is
-forbidden by a gate the refinement never opened.
+what they look like — and the ticket's headline fix, which turned out to be a
+thing the repository had already decided not to do.
 
-Three commits: the pinned inventory red on all thirty-five lines (`74c7c62`),
-the corrections and translations (`a985547`), and a pre-existing red on the
-branch that was not this ticket's to cause (`fd9a082`). Plus this note.
+Six commits: the pinned inventory red on all thirty-five lines (`74c7c62`), the
+corrections and translations (`a985547`), a pre-existing red on the branch that
+was not this ticket's to cause (`fd9a082`), this note (`27ae8e9`), that same
+pre-existing fix dropped in favour of main's (`75cba61`), and the two excused
+blocks stated as cases — which is also where this note gained the founder's
+answer.
 
-## The blocked half, first, because it is the headline
+## The premise that was wrong, first, because it is the headline
 
 The ticket's Definition of Done asks that `docs/spec/intake.md`'s opening item
 example (lines 50-55) "contains no Portuguese content", and the Context calls it
-"the most visible" occurrence in the tree. **It is not in this branch, and it
-cannot be without editing an existing gate's assertions.**
+"the most visible" occurrence in the tree. **That item is not a defect and never
+was.** This is not a scope change — the ticket's premise about that block was
+wrong, the same way its predecessor's premise about seven "frozen" tokens was
+wrong four times out of seven, and it is worth recording in those words.
 
 `tests/t313-docs-specs-drift.test.mjs` AT7 is named *"intake.md keeps its
 submitted-content example, on its own reason"* and asserts that the document
@@ -39,21 +44,51 @@ founder ruled on it — t314 dropped a *circular* cross-check (AT7 was the reaso
 two test fixtures could not be translated) but deliberately kept AT7 itself,
 "on the reason that was always the real one".
 
+**The founder's ruling, 2026-08-26:** keep the example Portuguese, close t328
+without that DoD item, record §2 as a fourth excluded case beside §7's verbatim
+transcript, and open no follow-up — there is nothing left open to follow up on.
+And the reason is stronger than "an exception": *"That is not an exception to
+D24; it is D24 applied correctly, which is why it deserves to be stated as a
+case rather than buried as a skip."* D24 governs the prose this project writes.
+A submitted item is not that.
+
 So `docs/spec/intake.md` §2 is a **fourth case**, structurally identical to §7's
 verbatim transcript that FR3 already excludes: a fenced block the document tree
-keeps in Portuguese *on a recorded decision*. The refinement's three buckets do
-not have a slot for it because the refinement never read AT7 — it is not in the
-ticket's Context, its Out of Scope, or its shared-file surface.
+keeps in Portuguese *on a recorded decision*. The refinement's three buckets have
+no slot for it because the refinement never read AT7 — it is not in the ticket's
+Context, its Out of Scope, or its shared-file surface.
 
-The whole example is held back, not half of it. `"ref": "migracao"` and
-`"depends_on": ["dominio"]` carry no diacritic and are invisible to AT7, so they
-*could* have been changed — but they are fields of the same submitted item, and
-FR2's own rule ("splitting them would leave a block that is half-fixed and still
-wrong") applies to a block split by a gate exactly as it does to one split by
+Stated as a case, not buried: `EXCUSED_BLOCKS` in the new gate carries both
+blocks with their fence ranges and their reasons, and AT3 asserts that no pin of
+this ticket reaches inside either. For §2 it deliberately does **not** re-assert
+the three strings against the document — AT7 owns that claim and had it first —
+but reads them in `tests/t313-docs-specs-drift.test.mjs` instead, so that
+retiring AT7 turns this gate red and names the decision rather than letting §2
+drift on nobody's authority.
+
+The whole example is held, not half of it. `"ref": "migracao"` and
+`"depends_on": ["dominio"]` carry no diacritic and AT7 cannot see them, so they
+*could* have been changed with nothing going red — and the result would have been
+a half-translated payload, which is worse than either whole one. That is FR2's
+own rule, and it applies to a block split by a gate exactly as to one split by
 carelessness. `docs/spec/intake.md:168` — the retired `depende_de_trabalho_id`
 in §4 — is a different block and IS fixed.
 
-An input request carries the decision. Nothing else in the ticket depends on it.
+### The pattern, named because it is now twice
+
+The founder's words: *"The ticket was wrong, not you, and for the second time in
+a row: t327's body named a file t312 had already pinned, and this body named a
+block t313's AT7 had already pinned with a recorded rationale that t314 then
+re-litigated and deliberately kept. Both times the pin was in a file the ticket
+never declared, and both times the developer stage caught what the refinement did
+not."*
+
+The cheap fix is mechanical and belongs to refinement, not to development:
+**before declaring a file's content a defect, grep the test tree for the strings
+you intend to remove.** Both misses would have been caught by one `grep -rl` over
+`tests/` and `packages/*/test/`. This ticket's shared-file surface lists seven
+paths; the gate that actually blocked it is in none of them, because a gate that
+pins a document is not a file the document's ticket thinks it shares.
 
 ## The three buckets, by file and line
 
@@ -146,12 +181,18 @@ fenced JSON examples carry the same retired vocabulary at document-wide scale �
 correctness audit, not a translation, and it is document-wide rather than a line
 or two per file. `notes/2026-08-26-t314-closing-note.md` already found and
 costed it and recommended a dedicated ticket; this ticket applied that
-recommendation instead of re-deciding it. **Recommend opening that follow-up**,
+recommendation instead of re-deciding it. **Recommend opening that ticket**,
 scoped to auditing every fenced example in `docs/spec/graph.md` against
 `schema/graph.schema.json` and the wire glossary, folding in the illustrative
 content once the keys are current — and widening it to `schema/examples/**`,
 whose `graph-valid-flowpilot.json` carries `refinar`/`desenvolver`/`integrar`/
 `testar`/`implantar` as live node ids and is what makes `refinar` bucket 1 here.
+
+That recommendation is about `docs/spec/graph.md` and nothing else. **There is no
+follow-up for `docs/spec/intake.md` §2** — the founder's answer is explicit that
+nothing there is left open. If a later reader finds §2 and reads it as unfinished
+work, this note and `EXCUSED_BLOCKS` are the answer: it is finished, and the
+finished state is Portuguese.
 
 `specs/events/taxonomy.md` and `docs/spec/synthesizer.md`: read in full, no
 edit, as the ticket predicted. The taxonomy's fenced examples are already
@@ -225,19 +266,31 @@ are the established shape here: `tests/glossary-wire-rename-integrity.test.mjs`
 and `tests/t313-notes-quotation-inventory.test.mjs` both do it already.
 
 **`notes/2026-08-26-t314-closing-note.md`** and the `TOUCHABLE` list in
-**`tests/notes-redaction.test.mjs`** — a pre-existing red. `npm test` was already
-failing at `df4a2be`, the commit this branch starts from, and the proof is in
-`fd9a082`'s message: t314's own note quotes `docs/spec/graph.md`'s stale edge
-with backtick spans that WRAP, and `SPAN` in `scripts/no-portuguese-prose.mjs`
-pairs backticks within one line by design. The mark was therefore invisible and
-`para` was read as prose. The repository had already met this exact incident one
-note earlier — see the `notes/2026-08-25-t309-closing-note.md` entry in
-`TOUCHABLE` — and chose the same fix: put the quotation on one line, change not
-one character of quoted text, declare the note. Done both ways here.
+**`tests/notes-redaction.test.mjs`** — a pre-existing red, fixed twice by two
+sessions that could not see each other. `npm test` was already failing at
+`df4a2be`, the commit this branch starts from: t314's own note quotes
+`docs/spec/graph.md`'s stale edge with backtick spans that WRAP, and `SPAN` in
+`scripts/no-portuguese-prose.mjs` pairs backticks within one line by design, so
+the mark was invisible and `para` was read as prose. The repository had already
+met this exact incident one note earlier — see the
+`notes/2026-08-25-t309-closing-note.md` entry in `TOUCHABLE` — and chose the same
+fix: quotation onto one line, not one character of quoted text changed, note
+declared. `fd9a082` did that here.
 
-The lesson generalises and is worth carrying: **in this tree, a marked quotation
-must fit on one line or it is not marked.** Reflowing a paragraph can silently
-disarm a language gate, and nothing warns you.
+**Main had done it independently, as `a94dbac`, while this branch was working** —
+same two files, same reflow, same `TOUCHABLE` entry, different wording, and
+reported by the t327 session rather than this one. `a94dbac`'s parent is
+`df4a2be`, this branch's own starting point. `75cba61` therefore drops this
+branch's copy and takes main's bytes verbatim, on the founder's instruction: two
+versions of one fix on the two sides of a merge is a conflict for nobody's
+benefit, and main's is the shared history. **Whoever integrates should see no
+conflict in those two files at all** — if one appears, take main's side, because
+that is already what this branch holds.
+
+The lesson generalises and is the reason main's commit calls twice in one day a
+pattern: **in this tree, a marked quotation must fit on one line or it is not
+marked.** Reflowing a paragraph can silently disarm a language gate, and nothing
+warns you — not the author, not the renderer, not review.
 
 ## Gates
 

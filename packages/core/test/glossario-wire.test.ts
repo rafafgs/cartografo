@@ -652,7 +652,7 @@ test('the checks bite on a glossary broken on purpose', () => {
       '| api | `servico` | `chore` | `x.ts` |',
       '| events | `servico` | `service` | `x.ts` |',
       '',
-      '| coluna | que não é | do glossário | nenhuma |',
+      '| column | that is not | of the glossary | none |',
       '|---|---|---|---|',
       '| api | `nada` | `nothing` | `x.ts` |',
     ].join('\n'),

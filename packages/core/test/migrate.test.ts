@@ -80,11 +80,11 @@ test('AT1 — migrations run in numeric (not alphabetical) order and stay record
   // Written out of order on disk on purpose. Besides `0002` coming before
   // `0001`, a `10_` goes in that in ALPHABETICAL order falls before `2_` — only
   // ordering by the prefix number returns the right sequence.
-  writeMigration(dir, '0002_segunda.sql', 'CREATE TABLE segunda (id TEXT PRIMARY KEY);');
-  writeMigration(dir, '10_decima.sql', 'CREATE TABLE decima (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '0002_second.sql', 'CREATE TABLE second (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '10_tenth.sql', 'CREATE TABLE tenth (id TEXT PRIMARY KEY);');
   writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
 
-  const expected = ['0001_init', '0002_segunda', '10_decima'];
+  const expected = ['0001_init', '0002_second', '10_tenth'];
   assert.deepEqual(
     listMigrations(dir).map((m) => m.id),
     expected,
@@ -116,7 +116,7 @@ test('AT1 — migrations run in numeric (not alphabetical) order and stay record
     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
     .all() as Array<{ name: string }>;
   const names = tables.map((row) => row.name);
-  for (const wanted of ['decima', 'schema_migrations', 'segunda']) {
+  for (const wanted of ['schema_migrations', 'second', 'tenth']) {
     assert.ok(names.includes(wanted), `the table "${wanted}" has to have been created`);
   }
 });
@@ -129,11 +129,11 @@ test('AT2 — a second startup over an already migrated database reapplies nothi
   const dir = path.join(base, 'migrations');
   mkdirSync(dir);
   writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
-  writeMigration(dir, '0002_segunda.sql', 'CREATE TABLE segunda (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '0002_second.sql', 'CREATE TABLE second (id TEXT PRIMARY KEY);');
 
   const dbPath = path.join(base, 'cartografo.db');
   const first = openDatabase(dbPath);
-  assert.deepEqual(migrate(first, dir), ['0001_init', '0002_segunda']);
+  assert.deepEqual(migrate(first, dir), ['0001_init', '0002_second']);
   const afterFirst = first
     .prepare('SELECT id, applied_at FROM schema_migrations ORDER BY id')
     .all();
@@ -165,7 +165,7 @@ test('AT3 — a migration that breaks halfway leaves no residue (one transaction
   writeMigration(
     dir,
     '0002_quebrada.sql',
-    'CREATE TABLE meio_do_caminho (id TEXT PRIMARY KEY);\nISTO NAO E SQL VALIDO;\n',
+    'CREATE TABLE halfway (id TEXT PRIMARY KEY);\nTHIS IS NOT VALID SQL;\n',
   );
 
   const db = openDatabase(path.join(base, 'cartografo.db'));
@@ -183,7 +183,7 @@ test('AT3 — a migration that breaks halfway leaves no residue (one transaction
   );
 
   const residue = db
-    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'meio_do_caminho'")
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'halfway'")
     .get();
   assert.equal(residue, undefined, 'what the broken migration created before failing has to be gone');
 });
@@ -198,10 +198,10 @@ test('AT4 — a .sql file without a numeric prefix and a duplicated number fail 
   writeMigration(withoutPrefix, 'init.sql', CONTROL_TABLE_SQL);
   assert.throws(() => listMigrations(withoutPrefix), /init\.sql/);
 
-  const duplicated = path.join(base, 'duplicado');
+  const duplicated = path.join(base, 'duplicated');
   mkdirSync(duplicated);
   writeMigration(duplicated, '0001_init.sql', CONTROL_TABLE_SQL);
-  writeMigration(duplicated, '0001_outra.sql', 'CREATE TABLE outra (id TEXT PRIMARY KEY);');
+  writeMigration(duplicated, '0001_other.sql', 'CREATE TABLE other (id TEXT PRIMARY KEY);');
   assert.throws(() => listMigrations(duplicated), /0001/);
 });
 
@@ -364,9 +364,9 @@ test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows alr
   const base = temporaryArea(t);
 
   // The database is taken up to `0009` only — the schema as it was before this
-  // ficha — and the row is seeded THERE, so what is asserted afterwards is a
+  // ticket — and the row is seeded THERE, so what is asserted afterwards is a
   // real rebuild of a populated table and not a fresh CREATE.
-  const upTo0009 = path.join(base, 'ate-0009');
+  const upTo0009 = path.join(base, 'up-to-0009');
   mkdirSync(upTo0009);
   const all = listMigrations(REAL_MIGRATIONS_DIR);
   const rebuild = all.find((migration) => migration.number === 10);
@@ -417,17 +417,17 @@ test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows alr
   // keys on there is no other order that ever satisfies all of them.
   db.prepare(
     `INSERT INTO graph (id, class, lineage_type, current_version_id, created_at)
-     VALUES ('redacao', 'redacao', 'base', NULL, ?)`,
+     VALUES ('drafting', 'drafting', 'base', NULL, ?)`,
   ).run(moment);
   db.prepare(
     `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, created_at)
-     VALUES (?, 'redacao', NULL, '{}', 'manual', ?)`,
+     VALUES (?, 'drafting', NULL, '{}', 'manual', ?)`,
   ).run(versionId, moment);
-  db.prepare('UPDATE graph SET current_version_id = ? WHERE id = ?').run(versionId, 'redacao');
+  db.prepare('UPDATE graph SET current_version_id = ? WHERE id = ?').run(versionId, 'drafting');
   const seed = db.prepare(
     `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
                            status, revert_reason, result, created_at, updated_at)
-     VALUES ('redacao', ?, '[]', '{"fonte":"telemetria"}', '{"nome":"x"}', ?, NULL, ?, ?, ?)`,
+     VALUES ('drafting', ?, '[]', '{"fonte":"telemetry"}', '{"nome":"x"}', ?, NULL, ?, ?, ?)`,
   );
   seed.run(versionId, 'rejected', '{"soundness":{"valido":false}}', moment, moment);
   seed.run(versionId, 'pending', null, moment, moment);
@@ -440,9 +440,9 @@ test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows alr
   const bornOfProposal = `sha256:${'b'.repeat(64)}`;
   db.prepare(
     `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id, created_at)
-     VALUES (?, 'redacao', ?, '{}', 'proposal', 1, ?)`,
+     VALUES (?, 'drafting', ?, '{}', 'proposal', 1, ?)`,
   ).run(bornOfProposal, versionId, moment);
-  db.prepare('UPDATE graph SET origin_proposal_id = 2 WHERE id = ?').run('redacao');
+  db.prepare('UPDATE graph SET origin_proposal_id = 2 WHERE id = ?').run('drafting');
 
   const previous = db
     .prepare('SELECT id, graph_id, status, result, created_at FROM proposal ORDER BY id')
@@ -495,7 +495,7 @@ test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows alr
     .prepare(
       `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
                              status, created_at, updated_at)
-       VALUES ('redacao', ?, '[]', '{}', '{}', 'pending', ?, ?)`,
+       VALUES ('drafting', ?, '[]', '{}', '{}', 'pending', ?, ?)`,
     )
     .run(versionId, moment, moment);
   assert.equal(
@@ -657,11 +657,11 @@ test('t279 AT8 — an applied migration missing on disk stops the startup before
   // reads `schema_migrations.id` and nothing else, so it has to bite on a ledger
   // that predates the column just as hard (FR3).
   writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
-  writeMigration(dir, '0002_segunda.sql', 'CREATE TABLE segunda (id TEXT PRIMARY KEY);');
+  writeMigration(dir, '0002_second.sql', 'CREATE TABLE second (id TEXT PRIMARY KEY);');
 
   const dbPath = path.join(base, 'cartografo.db');
   const first = openDatabase(dbPath);
-  assert.deepEqual(migrate(first, dir), ['0001_init', '0002_segunda']);
+  assert.deepEqual(migrate(first, dir), ['0001_init', '0002_second']);
   const ledgerBefore = first.prepare('SELECT id, applied_at FROM schema_migrations ORDER BY id').all();
   first.close();
 

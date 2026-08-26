@@ -56,7 +56,7 @@ test('t157 FR5 — an empty item is refused in an optional string-list too', () 
     {
       job_id: 1,
       kind: 'question',
-      question: 'qual caminho?',
+      question: 'which path?',
       options: ['seguir', ''],
       auto_approvable: false,
     },
@@ -76,13 +76,13 @@ test('t157 FR5 — a list of real strings still passes', () => {
     requireValidData('job.created', {
       title: 'x',
       entry_node_id: 'y',
-      acceptance_criteria: ['a nota cabe em uma tela'],
+      acceptance_criteria: ['the note fits on one screen'],
     }),
     {
       title: 'x',
       entry_node_id: 'y',
       body: null,
-      acceptance_criteria: ['a nota cabe em uma tela'],
+      acceptance_criteria: ['the note fits on one screen'],
       fields: null,
       tier: null,
     },
@@ -109,7 +109,7 @@ test('t157 FR5 — a list of real strings still passes', () => {
  */
 test('t168 — job.created accepts fields as a map of scalars', () => {
   const filled = {
-    premise_source: 'relatório trimestral 2026Q2, página 12',
+    premise_source: 'quarterly report 2026Q2, page 12',
     downside: -12.5,
     upside: 40,
     reviewed: true,
@@ -145,7 +145,7 @@ test('t168 — a job born with no declared field records null, never an empty ma
 
 test('t168 — a non-scalar entry in fields is refused', () => {
   for (const broken of [
-    { premise_source: { pagina: 12 } },
+    { premise_source: { page: 12 } },
     { downside: [12] },
     { premise_source: null },
     ['premise_source'],
@@ -159,7 +159,7 @@ test('t168 — a non-scalar entry in fields is refused', () => {
 const OPEN_SESSION = Object.freeze({
   engine: 'claude-code',
   working_dir: '/tmp/cartografo',
-  prompt: 'faça algo e conte o que aconteceu',
+  prompt: 'do something and report what happened',
 });
 
 test('t163 — session.opened accepts the silence budget, and absent reads as null', () => {
@@ -356,7 +356,7 @@ test('t227 AT4 — the old Portuguese envelope keys do not exist any more', () =
     'dados',
   ]) {
     refusesEvent(
-      { ...envelope(), [key]: 'seja o que for' },
+      { ...envelope(), [key]: 'whatever it may be' },
       `${key} does not exist in the envelope`,
     );
   }
@@ -426,7 +426,7 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
     refuses('session.finished', { status }, 'status');
   }
 
-  const denial = { tool: 'WebFetch', reason: 'sem permissão' };
+  const denial = { tool: 'WebFetch', reason: 'no permission' };
   for (const resource of ['filesystem', 'network']) {
     assert.equal(
       requireValidData('session.permission_denied', { ...denial, resource }).resource,
@@ -466,7 +466,7 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
  * Which makes this file the FIRST gate on it: `PATCH /finish` calls
  * `requireValidData` before it writes anything, so a `failure_kind` this list
  * does not carry is a `400` and the adapter's whole reading is lost on the way
- * in. Widening the list is the one change this ficha makes here — `status` is
+ * in. Widening the list is the one change this ticket makes here — `status` is
  * untouched on purpose (the frozen `SessionStatus` is a decision, not an
  * oversight: `docs/formats/engine-adapter.md`, "Rejected — a richer
  * `SessionStatus`"), and no cross-field rule is added, because
@@ -638,7 +638,7 @@ test('t196 AT9 — an event whose entity is not the type\'s own subject is refus
 /* -------------------------------------------------------------------------- */
 
 test('t253 FR1 — session.finished round-trips an arbitrary output object', () => {
-  const output = { branch: 'ticket-253', arquivos: ['a.ts', 'b.ts'], aninhado: { ok: true } };
+  const output = { branch: 'ticket-253', files: ['a.ts', 'b.ts'], nested: { ok: true } };
 
   assert.deepEqual(
     requireValidData('session.finished', { status: 'completed', output }).output,
@@ -657,7 +657,7 @@ test('t253 FR1 — session.finished round-trips an arbitrary output object', () 
 });
 
 test('t253 FR1 — an output that is not an object never enters the log', () => {
-  for (const output of ['a nota', 42, true, ['uma', 'lista']]) {
+  for (const output of ['the note', 42, true, ['a', 'list']]) {
     refuses('session.finished', { status: 'completed', output }, 'output');
   }
 });
@@ -685,7 +685,7 @@ test('t253 FR4 — output_schema_error is the list of reasons, and never empty',
   );
   refuses(
     'session.finished',
-    { status: 'completed', output_schema_error: 'um motivo só' },
+    { status: 'completed', output_schema_error: 'just one reason' },
     'output_schema_error',
   );
 });
@@ -696,7 +696,7 @@ test('t253 FR4 — output_schema_error is the list of reasons, and never empty',
  * A boolean and not a second list beside `output_schema_error` above: what the
  * dispatch has to know synchronously is only WHETHER the report was taken, and
  * the reasons it was not are already carried, whole, by the field next door.
- * Optional like every other one, so an event written before this ficha still
+ * Optional like every other one, so an event written before this ticket still
  * validates — but `finishSession` never leaves it unset, the same discipline
  * `output_schema_error` keeps on the path that raises it.
  */

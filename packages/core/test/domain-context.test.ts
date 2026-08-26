@@ -75,7 +75,7 @@ const SNAPSHOT: ProjectedSnapshot = {
  * The default is the shape of a job standing on its entry node: nothing
  * executed yet, and the instant it was created as the moment it got there.
  */
-const TRAVESSIA = Object.freeze({
+const TRAVERSAL = Object.freeze({
   nodes_visited: [] as string[],
   entered_at: '2026-08-18T08:00:00.000Z',
 });
@@ -83,11 +83,11 @@ const TRAVESSIA = Object.freeze({
 /** The sources with nothing in them, so each case varies only its own piece. */
 function sources(overrides: Partial<ContextSources> = {}): ContextSources {
   return {
-    job: { id: 253, title: 'Projeção de input', body: 'o corpo bruto', fields: null },
+    job: { id: 253, title: 'Input projection', body: 'the raw body', fields: null },
     snapshot: SNAPSHOT,
     outputs: [],
     answered: [],
-    traversal: { nodes_visited: [...TRAVESSIA.nodes_visited], entered_at: TRAVESSIA.entered_at },
+    traversal: { nodes_visited: [...TRAVERSAL.nodes_visited], entered_at: TRAVERSAL.entered_at },
     ...overrides,
   };
 }
@@ -97,7 +97,7 @@ test('t253 FR7 — the job seeds input.job, and its own fields land at the top l
     sources({
       job: {
         id: 253,
-        title: 'Projeção de input',
+        title: 'Input projection',
         body: 'o corpo bruto',
         fields: { premise_source: 'nota de 2026-08-17', downside: 3, upside: 12 },
       },
@@ -106,7 +106,7 @@ test('t253 FR7 — the job seeds input.job, and its own fields land at the top l
 
   assert.deepEqual(input.job, {
     id: 253,
-    title: 'Projeção de input',
+    title: 'Input projection',
     body: 'o corpo bruto',
   });
   // Beside `input.job`, never inside it: this is what keeps bets' scalar custom
@@ -160,7 +160,7 @@ test('t253 FR7 — two nodes sharing a produces bucket accumulate into one objec
       outputs: [
         {
           node_id: 'desenvolver',
-          output: { branch: 'ticket-253', arquivos: 4 },
+          output: { branch: 'ticket-253', files: 4 },
           finished_at: '2026-08-17T09:00:00.000Z',
           session_id: 1,
         },
@@ -176,7 +176,7 @@ test('t253 FR7 — two nodes sharing a produces bucket accumulate into one objec
 
   assert.deepEqual(input.artefato, {
     branch: 'ticket-253',
-    arquivos: 4,
+    files: 4,
     merge_commit: 'a1b2c3d',
   });
 });
@@ -193,7 +193,7 @@ test('t253 FR7 — a produces-less node merges at the top, and the bucket surviv
         },
         {
           node_id: 'testar',
-          output: { outcome: 'pass', evidencia: 'a suíte passou' },
+          output: { outcome: 'pass', evidence: 'the suite passed' },
           finished_at: '2026-08-17T10:00:00.000Z',
           session_id: 2,
         },
@@ -208,7 +208,7 @@ test('t253 FR7 — a produces-less node merges at the top, and the bucket surviv
   );
 
   assert.equal(input.outcome, 'pass', 'the gate declares no bucket: it merges at the top');
-  assert.equal(input.evidencia, 'a suíte passou');
+  assert.equal(input.evidence, 'the suite passed');
   assert.deepEqual(
     input.artefato,
     { branch: 'ticket-253', merge_commit: 'a1b2c3d' },
@@ -222,13 +222,13 @@ test('t253 FR7 — the walk is in finished_at order, and the later writer wins',
       outputs: [
         {
           node_id: 'integrar',
-          output: { merge_commit: 'depois' },
+          output: { merge_commit: 'after' },
           finished_at: '2026-08-17T11:00:00.000Z',
           session_id: 9,
         },
         {
           node_id: 'desenvolver',
-          output: { merge_commit: 'antes', branch: 'ticket-253' },
+          output: { merge_commit: 'before', branch: 'ticket-253' },
           finished_at: '2026-08-17T09:00:00.000Z',
           session_id: 1,
         },
@@ -236,7 +236,7 @@ test('t253 FR7 — the walk is in finished_at order, and the later writer wins',
     }),
   );
 
-  assert.deepEqual(input.artefato, { merge_commit: 'depois', branch: 'ticket-253' });
+  assert.deepEqual(input.artefato, { merge_commit: 'after', branch: 'ticket-253' });
 });
 
 test('t253 FR7 — a session whose node the snapshot does not carry merges at the top', async () => {
@@ -288,13 +288,13 @@ test('t253 FR7 — the answered escalations are exposed structurally', async () 
   const input = await buildNodeInput(
     sources({
       answered: [
-        { id: '4', pergunta: 'Qual mapeamento vale?', resposta: 'Opção 1: produces + project.' },
+        { id: '4', pergunta: 'Which mapping holds?', resposta: 'Option 1: produces + project.' },
       ],
     }),
   );
 
   assert.deepEqual(input.perguntas_respondidas, [
-    { id: '4', pergunta: 'Qual mapeamento vale?', resposta: 'Opção 1: produces + project.' },
+    { id: '4', pergunta: 'Which mapping holds?', resposta: 'Option 1: produces + project.' },
   ]);
 });
 
@@ -376,7 +376,7 @@ test('t270 AT — sessions_by_node groups the reports by node, in closing order'
         // `bucketOf` already reads it.
         {
           node_id: null,
-          output: { nota: 'sessão sem nó' },
+          output: { nota: 'session with no node' },
           finished_at: '2026-08-17T12:00:00.000Z',
           session_id: 11,
         },

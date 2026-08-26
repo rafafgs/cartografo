@@ -21,13 +21,13 @@
  * ## What is read, and what is not
  *
  * Only a **backtick span or a fenced code block** is read. Everything else on
- * the page is blanked before a term is looked for, because these documents are
- * Portuguese prose ON PURPOSE (D18): the sentence
- * `a pergunta que bloqueia o trabalho` is the language the project is written
- * in, and a sweep that could not tell it from a citation would have to be
- * turned off to be usable. A name
- * quoted as code is the one position where the document is claiming something
- * about the wire, and it is the only position this gate judges.
+ * the page is blanked before a term is looked for. The rule was written when
+ * these documents were Portuguese prose under D18's carve-out, and it outlives
+ * that carve-out for a reason that has nothing to do with language: a name
+ * quoted as code is the one position where the document is CLAIMING something
+ * about the wire, and a word in running prose claims nothing. That is the only
+ * position this gate judges — which is also why the fixtures below keep a
+ * retired name in prose position, undelimited, as the evidence it is ignored.
  *
  * §5.3 and §5.4 — the validation report — are deliberately NOT swept. Their
  * rows are common Portuguese words (`estrutura`, `erros`, `codigo`, `regra`),
@@ -345,20 +345,20 @@ test('FR1 — every wire name the specifications quote is the one the code publi
 test('FR1 — the sweep bites on a Portuguese citation planted in a fixture document', () => {
   const terms = glossaryTerms();
   const fixture = [
-    '# Uma especificação plantada',
+    '# A planted specification',
     '',
-    'O runner grava o evento `trabalho.criado` e segue.',
+    'The runner records the event `trabalho.criado` and moves on.',
     '',
-    'A tela mostra a fila em `/quadro`, e o gerador roda com `--classe`.',
+    'The screen shows the queue at `/quadro`, and the generator runs with `--classe`.',
     '',
     '```json',
     '{"tipo": "pergunta.respondida", "dados": {"resposta": "sim"}}',
     '```',
     '',
-    'Responder é `PATCH /v1/perguntas/:id/resposta`, e o schema é',
+    'Answering is `PATCH /v1/perguntas/:id/resposta`, and the schema is',
     '[`lease.concedida`](../../specs/events/schemas/lease.concedida.schema.json).',
     '',
-    'A taxonomia também declara `grafo_versao.*`, que ninguém grava ainda.',
+    'The taxonomy also declares `grafo_versao.*`, which nobody writes yet.',
   ].join('\n');
 
   const hits = citationHits(fixture, terms);
@@ -375,23 +375,23 @@ test('FR1 — the sweep does NOT bite on the English, nor on prose that only loo
   const terms = glossaryTerms();
   const allowed = [
     // The same citations, spelled the way the code spells them today.
-    'O runner grava o evento `job.created` e segue.',
-    'A tela mostra a fila em `/board`, e o gerador roda com `--class` e `--out`.',
-    'Responder é `PATCH /v1/input-requests/:id/answer`.',
+    'The runner records the event `job.created` and moves on.',
+    'The screen shows the queue at `/board`, and the generator runs with `--class` and `--out`.',
+    'Answering is `PATCH /v1/input-requests/:id/answer`.',
     '```json\n{"type": "input_request.answered", "data": {"answer": "sim"}}\n```',
-    // Prose, which is Portuguese by decision (D18) and never a citation.
-    'A pergunta criada pelo agente bloqueia o trabalho até a resposta chegar.',
-    'O evento trabalho.criado, escrito sem crase, é a prosa que a D18 mantém.',
+    // A retired name in PROSE position, undelimited: the one shape this sweep
+    'The words pergunta, trabalho and resposta, in running prose, cite nothing.',
+    'The event trabalho.criado, written without backticks, is prose and not a citation.',
     // Backticked names that merely contain a retired word: an entity type, a
     // migration file, a column, a directory. None of them is a §2.1/§5 row.
-    'A entidade é `pergunta` e o ator é `usuario`; a tabela é `input_request`.',
-    'A migração é `0003_trabalho_sessao_evento_pergunta.sql`, e a lease é `0004_runner_lease.sql`.',
+    'The entity is `pergunta` and the actor is `usuario`; the table is `input_request`.',
+    'The migration is `0003_trabalho_sessao_evento_pergunta.sql`, and the lease is `0004_runner_lease.sql`.',
     // A whole family cited at once, in the two spellings that did not change.
-    'A taxonomia declara `lease.*` e `graph_version.*`, que ninguém grava ainda.',
-    'O bundle mora em `factory-graphs/software-development`.',
-    'O corpo carrega `job_id` e `depends_on_job_id`, nunca `/trabalhos`… bem, veja abaixo.',
+    'The taxonomy declares `lease.*` and `graph_version.*`, which nobody writes yet.',
+    'The bundle lives in `factory-graphs/software-development`.',
+    'The body carries `job_id` and `depends_on_job_id`, never `/trabalhos`… well, see below.',
     // A longer flag whose stem is a retired one, and the retired one's English.
-    'O comando aceita `--classes-file` e `--class`, nunca as duas juntas.',
+    'The command accepts `--classes-file` and `--class`, never both at once.',
   ];
 
   for (const document of allowed) {

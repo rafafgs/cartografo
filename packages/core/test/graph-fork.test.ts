@@ -153,7 +153,7 @@ function newNode(): Record<string, unknown> {
   return {
     id: 'checar_fatos',
     role: 'revisor',
-    node_type: 'trabalho',
+    node_type: 'work',
     description: 'Confere cada afirmação da nota contra a fonte citada.',
     skill_ref: {
       id: 'cartografo/checar-fatos',

@@ -84,7 +84,7 @@ const HEADING = /^##\s/;
  *
  * Blanks rather than drops for the usual reason: a failure has to quote the line
  * of the file, not the line of a slice of it. The heading itself is blanked too —
- * `## 6. A superfície HTTP` is a title, and titles claim nothing about the wire.
+ * `## 6. The HTTP surface` is a title, and titles claim nothing about the wire.
  *
  * @param document The file's contents.
  * @param number The section number, as the heading writes it.
@@ -300,20 +300,20 @@ test('t258 — the filters §6 lists are the query parameters the route reads', 
 
 test('t258 — the gate bites on the pre-t226 table it was written for', () => {
   const stale = [
-    '# Uma ficha plantada',
+    '# A planted ticket',
     '',
-    '## 5. Seção anterior',
+    '## 5. Previous section',
     '',
-    '`400 itens_invalidos` fora da seção não é promessa desta tabela.',
+    '`400 itens_invalidos` outside the section is no promise of this table.',
     '',
-    '## 6. A superfície HTTP',
+    '## 6. The HTTP surface',
     '',
-    '| Rota | Resposta | Erros |',
+    '| Route | Response | Errors |',
     '|---|---|---|',
     '| `POST /v1/intake` | `201 {rascunho}` | `400 campo_obrigatorio_ausente` · `400 itens_invalidos` |',
     '| `GET /v1/intake` | `200 {rascunhos}` | filters `status`, `classe`, `projeto_id` |',
     '',
-    '## 7. Seção seguinte',
+    '## 7. Next section',
     '',
     '| `PATCH /v1/intake/:id` | `200 {rascunho}` | `409 rascunho_nao_pendente` |',
   ].join('\n');
@@ -340,16 +340,16 @@ test('t258 — the gate bites on the pre-t226 table it was written for', () => {
 
 test('t258 — the gate does NOT bite on the table the code really writes', () => {
   const current = [
-    '## 6. A superfície HTTP',
+    '## 6. The HTTP surface',
     '',
-    '| Rota | Resposta | Erros |',
+    '| Route | Response | Errors |',
     '|---|---|---|',
     '| `POST /v1/intake` | `201 {draft}` | `400 missing_required_field` · `404 unknown_graph` |',
     '| `GET /v1/intake` | `200 {drafts}` | filters `status`, `class`, `project_id` |',
     '| `GET /v1/intake/:id` | `200 {draft}` | `404 unknown_draft` |',
     '| `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `409 draft_not_pending` · `400 validation_failed` |',
     '',
-    '## 7. Seção seguinte',
+    '## 7. Next section',
   ].join('\n');
 
   const section = sectionOnly(current, SECTION);

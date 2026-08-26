@@ -420,7 +420,8 @@ const PROTOCOL_TOKENS = new RegExp(
  * `src/routes/proposals.ts:744` reads off the body — from `depois da queda`,
  * which is a Portuguese sentence in a fixture title. The difference is
  * POSITION, and position is something a regex can see: a key is followed by a
- * colon and a value is not. So the mask below blanks these six words when they
+ * colon — its own closing quote included, so the key of a JSON literal written
+ * inside a string counts — and a value is not. So the mask below blanks these six words when they
  * head a property and leaves them alone everywhere else, which is why
  * `merge_commit: 'depois'` still goes red — the value there is prose that
  * happens to be one word long.
@@ -443,7 +444,78 @@ const PROTOCOL_TOKENS = new RegExp(
  * reason {@link PROTOCOL_TOKENS} is.
  */
 const WIRE_KEYS = new RegExp(
-  `\\b(?:${['antes', 'depois', 'fonte', 'observacao', 'pergunta', 'resposta'].join('|')})\\s*:`,
+  `\\b(?:${['antes', 'depois', 'fonte', 'observacao', 'pergunta', 'resposta'].join('|')})["']?\\s*:`,
+  'g',
+);
+
+/**
+ * The pre-D20/D24 spellings, masked only where the line is QUOTING one.
+ *
+ * `glossario-wire.test.ts`, `glossario-wire-docs.test.ts` and
+ * `glossary-terms.ts` are gates over `docs/spec/glossario-wire.md`, which is a
+ * map of RETIRED names — and a map of retired names is written in retired
+ * names. Their term lists, their fixture glossary rows and their assertion
+ * messages all spell `trabalho`, `grafo`, `pergunta` and `codigo` because that
+ * is the DATA under test; the prose around it is English and stays English.
+ *
+ * So the mask is by position and not by file. A name is data when it is
+ * delimited — inside backticks, inside quotes, or standing as a path segment
+ * after a slash — which is exactly how this codebase quotes a table, column,
+ * event or route while writing English around it
+ * (`no-portuguese-identifiers.test.ts` masks backticked comment spans for the
+ * same reason, and `no-portuguese-user-facing-strings.test.ts` masks
+ * sub-quoted and backticked spans). Undelimited, the same word is prose and
+ * still goes red: `A pergunta criada pelo agente` is a Portuguese sentence and
+ * is reported as one.
+ *
+ * The list is CLOSED to the retired vocabulary. It is not "any quoted token" —
+ * that would blind the sweep to a one-word Portuguese fixture value, which is
+ * a class this ticket really found (`{ ref: 'tese' }`, `title: 'Primeira'`).
+ *
+ * Built from a list of strings rather than written as a regex literal, for the
+ * reason {@link PROTOCOL_TOKENS} is.
+ */
+const RETIRED_NAMES: readonly string[] = Object.freeze([
+  'trabalho',
+  'trabalhos',
+  'grafo',
+  'grafos',
+  'pergunta',
+  'perguntas',
+  'resposta',
+  'respostas',
+  'execucao',
+  'execucoes',
+  'sessoes',
+  'classe',
+  'codigo',
+  'aresta',
+  'arestas',
+  'portao',
+  'hoje',
+  'nada',
+  'fim',
+]);
+
+/**
+ * One retired name, delimited: `x`, 'x', "x", or /x as a path segment.
+ *
+ * The single-quoted form carries one exception, and it is the reason the three
+ * quotes are not written as one character class: a single-quoted name right
+ * after a `key:` is not a citation but a VALUE, and `node_type: 'trabalho'` is
+ * a stale enum this ticket had to fix — `schema/graph.schema.json:191` has said
+ * `["work", "gate"]` since t178. A mask that excused it would have hidden the
+ * defect instead of the data. Backticks and double quotes need no such rule:
+ * they are how English prose here QUOTES a name, and prose puts a colon before
+ * a quote all the time (`the document: \`hoje\` and \`vira\``).
+ */
+const QUOTED_RETIRED = new RegExp(
+  [
+    `\`(?:${RETIRED_NAMES.join('|')})\``,
+    `(?<!:)(?<!:\\s)'(?:${RETIRED_NAMES.join('|')})'`,
+    `"(?:${RETIRED_NAMES.join('|')})"`,
+    `/(?:${RETIRED_NAMES.join('|')})\\b`,
+  ].join('|'),
   'g',
 );
 
@@ -500,6 +572,7 @@ function blank(text: string): string {
  */
 export function offendersIn(text: string): string[] {
   let masked = text
+    .replace(QUOTED_RETIRED, blank)
     .replace(WIRE_KEYS, blank)
     .replace(PROTOCOL_TOKENS, blank)
     .replace(ILLUSTRATIVE_IDS, blank);

@@ -67,8 +67,8 @@ function requireNode(doc: GraphDocument, id: string): GraphNode {
 const NEW_NODE: GraphNode = {
   id: 'checar_fatos',
   role: 'revisor',
-  node_type: 'trabalho',
-  description: 'Confere cada afirmação da nota contra a fonte citada.',
+  node_type: 'work',
+  description: 'Checks each claim of the note against the cited source.',
   skill_ref: {
     id: 'cartografo/checar-fatos',
     version: '1.0.0',
@@ -89,7 +89,7 @@ const NEW_NODE: GraphNode = {
       {
         type: 'deterministic',
         command: 'test -s checagem.md',
-        description: 'O relatório de checagem existe e não está vazio.',
+        description: 'The check report exists and is not empty.',
       },
     ],
   },
@@ -99,8 +99,8 @@ const NEW_NODE: GraphNode = {
 const ARCHIVE_NODE: GraphNode = {
   id: 'arquivar',
   role: 'arquivista',
-  node_type: 'trabalho',
-  description: 'Guarda a nota revisada no acervo do projeto.',
+  node_type: 'work',
+  description: 'Stores the reviewed note in the project archive.',
   skill_ref: {
     id: 'cartografo/arquivar-nota',
     version: '1.0.0',
@@ -142,9 +142,9 @@ const OTHER_CONTRACT = {
   checks: [
     {
       type: 'agentic',
-      instruction: 'A nota sobrevive a uma leitura adversarial? Cite o trecho mais frágil.',
+      instruction: 'Does the note survive an adversarial reading? Cite the weakest passage.',
       required_evidence: true,
-      description: 'Leitura de red team, com evidência própria.',
+      description: 'A red-team reading, with evidence of its own.',
     },
   ],
 };
@@ -194,7 +194,7 @@ function roleAndContractChanged(): Pair {
 function typeChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
-  requireNode(to, 'revisar').node_type = 'trabalho';
+  requireNode(to, 'revisar').node_type = 'work';
   return { label: 'node type changed', from, to };
 }
 
@@ -241,7 +241,7 @@ function everythingAtOnce(): Pair {
   from.edges.push({ from: 'revisar', to: 'arquivar', condition: 'aprovado' });
 
   const to = minimalGraph();
-  const rewritten: GraphNode = { ...structuredClone(requireNode(to, 'redigir')), node_type: 'portao' };
+  const rewritten: GraphNode = { ...structuredClone(requireNode(to, 'redigir')), node_type: 'gate' };
   const reviewed: GraphNode = {
     ...structuredClone(requireNode(to, 'revisar')),
     role: 'red-team',
@@ -513,7 +513,7 @@ test('t140 FR1 — the identity fields are never diffed, whatever they say', asy
   const to = minimalGraph();
   to.problem_class = 'outra-classe';
   to.lineage = { type: 'variante', base_class: 'nota-curta' };
-  to.metadata = { nome: 'outro nome' };
+  to.metadata = { nome: 'another name' };
   to.initial_node = 'revisar';
   to.final_nodes = ['redigir'];
 

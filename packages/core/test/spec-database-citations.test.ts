@@ -460,10 +460,10 @@ test('FR11 — the sweep bites on a citation the rename left behind', async () =
   const caught = [
     // The exact sentence of §5 that t236 fixes: stale table AND stale column,
     // plus the stale table of the SQL type quoted right after it.
-    '`grafo.origem_proposta_id` é `INTEGER REFERENCES proposta(id)`, e',
+    '`grafo.origem_proposta_id` is `INTEGER REFERENCES proposta(id)`, and',
     // Half-renamed citations, each of which reads plausible on its own.
-    '`graph.origem_proposta_id` chega ao documento como `String(id)`.',
-    '`grafo.current_version_id` é o ponteiro da linhagem.',
+    '`graph.origem_proposta_id` reaches the document as `String(id)`.',
+    '`grafo.current_version_id` is the lineage pointer.',
     // A DDL block written against the schema before D20's database children.
     'CREATE TABLE grafo_versao (',
     "CREATE UNIQUE INDEX graph_class_base_unique ON grafo (class) WHERE lineage_type = 'base';",
@@ -489,18 +489,18 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
   const allowed = [
     // The very next line of §5: a field of `schema/grafo.schema.json`, not a
     // column, and the reason the sentence above it exists at all.
-    '`linhagem.origem_proposta_id` é `string` no `grafo.schema.json` — pensado',
+    '`linhagem.origem_proposta_id` is `string` in `grafo.schema.json` — meant',
     // A document key and a wire field, both unqualified: out of this sweep.
-    '| `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |',
-    '| Base sem `versao_corrente_id` (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |',
+    '| `origem_proposta_id` is not a positive integer | `400` | `origem_proposta_id_invalido` |',
+    '| Base with no `versao_corrente_id` (defensive invariant) | `409` | `grafo_sem_versao_corrente` |',
     // A file name whose stem happens to be a renamed table.
-    'o formato está em [`graph.md` §7](graph.md) e a taxonomia em `taxonomy.md`.',
+    'the format is in [`graph.md` §7](graph.md) and the taxonomy in `taxonomy.md`.',
     // An event type and an event payload key, neither of them a column.
-    '`motivo` espelha `dados.motivo` do evento `grafo_versao.revertida`.',
+    '`motivo` mirrors `dados.motivo` of the event `grafo_versao.revertida`.',
     // An event whose two halves both resolve as schema and are still an event.
-    '**Declarar não bloqueia.** Nenhum `trabalho.bloqueado` nasce daqui.',
+    '**Declaring does not block.** No `trabalho.bloqueado` is born here.',
     // The renamed schema, cited correctly.
-    '`graph.origin_proposal_id` é `INTEGER REFERENCES proposal(id)`, e',
+    '`graph.origin_proposal_id` is `INTEGER REFERENCES proposal(id)`, and',
     '  origin_proposal_id  INTEGER REFERENCES proposal(id),',
     'CREATE TABLE graph_version (',
     '`graph_version.graph_id`, `proposal.operations` e `proposal.result`.',
@@ -508,7 +508,7 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
     'CREATE TABLE lease (\n  job_id  INTEGER NOT NULL,\n  expires_at  TEXT NOT NULL\n);',
     'CREATE INDEX idx_lease_runner_status ON lease (runner_id, status);',
     // A trailing comment inside a body, naming the word a column is named after.
-    'CREATE TABLE graph (\n  id  TEXT PRIMARY KEY,  -- classe, para a linhagem base (D8)\n);',
+    'CREATE TABLE graph (\n  id  TEXT PRIMARY KEY,  -- classe, for the base lineage (D8)\n);',
     // A stored value inside a body: this sweep reads NAMES, and the value is
     // `no-portuguese-database.test.ts`'s to judge.
     "CREATE TABLE proposal (\n  status  TEXT NOT NULL DEFAULT 'pending'\n);",

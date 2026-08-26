@@ -12,10 +12,10 @@
  *
  * The names are the API's, because they ARE the route: `approve` is the path of
  * `POST /v1/proposals/:id/approve`. They came in from t111 in Portuguese and
- * were renamed with the rest of the `/v1` surface (t127, FR3/FR4) — this file's
- * own identifiers and the button labels are the tela ticket's scope, not this
- * one's. `approve` and `reject` have no route in core yet; they are spelled the
- * way core will spell them under D18.
+ * were renamed with the rest of the `/v1` surface (t127, FR3/FR4); the button
+ * LABELS beside them are a different vocabulary and moved separately, with the
+ * rest of the screen's copy (t310). `approve` and `reject` have no route in
+ * core yet; they are spelled the way core will spell them under D18.
  */
 
 /** @typedef {'approve' | 'reject' | 'apply' | 'revert'} ActionName */
@@ -23,7 +23,7 @@
 /**
  * @typedef {object} ActionDescriptor
  * @property {ActionName} route Last segment of `POST /v1/proposals/:id/<route>`.
- * @property {string} label Button text, in Portuguese, like the rest of the page.
+ * @property {string} label Button text, in English, like the rest of the page.
  * @property {boolean} requiresReason Whether a `reason` is mandatory (FR7).
  * @property {string} reasonLabel Visible label — and accessible name — of the reason field, when there is one.
  */
@@ -33,27 +33,27 @@
 export const ACTIONS = Object.freeze({
   approve: Object.freeze({
     route: 'approve',
-    label: 'Aprovar',
+    label: 'Approve',
     requiresReason: false,
     reasonLabel: '',
   }),
   reject: Object.freeze({
     route: 'reject',
-    label: 'Rejeitar',
+    label: 'Reject',
     requiresReason: true,
-    reasonLabel: 'Por que esta hipótese não vale a pena?',
+    reasonLabel: 'Why is this hypothesis not worth it?',
   }),
   apply: Object.freeze({
     route: 'apply',
-    label: 'Aplicar',
+    label: 'Apply',
     requiresReason: false,
     reasonLabel: '',
   }),
   revert: Object.freeze({
     route: 'revert',
-    label: 'Reverter',
+    label: 'Revert',
     requiresReason: true,
-    reasonLabel: 'Por que a versão aplicada está sendo abandonada?',
+    reasonLabel: 'Why is the applied version being abandoned?',
   }),
 });
 
@@ -75,7 +75,7 @@ const ACTIONS_BY_STATUS = Object.freeze({
   rejected: Object.freeze([]),
 });
 
-/** Statuses that are still waiting on a person — the "Pendentes" section (FR3). */
+/** Statuses that are still waiting on a person — the "Pending" section (FR3). */
 export const OPEN_STATUSES = Object.freeze(['pending', 'approved']);
 
 /**

@@ -54,9 +54,15 @@
  * timeline, today and a month from now. That is what makes it testable without
  * real time.
  *
- * The three bucket names stay in Portuguese on purpose: they are written into
- * the page as `data-segmento` values and rendered as the visible label of each
- * row, so they are screen content, not identifiers (t133, exceptions 9 and 10).
+ * The three bucket names stay in Portuguese, and after t310 they are the ONE
+ * thing on this screen that does. Everything a person reads went English there —
+ * page titles, nav text, table headers, status words, every message — and these
+ * did not, by the founder's explicit decision recorded in that ticket. The
+ * reason is that they are not only copy: each value is written into the page as
+ * a `data-segmento` marker (the DOM contract of `docs/spec/screen.md` §6) and
+ * threaded through `pages.ts` and the tests as a TypeScript union, so renaming
+ * them is a change to what the acceptance tests select on rather than to what
+ * the page says. Renaming that surface is his own to make, whole and separately.
  */
 
 /** The three buckets. */

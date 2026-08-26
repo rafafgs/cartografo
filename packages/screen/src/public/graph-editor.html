@@ -1,31 +1,31 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>cartografo — configuração de grafo</title>
+    <title>cartografo — graph configuration</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
       <nav>
-        <a href="/board">quadro</a>
-        <a href="/executions">execuções</a>
-        <a href="/input-requests">perguntas</a>
+        <a href="/board">board</a>
+        <a href="/executions">executions</a>
+        <a href="/input-requests">questions</a>
         <a href="/runners">runners</a>
-        <a href="/">propostas</a>
+        <a href="/">proposals</a>
       </nav>
-      <h1>Configuração de grafo</h1>
+      <h1>Graph configuration</h1>
       <p class="lead">
-        Edite os nós e as arestas de um grafo-base. Salvar não escreve no grafo: escreve uma
-        proposta, aprova e aplica — as mesmas três chamadas que qualquer outro cliente da API
-        faria, com o mesmo portão de soundness recusando o que quebraria a execução.
+        Edit the nodes and the edges of a base graph. Saving does not write to the graph: it
+        writes a proposal, approves it and applies it — the same three calls any other client of
+        the API would make, with the same soundness gate refusing what would break a traversal.
       </p>
       <p class="controls">
-        <label class="field-label" for="graph-picker">grafo-base</label>
+        <label class="field-label" for="graph-picker">base graph</label>
         <select id="graph-picker" class="picker"></select>
-        <button id="load" type="button">Carregar</button>
-        <button id="save" type="button">Salvar</button>
+        <button id="load" type="button">Load</button>
+        <button id="save" type="button">Save</button>
         <span id="notice" class="notice" role="status"></span>
       </p>
       <p id="base" class="version"></p>
@@ -35,14 +35,14 @@
 
     <main>
       <section class="column">
-        <h2>Nós</h2>
-        <p class="controls"><button id="add-node" type="button">Adicionar nó</button></p>
+        <h2>Nodes</h2>
+        <p class="controls"><button id="add-node" type="button">Add node</button></p>
         <ul id="node-list" class="cards"></ul>
       </section>
 
       <section class="column">
-        <h2>Arestas</h2>
-        <p class="controls"><button id="add-edge" type="button">Adicionar aresta</button></p>
+        <h2>Edges</h2>
+        <p class="controls"><button id="add-edge" type="button">Add edge</button></p>
         <ul id="edge-list" class="cards"></ul>
       </section>
     </main>

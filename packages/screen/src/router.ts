@@ -53,9 +53,13 @@
  * `GET /v1/input-requests` — and `/runners` was already there. Nothing is
  * public yet (D20), so no old path redirects: they simply do not exist.
  *
- * What did NOT move is everything a person reads: the nav link text, the page
- * titles, the `.quadro`/`.pergunta` class names and the `data-*` markers are
- * product copy in Portuguese (t133, exceptions 9 and 10).
+ * What did NOT move with them is the DOM/structural contract: the
+ * `.quadro`/`.pergunta` class names and the `data-*` markers are what the
+ * acceptance tests and the stylesheet select on, and they keep their Portuguese
+ * spelling (t133, exception 10). The nav link text and the page titles used to
+ * be named here too, as copy that stayed — they went English with the rest of
+ * what a person reads in t310, and this file's own failure titles and details
+ * went with them.
  *
  * Control plane address precedence, the same as the core's CLI
  * (`packages/core/src/cli/url.ts`): `--url` > `CARTOGRAFO_URL` >
@@ -278,7 +282,7 @@ async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
     for await (const chunk of request) {
       const block = chunk as Buffer;
       size += block.length;
-      if (size > BODY_LIMIT) throw new UsageError('formulário grande demais');
+      if (size > BODY_LIMIT) throw new UsageError('form too large');
       chunks.push(block);
     }
   } catch (cause) {
@@ -286,7 +290,7 @@ async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
     // saying so with a 400. Anything else coming out of the iteration is the
     // connection dying underneath it.
     if (cause instanceof UsageError) throw cause;
-    throw new ClientAbortedError('o formulário parou de chegar no meio', { cause });
+    throw new ClientAbortedError('the form stopped arriving halfway through', { cause });
   }
 
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
@@ -316,29 +320,29 @@ export function failurePage(error: unknown, controlPlaneUrl: string): Page {
   if (error instanceof ClientAbortedError) {
     return errorPage(
       499,
-      'cliente desconectado',
-      'A conexão caiu antes de a tela terminar de ler o pedido. Nada foi alterado.',
+      'client disconnected',
+      'The connection dropped before the screen finished reading the request. Nothing was changed.',
     );
   }
   if (error instanceof NetworkError) {
     return errorPage(
       502,
-      'control plane fora do ar',
-      `Não deu para falar com ${controlPlaneUrl}. Rode \`npx cartografo\` em outro terminal (ou aponte outro endereço com --url).`,
+      'control plane down',
+      `Could not reach ${controlPlaneUrl}. Run \`npx cartografo\` in another terminal (or point somewhere else with --url).`,
     );
   }
   if (error instanceof ApiError) {
     if (error.status === 404) {
-      return errorPage(404, 'não encontrado', 'O control plane não conhece este endereço.');
+      return errorPage(404, 'not found', 'The control plane does not know this address.');
     }
     return errorPage(
       502,
-      'o control plane recusou',
-      `${error.message}. Nada foi alterado por esta tela.`,
+      'the control plane refused',
+      `${error.message}. Nothing was changed by this screen.`,
     );
   }
-  if (error instanceof UsageError) return errorPage(400, 'pedido inválido', error.message);
-  return errorPage(500, 'erro na tela', 'Algo quebrou ao montar esta página.');
+  if (error instanceof UsageError) return errorPage(400, 'invalid request', error.message);
+  return errorPage(500, 'screen error', 'Something broke while building this page.');
 }
 
 /**
@@ -366,7 +370,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     if (executionMatch !== null) {
       const id = routeId(executionMatch[1]);
       return id === null
-        ? errorPage(404, 'execução inválida', 'O id de uma execução é um inteiro.')
+        ? errorPage(404, 'invalid execution', 'An execution id is an integer.')
         : await executionPage(client, id);
     }
 
@@ -374,7 +378,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     if (jobMatch !== null) {
       const id = routeId(jobMatch[1]);
       return id === null
-        ? errorPage(404, 'trabalho inválido', 'O id de um trabalho é um inteiro.')
+        ? errorPage(404, 'invalid job', 'A job id is an integer.')
         : await jobPage(client, id);
     }
   }
@@ -389,20 +393,20 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
         return errorPage(
           403,
-          'origem não confiável',
-          'Este formulário só aceita envios que começaram nesta página. Recarregue e tente de novo.',
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
         );
       }
 
       const id = routeId(answerMatch[1]);
       if (id === null) {
-        return errorPage(404, 'pergunta inválida', 'O id de uma pergunta é um inteiro.');
+        return errorPage(404, 'invalid question', 'A question id is an integer.');
       }
       return await submitAnswer(client, id, request);
     }
   }
 
-  return errorPage(404, 'página não encontrada', `Não existe ${pathname === '' ? '/' : pathname}.`);
+  return errorPage(404, 'page not found', `There is no ${pathname === '' ? '/' : pathname}.`);
 }
 
 /**
@@ -428,8 +432,8 @@ async function submitAnswer(
   if (answer === '') {
     return errorPage(
       400,
-      'resposta em branco',
-      'Escreva a resposta (ou clique numa das opções) antes de enviar.',
+      'blank answer',
+      'Write the answer (or click one of the options) before sending.',
     );
   }
 
@@ -499,7 +503,7 @@ async function readBody(request: IncomingMessage, limit: number): Promise<Buffer
     for await (const chunk of request) {
       const block = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
       size += block.length;
-      if (size > limit) throw new PayloadTooLargeError(`corpo maior que ${limit} bytes`);
+      if (size > limit) throw new PayloadTooLargeError(`body larger than ${limit} bytes`);
       chunks.push(block);
     }
   } catch (cause) {
@@ -507,7 +511,7 @@ async function readBody(request: IncomingMessage, limit: number): Promise<Buffer
     // saying so. Anything else out of the iteration is the connection dying
     // underneath it.
     if (cause instanceof PayloadTooLargeError) throw cause;
-    throw new ClientAbortedError('o corpo do pedido parou de chegar no meio', { cause });
+    throw new ClientAbortedError('the request body stopped arriving halfway through', { cause });
   }
   return Buffer.concat(chunks);
 }
@@ -532,7 +536,7 @@ function reportRequestFailure(
   response: ServerResponse,
   controlPlaneUrl: string,
 ): void {
-  process.stderr.write(`cartografo-screen: pedido falhou — ${describeError(error)}\n`);
+  process.stderr.write(`cartografo-screen: request failed — ${describeError(error)}\n`);
 
   if (response.headersSent || response.writableEnded || response.destroyed) {
     response.destroy();

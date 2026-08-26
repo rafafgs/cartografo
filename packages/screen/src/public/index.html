@@ -1,44 +1,44 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>cartografo — inbox de propostas</title>
+    <title>cartografo — proposal inbox</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
       <nav>
-        <a href="/board">quadro</a>
-        <a href="/executions">execuções</a>
-        <a href="/input-requests">perguntas</a>
-        <a href="/graph-editor.html">grafo</a>
+        <a href="/board">board</a>
+        <a href="/executions">executions</a>
+        <a href="/input-requests">questions</a>
+        <a href="/graph-editor.html">graph</a>
       </nav>
-      <h1>Inbox de propostas</h1>
+      <h1>Proposal inbox</h1>
       <p class="lead">
-        Cada proposta é uma hipótese sobre o grafo: um diff semântico, a evidência que o motivou e
-        a métrica que ele espera mover. Nada entra no grafo sem passar por aqui.
+        Every proposal is a hypothesis about the graph: a semantic diff, the evidence behind it
+        and the metric it expects to move. Nothing enters the graph without passing through here.
       </p>
       <p class="controls">
-        <button id="refresh" type="button">Atualizar</button>
+        <button id="refresh" type="button">Refresh</button>
         <span id="notice" class="notice" role="status"></span>
       </p>
     </header>
 
     <main>
       <section class="column">
-        <h2>Pendentes</h2>
+        <h2>Pending</h2>
         <ul id="pending-list" class="proposals"></ul>
       </section>
 
       <section class="column">
-        <h2>Histórico</h2>
+        <h2>History</h2>
         <ul id="history-list" class="proposals"></ul>
       </section>
 
       <section class="column">
-        <h2>Detalhe</h2>
-        <div id="detail" class="detail">Selecione uma proposta.</div>
+        <h2>Detail</h2>
+        <div id="detail" class="detail">Select a proposal.</div>
       </section>
     </main>
 

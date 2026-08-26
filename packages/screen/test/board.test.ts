@@ -13,6 +13,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type * as ClientModule from '../src/client.ts';
+import type * as PagesModule from '../src/pages.ts';
 import {
   T107_ARTIFACTS,
   api,
@@ -186,18 +188,47 @@ test('t310 — a board with nothing on it says so in English', async (t) => {
   assert.ok(page.html.includes('class="vazio"'), 'the class name is structure, and structure did not move');
 });
 
-test('t310 — the blocked card with no reason declared says it in English', async (t) => {
-  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
-  const cp = await startControlPlane(t);
+test('t310 — the blocked card with no reason declared says it in English', async () => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages);
 
-  const job = await createJob(cp, { title: 'Blocked with nothing said', entry_node_id: 'refinar' });
-  await api(cp, 'POST', `/v1/jobs/${job.id}/blocks`, {});
+  // Against a fake client, and not a real control plane, for the reason
+  // `runners.test.ts` states: `job.blocked` is required to carry a `reason` by
+  // the event schema (`packages/core/src/db/event-validation.ts`), so a job that
+  // is blocked with none cannot be seeded through the API at all. The fallback
+  // exists because the projection is a column and the log is the contract, and
+  // this is the only way to see what it says.
+  const { boardPage } = (await import(
+    new URL('../src/pages.ts', import.meta.url).href
+  )) as typeof PagesModule;
+  const { ApiClient } = (await import(
+    new URL('../src/client.ts', import.meta.url).href
+  )) as typeof ClientModule;
 
-  const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/board');
+  const page = await boardPage(
+    new ApiClient({
+      baseUrl: 'http://127.0.0.1:4317',
+      doFetch: async () =>
+        new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                id: 1,
+                title: 'Blocked with nothing said',
+                current_node_id: 'refinar',
+                execution_id: null,
+                blocked: true,
+                block_reason: null,
+                completed: false,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    }),
+  );
 
   assert.equal(page.status, 200);
-  const card = blocks(page.html, 'trabalho').find((one) => one.value === String(job.id));
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
   assert.ok(card !== undefined);
   assert.ok(
     card.excerpt.includes('blocked, with no reason declared'),

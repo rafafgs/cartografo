@@ -16,19 +16,22 @@
  * vocabulary does not know — one strange line is a bad render, an exception is
  * a blank page over the whole inbox.
  *
- * What it READS is §3 English since D20's third child (t228); what it WRITES is
- * the same Portuguese prose as ever. Only the property names moved — the text a
- * person judges a proposal by did not.
+ * What it READS is §3 English since D20's third child (t228); what it WRITES
+ * went English later, with the rest of the screen's copy (t310). The two halves
+ * moved for unrelated reasons — one is a wire format, the other is the sentence
+ * a person approves a change by — and only one thing here is still passed
+ * through untranslated: the `condition` VALUE of an edge, which is free text
+ * somebody typed into the graph document and not this module's prose.
  */
 
 /** Shown when a proposal carries no operations at all (AT7). */
-export const EMPTY_DIFF_LINE = 'nenhuma alteração';
+export const EMPTY_DIFF_LINE = 'no change';
 
 /** Shown for an entry that is not even an operation object. */
-const MALFORMED_LINE = '? operação malformada';
+const MALFORMED_LINE = '? malformed operation';
 
 /** Fallback for an operation that does not say which node it is about. */
-const MISSING_ID = 'sem id';
+const MISSING_ID = 'no id';
 
 /** How much of an object value is shown before it stops being readable. */
 const VALUE_LIMIT = 60;
@@ -42,7 +45,7 @@ function isObject(value) {
  * A node/edge identifier as text, with an honest fallback.
  *
  * @param {unknown} value Candidate identifier.
- * @returns {string} The identifier, or `sem id`.
+ * @returns {string} The identifier, or `no id`.
  */
 function asId(value) {
   return typeof value === 'string' && value.trim() !== '' ? value : MISSING_ID;
@@ -60,22 +63,22 @@ function asId(value) {
  */
 function describeValue(value) {
   if (typeof value === 'string') return `"${value}"`;
-  if (value === null) return 'nulo';
-  if (value === undefined) return 'vazio';
+  if (value === null) return 'null';
+  if (value === undefined) return 'empty';
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
 
   let json;
   try {
     json = JSON.stringify(value);
   } catch {
-    return 'valor não exibível';
+    return 'unprintable value';
   }
-  if (typeof json !== 'string') return 'valor não exibível';
+  if (typeof json !== 'string') return 'unprintable value';
   return json.length > VALUE_LIMIT ? `${json.slice(0, VALUE_LIMIT)}…` : json;
 }
 
 /**
- * One edge, as `de → para`, with the condition when there is one.
+ * One edge, as `from → to`, with the condition when there is one.
  *
  * @param {unknown} edge The `edge` field of the operation.
  * @returns {string} Readable text.
@@ -85,7 +88,7 @@ function describeEdge(edge) {
   const target = isObject(edge) ? asId(edge.to) : MISSING_ID;
   const condition = isObject(edge) ? edge.condition : undefined;
   const suffix =
-    typeof condition === 'string' && condition.trim() !== '' ? ` (condição: ${condition})` : '';
+    typeof condition === 'string' && condition.trim() !== '' ? ` (condition: ${condition})` : '';
   return `${source} → ${target}${suffix}`;
 }
 
@@ -103,19 +106,19 @@ function renderOperation(operation) {
       const node = operation.node;
       const id = asId(isObject(node) ? node.id : undefined);
       const kind = isObject(node) && typeof node.node_type === 'string' ? node.node_type : '';
-      return `+ nó "${id}"${kind === '' ? '' : ` (tipo ${kind})`}`;
+      return `+ node "${id}"${kind === '' ? '' : ` (type ${kind})`}`;
     }
     case 'remove_node':
-      return `- nó "${asId(operation.node_id)}"`;
+      return `- node "${asId(operation.node_id)}"`;
     case 'add_edge':
-      return `+ aresta ${describeEdge(operation.edge)}`;
+      return `+ edge ${describeEdge(operation.edge)}`;
     case 'remove_edge':
-      return `- aresta ${describeEdge(operation.edge)}`;
+      return `- edge ${describeEdge(operation.edge)}`;
     case 'change_node_field':
-      return `~ nó "${asId(operation.node_id)}": campo "${asId(operation.field)}" de ${describeValue(operation.from)} para ${describeValue(operation.to)}`;
+      return `~ node "${asId(operation.node_id)}": field "${asId(operation.field)}" from ${describeValue(operation.from)} to ${describeValue(operation.to)}`;
     default:
       return typeof operation.type === 'string' && operation.type.trim() !== ''
-        ? `? operação de tipo desconhecido ("${operation.type}")`
+        ? `? operation of unknown type ("${operation.type}")`
         : MALFORMED_LINE;
   }
 }
@@ -123,7 +126,7 @@ function renderOperation(operation) {
 /**
  * The whole diff of a proposal, one line per operation.
  *
- * @param {unknown} operations The `operacoes` field of the proposal.
+ * @param {unknown} operations The `operations` field of the proposal.
  * @returns {string[]} One line per operation, or the explicit empty line.
  */
 export function renderOperations(operations) {

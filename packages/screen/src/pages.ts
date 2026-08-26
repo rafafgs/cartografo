@@ -17,8 +17,16 @@
  * — without freezing the whole markup. They are documented in
  * `docs/spec/screen.md`; changing one of them changes the contract, not the CSS.
  * They keep their Portuguese spelling for exactly that reason (t133,
- * exception 10), and so does every string that reaches the browser: the screen
- * is a Portuguese-language product surface (exception 9).
+ * exception 10), and so do the CSS class names beside them.
+ *
+ * The COPY does not. Every page title, nav link, table header, status word and
+ * message this file renders is English since t310 — the screen is the only
+ * package a person opens, and it reads in the project's language like
+ * everything else. The two vocabularies were one exception until then and are
+ * two now: what a person reads moved, what a test and a stylesheet select on
+ * stayed. The three bucket labels `totalsHtml` writes are the one leftover, and
+ * they are not copy either: they are `timeline.ts`'s `SegmentCategory` values,
+ * which are also the `data-segmento` contract.
  *
  * ## Escaping is not a detail
  *
@@ -50,7 +58,12 @@ export interface Page {
  *
  * Deliberately honest: recording "tela" is saying the answer came through this
  * door, which is all the system actually knows. Inventing a user would be worse
- * than admitting the gap — the `pergunta.respondida` event is an audit trail.
+ * than admitting the gap — the `input_request.answered` event is an audit trail.
+ *
+ * The value stays Portuguese while the rest of this file goes English (t310),
+ * and not by omission: it is already written into an append-only log (D15), so
+ * renaming it would make new rows disagree with old ones about who answered.
+ * t303 read it the same way and left it alone.
  */
 export const DEFAULT_ANSWERED_BY = 'tela';
 
@@ -97,7 +110,7 @@ export function escapeHtml(value: unknown): string {
 /** The shared shell: same navigation on every page, so there is no dead end. */
 function layout(title: string, body: string): string {
   return `<!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -108,12 +121,12 @@ function layout(title: string, body: string): string {
 <header class="topo">
   <h1>cartografo</h1>
   <nav>
-    <a href="/board">quadro</a>
-    <a href="/executions">execuções</a>
-    <a href="/input-requests">perguntas</a>
+    <a href="/board">board</a>
+    <a href="/executions">executions</a>
+    <a href="/input-requests">questions</a>
     <a href="/runners">runners</a>
-    <a href="/">propostas</a>
-    <a href="/graph-editor.html">grafo</a>
+    <a href="/">proposals</a>
+    <a href="/graph-editor.html">graph</a>
   </nav>
 </header>
 ${body}
@@ -124,7 +137,7 @@ ${body}
 
 /** Readable duration: what matters is the order of magnitude, not the ms. */
 export function formatDuration(ms: number | null): string {
-  if (ms === null) return 'em aberto';
+  if (ms === null) return 'still open';
   if (ms < 1000) return `${ms}ms`;
   const seconds = Math.round(ms / 1000);
   if (seconds < 90) return `${seconds}s`;
@@ -142,7 +155,7 @@ function jobCard(job: Job): string {
     job.blocked && job.block_reason !== null
       ? `<p class="motivo">⛔ ${escapeHtml(job.block_reason)}</p>`
       : job.blocked
-        ? '<p class="motivo">⛔ bloqueado, sem motivo declarado</p>'
+        ? '<p class="motivo">⛔ blocked, with no reason declared</p>'
         : '';
   return `<article class="${classes}" data-trabalho="${job.id}">
       <div class="id">#${job.id}</div>
@@ -161,7 +174,7 @@ function jobCard(job: Job): string {
  * scope.
  */
 function jobBoard(jobs: Job[]): string {
-  if (jobs.length === 0) return '<p class="vazio">Nenhum trabalho por aqui ainda.</p>';
+  if (jobs.length === 0) return '<p class="vazio">No jobs here yet.</p>';
 
   const byNode = new Map<string, Job[]>();
   for (const job of jobs) {
@@ -197,7 +210,7 @@ function jobBoard(jobs: Job[]): string {
  * looks for.
  */
 function sessionsTable(sessions: Session[]): string {
-  if (sessions.length === 0) return '<p class="vazio">Nenhuma sessão nesta execução.</p>';
+  if (sessions.length === 0) return '<p class="vazio">No sessions in this execution.</p>';
 
   const rows = sessions.map((session) => {
     const usage =
@@ -210,14 +223,14 @@ function sessionsTable(sessions: Session[]): string {
       <td>${escapeHtml(session.engine)}</td>
       <td>${escapeHtml(session.status)}</td>
       <td>${escapeHtml(session.opened_at)}</td>
-      <td>${session.finished_at === null ? '<span class="vazio">em andamento</span>' : escapeHtml(session.finished_at)}</td>
+      <td>${session.finished_at === null ? '<span class="vazio">in progress</span>' : escapeHtml(session.finished_at)}</td>
       <td>${escapeHtml(usage)}</td>
-      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript">ver saída</a></td>
+      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript">see output</a></td>
     </tr>`;
   });
 
   return `<table>
-  <thead><tr><th>sessão</th><th>trabalho</th><th>engine</th><th>status</th><th>aberta em</th><th>finalizada em</th><th>uso</th><th>transcrição</th></tr></thead>
+  <thead><tr><th>session</th><th>job</th><th>engine</th><th>status</th><th>opened at</th><th>finished at</th><th>usage</th><th>transcript</th></tr></thead>
   <tbody>
     ${rows.join('\n    ')}
   </tbody>
@@ -228,7 +241,7 @@ function sessionsTable(sessions: Session[]): string {
 function questionSummary(question: Question): string {
   return `<article class="pergunta" data-pergunta="${question.id}">
   <strong>${escapeHtml(question.question)}</strong>
-  <p class="motivo">trabalho <a href="/jobs/${question.job_id}">#${question.job_id}</a> · desde ${escapeHtml(question.created_at)} · <a href="/input-requests">responder</a></p>
+  <p class="motivo">job <a href="/jobs/${question.job_id}">#${question.job_id}</a> · since ${escapeHtml(question.created_at)} · <a href="/input-requests">answer</a></p>
 </article>`;
 }
 
@@ -266,19 +279,19 @@ function questionCard(question: Question): string {
   return `<article class="pergunta" data-pergunta="${question.id}">
   <strong>${escapeHtml(question.question)}</strong>
   <dl>
-    <dt>trabalho</dt><dd><a href="/jobs/${question.job_id}">#${question.job_id}</a></dd>
-    ${field('criada em', question.created_at)}
-    ${field('contexto', question.context)}
-    ${field('recomendação', question.recommendation)}
-    ${field('resposta padrão', question.default_answer)}
+    <dt>job</dt><dd><a href="/jobs/${question.job_id}">#${question.job_id}</a></dd>
+    ${field('created at', question.created_at)}
+    ${field('context', question.context)}
+    ${field('recommendation', question.recommendation)}
+    ${field('default answer', question.default_answer)}
   </dl>
   <form method="post" action="/input-requests/${question.id}/answer">
     ${options}
-    <label for="resposta-${question.id}">sua resposta</label>
-    <textarea id="resposta-${question.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.default_answer ?? '')}</textarea>
+    <label for="resposta-${question.id}">your answer</label>
+    <textarea id="resposta-${question.id}" name="resposta" required placeholder="the answer, as you would give it to a person">${escapeHtml(question.default_answer ?? '')}</textarea>
     <p>
-      <label>quem responde <input name="respondido_por" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
-      <button type="submit">responder</button>
+      <label>who is answering <input name="respondido_por" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
+      <button type="submit">answer</button>
     </p>
   </form>
 </article>`;
@@ -304,7 +317,7 @@ function segmentHtml(segment: Segment): string {
   const label = segment.category.replaceAll('_', ' ');
   const detail = segment.detail === null ? '' : ` — ${escapeHtml(segment.detail)}`;
   const node = segment.nodeId === null ? '' : ` <span class="id">@${escapeHtml(segment.nodeId)}</span>`;
-  const end = segment.end === null ? 'agora' : escapeHtml(segment.end);
+  const end = segment.end === null ? 'now' : escapeHtml(segment.end);
   return `  <li class="segmento" data-segmento="${segment.category}" data-inicio="${escapeHtml(segment.start)}" data-fim="${segment.end === null ? '' : escapeHtml(segment.end)}">
     <span class="balde">${escapeHtml(label)}</span>
     <span>${escapeHtml(formatDuration(segment.durationMs))}${node}${detail}<br><span class="id">${escapeHtml(segment.start)} → ${end}</span></span>
@@ -313,7 +326,7 @@ function segmentHtml(segment: Segment): string {
 
 function totalsHtml(timeline: Timeline): string {
   return `<table>
-  <thead><tr><th>balde</th><th>tempo fechado</th></tr></thead>
+  <thead><tr><th>bucket</th><th>closed time</th></tr></thead>
   <tbody>
     <tr><td>fila</td><td>${escapeHtml(formatDuration(timeline.totals.fila))}</td></tr>
     <tr><td>agente trabalhando</td><td>${escapeHtml(formatDuration(timeline.totals.agente_trabalhando))}</td></tr>
@@ -332,7 +345,7 @@ export async function boardPage(client: ApiClient): Promise<Page> {
   const jobs = await client.listJobs();
   return {
     status: 200,
-    html: layout('quadro', `<h2>quadro · ${jobs.length} trabalho(s)</h2>\n${jobBoard(jobs)}`),
+    html: layout('board', `<h2>board · ${jobs.length} job(s)</h2>\n${jobBoard(jobs)}`),
   };
 }
 
@@ -348,7 +361,7 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
   const row = (execution: ExecutionSummary): string => {
     const label =
       execution.execution_id === null
-        ? '<span class="vazio">sem execução</span>'
+        ? '<span class="vazio">no execution</span>'
         : `<a href="/executions/${execution.execution_id}">#${execution.execution_id}</a>`;
     return `<tr data-execucao="${execution.execution_id ?? ''}">
       <td>${label}</td>
@@ -360,15 +373,15 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
 
   const body =
     executions.length === 0
-      ? '<p class="vazio">Nenhuma execução ainda.</p>'
+      ? '<p class="vazio">No executions yet.</p>'
       : `<table>
-  <thead><tr><th>execução</th><th>trabalhos</th><th>bloqueados</th><th>perguntas pendentes</th></tr></thead>
+  <thead><tr><th>execution</th><th>jobs</th><th>blocked</th><th>pending questions</th></tr></thead>
   <tbody>
     ${executions.map(row).join('\n    ')}
   </tbody>
 </table>`;
 
-  return { status: 200, html: layout('execuções', `<h2>execuções</h2>\n${body}`) };
+  return { status: 200, html: layout('executions', `<h2>executions</h2>\n${body}`) };
 }
 
 /**
@@ -396,27 +409,27 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
   const row = (runner: RunnerHealth): string => {
     const expiration =
       runner.last_expiration === null
-        ? missing('nenhuma')
+        ? missing('none')
         : escapeHtml(
-            `trabalho #${runner.last_expiration.job_id} (${
-              runner.last_expiration.expiration_reason ?? 'sem motivo declarado'
-            }) às ${runner.last_expiration.expires_at}`,
+            `job #${runner.last_expiration.job_id} (${
+              runner.last_expiration.expiration_reason ?? 'no reason declared'
+            }) at ${runner.last_expiration.expires_at}`,
           );
 
     return `<tr data-runner="${escapeHtml(runner.id)}">
       <td>${escapeHtml(runner.id)}</td>
-      <td data-campo="nome">${runner.name === null ? missing('sem nome') : escapeHtml(runner.name)}</td>
+      <td data-campo="nome">${runner.name === null ? missing('no name') : escapeHtml(runner.name)}</td>
       <td data-campo="leases_ativas">${runner.active_leases}</td>
-      <td data-campo="ultimo_heartbeat">${runner.last_heartbeat === null ? missing('nunca') : escapeHtml(runner.last_heartbeat)}</td>
+      <td data-campo="ultimo_heartbeat">${runner.last_heartbeat === null ? missing('never') : escapeHtml(runner.last_heartbeat)}</td>
       <td data-campo="ultima_expiracao">${expiration}</td>
     </tr>`;
   };
 
   const body =
     runners.length === 0
-      ? '<p class="vazio">Nenhum runner pareado ainda.</p>'
+      ? '<p class="vazio">No runner paired yet.</p>'
       : `<table>
-  <thead><tr><th>runner</th><th>nome</th><th>leases ativas</th><th>último heartbeat</th><th>última expiração</th></tr></thead>
+  <thead><tr><th>runner</th><th>name</th><th>active leases</th><th>last heartbeat</th><th>last expiration</th></tr></thead>
   <tbody>
     ${runners.map(row).join('\n    ')}
   </tbody>
@@ -445,18 +458,18 @@ export async function executionPage(client: ApiClient, executionId: number): Pro
 
   const questionQueue =
     questions.length === 0
-      ? '<p class="vazio">Ninguém esperando resposta nesta execução.</p>'
+      ? '<p class="vazio">Nobody waiting for an answer in this execution.</p>'
       : questions.map(questionSummary).join('\n');
 
   return {
     status: 200,
     html: layout(
-      `execução ${executionId}`,
-      `<h2>execução #${executionId} · ${jobs.length} trabalho(s)</h2>
+      `execution ${executionId}`,
+      `<h2>execution #${executionId} · ${jobs.length} job(s)</h2>
 ${jobBoard(jobs)}
-<h2>sessões</h2>
+<h2>sessions</h2>
 ${sessionsTable(sessions)}
-<h2>perguntas pendentes</h2>
+<h2>pending questions</h2>
 ${questionQueue}`,
     ),
   };
@@ -473,12 +486,12 @@ export async function questionsPage(client: ApiClient): Promise<Page> {
 
   const body =
     questions.length === 0
-      ? '<p class="vazio">Ninguém esperando resposta. 🎉</p>'
+      ? '<p class="vazio">Nobody waiting for an answer. 🎉</p>'
       : `${questions.map(questionCard).join('\n')}\n${OPTIONS_SCRIPT}`;
 
   return {
     status: 200,
-    html: layout('perguntas', `<h2>perguntas pendentes · ${questions.length}</h2>\n${body}`),
+    html: layout('questions', `<h2>pending questions · ${questions.length}</h2>\n${body}`),
   };
 }
 
@@ -504,24 +517,24 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
   ]);
 
   if (job === null || events === null) {
-    return errorPage(404, 'trabalho não encontrado', `Não existe trabalho #${jobId}.`);
+    return errorPage(404, 'job not found', `There is no job #${jobId}.`);
   }
 
   const timeline = buildTimeline({ events, sessions, questions, completed: job.completed });
   const state = timeline.done
-    ? 'concluído'
+    ? 'done'
     : job.blocked
-      ? `bloqueado — ${job.block_reason ?? 'sem motivo declarado'}`
-      : 'em curso';
+      ? `blocked — ${job.block_reason ?? 'no reason declared'}`
+      : 'in progress';
 
   const execution =
     job.execution_id === null
-      ? '<span class="vazio">sem execução</span>'
+      ? '<span class="vazio">no execution</span>'
       : `<a href="/executions/${job.execution_id}">#${job.execution_id}</a>`;
 
   const segments =
     timeline.segments.length === 0
-      ? '<p class="vazio">Nada aconteceu com este trabalho ainda.</p>'
+      ? '<p class="vazio">Nothing has happened to this job yet.</p>'
       : `<ul class="linha-do-tempo">\n${timeline.segments.map(segmentHtml).join('\n')}\n</ul>`;
 
   return {
@@ -529,10 +542,10 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
     html: layout(
       job.title,
       `<h2>#${job.id} · ${escapeHtml(job.title)}</h2>
-<p>nó atual <strong>${escapeHtml(job.current_node_id)}</strong> · execução ${execution} · ${escapeHtml(state)}</p>
-<h2>linha do tempo</h2>
+<p>current node <strong>${escapeHtml(job.current_node_id)}</strong> · execution ${execution} · ${escapeHtml(state)}</p>
+<h2>timeline</h2>
 ${segments}
-<h2>totais</h2>
+<h2>totals</h2>
 ${totalsHtml(timeline)}`,
     ),
   };
@@ -551,7 +564,7 @@ export function errorPage(status: number, title: string, detail: string): Page {
     status,
     html: layout(
       title,
-      `<h2>${escapeHtml(title)}</h2>\n<p>${escapeHtml(detail)}</p>\n<p><a href="/board">voltar ao quadro</a></p>`,
+      `<h2>${escapeHtml(title)}</h2>\n<p>${escapeHtml(detail)}</p>\n<p><a href="/board">back to the board</a></p>`,
     ),
   };
 }

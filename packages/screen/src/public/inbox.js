@@ -12,9 +12,14 @@
  * `consultarSaude` takes its `fetch` in `src/index.ts`.
  *
  * Two deliberate absences, both out of scope: no polling or websocket — the
- * list changes on "Atualizar" or after a successful action on one row — and no
+ * list changes on "Refresh" or after a successful action on one row — and no
  * pagination, which is honest at the scale of the PoC and revisited when a real
  * inbox gets long.
+ *
+ * Every string this module shows reads in English since t310, including the two
+ * synthetic error codes below. Those are this page's own invention — the proxy's
+ * `control_plane_unavailable` is a wire code and was already English — so they
+ * carry no glossary entry and nothing depends on their old spelling.
  */
 
 import { ACTIONS, isOpen, resolveActionsForStatus } from './actions.js';
@@ -89,8 +94,8 @@ export function mount(doc, request) {
         ok: false,
         status: 0,
         body: {
-          error: 'tela_sem_resposta',
-          message: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
+          error: 'screen_unresponsive',
+          message: `the screen did not answer (${cause instanceof Error ? cause.message : 'network failure'})`,
         },
       };
     }
@@ -100,7 +105,7 @@ export function mount(doc, request) {
       try {
         body = JSON.parse(text);
       } catch {
-        body = { error: 'resposta_ilegivel', message: text.slice(0, 200) };
+        body = { error: 'unreadable_response', message: text.slice(0, 200) };
       }
     }
     return { ok: response.ok, status: response.status, body };
@@ -112,22 +117,23 @@ export function mount(doc, request) {
    * `error` + `message` is what every error of the API carries since t226 — and
    * what the screen's OWN proxy carries since t255, which is four tickets in
    * which this function met `{erro, mensagem}` from `proxy.ts` and fell through
-   * to "falha 502" with the real message right there in the body.
-   * the fallback for the one error the core does NOT write itself: Fastify's
-   * own 404, which is exactly what a screen pointed at a control plane without
-   * the inbox routes gets back — a real message beats "falha 404" there.
+   * to the bare status line with the real message right there in the body.
+   * The status line is the fallback for the one error the core does NOT write
+   * itself: Fastify's own 404, which is exactly what a screen pointed at a
+   * control plane without the inbox routes gets back — a real message beats
+   * "failure 404" there.
    *
    * @param {any} body
    * @param {number} status
    */
   function messageOf(body, status) {
-    if (body === null || typeof body !== 'object') return `falha ${status}`;
+    if (body === null || typeof body !== 'object') return `failure ${status}`;
     if (typeof body.message === 'string' && body.message !== '') {
       return typeof body.error === 'string' ? `${body.error}: ${body.message}` : body.message;
     }
     if (typeof body.error === 'string') return body.error;
     if (typeof body.message === 'string' && body.message !== '') return body.message;
-    return `falha ${status}`;
+    return `failure ${status}`;
   }
 
   /** Accepts `{proposals: [...]}` or a bare array — the envelope is t111's call. */
@@ -146,7 +152,7 @@ export function mount(doc, request) {
     return body.id === undefined ? null : body;
   }
 
-  /** A value that is not text (evidência, métrica) shown without pretending. */
+  /** A value that is not text (evidence, metric) shown without pretending. */
   function asText(value) {
     if (value === undefined || value === null) return '—';
     if (typeof value === 'string') return value;
@@ -170,7 +176,7 @@ export function mount(doc, request) {
    * @param {string|number} id
    */
   async function showDetail(id) {
-    fill(detail, el('p', 'muted', `carregando proposta #${id}…`));
+    fill(detail, el('p', 'muted', `loading proposal #${id}…`));
 
     const { ok, status, body } = await call(`${LIST_URL}/${id}`);
     const proposal = proposalOf(body);
@@ -180,25 +186,25 @@ export function mount(doc, request) {
     }
 
     const blocks = [
-      el('h3', undefined, `Proposta #${proposal.id} — ${proposal.status ?? 'sem status'}`),
-      field('Grafo', proposal.graph_id),
-      field('Versão-alvo', proposal.target_version),
+      el('h3', undefined, `Proposal #${proposal.id} — ${proposal.status ?? 'no status'}`),
+      field('Graph', proposal.graph_id),
+      field('Target version', proposal.target_version),
     ];
 
     const diff = el('div', 'diff');
-    diff.append(el('h4', undefined, 'Diff semântico'));
+    diff.append(el('h4', undefined, 'Semantic diff'));
     for (const line of renderOperations(proposal.operations)) {
       diff.append(el('p', `op ${lineClass(line)}`, line));
     }
     blocks.push(diff);
 
-    blocks.push(block('Evidência', asText(proposal.evidence)));
-    blocks.push(block('Métrica esperada', asText(proposal.expected_metric)));
+    blocks.push(block('Evidence', asText(proposal.evidence)));
+    blocks.push(block('Expected metric', asText(proposal.expected_metric)));
     if (proposal.result !== undefined && proposal.result !== null) {
-      blocks.push(block('Resultado', asText(proposal.result)));
+      blocks.push(block('Result', asText(proposal.result)));
     }
-    if (proposal.rejection_reason) blocks.push(block('Motivo da rejeição', proposal.rejection_reason));
-    if (proposal.revert_reason) blocks.push(block('Motivo da reversão', proposal.revert_reason));
+    if (proposal.rejection_reason) blocks.push(block('Rejection reason', proposal.rejection_reason));
+    if (proposal.revert_reason) blocks.push(block('Revert reason', proposal.revert_reason));
 
     fill(detail, ...blocks);
   }
@@ -236,16 +242,16 @@ export function mount(doc, request) {
     const row = el('li', 'proposal');
 
     const head = el('p', 'head');
-    const title = el('button', 'link', `#${proposal.id} · ${proposal.graph_id ?? 'sem grafo'}`);
+    const title = el('button', 'link', `#${proposal.id} · ${proposal.graph_id ?? 'no graph'}`);
     title.type = 'button';
     title.addEventListener('click', () => {
       void showDetail(proposal.id);
     });
-    const status = el('span', 'status', proposal.status ?? 'sem status');
+    const status = el('span', 'status', proposal.status ?? 'no status');
     head.append(title, status);
 
     const version = el('p', 'version');
-    if (proposal.applied_version_id) version.textContent = `versão ${proposal.applied_version_id}`;
+    if (proposal.applied_version_id) version.textContent = `version ${proposal.applied_version_id}`;
 
     const message = el('p', 'message');
     const controls = el('p', 'actions');
@@ -255,7 +261,7 @@ export function mount(doc, request) {
     function drawActions(currentStatus) {
       const names = resolveActionsForStatus(currentStatus);
       if (names.length === 0) {
-        fill(controls, el('span', 'muted', 'somente leitura'));
+        fill(controls, el('span', 'muted', 'read only'));
         return;
       }
 
@@ -296,10 +302,10 @@ export function mount(doc, request) {
       const input = el('input', 'reason-input');
       input.id = fieldId;
       input.type = 'text';
-      const confirm = el('button', 'action', `Confirmar ${action.label.toLowerCase()}`);
+      const confirm = el('button', 'action', `Confirm ${action.label.toLowerCase()}`);
       confirm.type = 'button';
       confirm.disabled = true;
-      const cancel = el('button', 'link', 'cancelar');
+      const cancel = el('button', 'link', 'cancel');
       cancel.type = 'button';
 
       input.addEventListener('input', () => {
@@ -345,14 +351,14 @@ export function mount(doc, request) {
       const updated = proposalOf(body);
       const previousStatus = proposal.status;
       Object.assign(proposal, updated ?? {});
-      status.textContent = proposal.status ?? 'sem status';
+      status.textContent = proposal.status ?? 'no status';
 
       const newVersion = body?.graph_version?.id ?? proposal.applied_version_id;
-      if (newVersion) version.textContent = `versão ${newVersion}`;
+      if (newVersion) version.textContent = `version ${newVersion}`;
 
       message.textContent =
         isOpen(previousStatus) && !isOpen(proposal.status)
-          ? 'concluída — sai dos pendentes no próximo "Atualizar"'
+          ? 'done — it leaves the pending list on the next "Refresh"'
           : '';
       drawActions(proposal.status);
       void showDetail(proposal.id);
@@ -366,7 +372,7 @@ export function mount(doc, request) {
 
   /** Reloads both sections from the API (FR3). */
   async function reload() {
-    setNotice('carregando…', false);
+    setNotice('loading…', false);
 
     const { ok, status, body } = await call(LIST_URL);
     if (!ok) {
@@ -380,14 +386,14 @@ export function mount(doc, request) {
 
     fill(
       pendingList,
-      ...(open.length === 0 ? [el('li', 'muted', 'nenhuma proposta esperando decisão')] : open.map(renderRow)),
+      ...(open.length === 0 ? [el('li', 'muted', 'no proposal waiting for a decision')] : open.map(renderRow)),
     );
     fill(
       historyList,
-      ...(history.length === 0 ? [el('li', 'muted', 'nada decidido ainda')] : history.map(renderRow)),
+      ...(history.length === 0 ? [el('li', 'muted', 'nothing decided yet')] : history.map(renderRow)),
     );
 
-    setNotice(`${proposals.length} proposta(s)`, false);
+    setNotice(`${proposals.length} proposal(s)`, false);
   }
 
   refresh.addEventListener('click', () => {

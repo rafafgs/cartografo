@@ -216,7 +216,7 @@ test('AT2 — POST /v1/proposals/:id/approve forwards method, body and content-t
 test('AT3 — a path outside /v1/* is served from the static page, not proxied', async (t) => {
   const upstream = await startFakeUpstream(t, (_request, response) => {
     response.writeHead(500, { 'content-type': 'text/plain' });
-    response.end('o upstream nunca deveria ver isto');
+    response.end('the upstream should never see this');
   });
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
@@ -227,8 +227,8 @@ test('AT3 — a path outside /v1/* is served from the static page, not proxied',
 
   const html = await page.text();
   assert.match(html, /<html/i);
-  assert.match(html, /Pendentes/);
-  assert.match(html, /Histórico/);
+  assert.match(html, /Pending/);
+  assert.match(html, /History/);
 
   // The page is useless without its module; serving it is part of the same job.
   const script = await fetch(`${screen.url}/inbox.js`);

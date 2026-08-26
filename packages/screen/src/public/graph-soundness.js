@@ -25,16 +25,17 @@
  * `target`, `message`) and the rule names are the wire format of the 422, and
  * speak English since t230 (`docs/spec/glossario-wire.md` §5.3/5.4) — in
  * lockstep on both sides of the parity between `packages/core` and
- * `scripts/validate-graph.mjs`. Every LINE this file writes out of them does
- * not: it is product surface in Portuguese (t133, exceptions 9 and 10), which
- * D20 does not touch.
+ * `scripts/validate-graph.mjs`. Every LINE this file writes out of them is
+ * product copy, and speaks English for a different reason and since a different
+ * ticket: t310, which moved everything a person reads on this screen. Nothing
+ * here is a wire value, so nothing here has to move in lockstep with anything.
  */
 
 /** Shown when the report carries no problem at all. */
-export const NO_PROBLEMS_LINE = 'nenhum problema';
+export const NO_PROBLEMS_LINE = 'no problem';
 
 /** Used when a target is there but unnamed — a node with no id, say. */
-const MISSING_ID = 'sem id';
+const MISSING_ID = 'no id';
 
 /**
  * One sentence per rule, in the order `validateSoundness` runs them.
@@ -48,13 +49,13 @@ const MISSING_ID = 'sem id';
  */
 const RULE_LINES = Object.freeze({
   reachable: (target) =>
-    `o nó ${nodeName(target)} não é alcançável a partir do nó inicial: falta uma aresta que chegue até ele`,
+    `node ${nodeName(target)} is not reachable from the initial node: an edge that arrives at it is missing`,
   terminates: (target) =>
-    `do nó ${nodeName(target)} não há caminho até um nó final: quem cair nele não conclui a travessia`,
+    `from node ${nodeName(target)} there is no path to a final node: whoever lands on it never finishes the traversal`,
   edge_with_condition: (target) =>
-    `a aresta ${edgeName(target)} está sem condição: uma transição sem rótulo é um caminho que o executor não sabe quando tomar`,
+    `edge ${edgeName(target)} has no condition: a transition with no label is a path the executor does not know when to take`,
   node_with_contract: (target) =>
-    `o nó ${nodeName(target)} não declara skill_ref e contract completos: sem contrato não há como verificar o que ele produziu`,
+    `node ${nodeName(target)} does not declare a complete skill_ref and contract: with no contract there is no way to verify what it produced`,
 });
 
 /** The four rule names this mapping covers, in the order the gate runs them. */
@@ -90,13 +91,13 @@ function edgeName(target) {
  * @returns {string} The line to show.
  */
 function renderViolation(violation) {
-  if (!isObject(violation)) return 'regra de soundness desconhecida: violação malformada';
+  if (!isObject(violation)) return 'unknown soundness rule: malformed violation';
 
   const rule = violation.rule;
   const line = typeof rule === 'string' ? RULE_LINES[rule] : undefined;
   if (line === undefined) {
     const name = typeof rule === 'string' && rule.trim() !== '' ? rule : MISSING_ID;
-    return `regra de soundness desconhecida ("${name}") sobre ${JSON.stringify(violation.target ?? null)}`;
+    return `unknown soundness rule ("${name}") about ${JSON.stringify(violation.target ?? null)}`;
   }
   return line(violation.target);
 }
@@ -115,7 +116,7 @@ export function renderReport(report) {
     if (isObject(problem) && typeof problem.message === 'string' && problem.message !== '') {
       return problem.message;
     }
-    return 'problema de estrutura sem mensagem declarada';
+    return 'structure problem with no declared message';
   });
 
   const soundness = isObject(document.soundness) ? document.soundness.violations : undefined;

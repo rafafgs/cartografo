@@ -19,7 +19,7 @@
  * this page departs from the inbox's rhythm: the human who just edited the
  * graph IS the human the gate would ask, and a second click on their own draft
  * would be ceremony, not judgement. A topographer's proposal still stops at
- * `pendente` and still waits for someone in `/` (README, princípio 5).
+ * `pending` and still waits for someone in `/` (README, principle 5).
  *
  * ## What is editable, and what is not
  *
@@ -42,9 +42,17 @@
  *
  * The wire keys (`graph_id`, `target_version`, `operations`, `evidence`,
  * `expected_metric`, `proposal`, `graph_version`) went English with the API in
- * t226; every string the browser SHOWS stays Portuguese (t133, exceptions 9 and
- * 10), and so do `MANUAL_EVIDENCE`/`MANUAL_METRIC` below, which are the frozen
- * hypothesis shape `domain/hypothesis.ts` owns and D20 does not unfreeze.
+ * t226; every string the browser SHOWS went English with the rest of the
+ * screen's copy in t310.
+ *
+ * The two constants below sit on either side of that line, and telling them
+ * apart is the whole of what t310 had to get right. `MANUAL_EVIDENCE` is this
+ * page's own invention — `evidence` is an unstructured blob the core checks the
+ * presence of and never the shape of — so it moved with the copy.
+ * `MANUAL_METRIC` did NOT: `domain/hypothesis.ts` and `routes/proposals.ts`
+ * validate every `expected_metric` against exactly `{nome, direcao: "sobe"|"cai",
+ * de, para}`, so renaming a key here would make this page's own proposals fail
+ * that gate. Only the metric's free-text `nome` VALUE is copy, and only it moved.
  */
 
 import { diffGraphs, FROZEN_NODE_FIELDS } from './graph-operations.js';
@@ -76,13 +84,21 @@ const SKILLS_URL = '/v1/skills';
  * ever reads the metric's shape.
  */
 export const MANUAL_EVIDENCE = Object.freeze({
-  fonte: 'tela-configuracao',
-  observacao: 'edição manual via tela de configuração do grafo',
+  source: 'graph-configuration-screen',
+  note: 'manual edit through the graph configuration screen',
 });
 
-/** The inert metric that goes with it. */
+/**
+ * The inert metric that goes with it — and a frozen wire shape, not copy.
+ *
+ * `nome`, `direcao`, `de`, `para` and the value `sobe` are what
+ * `packages/core`'s `metrica_esperada` validation demands of every proposal
+ * (`domain/hypothesis.ts`, `routes/proposals.ts`), and `packages/core`'s own
+ * `no-portuguese-user-facing-strings.test.ts` protects them on that side. They
+ * stayed exactly as they are through t310; only the free-text name moved.
+ */
 export const MANUAL_METRIC = Object.freeze({
-  nome: 'edição manual (sem métrica)',
+  nome: 'manual edit (no metric)',
   direcao: 'sobe',
   de: 0,
   para: 0,
@@ -96,19 +112,19 @@ const EMPTY_CONTRACT = {
 };
 
 /** Said next to the three fields no client can swap on an existing node. */
-const FROZEN_NOTE = 'remova e recrie o nó para mudar isso';
+const FROZEN_NOTE = 'remove and re-create the node to change this';
 
 /** Human label of each field, so the page is not a list of raw key names. */
 const FIELD_LABELS = {
   id: 'id',
-  node_type: 'tipo do nó (work ou gate)',
+  node_type: 'node type (work or gate)',
   engine: 'engine',
-  role: 'papel',
-  description: 'descrição',
-  contract: 'contrato (JSON: input_schema, output_schema, checks)',
-  from: 'de',
-  to: 'para',
-  condition: 'condição',
+  role: 'role',
+  description: 'description',
+  contract: 'contract (JSON: input_schema, output_schema, checks)',
+  from: 'from',
+  to: 'to',
+  condition: 'condition',
 };
 
 /**
@@ -308,7 +324,7 @@ export function mount(doc, request) {
     const control = el('select', 'field-input');
     const id = `graph-field-${(fieldCount += 1)}`;
     control.id = id;
-    const label = el('label', 'field-label', `versões registradas de ${skillId}`);
+    const label = el('label', 'field-label', `registered versions of ${skillId}`);
     label.htmlFor = id;
 
     // The pinned version is listed too, and it is the selected one: the point is
@@ -327,9 +343,9 @@ export function mount(doc, request) {
     control.append(
       ...options.map((entry) => {
         const suffix = !entry.registered
-          ? ' (pinada, fora do registro)'
+          ? ' (pinned, not in the registry)'
           : entry.version === pinned
-            ? ' (pinada)'
+            ? ' (pinned)'
             : '';
         const option = el('option', undefined, `${entry.version}${suffix}`);
         option.value = entry.version;
@@ -345,7 +361,7 @@ export function mount(doc, request) {
       // Redrawn, because the three text fields above show the pin and they are
       // the ones a person will read back to check what they just chose.
       draw();
-      setNotice(`nó "${String(node.id)}" agora pina ${chosen.id} ${chosen.version}`, false);
+      setNotice(`node "${String(node.id)}" now pins ${chosen.id} ${chosen.version}`, false);
     });
 
     line.append(label, control);
@@ -367,8 +383,8 @@ export function mount(doc, request) {
     if (entry.fresh) card.setAttribute('data-new', 'true');
 
     const head = el('p', 'head');
-    const title = el('span', 'title', entry.fresh ? 'nó novo' : `nó ${String(node.id)}`);
-    const remove = el('button', 'action', 'Remover nó');
+    const title = el('span', 'title', entry.fresh ? 'new node' : `node ${String(node.id)}`);
+    const remove = el('button', 'action', 'Remove node');
     remove.type = 'button';
     remove.addEventListener('click', () => {
       removeNode(entry);
@@ -381,7 +397,7 @@ export function mount(doc, request) {
         textField('input', 'id', String(node.id ?? ''), (value) => {
           node.id = value;
           card.setAttribute('data-node', value);
-          title.textContent = value === '' ? 'nó novo' : `nó ${value}`;
+          title.textContent = value === '' ? 'new node' : `node ${value}`;
         }),
         choiceField('node_type', ['work', 'gate'], String(node.node_type ?? 'work'), (value) => {
           node.node_type = value;
@@ -428,7 +444,7 @@ export function mount(doc, request) {
 
     const head = el('p', 'head');
     const title = el('span', 'title', describeEdge(edge));
-    const remove = el('button', 'action', 'Remover aresta');
+    const remove = el('button', 'action', 'Remove edge');
     remove.type = 'button';
     remove.addEventListener('click', () => {
       removeEdge(edge);
@@ -470,13 +486,13 @@ export function mount(doc, request) {
     fill(
       nodeList,
       ...(nodeEntries.length === 0
-        ? [el('li', 'muted', 'nenhum nó — este grafo não atravessaria nada')]
+        ? [el('li', 'muted', 'no node — this graph would not traverse anything')]
         : nodeEntries.map(renderNode)),
     );
     fill(
       edgeList,
       ...(edgeEntries.length === 0
-        ? [el('li', 'muted', 'nenhuma aresta')]
+        ? [el('li', 'muted', 'no edge')]
         : edgeEntries.map(renderEdge)),
     );
   }
@@ -499,8 +515,8 @@ export function mount(doc, request) {
     draw();
     setNotice(
       dropped === 0
-        ? `nó "${id}" removido do rascunho`
-        : `nó "${id}" removido do rascunho, junto com ${dropped} aresta(s) que o tocavam`,
+        ? `node "${id}" removed from the draft`
+        : `node "${id}" removed from the draft, along with ${dropped} edge(s) that touched it`,
       false,
     );
   }
@@ -508,7 +524,7 @@ export function mount(doc, request) {
   function removeEdge(edge) {
     edgeEntries = edgeEntries.filter((candidate) => candidate !== edge);
     draw();
-    setNotice(`aresta ${describeEdge(edge)} removida do rascunho`, false);
+    setNotice(`edge ${describeEdge(edge)} removed from the draft`, false);
   }
 
   /* ------------------------------------------------------------------ HTTP */
@@ -531,8 +547,8 @@ export function mount(doc, request) {
         ok: false,
         status: 0,
         body: {
-          error: 'tela_sem_resposta',
-          message: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
+          error: 'screen_unresponsive',
+          message: `the screen did not answer (${cause instanceof Error ? cause.message : 'network failure'})`,
         },
       };
     }
@@ -542,7 +558,7 @@ export function mount(doc, request) {
       try {
         body = JSON.parse(text);
       } catch {
-        body = { error: 'resposta_ilegivel', message: text.slice(0, 200) };
+        body = { error: 'unreadable_response', message: text.slice(0, 200) };
       }
     }
     return { ok: response.ok, status: response.status, body };
@@ -559,20 +575,20 @@ export function mount(doc, request) {
 
   /** The human-readable half of an error body, in the core's own vocabulary. */
   function messageOf(body, status) {
-    if (!isObject(body)) return `falha ${status}`;
+    if (!isObject(body)) return `failure ${status}`;
     if (typeof body.message === 'string' && body.message !== '') {
       return typeof body.error === 'string' ? `${body.error}: ${body.message}` : body.message;
     }
     if (typeof body.error === 'string') return body.error;
     if (typeof body.message === 'string' && body.message !== '') return body.message;
-    return `falha ${status}`;
+    return `failure ${status}`;
   }
 
   /* --------------------------------------------------------------- loading */
 
   /** Fills the picker with the registered classes (FR1). */
   async function loadClasses() {
-    setNotice('carregando classes…', false);
+    setNotice('loading classes…', false);
     const answer = await call(CLASSES_URL);
     if (!answer.ok) {
       setNotice(messageOf(answer.body, answer.status), true);
@@ -596,8 +612,8 @@ export function mount(doc, request) {
 
     setNotice(
       classes.length === 0
-        ? 'nenhuma classe registrada ainda — importe um grafo de fábrica primeiro'
-        : `${classes.length} classe(s) registrada(s)`,
+        ? 'no class registered yet — import a factory graph first'
+        : `${classes.length} class(es) registered`,
       false,
     );
   }
@@ -612,11 +628,11 @@ export function mount(doc, request) {
   async function loadGraph(chosen) {
     const wanted = chosen ?? picker.value;
     if (typeof wanted !== 'string' || wanted === '') {
-      setNotice('escolha um grafo para carregar', true);
+      setNotice('choose a graph to load', true);
       return;
     }
 
-    setNotice(`carregando ${wanted}…`, false);
+    setNotice(`loading ${wanted}…`, false);
     fill(problems);
     fill(result);
     appliedVersionId = null;
@@ -630,7 +646,7 @@ export function mount(doc, request) {
     const graph = isObject(lineage.body) ? lineage.body.graph : undefined;
     const current = isObject(graph) ? graph.current_version_id : null;
     if (typeof current !== 'string' || current === '') {
-      setNotice('este grafo não aponta para versão corrente nenhuma', true);
+      setNotice('this graph points at no current version', true);
       return;
     }
 
@@ -643,7 +659,7 @@ export function mount(doc, request) {
     const row = isObject(version.body) ? version.body.graph_version : undefined;
     const snapshot = isObject(row) ? row.snapshot : undefined;
     if (!isObject(snapshot)) {
-      setNotice('a versão veio sem snapshot; não há o que editar', true);
+      setNotice('the version came with no snapshot; there is nothing to edit', true);
       return;
     }
 
@@ -667,12 +683,12 @@ export function mount(doc, request) {
 
     fill(
       base,
-      el('span', 'label', 'editando '),
-      el('span', 'value', `${String(snapshot.problem_class ?? wanted)} · versão ${current}`),
+      el('span', 'label', 'editing '),
+      el('span', 'value', `${String(snapshot.problem_class ?? wanted)} · version ${current}`),
     );
 
     draw();
-    setNotice(`${nodeEntries.length} nó(s) e ${edgeEntries.length} aresta(s) carregados`, false);
+    setNotice(`${nodeEntries.length} node(s) and ${edgeEntries.length} edge(s) loaded`, false);
   }
 
   /**
@@ -735,10 +751,10 @@ export function mount(doc, request) {
       const node = { ...entry.node };
       const id = typeof node.id === 'string' ? node.id.trim() : '';
       if (id === '') {
-        complaints.push('há um nó sem id: todo nó precisa de um id antes de salvar');
+        complaints.push('there is a node with no id: every node needs an id before saving');
         continue;
       }
-      if (seen.has(id)) complaints.push(`o id de nó "${id}" aparece mais de uma vez`);
+      if (seen.has(id)) complaints.push(`the node id "${id}" appears more than once`);
       seen.add(id);
       node.id = id;
 
@@ -746,7 +762,7 @@ export function mount(doc, request) {
         node.contract = JSON.parse(entry.contractText);
       } catch (cause) {
         complaints.push(
-          `o contrato do nó "${id}" não é JSON válido: ${cause instanceof Error ? cause.message : 'erro de parse'}`,
+          `the contract of node "${id}" is not valid JSON: ${cause instanceof Error ? cause.message : 'parse error'}`,
         );
       }
 
@@ -762,7 +778,7 @@ export function mount(doc, request) {
       const from = typeof edge.from === 'string' ? edge.from.trim() : '';
       const to = typeof edge.to === 'string' ? edge.to.trim() : '';
       if (from === '' || to === '') {
-        complaints.push('há uma aresta sem as duas pontas: preencha "de" e "para" antes de salvar');
+        complaints.push('there is an edge missing an end: fill in "from" and "to" before saving');
         continue;
       }
       const copy = { ...edge, from, to };
@@ -772,7 +788,7 @@ export function mount(doc, request) {
 
     if (complaints.length > 0) {
       showLines(complaints, true);
-      setNotice('nada foi enviado: o rascunho ainda tem problema', true);
+      setNotice('nothing was sent: the draft still has a problem', true);
       return null;
     }
     return { ...loaded, nodes, edges };
@@ -783,7 +799,7 @@ export function mount(doc, request) {
     fill(problems, ...lines.map((line) => el('p', isError ? 'problem error' : 'problem', line)));
   }
 
-  /** A "Recarregar" button, which is the only thing this page ever retries with. */
+  /** A "Reload" button, which is the only thing this page ever retries with. */
   function reloadAction(label) {
     const button = el('button', 'action', label);
     button.type = 'button';
@@ -806,7 +822,7 @@ export function mount(doc, request) {
     fill(result);
 
     if (graphId === null || versionId === null || loaded === null) {
-      setNotice('carregue um grafo antes de salvar', true);
+      setNotice('load a graph before saving', true);
       return;
     }
 
@@ -815,11 +831,11 @@ export function mount(doc, request) {
 
     const operations = diffGraphs(loaded, edited);
     if (operations.length === 0) {
-      setNotice('nenhuma alteração para salvar', false);
+      setNotice('no change to save', false);
       return;
     }
 
-    setNotice(`enviando ${operations.length} operação(ões)…`, false);
+    setNotice(`sending ${operations.length} operation(s)…`, false);
 
     const created = await post(PROPOSALS_URL, {
       graph_id: graphId,
@@ -829,26 +845,26 @@ export function mount(doc, request) {
       expected_metric: MANUAL_METRIC,
     });
     if (!created.ok) {
-      refuse(created, 'a proposta não foi criada');
+      refuse(created, 'the proposal was not created');
       return;
     }
 
     const proposal = isObject(created.body) ? created.body.proposal : undefined;
     const proposalId = isObject(proposal) ? proposal.id : undefined;
     if (proposalId === undefined || proposalId === null) {
-      setNotice('a API criou a proposta sem devolver o id dela', true);
+      setNotice('the API created the proposal without returning its id', true);
       return;
     }
 
     const approved = await post(`${PROPOSALS_URL}/${String(proposalId)}/approve`, {});
     if (!approved.ok) {
-      refuse(approved, `a proposta #${String(proposalId)} não foi aprovada`);
+      refuse(approved, `proposal #${String(proposalId)} was not approved`);
       return;
     }
 
     const applied = await post(`${PROPOSALS_URL}/${String(proposalId)}/apply`, {});
     if (!applied.ok) {
-      refuse(applied, `a proposta #${String(proposalId)} foi recusada ao aplicar`);
+      refuse(applied, `proposal #${String(proposalId)} was refused on apply`);
       return;
     }
 
@@ -860,10 +876,10 @@ export function mount(doc, request) {
     // and the way to do it is on top of the version that just came into being.
     fill(
       result,
-      el('p', 'ok', newVersion === null ? 'aplicada' : `versão nova: ${newVersion}`),
-      reloadAction('Recarregar'),
+      el('p', 'ok', newVersion === null ? 'applied' : `new version: ${newVersion}`),
+      reloadAction('Reload'),
     );
-    setNotice('aplicada', false);
+    setNotice('applied', false);
   }
 
   /**
@@ -882,13 +898,13 @@ export function mount(doc, request) {
 
     if (answer.status === 422 && body.error === 'invalid_graph') {
       showLines(renderReport(body), true);
-      setNotice(`${headline}: o portão de soundness reprovou`, true);
+      setNotice(`${headline}: the soundness gate refused it`, true);
       return;
     }
 
     if (answer.status === 409 && body.error === 'stale_proposal') {
-      showLines(['a base do grafo mudou enquanto você editava'], true);
-      problems.append(reloadAction('Recarregar'));
+      showLines(['the graph base moved while you were editing'], true);
+      problems.append(reloadAction('Reload'));
       setNotice(headline, true);
       return;
     }
@@ -909,12 +925,12 @@ export function mount(doc, request) {
       contractText: asJsonText(EMPTY_CONTRACT),
     });
     draw();
-    setNotice('nó novo no rascunho — preencha id, papel, skill e contrato', false);
+    setNotice('new node in the draft — fill in id, role, skill and contract', false);
   });
   addEdge.addEventListener('click', () => {
     edgeEntries.push({ from: '', to: '', condition: '' });
     draw();
-    setNotice('aresta nova no rascunho', false);
+    setNotice('new edge in the draft', false);
   });
   saveButton.addEventListener('click', () => {
     void save();

@@ -16,10 +16,14 @@
  * and the control plane as a child process that this package can only reach
  * over HTTP (D11).
  *
- * The wire keys (`grafo_id`, `versao_alvo`, `operacoes`, `grafo_versao`,
- * `proposta`) and every string the page shows stay in Portuguese: they are the
- * control plane's format and the product's own surface (t133, exceptions 9
- * and 10).
+ * Every string the page SHOWS reads in English since t310. Two values it sends
+ * do not, and this file pins both: `MANUAL_EVIDENCE` moved with the copy because
+ * it is this screen's own invention, while `MANUAL_METRIC` stayed exactly as it
+ * is because `packages/core` validates every proposal's `expected_metric`
+ * against that Portuguese shape (`domain/hypothesis.ts`,
+ * `routes/proposals.ts`). Renaming its keys here would make this page's own
+ * proposals fail that validation — which is why AC1 asserts the two side by
+ * side, in one body.
  */
 
 import assert from 'node:assert/strict';
@@ -52,7 +56,7 @@ const EDITABLE_FIELDS = [
 const FROZEN_FIELDS = ['engine', 'id', 'node_type'];
 
 /** The sentence the page owes next to those three (FR2). */
-const FROZEN_NOTE = 'remova e recrie o nó para mudar isso';
+const FROZEN_NOTE = 'remove and re-create the node to change this';
 
 /** Tags that take input from a person. */
 const CONTROL_TAGS = ['input', 'select', 'textarea'];
@@ -174,7 +178,7 @@ const NEW_NODE = {
   id: 'checar_fonte',
   role: 'conferente',
   node_type: 'work',
-  description: 'Confere as fontes citadas na nota.',
+  description: 'Checks the sources cited in the note.',
   'skill_ref.id': 'cartografo/checar-fonte',
   'skill_ref.version': '1.0.0',
   'skill_ref.hash': `sha256:${'4'.repeat(64)}`,
@@ -292,6 +296,20 @@ test('AC1 — the page produces the same version the API would, through the same
   const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
   assert.ok(sent !== undefined, 'the page never created a proposal');
 
+  // t310, and the whole reason this ticket had two landmines rather than one.
+  // The evidence is this screen's own invention and moved with the copy; the
+  // metric mirrors the shape `packages/core` still validates, and did not.
+  const body = sent.body as { evidence: unknown; expected_metric: unknown };
+  assert.deepEqual(body.evidence, {
+    source: 'graph-configuration-screen',
+    note: 'manual edit through the graph configuration screen',
+  });
+  assert.deepEqual(
+    body.expected_metric,
+    { nome: 'manual edit (no metric)', direcao: 'sobe', de: 0, para: 0 },
+    'MANUAL_METRIC is a frozen wire shape: only its free-text name is copy',
+  );
+
   const created = await api<{ proposal: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
   assert.equal(created.status, 201, `POST /v1/proposals returned ${created.status}`);
   const proposalId = created.body.proposal.id;
@@ -360,7 +378,7 @@ test('AC1 — two parallel edges stay two edges, from the cards to the version i
   // Remove the second of the pair and add a third condition in its place. The
   // two operations name the same two ends, so nothing but `condition` can tell
   // the removal from the addition — or from the sibling that has to survive.
-  removeCard(drawn[1], 'Remover aresta');
+  removeCard(drawn[1], 'Remove edge');
 
   doc.require('add-edge').click();
   fillCard(cards(doc, 'edge-list', 'data-edge').at(-1) as FakeElement, {
@@ -433,7 +451,7 @@ test('AC2 — a soundness failure is shown with its reason, and nothing is writt
   await editor.save();
 
   const shown = doc.require('problems').textContent;
-  for (const word of ['alcançável', 'checar_fonte']) {
+  for (const word of ['reachable', 'checar_fonte']) {
     assert.ok(shown.includes(word), `the refusal does not mention "${word}": ${shown}`);
   }
   assert.ok(
@@ -719,7 +737,7 @@ test('AC5 — a pin the registry does not carry is shown as such, never silently
   const selected = options.filter((option) => option.value === '1.0.0');
   assert.equal(selected.length, 1, 'the version this node pins has to be in the list');
   assert.ok(
-    selected[0].textContent.includes('fora do registro'),
+    selected[0].textContent.includes('not in the registry'),
     `the picker does not say the pin is unregistered: ${selected[0].textContent}`,
   );
   assert.equal(selected[0].disabled, true, 'and it is not something to choose');

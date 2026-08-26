@@ -22,6 +22,7 @@ import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as wait } from 'node:timers/promises';
 
+import type * as ClientModule from '../src/client.ts';
 import type * as ProxyModule from '../src/proxy.ts';
 import type * as RouterModule from '../src/router.ts';
 import type * as ScreenServerModule from '../src/server.ts';
@@ -249,7 +250,7 @@ test('AT4 — the screen listens on CARTOGRAFO_SCREEN_PORT, and on 4318 when it 
   assert.equal(resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: '5099' }), 5099);
   assert.equal(resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: '  ' }), 4318);
   assert.throws(
-    () => resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: 'não é porta' }),
+    () => resolveScreenPort({ CARTOGRAFO_SCREEN_PORT: 'not a port' }),
     /CARTOGRAFO_SCREEN_PORT/,
   );
 
@@ -417,13 +418,13 @@ test('t180 — a bad configuration fails at startup in English', async () => {
   const { parsePortFromEnv, resolveControlPlaneUrl, CONTROL_PLANE_URL_ENV } = await loadProxy();
 
   assert.throws(
-    () => parsePortFromEnv({ CARTOGRAFO_PORT: 'não é porta' }, 'CARTOGRAFO_PORT', 4317),
-    { message: 'CARTOGRAFO_PORT invalid: "não é porta" (expected an integer from 0 to 65535)' },
+    () => parsePortFromEnv({ CARTOGRAFO_PORT: 'not a port' }, 'CARTOGRAFO_PORT', 4317),
+    { message: 'CARTOGRAFO_PORT invalid: "not a port" (expected an integer from 0 to 65535)' },
   );
 
   assert.throws(
-    () => resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'nem url é' }),
-    { message: 'CARTOGRAFO_URL invalid: "nem url é" (expected something like http://127.0.0.1:4317)' },
+    () => resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'not a url either' }),
+    { message: 'CARTOGRAFO_URL invalid: "not a url either" (expected something like http://127.0.0.1:4317)' },
   );
 
   assert.throws(
@@ -565,7 +566,7 @@ test('t199 AT — --url wins over the environment, through the same command', { 
 
 test('t199 AT — a bad --url and a bad CARTOGRAFO_SCREEN_PORT both fail in English', { timeout: 120_000 }, async () => {
   const badUrl = await runScreenBin({
-    args: ['--url', 'nem url é'],
+    args: ['--url', 'not a url either'],
     env: { CARTOGRAFO_SCREEN_PORT: '0' },
   });
   assert.equal(badUrl.readiness, null, 'a screen pointed at nothing must not come up');
@@ -574,7 +575,7 @@ test('t199 AT — a bad --url and a bad CARTOGRAFO_SCREEN_PORT both fail in Engl
   assert.doesNotMatch(badUrl.stderr, /inválida|esperado|precisa ser/);
 
   const badPort = await runScreenBin({
-    env: { CARTOGRAFO_SCREEN_PORT: 'não é porta' },
+    env: { CARTOGRAFO_SCREEN_PORT: 'not a port' },
   });
   assert.equal(badPort.readiness, null);
   assert.notEqual(badPort.code, 0);
@@ -666,7 +667,7 @@ test('AT6 — a /v1 body past PROXY_BODY_LIMIT is refused with 413, and never fo
 
   const upstream = await startFakeUpstream(t, (_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end('{"o upstream nunca deveria ver isto":true}');
+    response.end('{"the upstream should never see this":true}');
   });
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
@@ -711,7 +712,7 @@ test('AT7 — a /v1 body of exactly PROXY_BODY_LIMIT bytes still goes through, w
 
   const upstream = await startFakeUpstream(t, (_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end('{"aceito":true}');
+    response.end('{"accepted":true}');
   });
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
@@ -724,7 +725,7 @@ test('AT7 — a /v1 body of exactly PROXY_BODY_LIMIT bytes still goes through, w
   });
 
   assert.equal(accepted.status, 200);
-  assert.equal(await accepted.text(), '{"aceito":true}');
+  assert.equal(await accepted.text(), '{"accepted":true}');
 
   assert.equal(upstream.requests.length, 1, 'the body at the ceiling is forwarded, not refused');
   assert.equal(
@@ -733,6 +734,116 @@ test('AT7 — a /v1 body of exactly PROXY_BODY_LIMIT bytes still goes through, w
     'the ceiling is a ceiling, not a ceiling minus one',
   );
   assert.equal(upstream.requests[0].body, body, 'and it crosses whole, not truncated to the ceiling');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t310 — the five failures the screen answers as a PAGE.                     */
+/*                                                                            */
+/* The three bodies above are API plumbing and have been English since t180 / */
+/* t255. These five are the other half: a person meets them as HTML, in a     */
+/* browser, and until t310 every one of them was Portuguese. `failurePage` is */
+/* exercised directly because four of the five need an error object that no   */
+/* fake upstream can produce on demand — a dead client above all, whose page  */
+/* by definition never reaches anyone.                                        */
+/* -------------------------------------------------------------------------- */
+
+/** Title and detail of a page, read back out of the HTML it rendered. */
+function saidBy(html: string): { title: string; detail: string } {
+  const title = /<h2>([^<]*)<\/h2>/.exec(html);
+  const detail = /<h2>[^<]*<\/h2>\s*<p>([^<]*)<\/p>/.exec(html);
+  assert.ok(title !== null, `the page has no title at all:\n${html}`);
+  assert.ok(detail !== null, `the page has no detail at all:\n${html}`);
+  return { title: title[1], detail: detail[1] };
+}
+
+test('t310 — failurePage answers each of its five branches in English', async () => {
+  const { failurePage, ClientAbortedError, UsageError } = await loadRouter();
+  const { ApiError, NetworkError } = (await import(
+    new URL('../src/client.ts', import.meta.url).href
+  )) as typeof ClientModule;
+
+  const url = 'http://127.0.0.1:4317';
+
+  const aborted = failurePage(new ClientAbortedError('the form stopped arriving halfway through'), url);
+  assert.equal(aborted.status, 499);
+  assert.deepEqual(saidBy(aborted.html), {
+    title: 'client disconnected',
+    detail: 'The connection dropped before the screen finished reading the request. Nothing was changed.',
+  });
+
+  const down = failurePage(new NetworkError(url, new Error('ECONNREFUSED')), url);
+  assert.equal(down.status, 502);
+  assert.equal(saidBy(down.html).title, 'control plane down');
+  assert.ok(
+    saidBy(down.html).detail.startsWith(`Could not reach ${url}. Run `),
+    `the 502 does not say how to fix it in English:\n${down.html}`,
+  );
+
+  const missing = failurePage(new ApiError('/v1/jobs/7', 404, null), url);
+  assert.equal(missing.status, 404);
+  assert.deepEqual(saidBy(missing.html), {
+    title: 'not found',
+    detail: 'The control plane does not know this address.',
+  });
+
+  const refused = failurePage(new ApiError('/v1/proposals', 409, null), url);
+  assert.equal(refused.status, 502);
+  assert.equal(saidBy(refused.html).title, 'the control plane refused');
+  assert.ok(
+    saidBy(refused.html).detail.endsWith('. Nothing was changed by this screen.'),
+    `the 502 does not close in English:\n${refused.html}`,
+  );
+
+  const bad = failurePage(new UsageError('form too large'), url);
+  assert.equal(bad.status, 400);
+  assert.deepEqual(saidBy(bad.html), { title: 'invalid request', detail: 'form too large' });
+
+  // The sixth branch is not a branch of the ticket's list, but it is the one a
+  // bug in this package lands on, and it is copy just the same.
+  const broken = failurePage(new Error('boom'), url);
+  assert.equal(broken.status, 500);
+  assert.deepEqual(saidBy(broken.html), {
+    title: 'screen error',
+    detail: 'Something broke while building this page.',
+  });
+
+  for (const page of [aborted, down, missing, refused, bad, broken]) {
+    assert.ok(page.html.includes('<html lang="en">'), 'a failure page still declares another language');
+    assert.ok(page.html.includes('>back to the board</a>'), 'the way out of a failure is not English');
+  }
+});
+
+test('t310 — the routes that refuse an id, and the 404 of an unknown path, are English', async (t) => {
+  // Nothing here reaches the control plane: every one of these is refused by the
+  // screen's own router, before a read is even attempted.
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"jobs":[]}');
+  });
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
+
+  const cases = [
+    { path: '/executions/sete', title: 'invalid execution', detail: 'An execution id is an integer.' },
+    { path: '/jobs/sete', title: 'invalid job', detail: 'A job id is an integer.' },
+    { path: '/nowhere', title: 'page not found', detail: 'There is no /nowhere.' },
+  ];
+
+  for (const one of cases) {
+    const response = await fetch(`${screen.url}${one.path}`);
+    assert.equal(response.status, 404, `${one.path} answered ${response.status}`);
+    assert.deepEqual(saidBy(await response.text()), { title: one.title, detail: one.detail });
+  }
+
+  const badQuestionId = await fetch(`${screen.url}/input-requests/sete/answer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'resposta=x',
+  });
+  assert.equal(badQuestionId.status, 404);
+  assert.deepEqual(saidBy(await badQuestionId.text()), {
+    title: 'invalid question',
+    detail: 'A question id is an integer.',
+  });
 });
 
 test('t199 AT — the surviving resolver takes the explicit override as its first choice', async () => {
@@ -749,8 +860,8 @@ test('t199 AT — the surviving resolver takes the explicit override as its firs
   );
   // Blank is not a choice: `--url` absent and `--url ""` mean the same thing.
   assert.equal(resolveControlPlaneUrl({ [CONTROL_PLANE_PORT_ENV]: '5099' }, '  '), 'http://127.0.0.1:5099');
-  assert.throws(() => resolveControlPlaneUrl({}, 'nem url é'), {
-    message: '--url invalid: "nem url é" (expected something like http://127.0.0.1:4317)',
+  assert.throws(() => resolveControlPlaneUrl({}, 'not a url either'), {
+    message: '--url invalid: "not a url either" (expected something like http://127.0.0.1:4317)',
   });
   assert.throws(() => resolveControlPlaneUrl({}, 'ftp://127.0.0.1:4317'), {
     message: '--url has to be http or https: "ftp://127.0.0.1:4317"',

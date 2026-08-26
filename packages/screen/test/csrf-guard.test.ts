@@ -181,7 +181,7 @@ test("t192 AT3 — the screen's own page is forwarded verbatim, by either signal
   });
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
-  const sent = JSON.stringify({ reason: 'métrica esperada não é observável' });
+  const sent = JSON.stringify({ reason: 'the expected metric is not observable' });
 
   // 1. What a current browser sends from the screen's own tab.
   const bySite = await fetch(`${screen.url}/v1/proposals/7/approve`, {
@@ -284,10 +284,10 @@ async function readFromControlPlane(
 
 test("t192 AT7 — the server-rendered form refuses a cross-site submit, and nothing is written", async (t) => {
   const cp = await startControlPlane(t);
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   const question = await createQuestion(cp, {
     job_id: job.id,
-    question: 'Renumerar a migração para 0003?',
+    question: 'Renumber the migration to 0003?',
   });
 
   const screen = await startScreen(t, cp);
@@ -297,13 +297,21 @@ test("t192 AT7 — the server-rendered form refuses a cross-site submit, and not
       'content-type': 'application/x-www-form-urlencoded',
       'sec-fetch-site': 'cross-site',
     },
-    body: new URLSearchParams({ resposta: 'Manter 0002', respondido_por: 'rafael' }).toString(),
+    body: new URLSearchParams({ resposta: 'Keep 0002', respondido_por: 'rafael' }).toString(),
     redirect: 'manual',
   });
 
   assert.equal(submission.status, 403);
   assert.match(submission.headers.get('content-type') ?? '', /^text\/html/);
-  assert.match(await submission.text(), /origem não confiável/);
+  // t310: the 403 a person meets is a PAGE, and it reads in English. The wire
+  // code `untrusted_origin` the proxy answers with was already English (t255).
+  const refusal = await submission.text();
+  assert.ok(refusal.includes('<h2>untrusted origin</h2>'), `the 403 title is not English:\n${refusal}`);
+  assert.ok(
+    refusal.includes('This form only accepts submissions that started on this page. Reload and try again.'),
+    `the 403 detail is not English:\n${refusal}`,
+  );
+  assert.ok(refusal.includes('<html lang="en">'), 'the refusal page still declares another language');
 
   // The proof is not the page: it is the state, read back through the public API
   // without going through the screen at all.

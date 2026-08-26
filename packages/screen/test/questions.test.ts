@@ -33,11 +33,11 @@ import {
 } from './support.ts';
 
 const FULL_BODY = {
-  question: 'Renumerar a migração para 0003?',
-  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  options: ['Renumerar para 0003', 'Manter 0002'],
-  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
-  default_answer: 'Manter 0002',
+  question: 'Renumber the migration to 0003?',
+  context: 't101 runs in parallel and owns the same numbering space.',
+  options: ['Renumber to 0003', 'Keep 0002'],
+  recommendation: 'Keep 0002 and renumber only if it collides on the merge.',
+  default_answer: 'Keep 0002',
 };
 
 /** Reads the question straight from the control plane, bypassing the screen. */
@@ -62,7 +62,7 @@ test('t107 AT6 — GET /input-requests shows the whole question, with what it ta
   const cp = await startControlPlane(t);
 
   const job = await createJob(cp, {
-    title: 'que pergunta',
+    title: 'what a question',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
@@ -70,10 +70,10 @@ test('t107 AT6 — GET /input-requests shows the whole question, with what it ta
 
   const answered = await createQuestion(cp, {
     job_id: job.id,
-    question: 'esta já foi decidida',
+    question: 'this one was already decided',
   });
   await api(cp, 'PATCH', `/v1/input-requests/${answered.id}/answer`, {
-    answer: 'sim',
+    answer: 'yes',
     answered_by: 'rafael',
   });
 
@@ -100,6 +100,18 @@ test('t107 AT6 — GET /input-requests shows the whole question, with what it ta
     card.excerpt.includes(`action="/input-requests/${question.id}/answer"`),
     'each question carries the form that answers it',
   );
+  // t310: every label of the card, and the button, read in English.
+  assert.ok(page.html.includes('<h2>pending questions · 1</h2>'), `the heading is not English:\n${page.html}`);
+  for (const label of ['created at', 'context', 'recommendation', 'default answer', 'job']) {
+    assert.ok(card.excerpt.includes(`<dt>${label}</dt>`), `the "${label}" label is missing:\n${card.excerpt}`);
+  }
+  assert.ok(card.excerpt.includes('>your answer</label>'), `the answer label is not English:\n${card.excerpt}`);
+  assert.ok(card.excerpt.includes('who is answering'), `the author label is not English:\n${card.excerpt}`);
+  assert.ok(
+    card.excerpt.includes('<button type="submit">answer</button>'),
+    `the submit button is not English:\n${card.excerpt}`,
+  );
+
   assert.ok(card.excerpt.includes('method="post"'), 'answering is a write, and a write is a POST');
 });
 
@@ -107,7 +119,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const before = await readFromControlPlane(cp, job.id, question.id);
@@ -115,7 +127,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
 
   const screen = await startScreen(t, cp);
   const submission = await submitForm(screen, `/input-requests/${question.id}/answer`, {
-    resposta: 'Manter 0002',
+    resposta: 'Keep 0002',
     respondido_por: 'rafael',
   });
 
@@ -126,7 +138,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   // matters is that the STATE changed, not that the screen said it changed.
   const after = await readFromControlPlane(cp, job.id, question.id);
   assert.equal(after.status, 'answered');
-  assert.equal(after.answer, 'Manter 0002');
+  assert.equal(after.answer, 'Keep 0002');
   assert.equal(after.answered_by, 'rafael');
   assert.ok(after.answered_at !== null);
 
@@ -143,7 +155,7 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const screen = await startScreen(t, cp);
@@ -165,9 +177,50 @@ test('t107 AT6 — answering a nonexistent question propagates the control plane
   const screen = await startScreen(t, cp);
 
   const submission = await submitForm(screen, '/input-requests/424242/answer', {
-    resposta: 'seja lá o que for',
+    resposta: 'whatever it may be',
     respondido_por: 'rafael',
   });
 
   assert.equal(submission.status, 404, 'the screen does not invent success the API did not give');
+});
+
+test('t310 — an empty question queue says so in English', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const page = await openPage(screen, '/input-requests');
+
+  assert.equal(page.status, 200);
+  assert.ok(
+    page.html.includes('<p class="vazio">Nobody waiting for an answer. 🎉</p>'),
+    `the empty state is missing or still Portuguese:\n${page.html}`,
+  );
+});
+
+test('t310 — a blank answer is refused with an English page', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
+  const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
+
+  const screen = await startScreen(t, cp);
+  // `submitForm` hands back status and Location only; the assertion here is
+  // about the PAGE, so the request is made directly.
+  const submission = await fetch(`${screen.url}/input-requests/${question.id}/answer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ resposta: '   ', respondido_por: 'rafael' }).toString(),
+    redirect: 'manual',
+  });
+
+  assert.equal(submission.status, 400);
+  const html = await submission.text();
+  assert.ok(html.includes('<h2>blank answer</h2>'), `the refusal title is not English:\n${html}`);
+  assert.ok(
+    html.includes('Write the answer (or click one of the options) before sending.'),
+    `the refusal detail is not English:\n${html}`,
+  );
+  assert.ok(html.includes('back to the board'), `the way out is not English:\n${html}`);
 });

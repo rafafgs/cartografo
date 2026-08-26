@@ -130,7 +130,7 @@ test('t164 AT — /runners renders one row per runner, with the four fields and 
   );
   assert.match(
     busy.excerpt,
-    /trabalho #42 \(heartbeat_lost\) às 2026-08-15T10:07:00.000Z/,
+    /job #42 \(heartbeat_lost\) at 2026-08-15T10:07:00.000Z/,
     'the last expiration names the job it lost, why, and when',
   );
 
@@ -140,12 +140,25 @@ test('t164 AT — /runners renders one row per runner, with the four fields and 
   );
   assert.ok(!page.html.includes('<script>alert(1)</script>'), 'no name reaches the browser raw');
 
+  // t310: the table headers and the three placeholders read in English. The
+  // `data-campo` names and the `vazio` class beside them are the DOM contract
+  // and did NOT move (AC2).
+  assert.ok(
+    page.html.includes(
+      '<thead><tr><th>runner</th><th>name</th><th>active leases</th><th>last heartbeat</th><th>last expiration</th></tr></thead>',
+    ),
+    `the table headers are not English:\n${page.html}`,
+  );
+
   assert.match(idle.excerpt, /data-campo="leases_ativas">\s*0\s*</);
-  for (const field of ['nome', 'ultimo_heartbeat', 'ultima_expiracao']) {
-    assert.match(
-      idle.excerpt,
-      new RegExp(`data-campo="${field}">\\s*<span class="vazio">`),
-      `a runner with no ${field} shows the vazio placeholder, not an empty cell`,
+  for (const [field, placeholder] of [
+    ['nome', 'no name'],
+    ['ultimo_heartbeat', 'never'],
+    ['ultima_expiracao', 'none'],
+  ] as const) {
+    assert.ok(
+      idle.excerpt.includes(`data-campo="${field}"><span class="vazio">${placeholder}</span>`),
+      `the placeholder of ${field} is not English:\n${idle.excerpt}`,
     );
   }
 });
@@ -157,7 +170,7 @@ test('t164 AT — /runners with nobody paired is the empty state, not an empty t
 
   assert.equal(page.status, 200);
   assert.ok(
-    page.html.includes('<p class="vazio">Nenhum runner pareado ainda.</p>'),
+    page.html.includes('<p class="vazio">No runner paired yet.</p>'),
     `the empty state is missing:\n${page.html}`,
   );
   assert.deepEqual(blocks(page.html, 'runner'), []);
@@ -167,7 +180,7 @@ test('t164 AT — GET /runners is served against a real control plane, and the n
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  await api(cp, 'POST', '/v1/runners', { id: 'runner-a', name: 'laptop do fundador' });
+  await api(cp, 'POST', '/v1/runners', { id: 'runner-a', name: "the founder's laptop" });
   await api(cp, 'POST', '/v1/runners', { id: 'runner-b' });
   const lease = await api<{ lease: { job_id: number } }>(cp, 'POST', '/v1/leases', {
     runner_id: 'runner-a',
@@ -192,7 +205,7 @@ test('t164 AT — GET /runners is served against a real control plane, and the n
   assert.match(rows[0].excerpt, /data-campo="leases_ativas">\s*1\s*</, 'runner-a holds one lease');
   assert.match(rows[1].excerpt, /data-campo="leases_ativas">\s*0\s*</, 'runner-b holds none');
   assert.ok(
-    rows[0].excerpt.includes('laptop do fundador'),
+    rows[0].excerpt.includes("the founder&#39;s laptop"),
     'the row shows the name the operator paired with',
   );
 

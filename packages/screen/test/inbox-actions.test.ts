@@ -19,9 +19,12 @@
  * control plane: a function from request to answer, so a test can say "this
  * POST comes back 409" or "this one never arrives" without a server.
  *
- * English per D18; the routes are the API's English paths, and the envelope keys
- * (`propostas`, `proposta`, `motivo`, `erro`), the statuses and every visible
- * string are the wire's and the page's Portuguese, untouched by the rename.
+ * English per D18; the routes are the API's English paths and the envelope keys
+ * are the wire's. Every visible string moved later, with t310: the labels this
+ * file clicks by and the messages it reads back are the page's copy, and the
+ * page reads in English now — including the two synthetic error codes
+ * `screen_unresponsive` and `unreadable_response`, which are this screen's own
+ * invention and carry no glossary entry.
  */
 
 import assert from 'node:assert/strict';
@@ -198,7 +201,7 @@ function rowOf(doc: FakeDocument, listId: string): FakeElement {
   return only(rowsOf(doc, listId), `row in #${listId}`);
 }
 
-/** Clicks the action button whose label matches — `Aprovar`, `Reverter`. */
+/** Clicks the action button whose label matches — `Approve`, `Revert`. */
 function clickAction(row: FakeElement, label: string): void {
   only(
     row.byClass('action').filter((node) => node.textContent === label),
@@ -226,7 +229,7 @@ function confirmWithReason(row: FakeElement, reason: string): void {
   const input = only(row.byClass('reason-input'), 'reason field');
   input.typeText(reason);
   only(
-    row.byClass('action').filter((node) => node.textContent.startsWith('Confirmar')),
+    row.byClass('action').filter((node) => node.textContent.startsWith('Confirm')),
     'confirm button',
   ).click();
 }
@@ -243,7 +246,7 @@ const APPLIED = {
 
 test('approve — the row takes the new status without the page reloading', async () => {
   // Stateful on purpose: the row reloads the detail pane after a decision, and a
-  // fake that kept answering `pendente` there would be testing the fake.
+  // fake that kept answering `pending` there would be testing the fake.
   const stored: Record<string, unknown>[] = [{ ...PENDING }];
   const { doc, calls } = await openInbox(
     controlPlane(stored, () => {
@@ -253,7 +256,7 @@ test('approve — the row takes the new status without the page reloading', asyn
   );
   const row = rowOf(doc, 'pending-list');
 
-  clickAction(row, 'Aprovar');
+  clickAction(row, 'Approve');
   await settle();
 
   const posted = postOf(calls);
@@ -261,11 +264,11 @@ test('approve — the row takes the new status without the page reloading', asyn
   assert.deepEqual(posted.body, {}, 'approve carries no reason (FR7)');
 
   assert.equal(statusOf(row).textContent, 'approved');
-  assert.deepEqual(actionLabels(row), ['Aplicar'], 'the row now offers what the new status allows');
+  assert.deepEqual(actionLabels(row), ['Apply'], 'the row now offers what the new status allows');
   assert.equal(messageOf(row).textContent, '', 'a proposal still open says nothing extra');
   assert.equal(
     doc.require('detail').byTag('h3')[0]?.textContent,
-    'Proposta #7 — approved',
+    'Proposal #7 — approved',
     'the detail pane follows the decision',
   );
 });
@@ -281,15 +284,15 @@ test('apply — the version that came out of it appears on the row', async () =>
   );
   const row = rowOf(doc, 'pending-list');
 
-  clickAction(row, 'Aplicar');
+  clickAction(row, 'Apply');
   await settle();
 
   assert.equal(statusOf(row).textContent, 'applied');
-  assert.equal(only(row.byClass('version'), 'version line').textContent, 'versão v-999');
-  assert.deepEqual(actionLabels(row), ['Reverter']);
+  assert.equal(only(row.byClass('version'), 'version line').textContent, 'version v-999');
+  assert.deepEqual(actionLabels(row), ['Revert']);
   assert.equal(
     messageOf(row).textContent,
-    'concluída — sai dos pendentes no próximo "Atualizar"',
+    'done — it leaves the pending list on the next "Refresh"',
     'a proposal that left the open statuses says where it went',
   );
 });
@@ -300,24 +303,24 @@ test('reject — the reason travels in the body, and the row becomes read-only',
   );
   const row = rowOf(doc, 'pending-list');
 
-  clickAction(row, 'Rejeitar');
+  clickAction(row, 'Reject');
   const confirm = only(
-    row.byClass('action').filter((node) => node.textContent.startsWith('Confirmar')),
+    row.byClass('action').filter((node) => node.textContent.startsWith('Confirm')),
     'confirm button',
   );
   assert.equal(confirm.disabled, true, 'nothing is sent before there is a reason');
   only(row.byClass('reason-input'), 'reason field').typeText('   ');
   assert.equal(confirm.disabled, true, 'and whitespace is not a reason');
 
-  confirmWithReason(row, '  a evidência não sustenta a hipótese  ');
+  confirmWithReason(row, '  the evidence does not hold the hypothesis up  ');
   await settle();
 
   const posted = postOf(calls);
   assert.equal(posted.url, '/v1/proposals/7/reject');
-  assert.deepEqual(posted.body, { reason: 'a evidência não sustenta a hipótese' });
+  assert.deepEqual(posted.body, { reason: 'the evidence does not hold the hypothesis up' });
 
   assert.deepEqual(actionLabels(row), [], 'a rejected proposal offers nothing');
-  assert.equal(only(row.byClass('muted'), 'read-only mark').textContent, 'somente leitura');
+  assert.equal(only(row.byClass('muted'), 'read-only mark').textContent, 'read only');
 });
 
 test('revert — the same, from the history section', async () => {
@@ -326,31 +329,31 @@ test('revert — the same, from the history section', async () => {
   );
   const row = rowOf(doc, 'history-list');
 
-  clickAction(row, 'Reverter');
-  confirmWithReason(row, 'a métrica não se sustentou em produção');
+  clickAction(row, 'Revert');
+  confirmWithReason(row, 'the metric did not hold up in production');
   await settle();
 
   const posted = postOf(calls);
   assert.equal(posted.url, '/v1/proposals/9/revert');
-  assert.deepEqual(posted.body, { reason: 'a métrica não se sustentou em produção' });
+  assert.deepEqual(posted.body, { reason: 'the metric did not hold up in production' });
   assert.equal(statusOf(row).textContent, 'reverted');
 });
 
 test('a refused action leaves the row exactly as it was, and says why', async () => {
   const { doc, calls } = await openInbox(
     controlPlane([PENDING], () =>
-      answers({ error: 'proposal_not_pending', message: 'a proposta 7 já foi decidida' }, 409),
+      answers({ error: 'proposal_not_pending', message: 'proposal 7 was already decided' }, 409),
     ),
   );
   const row = rowOf(doc, 'pending-list');
 
-  clickAction(row, 'Aprovar');
+  clickAction(row, 'Approve');
   await settle();
 
-  assert.equal(messageOf(row).textContent, 'proposal_not_pending: a proposta 7 já foi decidida');
+  assert.equal(messageOf(row).textContent, 'proposal_not_pending: proposal 7 was already decided');
   assert.equal(messageOf(row).classList.contains('error'), true);
   assert.equal(statusOf(row).textContent, 'pending', 'a refusal changes nothing');
-  assert.deepEqual(actionLabels(row), ['Aprovar', 'Rejeitar'], 'and the buttons come back');
+  assert.deepEqual(actionLabels(row), ['Approve', 'Reject'], 'and the buttons come back');
   assert.deepEqual(
     calls.map((call) => call.method),
     ['POST'],
@@ -360,7 +363,7 @@ test('a refused action leaves the row exactly as it was, and says why', async ()
 
 test("a failure says why in the core's own vocabulary, whatever shape it arrived in", async () => {
   const failures = [
-    { answer: answers({ message: 'sem código de erro' }, 422), shown: 'sem código de erro' },
+    { answer: answers({ message: 'no error code at all' }, 422), shown: 'no error code at all' },
     { answer: answers({ error: 'invalid_graph' }, 422), shown: 'invalid_graph' },
     {
       // Fastify's own 404 — the one error the core does not write itself, which
@@ -368,16 +371,16 @@ test("a failure says why in the core's own vocabulary, whatever shape it arrived
       answer: answers({ message: 'Route POST:/v1/proposals/7/approve not found' }, 404),
       shown: 'Route POST:/v1/proposals/7/approve not found',
     },
-    { answer: answersText('', 500), shown: 'falha 500' },
-    { answer: answersText('<html>Bad Gateway</html>', 502), shown: 'resposta_ilegivel: <html>Bad Gateway</html>' },
+    { answer: answersText('', 500), shown: 'failure 500' },
+    { answer: answersText('<html>Bad Gateway</html>', 502), shown: 'unreadable_response: <html>Bad Gateway</html>' },
     {
       answer: unreachable(new TypeError('fetch failed')),
-      shown: 'tela_sem_resposta: a tela não respondeu (fetch failed)',
+      shown: 'screen_unresponsive: the screen did not answer (fetch failed)',
     },
     {
       // Not everything thrown at a `fetch` is an `Error`.
       answer: unreachable('ECONNRESET'),
-      shown: 'tela_sem_resposta: a tela não respondeu (falha de rede)',
+      shown: 'screen_unresponsive: the screen did not answer (network failure)',
     },
   ];
 
@@ -385,12 +388,12 @@ test("a failure says why in the core's own vocabulary, whatever shape it arrived
     const { doc } = await openInbox(controlPlane([PENDING], () => failure.answer));
     const row = rowOf(doc, 'pending-list');
 
-    clickAction(row, 'Aprovar');
+    clickAction(row, 'Approve');
     await settle();
 
     assert.equal(messageOf(row).textContent, failure.shown);
     assert.equal(messageOf(row).classList.contains('error'), true);
-    assert.deepEqual(actionLabels(row), ['Aprovar', 'Rejeitar']);
+    assert.deepEqual(actionLabels(row), ['Approve', 'Reject']);
   }
 });
 
@@ -398,11 +401,11 @@ test('an answer with no proposal in it leaves the row on what it already knew', 
   const { doc } = await openInbox(controlPlane([PENDING], () => answers({ ok: true })));
   const row = rowOf(doc, 'pending-list');
 
-  clickAction(row, 'Aprovar');
+  clickAction(row, 'Approve');
   await settle();
 
   assert.equal(statusOf(row).textContent, 'pending');
-  assert.deepEqual(actionLabels(row), ['Aprovar', 'Rejeitar']);
+  assert.deepEqual(actionLabels(row), ['Approve', 'Reject']);
 });
 
 test('the title opens the proposal in full, diff included', async () => {
@@ -411,11 +414,11 @@ test('the title opens the proposal in full, diff included', async () => {
     graph_id: 'grafo-fabrica-1',
     status: 'pending',
     target_version: 'sha256:abc',
-    evidence: { execucoes: 12, falhas: 3 },
-    expected_metric: 'retrabalho abaixo de 20%',
-    result: 'ainda não medido',
-    rejection_reason: 'não se aplica',
-    revert_reason: 'não se aplica',
+    evidence: { executions: 12, failures: 3 },
+    expected_metric: 'rework below 20%',
+    result: 'not measured yet',
+    rejection_reason: 'does not apply',
+    revert_reason: 'does not apply',
     operations: [
       { type: 'add_node', node: { id: 'red-team', node_type: 'gate' } },
       { type: 'remove_node', node_id: 'deploy' },
@@ -436,7 +439,7 @@ test('the title opens the proposal in full, diff included', async () => {
   );
 
   const detail = doc.require('detail');
-  assert.equal(only(detail.byTag('h3'), 'title').textContent, 'Proposta #11 — pending');
+  assert.equal(only(detail.byTag('h3'), 'title').textContent, 'Proposal #11 — pending');
   assert.deepEqual(
     detail.byClass('op').map((line) => line.className),
     ['op add', 'op remove', 'op change', 'op unknown'],
@@ -446,18 +449,28 @@ test('the title opens the proposal in full, diff included', async () => {
   const shown = detail.byTag('pre').map((node) => node.textContent);
   assert.equal(shown[0], JSON.stringify(detailed.evidence, null, 2), 'evidence that is not text is shown as JSON');
   assert.deepEqual(shown.slice(1), [
-    'retrabalho abaixo de 20%',
-    'ainda não medido',
-    'não se aplica',
-    'não se aplica',
+    'rework below 20%',
+    'not measured yet',
+    'does not apply',
+    'does not apply',
   ]);
+
+  // t310: the labels above every one of those blocks are English too.
+  assert.deepEqual(
+    detail.byTag('h4').map((node) => node.textContent),
+    ['Semantic diff', 'Evidence', 'Expected metric', 'Result', 'Rejection reason', 'Revert reason'],
+  );
+  assert.deepEqual(
+    detail.byClass('label').map((node) => node.textContent),
+    ['Graph: ', 'Target version: '],
+  );
 });
 
 test('a proposal the API refuses shows the failure in the pane, not an empty one', async () => {
   const { doc } = await openInbox((exchange) =>
     exchange.url === '/v1/proposals'
       ? answers({ proposals: [PENDING] })
-      : answers({ error: 'unknown_proposal', message: 'não existe proposta 7' }, 404),
+      : answers({ error: 'unknown_proposal', message: 'there is no proposal 7' }, 404),
   );
 
   only(rowOf(doc, 'pending-list').byClass('link'), 'title of the row').click();
@@ -465,7 +478,7 @@ test('a proposal the API refuses shows the failure in the pane, not an empty one
 
   assert.equal(
     only(doc.require('detail').byClass('error'), 'failure in the pane').textContent,
-    'unknown_proposal: não existe proposta 7',
+    'unknown_proposal: there is no proposal 7',
   );
 });
 
@@ -477,7 +490,7 @@ test('a 200 that carries no proposal is a failure too, not a blank pane', async 
   only(rowOf(doc, 'pending-list').byClass('link'), 'title of the row').click();
   await settle();
 
-  assert.equal(only(doc.require('detail').byClass('error'), 'failure in the pane').textContent, 'falha 200');
+  assert.equal(only(doc.require('detail').byClass('error'), 'failure in the pane').textContent, 'failure 200');
 });
 
 test('a proposal missing fields renders without pretending it has them', async () => {
@@ -485,18 +498,18 @@ test('a proposal missing fields renders without pretending it has them', async (
   const { doc } = await openInbox(controlPlane([bare]));
   const row = rowOf(doc, 'history-list');
 
-  assert.equal(only(row.byClass('link'), 'title').textContent, '#12 · sem grafo');
-  assert.equal(statusOf(row).textContent, 'sem status');
+  assert.equal(only(row.byClass('link'), 'title').textContent, '#12 · no graph');
+  assert.equal(statusOf(row).textContent, 'no status');
   assert.deepEqual(actionLabels(row), [], 'an unknown status is read-only, never an exception');
 
   only(row.byClass('link'), 'title').click();
   await settle();
 
   const detail = doc.require('detail');
-  assert.equal(only(detail.byTag('h3'), 'title').textContent, 'Proposta #12 — sem status');
+  assert.equal(only(detail.byTag('h3'), 'title').textContent, 'Proposal #12 — no status');
   assert.deepEqual(
     detail.byClass('op').map((line) => line.textContent),
-    ['nenhuma alteração'],
+    ['no change'],
   );
   assert.deepEqual(
     detail.byTag('pre').map((node) => node.textContent),
@@ -507,11 +520,11 @@ test('a proposal missing fields renders without pretending it has them', async (
 
 test('a list the API refuses is said out loud instead of showing an empty inbox', async () => {
   const { doc } = await openInbox(() =>
-    answers({ error: 'control_plane_unavailable', message: 'o núcleo não respondeu' }, 502),
+    answers({ error: 'control_plane_unavailable', message: 'the core did not answer' }, 502),
   );
 
   const notice = doc.require('notice');
-  assert.equal(notice.textContent, 'control_plane_unavailable: o núcleo não respondeu');
+  assert.equal(notice.textContent, 'control_plane_unavailable: the core did not answer');
   assert.equal(notice.classList.contains('error'), true);
   assert.deepEqual(rowsOf(doc, 'pending-list'), [], 'no row is invented out of a failure');
 });
@@ -519,23 +532,23 @@ test('a list the API refuses is said out loud instead of showing an empty inbox'
 test('an empty inbox says so in both sections', async () => {
   const { doc } = await openInbox(controlPlane([]));
 
-  assert.equal(doc.require('pending-list').textContent, 'nenhuma proposta esperando decisão');
-  assert.equal(doc.require('history-list').textContent, 'nada decidido ainda');
-  assert.equal(doc.require('notice').textContent, '0 proposta(s)');
+  assert.equal(doc.require('pending-list').textContent, 'no proposal waiting for a decision');
+  assert.equal(doc.require('history-list').textContent, 'nothing decided yet');
+  assert.equal(doc.require('notice').textContent, '0 proposal(s)');
   assert.equal(doc.require('notice').classList.contains('error'), false);
 });
 
 test('the list envelope may be an array, and anything else is no proposals at all', async () => {
   const asArray = await openInbox(() => answers([PENDING, APPLIED]));
-  assert.equal(asArray.doc.require('notice').textContent, '2 proposta(s)');
+  assert.equal(asArray.doc.require('notice').textContent, '2 proposal(s)');
   assert.equal(rowsOf(asArray.doc, 'pending-list').length, 1);
   assert.equal(rowsOf(asArray.doc, 'history-list').length, 1);
 
-  const asNonsense = await openInbox(() => answers('nem lista nem envelope'));
-  assert.equal(asNonsense.doc.require('notice').textContent, '0 proposta(s)');
+  const asNonsense = await openInbox(() => answers('neither a list nor an envelope'));
+  assert.equal(asNonsense.doc.require('notice').textContent, '0 proposal(s)');
 });
 
-test('Atualizar asks the API again', async () => {
+test('Refresh asks the API again', async () => {
   const { doc, calls } = await openInbox(controlPlane([PENDING]));
 
   doc.require('refresh').click();

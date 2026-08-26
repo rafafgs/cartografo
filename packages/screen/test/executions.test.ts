@@ -30,19 +30,19 @@ test('t107 AT5 — GET /executions lists the executions with the right counts', 
   const cp = await startControlPlane(t);
 
   const fromSeven = await createJob(cp, {
-    title: 'primeiro da sete',
+    title: 'first of the seven',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
   await createJob(cp, {
-    title: 'segundo da sete',
+    title: 'second of the seven',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
-  await createJob(cp, { title: 'único da oito', entry_node_id: 'refinar', execution_id: 8 });
+  await createJob(cp, { title: 'only one of the eight', entry_node_id: 'refinar', execution_id: 8 });
 
-  await api(cp, 'POST', `/v1/jobs/${fromSeven.id}/blocks`, { reason: 'travou' });
-  await createQuestion(cp, { job_id: fromSeven.id, question: 'renumerar?' });
+  await api(cp, 'POST', `/v1/jobs/${fromSeven.id}/blocks`, { reason: 'stuck' });
+  await createQuestion(cp, { job_id: fromSeven.id, question: 'renumber?' });
 
   const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/executions');
@@ -71,6 +71,17 @@ test('t107 AT5 — GET /executions lists the executions with the right counts', 
   assert.match(eight.excerpt, /data-campo="trabalhos_bloqueados">\s*0\s*</);
   assert.match(eight.excerpt, /data-campo="perguntas_pendentes">\s*0\s*</);
 
+  // t310: heading and table headers are what a person reads, and they read in
+  // English now. The `data-campo` marker names above are not copy and did not
+  // move (AC2).
+  assert.ok(page.html.includes('<h2>executions</h2>'), `the heading is not English:\n${page.html}`);
+  assert.ok(
+    page.html.includes(
+      '<thead><tr><th>execution</th><th>jobs</th><th>blocked</th><th>pending questions</th></tr></thead>',
+    ),
+    `the table headers are not English:\n${page.html}`,
+  );
+
   assert.ok(seven.excerpt.includes('href="/executions/7"'), 'each execution leads to its page');
 });
 
@@ -79,12 +90,12 @@ test('t107 AT5 — GET /executions/:id slices jobs, sessions and questions of th
   const cp = await startControlPlane(t);
 
   const fromSeven = await createJob(cp, {
-    title: 'o trabalho da sete',
+    title: 'the job of the seven',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
   const fromEight = await createJob(cp, {
-    title: 'o trabalho da oito',
+    title: 'the job of the eight',
     entry_node_id: 'refinar',
     execution_id: 8,
   });
@@ -98,11 +109,11 @@ test('t107 AT5 — GET /executions/:id slices jobs, sessions and questions of th
 
   const questionOfSeven = await createQuestion(cp, {
     job_id: fromSeven.id,
-    question: 'seguir pelo caminho curto?',
+    question: 'take the short path?',
   });
   const questionOfEight = await createQuestion(cp, {
     job_id: fromEight.id,
-    question: 'pergunta da outra execução',
+    question: 'question of the other execution',
   });
 
   const screen = await startScreen(t, cp);
@@ -146,7 +157,7 @@ test('t159 — every session row links its transcript, on the API route the prox
   const cp = await startControlPlane(t);
 
   const job = await createJob(cp, {
-    title: 'o que deixou saída para trás',
+    title: 'the one that left output behind',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
@@ -156,7 +167,7 @@ test('t159 — every session row links its transcript, on the API route the prox
   await api(cp, 'PATCH', `/v1/sessions/${failed.id}/finish`, {
     status: 'failed',
     exit_code: 1,
-    transcript: 'erro: morri aqui, e sem isto ninguém sabe por quê',
+    transcript: 'error: I died here, and without this nobody knows why',
   });
 
   const screen = await startScreen(t, cp);
@@ -194,4 +205,61 @@ test('t107 AT5 — an execution with nothing in it is 200 with an empty page, no
   const page = await openPage(screen, '/executions/99');
   assert.equal(page.status, 200);
   assert.deepEqual(blocks(page.html, 'trabalho'), []);
+});
+
+test('t310 — an executions list with nothing in it says so in English', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const page = await openPage(screen, '/executions');
+
+  assert.equal(page.status, 200);
+  assert.ok(
+    page.html.includes('<p class="vazio">No executions yet.</p>'),
+    `the empty state is missing or still Portuguese:\n${page.html}`,
+  );
+});
+
+test('t310 — a job with no execution, and a session still open, both read in English', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const loose = await createJob(cp, { title: 'nobody grouped me', entry_node_id: 'refinar' });
+  const grouped = await createJob(cp, {
+    title: 'the one being worked on',
+    entry_node_id: 'refinar',
+    execution_id: 11,
+  });
+  await openSession(cp, { job_id: grouped.id, node_id: 'refinar' });
+
+  const screen = await startScreen(t, cp);
+
+  const list = await openPage(screen, '/executions');
+  assert.equal(list.status, 200);
+  assert.ok(
+    list.html.includes('<span class="vazio">no execution</span>'),
+    `the "no execution" row label is not English:\n${list.html}`,
+  );
+
+  const page = await openPage(screen, '/executions/11');
+  assert.equal(page.status, 200);
+  assert.ok(
+    page.html.includes(
+      '<thead><tr><th>session</th><th>job</th><th>engine</th><th>status</th><th>opened at</th><th>finished at</th><th>usage</th><th>transcript</th></tr></thead>',
+    ),
+    `the session table headers are not English:\n${page.html}`,
+  );
+  assert.ok(
+    page.html.includes('<span class="vazio">in progress</span>'),
+    `a session still open does not say so in English:\n${page.html}`,
+  );
+  assert.ok(page.html.includes('>see output</a>'), 'the transcript link text is not English');
+  assert.ok(page.html.includes('<h2>sessions</h2>'), 'the sessions heading is not English');
+  assert.ok(page.html.includes('<h2>pending questions</h2>'), 'the questions heading is not English');
+  assert.ok(
+    page.html.includes('<p class="vazio">Nobody waiting for an answer in this execution.</p>'),
+    `the empty question queue is not English:\n${page.html}`,
+  );
+  assert.ok(loose.id > 0);
 });

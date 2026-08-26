@@ -1,5 +1,5 @@
 /**
- * Acceptance tests for the reason field of `Rejeitar` and `Reverter` (t128, FR7).
+ * Acceptance tests for the reason field of `Reject` and `Revert` (t128, FR7).
  *
  * The alpha round on `t111` found the field with a placeholder and nothing
  * else: no `<label>`, no `aria-label`. A placeholder is a hint, not a name —
@@ -18,9 +18,8 @@
  * `POST /v1/proposals/:id/reject` — and not this package's own identifiers, so
  * they follow the `/v1` surface: they came in from t111 in Portuguese and were
  * renamed to English with the rest of it (t127, FR3/FR4, D18). The button
- * labels this file clicks by (`Rejeitar`, `Reverter`) are the visible text and
- * stay in Portuguese, like the rest of the page: the key and the label are two
- * different vocabularies and only one of them moved.
+ * labels this file clicks by (`Reject`, `Revert`) are the visible text, and
+ * they moved separately and later, with the rest of the page's copy (t310).
  */
 
 import assert from 'node:assert/strict';
@@ -110,7 +109,7 @@ function rowsOf(doc: FakeDocument, listId: string): FakeElement[] {
   return doc.require(listId).byClass('proposal');
 }
 
-/** Clicks the action button whose label matches — `Rejeitar`, `Reverter`. */
+/** Clicks the action button whose label matches — `Reject`, `Revert`. */
 function clickAction(row: FakeElement, label: string): void {
   const button = only(
     row.byClass('action').filter((node) => node.textContent === label),
@@ -129,11 +128,11 @@ const APPLIED = {
   operations: [],
 };
 
-test('AT1 — the reason field of Rejeitar has an accessible name', async () => {
+test('AT1 — the reason field of Reject has an accessible name', async () => {
   const doc = await openInbox([PENDING]);
   const row = only(rowsOf(doc, 'pending-list'), 'pending row');
 
-  clickAction(row, 'Rejeitar');
+  clickAction(row, 'Reject');
 
   const input = only(row.byClass('reason-input'), 'reason field');
   const { ACTIONS } = await loadActions();
@@ -142,13 +141,20 @@ test('AT1 — the reason field of Rejeitar has an accessible name', async () => 
     ACTIONS.reject.reasonLabel,
     'the reason field must say what it is for; a placeholder is not a name',
   );
+
+  // t310: and the question it asks is English.
+  assert.equal(ACTIONS.reject.reasonLabel, 'Why is this hypothesis not worth it?');
+  assert.equal(
+    only(row.byClass('reason-label'), 'reason label').textContent,
+    'Why is this hypothesis not worth it?',
+  );
 });
 
-test('AT2 — the reason field of Reverter has an accessible name', async () => {
+test('AT2 — the reason field of Revert has an accessible name', async () => {
   const doc = await openInbox([APPLIED]);
   const row = only(rowsOf(doc, 'history-list'), 'history row');
 
-  clickAction(row, 'Reverter');
+  clickAction(row, 'Revert');
 
   const input = only(row.byClass('reason-input'), 'reason field');
   const { ACTIONS } = await loadActions();
@@ -159,12 +165,12 @@ test('AT3 — the name is tied to the field, and survives someone typing into it
   const doc = await openInbox([PENDING]);
   const row = only(rowsOf(doc, 'pending-list'), 'pending row');
 
-  clickAction(row, 'Rejeitar');
+  clickAction(row, 'Reject');
   const input = only(row.byClass('reason-input'), 'reason field');
   const before = accessibleNameOf(row, input);
 
   // The reproduction, literally: the placeholder is gone from here on.
-  input.typeText('a evidência não sustenta a hipótese');
+  input.typeText('the evidence does not hold the hypothesis up');
 
   assert.notEqual(before, '');
   assert.equal(
@@ -183,8 +189,8 @@ test('AT4 — two rows with the field open keep one name each', async () => {
   const doc = await openInbox([PENDING, OTHER_PENDING]);
   const [first, second] = rowsOf(doc, 'pending-list');
 
-  clickAction(first, 'Rejeitar');
-  clickAction(second, 'Rejeitar');
+  clickAction(first, 'Reject');
+  clickAction(second, 'Reject');
 
   const firstInput = only(first.byClass('reason-input'), 'reason field of the first row');
   const secondInput = only(second.byClass('reason-input'), 'reason field of the second row');
@@ -206,12 +212,12 @@ test('AT5 — cancelling puts the buttons back and leaves no orphan label', asyn
   const doc = await openInbox([PENDING]);
   const row = only(rowsOf(doc, 'pending-list'), 'pending row');
 
-  clickAction(row, 'Rejeitar');
-  only(row.byClass('link').filter((node) => node.textContent === 'cancelar'), 'cancel button').click();
+  clickAction(row, 'Reject');
+  only(row.byClass('link').filter((node) => node.textContent === 'cancel'), 'cancel button').click();
 
   assert.deepEqual(
     row.byClass('action').map((node) => node.textContent),
-    ['Aprovar', 'Rejeitar'],
+    ['Approve', 'Reject'],
   );
   assert.deepEqual(row.byTag('label'), [], 'the label goes away with the field it names');
 });

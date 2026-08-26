@@ -76,7 +76,7 @@ function baseDocument(): Document {
         id: 'redigir',
         role: 'redator',
         node_type: 'work',
-        description: 'Escreve a nota a partir do tema declarado.',
+        description: 'Writes the note from the declared topic.',
         skill_ref: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
         contract: contractFor('nota'),
       },
@@ -114,7 +114,7 @@ test('AT1 — a new node becomes one `add_node` whose inverse removes that id', 
     id: 'aprovar',
     role: 'aprovador',
     node_type: 'gate',
-    description: 'Confere e encerra.',
+    description: 'Checks and closes.',
     skill_ref: { id: 'cartografo/aprovar-nota', version: '2.0.0', hash: HASH_C },
     contract: contractFor('aprovacao'),
   };
@@ -154,7 +154,7 @@ test('AT3 — one `change_node_field` per changed field, with `from`/`to` and in
   const newContract = contractFor('outra-nota');
 
   target.role = 'escritor';
-  target.description = 'Outra frase.';
+  target.description = 'Another sentence.';
   target.skill_ref = newSkill;
   target.contract = newContract;
 
@@ -177,14 +177,14 @@ test('AT3 — one `change_node_field` per changed field, with `from`/`to` and in
       type: 'change_node_field',
       node_id: 'redigir',
       field: 'description',
-      from: 'Escreve a nota a partir do tema declarado.',
-      to: 'Outra frase.',
+      from: 'Writes the note from the declared topic.',
+      to: 'Another sentence.',
       inverse: {
         type: 'change_node_field',
         node_id: 'redigir',
         field: 'description',
-        from: 'Outra frase.',
-        to: 'Escreve a nota a partir do tema declarado.',
+        from: 'Another sentence.',
+        to: 'Writes the note from the declared topic.',
       },
     },
     {
@@ -228,7 +228,7 @@ test('AT4 — an added and a removed edge become their two operations, each with
     from: 'revisar',
     to: 'redigir',
     condition: 'retrabalho',
-    description: 'A revisão devolve a nota.',
+    description: 'The review hands the note back.',
   };
   edgesOf(edited).push(added);
 

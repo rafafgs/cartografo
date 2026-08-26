@@ -29,17 +29,17 @@ test('t107 AT4 — GET /board shows jobs grouped by node, with the block reason'
   const cp = await startControlPlane(t);
 
   const refining = await createJob(cp, {
-    title: 'Tela mínima de observabilidade',
+    title: 'Minimal observability screen',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
   const implementing = await createJob(cp, {
-    title: 'Ciclo de pergunta e retomada',
+    title: 'Question and resume cycle',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
   const stuck = await createJob(cp, {
-    title: 'Grafo de fábrica 2',
+    title: 'Factory graph 2',
     entry_node_id: 'refinar',
     execution_id: 7,
   });
@@ -49,7 +49,7 @@ test('t107 AT4 — GET /board shows jobs grouped by node, with the block reason'
   });
   await api(cp, 'POST', `/v1/jobs/${stuck.id}/transitions`, { to_node_id: 'implementar' });
   await api(cp, 'POST', `/v1/jobs/${stuck.id}/blocks`, {
-    reason: 'esperando decisão do fundador',
+    reason: 'waiting on the founder to decide',
   });
 
   const screen = await startScreen(t, cp);
@@ -104,16 +104,25 @@ test('t107 AT4 — GET /board shows jobs grouped by node, with the block reason'
   const stuckCard = cards.find((card) => card.value === String(stuck.id));
   assert.ok(stuckCard !== undefined);
   assert.ok(
-    stuckCard.excerpt.includes('esperando decisão do fundador'),
+    stuckCard.excerpt.includes('waiting on the founder to decide'),
     'the blocked card has to say WHY it is blocked',
   );
 
   const looseCard = cards.find((card) => card.value === String(refining.id));
   assert.ok(looseCard !== undefined);
   assert.ok(
-    !looseCard.excerpt.includes('esperando decisão do fundador'),
+    !looseCard.excerpt.includes('waiting on the founder to decide'),
     'a block reason belongs to the blocked job, not to the page',
   );
+
+  // t310: the page a person actually opens reads in English — the heading it is
+  // titled by and the group label it groups under.
+  assert.ok(
+    page.html.includes('<h2>board · 3 job(s)</h2>'),
+    `the board heading is not the English one:\n${page.html}`,
+  );
+  assert.ok(page.html.includes('<a href="/board">board</a>'), 'the nav link text is still Portuguese');
+  assert.ok(page.html.includes('<html lang="en">'), 'the shell still declares another language');
 
   assert.ok(page.html.includes('href="/executions"'), 'the board leads to the executions list');
   assert.ok(
@@ -130,7 +139,7 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
   // says nothing about what it carries: interpolating it raw would be HTML
   // injection on the project's very first screen.
   await createJob(cp, {
-    title: '<script>alert("xss")</script> & cia',
+    title: '<script>alert("xss")</script> & co',
     entry_node_id: 'refinar',
   });
 
@@ -140,7 +149,7 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
   assert.equal(page.status, 200);
   assert.ok(!page.html.includes('<script>alert'), 'a job title must not become a script');
   assert.ok(
-    page.html.includes('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; cia'),
+    page.html.includes('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; co'),
     'the title shows up escaped, and whole',
   );
 });
@@ -158,4 +167,40 @@ test('t230 — the Portuguese paths D20 renamed are gone, with no redirect behin
     const page = await openPage(screen, gone);
     assert.equal(page.status, 404, `${gone} still answers; D20 §5.1 renamed it`);
   }
+});
+
+test('t310 — a board with nothing on it says so in English', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const page = await openPage(screen, '/board');
+
+  assert.equal(page.status, 200);
+  assert.ok(
+    page.html.includes('<p class="vazio">No jobs here yet.</p>'),
+    `the empty state is missing or still Portuguese:\n${page.html}`,
+  );
+  // The CSS class name is NOT copy: `vazio` is the DOM contract the founder
+  // reserved for himself (t310, AC2), and it stays exactly as it is.
+  assert.ok(page.html.includes('class="vazio"'), 'the class name is structure, and structure did not move');
+});
+
+test('t310 — the blocked card with no reason declared says it in English', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'Blocked with nothing said', entry_node_id: 'refinar' });
+  await api(cp, 'POST', `/v1/jobs/${job.id}/blocks`, {});
+
+  const screen = await startScreen(t, cp);
+  const page = await openPage(screen, '/board');
+
+  assert.equal(page.status, 200);
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === String(job.id));
+  assert.ok(card !== undefined);
+  assert.ok(
+    card.excerpt.includes('blocked, with no reason declared'),
+    `the fallback block line is not English:\n${card.excerpt}`,
+  );
 });

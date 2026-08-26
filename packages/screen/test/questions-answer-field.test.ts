@@ -37,11 +37,11 @@ import {
 } from './support.ts';
 
 const QUESTION = {
-  question: 'Renumerar a migração para 0003?',
-  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  options: ['Renumerar para 0003', 'Manter 0002'],
-  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
-  default_answer: 'Manter 0002',
+  question: 'Renumber the migration to 0003?',
+  context: 't101 runs in parallel and owns the same numbering space.',
+  options: ['Renumber to 0003', 'Keep 0002'],
+  recommendation: 'Keep 0002 and renumber only if it collides on the merge.',
+  default_answer: 'Keep 0002',
 };
 
 /* --- reading the page ------------------------------------------------- */
@@ -149,7 +149,7 @@ test('t134 AT6 — the answer field on GET /input-requests has an accessible nam
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
@@ -162,13 +162,19 @@ test('t134 AT6 — the answer field on GET /input-requests has an accessible nam
     '',
     'the required answer field must say what it is for; a placeholder is not a name',
   );
+
+  // t310: and the name a person actually hears is English.
+  assert.equal(accessibleNameOf(cards[0], field), 'your answer');
+  const author = controlsOf(cards[0]).find((tag) => attributeOf(tag, 'name') === 'respondido_por');
+  assert.ok(author !== undefined, 'the card has no "who is answering" field');
+  assert.equal(accessibleNameOf(cards[0], author), 'who is answering');
 });
 
 test('t134 AT6 — the name comes from something that outlives the first keystroke', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
@@ -188,7 +194,7 @@ test('t134 AT6 — every field of the answer form has a name, not just a placeho
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
   await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
@@ -209,9 +215,9 @@ test('t134 AT6 — two pending questions keep one name each', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { title: 'com perguntas', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'with questions', entry_node_id: 'refinar' });
   await createQuestion(cp, { job_id: job.id, ...QUESTION });
-  await createQuestion(cp, { job_id: job.id, question: 'E a outra, renumera?' });
+  await createQuestion(cp, { job_id: job.id, question: 'And the other one, renumber it?' });
 
   const screen = await startScreen(t, cp);
   const { html, cards } = await openQueue(screen);

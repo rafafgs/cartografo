@@ -22,8 +22,9 @@
  * The report's keys (`structure`, `errors`, `soundness`, `violations`, `rule`,
  * `target`, `message`) and the four rule names are the wire format of the 422,
  * and speak English since t230 (`docs/spec/glossario-wire.md` §5.3/5.4). The
- * LINES this module writes out of them do not: they are product copy in
- * Portuguese (t133, exceptions 9 and 10), and D20 does not touch copy.
+ * LINES this module writes out of them are product copy, and moved separately:
+ * t310 translated them, so both halves read English now for two unrelated
+ * reasons — one a wire format, the other the text a person is refused with.
  */
 
 import assert from 'node:assert/strict';
@@ -45,7 +46,7 @@ const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
  * went silent on a real problem — a hook pointing at a node that does not
  * exist, say — and the person editing the graph is left guessing.
  */
-const UNDECLARED_STRUCTURE_LINE = 'problema de estrutura sem mensagem declarada';
+const UNDECLARED_STRUCTURE_LINE = 'structure problem with no declared message';
 
 /**
  * The reference validator, reached through a computed specifier.
@@ -150,6 +151,48 @@ test('AT1 — each of the four rules becomes a distinct, non-empty line naming i
   });
 });
 
+test('t310 — the four rule sentences are the English copy, word for word', async () => {
+  const { renderReport } = await loadSoundness();
+
+  assert.deepEqual(
+    renderReport({
+      structure: { errors: [] },
+      soundness: {
+        violations: [
+          { rule: 'reachable', target: 'checar_fonte' },
+          { rule: 'terminates', target: 'checar_fonte' },
+          { rule: 'edge_with_condition', target: { from: 'redigir', to: 'revisar' } },
+          { rule: 'node_with_contract', target: 'revisar' },
+        ],
+      },
+    }),
+    [
+      'node "checar_fonte" is not reachable from the initial node: an edge that arrives at it is missing',
+      'from node "checar_fonte" there is no path to a final node: whoever lands on it never finishes the traversal',
+      'edge redigir → revisar has no condition: a transition with no label is a path the executor does not know when to take',
+      'node "revisar" does not declare a complete skill_ref and contract: with no contract there is no way to verify what it produced',
+    ],
+  );
+});
+
+test('t310 — the fallbacks of an unreadable report are English too', async () => {
+  const { NO_PROBLEMS_LINE, renderReport } = await loadSoundness();
+
+  assert.equal(NO_PROBLEMS_LINE, 'no problem');
+  assert.deepEqual(
+    renderReport({
+      structure: { errors: [{ code: 'invalid_edge' }] },
+      soundness: { violations: [null, { rule: 'invented_rule', target: 'x' }, { rule: '  ' }] },
+    }),
+    [
+      'structure problem with no declared message',
+      'unknown soundness rule: malformed violation',
+      'unknown soundness rule ("invented_rule") about "x"',
+      'unknown soundness rule ("no id") about null',
+    ],
+  );
+});
+
 test('AT2 — a structure error shows its own `message`, as the core wrote it', async () => {
   const { renderReport } = await loadSoundness();
 
@@ -214,7 +257,7 @@ test('AT4 — the counterexamples, through the reference validator, cover exactl
       const line = lines[index];
       assert.ok(
         line.trim() !== '' && line !== UNDECLARED_STRUCTURE_LINE,
-        `${name}: structure error "${problem.code ?? 'sem código'}" renders no prose of its own — the screen went silent on a problem the core had already written: ${line}`,
+        `${name}: structure error "${problem.code ?? 'no code'}" renders no prose of its own — the screen went silent on a problem the core had already written: ${line}`,
       );
     });
 
@@ -222,7 +265,7 @@ test('AT4 — the counterexamples, through the reference validator, cover exactl
       seen.add(violation.rule);
       const line = lines[structureCount + index];
       assert.ok(
-        line.trim() !== '' && !line.includes('desconhecida'),
+        line.trim() !== '' && !line.includes('unknown soundness rule'),
         `${name}: rule "${violation.rule}" has no prose of its own — the mapping drifted from the gate`,
       );
       for (const word of targetWords(violation.target)) {

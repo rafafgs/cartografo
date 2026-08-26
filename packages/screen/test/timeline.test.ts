@@ -186,7 +186,7 @@ test('t107 AT7 — GET /jobs/:id builds queue, agent and human in chronological 
   );
 });
 
-test('t152 — GET /jobs/:id on a freshly created job says "em curso", never "concluído"', async (t) => {
+test('t152 — GET /jobs/:id on a freshly created job says "in progress", never "done"', async (t) => {
   requireArtifacts(
     T107_ARTIFACTS.client,
     T107_ARTIFACTS.timeline,
@@ -198,17 +198,71 @@ test('t152 — GET /jobs/:id on a freshly created job says "em curso", never "co
   // Nothing but `job.created`: no session, no question, no graph version.
   // It is the most common state on a board — and the one the old heuristic
   // reported as finished, because "nothing is open" was read as "it is over".
-  const job = await createJob(cp, { title: 'acabou de nascer', entry_node_id: 'refinar' });
+  const job = await createJob(cp, { title: 'just born', entry_node_id: 'refinar' });
 
   const screen = await startScreen(t, cp);
   const page = await openPage(screen, `/jobs/${job.id}`);
 
   assert.equal(page.status, 200);
-  assert.ok(
-    !page.html.includes('concluído'),
+  assert.doesNotMatch(
+    page.html,
+    /\bdone\b/,
     'a job one event old was never finished, and the screen must not say so',
   );
-  assert.ok(page.html.includes('em curso'), 'it is waiting for someone: that is what it shows');
+  assert.ok(page.html.includes('in progress'), 'it is waiting for someone: that is what it shows');
+
+  // t310: the three bucket names are NOT copy. They are `data-segmento` values
+  // and the visible label of each row at once — the DOM/structural contract the
+  // founder reserved for himself — so they stay Portuguese while the state word
+  // beside them moves to English.
+  assert.ok(page.html.includes('<h2>timeline</h2>'), `the timeline heading is not English:\n${page.html}`);
+  assert.ok(page.html.includes('<h2>totals</h2>'), `the totals heading is not English:\n${page.html}`);
+  assert.ok(
+    page.html.includes('<thead><tr><th>bucket</th><th>closed time</th></tr></thead>'),
+    `the totals headers are not English:\n${page.html}`,
+  );
+  for (const bucket of ['fila', 'agente trabalhando', 'esperando humano']) {
+    assert.ok(
+      page.html.includes(`<td>${bucket}</td>`),
+      `the bucket label "${bucket}" moved; t310 leaves SegmentCategory exactly as it is`,
+    );
+  }
+});
+
+test('t310 — a done job says "done", and a blocked one says why, both in English', async (t) => {
+  requireArtifacts(
+    T107_ARTIFACTS.client,
+    T107_ARTIFACTS.timeline,
+    T107_ARTIFACTS.pages,
+    T107_ARTIFACTS.router,
+  );
+  const cp = await startControlPlane(t);
+
+  const blocked = await createJob(cp, { title: 'parked', entry_node_id: 'refinar' });
+  await api(cp, 'POST', `/v1/jobs/${blocked.id}/blocks`, { reason: 'the founder has to decide' });
+
+  const screen = await startScreen(t, cp);
+  const page = await openPage(screen, `/jobs/${blocked.id}`);
+
+  assert.equal(page.status, 200);
+  assert.ok(
+    page.html.includes('blocked — the founder has to decide'),
+    `the blocked state is not English:\n${page.html}`,
+  );
+  assert.ok(page.html.includes('current node'), `the node label is not English:\n${page.html}`);
+  assert.ok(
+    page.html.includes('<span class="vazio">no execution</span>'),
+    `a job outside any execution does not say so in English:\n${page.html}`,
+  );
+
+  // The 404 page of a job that does not exist is the same claim, one route over.
+  const missing = await openPage(screen, '/jobs/424242');
+  assert.equal(missing.status, 404);
+  assert.ok(missing.html.includes('<h2>job not found</h2>'), `the 404 title is not English:\n${missing.html}`);
+  assert.ok(
+    missing.html.includes('There is no job #424242.'),
+    `the 404 detail is not English:\n${missing.html}`,
+  );
 });
 
 test('t107 AT7 — a nonexistent job is a 404 on the screen', async (t) => {
@@ -259,7 +313,7 @@ test('t107 AT7 — the three-bucket rule, as a pure function', async () => {
       {
         id: 1,
         status: 'respondida',
-        question: 'e aí?',
+        question: 'well then?',
         created_at: instant(40),
         answered_at: instant(50),
       },
@@ -329,7 +383,7 @@ test('t107 AT7 — an open session and a pending question stay open, and the job
       {
         id: 1,
         status: 'pendente',
-        question: 'e aí?',
+        question: 'well then?',
         created_at: instant(20),
         answered_at: null,
       },

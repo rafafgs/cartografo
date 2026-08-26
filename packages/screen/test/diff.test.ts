@@ -12,9 +12,10 @@
  * wording is a change of what they were shown.
  *
  * Since t228 the INPUT is English (`type`, `node`, `node_id`, `edge`, `field`,
- * `from`, `to`) and the OUTPUT is the same Portuguese prose as before. That
- * asymmetry is the claim: the vocabulary that moved is the one on the wire, and
- * a person reading the inbox sees exactly what they saw yesterday.
+ * `from`, `to`). Since t310 the OUTPUT is too: the lines below are the copy a
+ * person judges a proposal by, and the screen renders in English now. The
+ * `condition` VALUE inside a line is NOT copy — it is free text typed into the
+ * graph document — and it passes through whatever language it was written in.
  */
 
 import assert from 'node:assert/strict';
@@ -58,11 +59,11 @@ test('AT6 — one readable line per operation, one per type of the §3 vocabular
   ];
 
   assert.deepEqual(renderOperations(operations), [
-    '+ nó "red_team" (tipo gate)',
-    '- nó "revisar_manual"',
-    '+ aresta testar → red_team (condição: aprovado)',
-    '- aresta testar → implantar',
-    '~ nó "implementar": campo "role" de "fazer" para "conferir"',
+    '+ node "red_team" (type gate)',
+    '- node "revisar_manual"',
+    '+ edge testar → red_team (condition: aprovado)',
+    '- edge testar → implantar',
+    '~ node "implementar": field "role" from "fazer" to "conferir"',
   ]);
 });
 
@@ -71,16 +72,16 @@ test('AT6 — an operation the screen does not know still renders as prose, neve
 
   const lines = renderOperations([
     { type: 'mover_no', node_id: 'implementar' },
-    'isto não é uma operação',
+    'this is not an operation at all',
     null,
     { type: 'add_edge', edge: { from: 'a', to: 'b' } },
   ]);
 
   assert.deepEqual(lines, [
-    '? operação de tipo desconhecido ("mover_no")',
-    '? operação malformada',
-    '? operação malformada',
-    '+ aresta a → b',
+    '? operation of unknown type ("mover_no")',
+    '? malformed operation',
+    '? malformed operation',
+    '+ edge a → b',
   ]);
   for (const line of lines) {
     assert.doesNotMatch(line, /[{[]\s*"?type/, 'no line may be the raw operation JSON');
@@ -90,10 +91,10 @@ test('AT6 — an operation the screen does not know still renders as prose, neve
 test('AT7 — an empty or absent diff says so, never prints "[]" and never throws', async () => {
   const { renderOperations, EMPTY_DIFF_LINE } = await loadDiff();
 
-  assert.equal(EMPTY_DIFF_LINE, 'nenhuma alteração');
+  assert.equal(EMPTY_DIFF_LINE, 'no change');
   assert.deepEqual(renderOperations([]), [EMPTY_DIFF_LINE]);
 
-  for (const absent of [undefined, null, 'nada disso', 7, {}]) {
+  for (const absent of [undefined, null, 'none of that', 7, {}]) {
     assert.deepEqual(
       renderOperations(absent as never),
       [EMPTY_DIFF_LINE],
@@ -102,4 +103,29 @@ test('AT7 — an empty or absent diff says so, never prints "[]" and never throw
   }
 
   assert.ok(!renderOperations([]).join('\n').includes('[]'));
+});
+
+test('t310 — the values on either side of a change read in English too', async () => {
+  const { renderOperations } = await loadDiff();
+
+  assert.deepEqual(
+    renderOperations([
+      { type: 'change_node_field', node_id: 'testar', field: 'timeout', from: null, to: 120 },
+      { type: 'change_node_field', node_id: 'testar', field: 'engine', from: 'claude-code', to: undefined },
+      {
+        type: 'change_node_field',
+        node_id: 'testar',
+        field: 'contract',
+        from: { loop: null },
+        to: { toJSON: () => { throw new Error('nope'); } },
+      },
+      { type: 'add_edge', edge: {} },
+    ]),
+    [
+      '~ node "testar": field "timeout" from null to 120',
+      '~ node "testar": field "engine" from "claude-code" to empty',
+      '~ node "testar": field "contract" from {"loop":null} to unprintable value',
+      '+ edge no id → no id',
+    ],
+  );
 });

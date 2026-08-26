@@ -240,9 +240,8 @@ neither was touched.
 Both are named here so they are discoverable without re-reading the ticket.
 
 **1 — stale pre-D20 field names inside fenced JSON examples.**
-`docs/spec/graph.md:532` still prints
-`{"de": "testar", "para": "desenvolver", "condicao": "retrabalho"}` as an edge,
-which is two format versions out of date:
+`docs/spec/graph.md:532` still prints an edge two format versions out of date —
+`{"de": "testar", "para": "desenvolver", "condicao": "retrabalho"}` — where
 a real edge reads `{"from", "to", "condition"}`. `docs/spec/human-escalation.md:47`
 and `docs/spec/intake.md:52-53` have the same shape of problem. These sit inside
 fenced blocks, which every prose gate in this family blanks, so no gate sees

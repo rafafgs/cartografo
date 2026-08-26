@@ -240,12 +240,12 @@ export const TOUCHABLE = Object.freeze([
   'notes/2026-08-25-t300-closing-note.md',
   'notes/2026-08-26-t311-closing-note.md',
   'notes/2026-08-26-t316-closing-note.md',
-  // t328: the same incident as the t309 entry above, one note later. The
-  // quotation of `docs/spec/graph.md`'s stale edge — the finding t328 was
-  // partly built on — was marked with backtick spans that WRAPPED, so the
-  // line-scoped matcher never saw the mark and `para` was read as prose. The
-  // quotation now sits on one line. Not one character of quoted text changed,
-  // and nothing redacted was reintroduced.
+  // Second incident fix of the same shape, 2026-08-26, direct on main: t314's
+  // own closing note wrapped a backtick span across a line break, so the
+  // document-tree gate read the second half as prose and main went red. The
+  // quotation now sits on one line; not one character of quoted text changed
+  // and nothing redacted was reintroduced. Twice in one day says the wrap is a
+  // recurring hazard of long quotations in agent-written notes, not a one-off.
   'notes/2026-08-26-t314-closing-note.md',
 ]);
 

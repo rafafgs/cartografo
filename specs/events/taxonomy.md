@@ -253,7 +253,7 @@ runner). `job_id`/`node_id` are optional: not every session serves a job.
 
 ```json
 {"job_id":101,"node_id":"refinement","engine":"claude-code",
- "engine_session_ref":"cc-9f2b41d0","working_dir":"/Users/rafael/cartografo-ticket-98",
+ "engine_session_ref":"cc-9f2b41d0","working_dir":"/srv/cartografo-ticket-98",
  "prompt":"Refine job 101 against the project conventions.","timeout_seconds":5400,
  "silence_seconds":900}
 ```

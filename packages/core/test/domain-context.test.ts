@@ -64,7 +64,7 @@ const SNAPSHOT: ProjectedSnapshot = {
     { id: 'integrar', contract: { produces: 'artefato' } },
   ],
   project: {
-    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    repo: 'git@github.com:octo-org/cartografo.git',
     comando_testes: 'npm test',
   },
 };
@@ -137,7 +137,7 @@ test('t253 FR7 — the snapshot project object lands at input.project', async ()
   const input = await buildNodeInput(sources());
 
   assert.deepEqual(input.project, {
-    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    repo: 'git@github.com:octo-org/cartografo.git',
     comando_testes: 'npm test',
   });
 });

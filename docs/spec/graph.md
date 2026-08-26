@@ -58,7 +58,7 @@ the projection publishes, and the software bundle declares the object.
 ```json
 {
   "project": {
-    "repo": "git@github.com:rafaelgomes/cartografo.git",
+    "repo": "git@github.com:octo-org/cartografo.git",
     "branch_principal": "main",
     "comando_testes": "npm test",
     "comandos_qualidade": ["npm test", "npm run lint", "npm run typecheck"]

@@ -154,7 +154,7 @@ function importedManifest(overrides: Record<string, unknown> = {}): Record<strin
     instructions: '# Feature Development Orchestrator\n\nSiga o protocolo.',
     origin: {
       type: 'imported',
-      repo: 'https://github.com/rafaelgomes/flowpilot',
+      repo: 'https://github.com/octo-org/flowpilot',
       ref: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
       imported_by: 'rafael',
       imported_at: '2026-08-14',
@@ -314,7 +314,7 @@ test('AT6 — an imported manifest with incomplete provenance is refused', async
     importedManifest({
       origin: {
         type: 'imported',
-        repo: 'https://github.com/rafaelgomes/flowpilot',
+        repo: 'https://github.com/octo-org/flowpilot',
         ref: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
         imported_by: 'rafael',
         imported_at: '2026-08-14',

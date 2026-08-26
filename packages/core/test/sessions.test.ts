@@ -104,7 +104,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
     node_id: 'refinamento',
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
-    working_dir: '/Users/rafael/cartografo-ticket-102',
+    working_dir: '/srv/cartografo-ticket-102',
     prompt: 'Refine job 102 against the project conventions.',
     timeout_seconds: 5400,
   });
@@ -129,7 +129,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
     node_id: 'refinamento',
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
-    working_dir: '/Users/rafael/cartografo-ticket-102',
+    working_dir: '/srv/cartografo-ticket-102',
     prompt: 'Refine job 102 against the project conventions.',
     timeout_seconds: 5400,
     // The second budget (t163). Declared by nobody here, so it normalizes to

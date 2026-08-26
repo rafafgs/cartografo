@@ -658,7 +658,7 @@ test('t253 — project is an optional top-level object, and both bundles still v
   );
 
   const document = readExample('graph-valid-minimal.json');
-  document.project = { repo: 'git@github.com:rafaelgomes/cartografo.git' };
+  document.project = { repo: 'git@github.com:octo-org/cartografo.git' };
   assert.deepEqual(validateAgainstSchema(document, schema), []);
 
   // The non-breaking claim, checked against the two real consumers: both

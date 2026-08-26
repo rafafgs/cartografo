@@ -42,7 +42,7 @@ const FIXTURES = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'external-skills');
 const FEATURE_DEV = path.join(FIXTURES, 'feature-dev', 'SKILL.md');
 const NO_DERIVABLE_CHECK = path.join(FIXTURES, 'no-derivable-check', 'SKILL.md');
 
-const SOURCE_REPO = 'https://github.com/rafaelgomes/flowpilot';
+const SOURCE_REPO = 'https://github.com/octo-org/flowpilot';
 const SOURCE_REF = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 
 /** The draft `scan-skill` writes — the contract this test demands of it. */

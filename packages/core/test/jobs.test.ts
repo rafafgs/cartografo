@@ -1221,7 +1221,7 @@ async function registerGraphWithBuckets(ctx: TestContext): Promise<string> {
   const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
   document.problem_class = 'nota-curta-com-baldes';
   document.project = {
-    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    repo: 'git@github.com:octo-org/cartografo.git',
     comando_testes: 'npm test',
   };
 
@@ -1346,7 +1346,7 @@ test('t253 AT4 — the route assembles the input from job, project, buckets and 
     body: 'the raw request',
   });
   assert.deepEqual(input.project, {
-    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    repo: 'git@github.com:octo-org/cartografo.git',
     comando_testes: 'npm test',
   });
   assert.deepEqual(
@@ -1409,7 +1409,7 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
         { id: 'publicar', contract: { produces: 'artefato' } },
       ],
       project: {
-        repo: 'git@github.com:rafaelgomes/cartografo.git',
+        repo: 'git@github.com:octo-org/cartografo.git',
         comando_testes: 'npm test',
       },
     },

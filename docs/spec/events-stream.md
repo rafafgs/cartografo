@@ -68,7 +68,7 @@ Both are optional and they **add up** (AND, never OR).
 | `tipo` | a comma-separated list | Only the types cited, matching the exact string. An unknown type is a `400`. |
 
 ```
-GET /v1/events/stream?projeto_id=1&tipo=job.transitioned,job.blocked
+GET /v1/events/stream?project_id=1&type=job.transitioned,job.blocked
 ```
 
 The values accepted in `tipo` are the types the control plane writes today:
@@ -112,7 +112,7 @@ A real excerpt from the wire, captured with `curl -sN`:
 ```
 id: 1
 event: job.created
-data: {"id":1,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":1},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-14T23:10:11.489Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
+data: {"id":1,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":1},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-14T23:10:11.489Z","data":{"title":"doc example","entry_node_id":"entry","body":null,"acceptance_criteria":null}}
 
 : heartbeat
 
@@ -208,7 +208,7 @@ connection **never** becomes `text/event-stream` at all:
 
 ```json
 {"error": "validation_failed",
- "details": ["tipo \"nao_existe\" is not in the taxonomy (see KNOWN_TYPES)"]}
+ "details": ["type \"does_not_exist\" is not in the taxonomy (see KNOWN_TYPES)"]}
 ```
 
 `details` carries the whole list of problems, not only the first.
@@ -218,7 +218,7 @@ not resolve, the answer is a `401` — also `application/json`, also without
 becoming `text/event-stream`:
 
 ```json
-{"error": "missing_credential", "message": "esta rota exige `Authorization: Bearer <token>` — ..."}
+{"error": "missing_credential", "message": "this route requires `Authorization: Bearer <token>` — ..."}
 ```
 
 `missing_credential` is "no usable header came" and `invalid_credential` is "one
@@ -238,7 +238,7 @@ Node ≥ 20, nothing installed. It reconnects on its own by the cursor:
 // events-stream.mjs — CARTOGRAFO_TOKEN=... node events-stream.mjs [http://127.0.0.1:4317]
 const base = process.argv[2] ?? 'http://127.0.0.1:4317';
 const token = process.env.CARTOGRAFO_TOKEN;
-const query = new URLSearchParams({ tipo: 'job.created,job.transitioned' });
+const query = new URLSearchParams({ type: 'job.created,job.transitioned' });
 
 let lastEventId = null;
 
@@ -302,7 +302,7 @@ for (;;) {
 Running against a control plane with a round happening:
 
 ```
-#1 job.created {"title":"demo round","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
+#1 job.created {"title":"demo round","entry_node_id":"entry","body":null,"acceptance_criteria":null}
 #2 job.transitioned {"from_node_id":null,"to_node_id":"refinar"}
 #3 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```
@@ -311,7 +311,7 @@ In the browser the same consumption fits in five lines, and reconnecting with
 `Last-Event-ID` is automatic:
 
 ```javascript
-const stream = new EventSource('/v1/events/stream?tipo=job.transitioned');
+const stream = new EventSource('/v1/events/stream?type=job.transitioned');
 stream.addEventListener('job.transitioned', (message) => {
   const event = JSON.parse(message.data);
   console.log(event.entity.id, event.data.from_node_id, '→', event.data.to_node_id);

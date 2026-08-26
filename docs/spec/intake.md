@@ -165,7 +165,7 @@ Every edge also becomes a
 event, the catalogue's 16th type:
 
 ```json
-{"depende_de_trabalho_id": 101}
+{"depends_on_job_id": 101}
 ```
 
 `entidade.id` is the **dependent** job; `dados.depende_de_trabalho_id` is the one

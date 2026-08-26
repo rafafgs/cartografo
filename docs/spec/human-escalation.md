@@ -44,7 +44,7 @@ nested `db.transaction` becomes a savepoint in `better-sqlite3`, so either all
 three things happen or none of them does.
 
 ```json
-{"motivo": "aguardando resposta da pergunta 900"}
+{"reason": "awaiting the answer to input request 900"}
 ```
 
 The reason cites the question's id (the example is the

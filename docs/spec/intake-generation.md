@@ -90,7 +90,7 @@ POST /v1/intake  {class, request, items}
         │
         ├─ 404 unknown_graph · 400 invalid_items ──▶ exit 1
         ▼
-201 {rascunho} — status `pendente`, no event, no ticket
+201 {draft} — status `pending`, no event, no ticket
         ▼
 prints the id  ──▶  done. Confirming is the human's.
 ```

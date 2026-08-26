@@ -48,9 +48,9 @@ Authorization: Bearer <token>
 ```
 
 ```json
-{"url": "https://meu-servico.exemplo/cartografo",
- "segredo": "uma-string-longa-e-aleatoria-que-eu-escolhi",
- "tipos": ["job.created", "job.transitioned"],
+{"url": "https://my-service.example/cartografo",
+ "secret": "a-long-random-string-that-i-chose",
+ "filter_types": ["job.created", "job.transitioned"],
  "project_id": 1}
 ```
 
@@ -66,11 +66,11 @@ The `201` response:
 ```json
 {"id": 3,
  "project_id": 1,
- "url": "https://meu-servico.exemplo/cartografo",
- "tipos": ["job.created", "job.transitioned"],
- "evento_inicial_id": 128,
- "criada_em": "2026-08-15T12:00:00.000Z",
- "desativada_em": null}
+ "url": "https://my-service.example/cartografo",
+ "filter_types": ["job.created", "job.transitioned"],
+ "initial_event_id": 128,
+ "created_at": "2026-08-15T12:00:00.000Z",
+ "deactivated_at": null}
 ```
 
 **The `segredo` comes back in no response**, neither here nor in the listing. It
@@ -100,8 +100,8 @@ receives anything, which is the worse of the two errors.
 
 ```
 GET /v1/webhooks               → {"webhooks": [ ...subscriptions... ]}
-GET /v1/webhooks?projeto_id=9  → only that project's
-DELETE /v1/webhooks/3          → the subscription, now with desativada_em
+GET /v1/webhooks?project_id=9  → only that project's
+DELETE /v1/webhooks/3          → the subscription, now with deactivated_at
 ```
 
 `DELETE` **deactivates**, it does not delete: the row goes on existing, with
@@ -143,11 +143,11 @@ Every event becomes a POST:
 
 ```
 POST /cartografo HTTP/1.1
-Host: meu-servico.exemplo
+Host: my-service.example
 Content-Type: application/json
 X-Cartografo-Signature: sha256=8f4c...  (64 hex characters)
 
-{"id":129,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-15T12:00:03.114Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
+{"id":129,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-15T12:00:03.114Z","data":{"title":"doc example","entry_node_id":"entry","body":null,"acceptance_criteria":null}}
 ```
 
 The body is the whole envelope, byte for byte the same object
@@ -185,7 +185,7 @@ In Node, the whole recipe is one line — the same one the server runs:
 
 ```javascript
 import { createHmac } from 'node:crypto';
-const signature = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
+const signature = `sha256=${createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')}`;
 ```
 
 **Answer fast.** Any `2xx` closes the delivery; the server does not read your
@@ -237,8 +237,8 @@ Before any write, the body is validated. An error is a `400`,
 ```json
 {"error": "validation_failed",
  "details": ["url has to use http or https (got: ftp:)",
-             "segredo has to be a non-empty string",
-             "tipo \"nao_existe\" is not in the taxonomy (see KNOWN_TYPES)"]}
+             "secret has to be a non-empty string",
+             "tipo \"does_not_exist\" is not in the taxonomy (see KNOWN_TYPES)"]}
 ```
 
 Before the validation comes the credential: without a valid
@@ -254,11 +254,11 @@ Node ≥ 20, nothing installed. It reads the raw body, verifies the signature in
 constant time and only then trusts the event:
 
 ```javascript
-// receiver.mjs — CARTOGRAFO_WEBHOOK_SEGREDO=... node receiver.mjs
+// receiver.mjs — CARTOGRAFO_WEBHOOK_SECRET=... node receiver.mjs
 import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const segredo = process.env.CARTOGRAFO_WEBHOOK_SEGREDO;
+const secret = process.env.CARTOGRAFO_WEBHOOK_SECRET;
 
 /** Compares two hexes of the same algorithm without leaking where they differ. */
 function matches(expected, received) {
@@ -281,7 +281,7 @@ createServer((request, response) => {
   request.on('data', (chunk) => chunks.push(chunk));
   request.on('end', () => {
     const rawBody = Buffer.concat(chunks).toString('utf8');
-    const expected = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
+    const expected = `sha256=${createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')}`;
 
     // Node normalizes the header's name to lowercase.
     if (!matches(expected, request.headers['x-cartografo-signature'])) {
@@ -307,13 +307,13 @@ Registering that receiver (with a tunnel, or from inside the same network):
 curl -sS -X POST http://127.0.0.1:4317/v1/webhooks \
   -H "authorization: Bearer $CARTOGRAFO_TOKEN" \
   -H 'content-type: application/json' \
-  -d '{"url":"http://127.0.0.1:8099/cartografo","segredo":"'"$CARTOGRAFO_WEBHOOK_SEGREDO"'"}'
+  -d '{"url":"http://127.0.0.1:8099/cartografo","secret":"'"$CARTOGRAFO_WEBHOOK_SECRET"'"}'
 ```
 
 And a round happening on the other side:
 
 ```
-#129 job.created {"title":"demo round","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
+#129 job.created {"title":"demo round","entry_node_id":"entry","body":null,"acceptance_criteria":null}
 #130 job.transitioned {"from_node_id":null,"to_node_id":"refinar"}
 #131 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```

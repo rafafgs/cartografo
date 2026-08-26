@@ -70,7 +70,7 @@ had to be touched.
       "node_id": "revisar",
       "destination": {
         "type": "webhook",
-        "url": "https://meu-servico.exemplo/cartografo",
+        "url": "https://my-service.example/cartografo",
         "secret_ref": "gancho-revisao"
       },
       "description": "Tells the on-duty reviewer when a note arrives for review."
@@ -120,7 +120,7 @@ Registering the key is an authenticated `PUT`, with the name in the path:
 PUT /v1/hook-secrets/gancho-revisao
 Content-Type: application/json
 
-{"valor": "uma-string-longa-e-aleatoria-que-eu-escolhi"}
+{"value": "a-long-random-string-that-i-chose"}
 ```
 
 | Route | What it does |
@@ -210,7 +210,7 @@ Every firing becomes a POST identical to a registered webhook's:
 
 ```
 POST /cartografo HTTP/1.1
-Host: meu-servico.exemplo
+Host: my-service.example
 Content-Type: application/json
 X-Cartografo-Signature: sha256=8f4c...  (64 hex characters)
 
@@ -249,7 +249,7 @@ In Node, the whole recipe is one line — the same one the server runs:
 
 ```javascript
 import { createHmac } from 'node:crypto';
-const signature = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
+const signature = `sha256=${createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')}`;
 ```
 
 The zero-dependency minimal receiver of
@@ -295,7 +295,7 @@ and in the registered webhooks with no extra work at all:
 
 ```json
 {"hook_id":"avisar-revisao","node_id":"revisar",
- "url":"https://meu-servico.exemplo/cartografo","last_error":"HTTP 502"}
+ "url":"https://my-service.example/cartografo","last_error":"HTTP 502"}
 ```
 
 It is written **only on exhaustion**, never per attempt: a transient failure is

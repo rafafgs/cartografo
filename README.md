@@ -116,6 +116,21 @@ database (D1), and that holds between processes, not only inside one.
 > checksum existed, so there is nothing to compare against, and the runner only
 > records what it finds today (warning on stderr). For those, the answer is still
 > exactly the one above — `rm -rf .cartografo/`.
+>
+> **`npx cartografo` refuses to start, saying `applied migration changed on
+> disk`? Delete `.cartografo/`.** That is the guard above doing its job, not
+> failing: the message names the migration whose content no longer matches the
+> `checksum` recorded when it was applied, and it stops the startup instead of
+> letting the server come up against a schema it cannot vouch for. It happens
+> when a migration is edited in place after a database has already run it, which
+> this project has now done twice on purpose — D20 (2026-08-16) rewriting the
+> schema's vocabulary into English, and t311 (2026-08-26) translating the
+> Portuguese `--` comments inside the twenty-three migration files whose names
+> stay frozen. Both times the answer is the same one, and it is the same one for
+> your own development database: `rm -rf .cartografo/` and `npx cartografo`
+> again. That reissues the `bootstrapToken` too, since the database is new. A
+> clone made from here on starts from an empty database and never meets the
+> error at all.
 
 Step 3 registers factory graph 1 (D14) as a base lineage — checking the bundle's
 skill hash pins locally first (D4) — and prints the `graph_version.id` that was

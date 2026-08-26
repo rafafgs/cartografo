@@ -37,9 +37,14 @@
  * - **the gloss** — `(literally "…")`, D24's own convention for the one span
  *   where the original is supposed to survive. Cut first, so that a marked
  *   quotation is never read;
- * - **backtick spans**, every file — `` `condicao` `` mid-sentence is the name
- *   of a field, not a word of the sentence (t299's cut, shared out of
- *   `scripts/no-portuguese-prose.mjs` by this ticket's FR3);
+ * - **backtick spans**, where a backtick is MARKUP — `` `condicao` ``
+ *   mid-sentence is the name of a field, not a word of the sentence (t299's
+ *   cut, shared out of `scripts/no-portuguese-prose.mjs` by t314's FR3). Where
+ *   it is markup and where it is not is the whole of t327: prose in `.md`, and
+ *   comments only in everything else ({@link codeLinesOf}), because in code a
+ *   backtick opens a template literal and in JSON it is a character of the
+ *   value. Reading either of those as markup blanked the sentence inside it,
+ *   and three real ones were sitting there;
  * - **fenced blocks**, `.md` only — where the JSON of the graph document, the
  *   DDL of the migrations and the frames of a session live (t299 again);
  * - **whole-string URLs and hostnames**, `.json`/`.jsonl` — `com` is a
@@ -291,15 +296,81 @@ const WIRE_KEYS = Object.freeze([
   /\.(?:de|para)\b/g,
   // the tail of a shape description: `{nome, direcao, de, para}`
   /\b(?:de|para)(?=\s*[}\]])/g,
+  // a field echoed beside its value, the shape a log line writes:
+  // `declared de=0.4, para=0.1`. The five per-package sweeps already mask this
+  // position, as `/\b[A-Za-z_][A-Za-z0-9_]*=/g`
+  // (`packages/core/test/no-portuguese-user-facing-strings.test.ts:125-126`,
+  // and its four siblings under the same comment). Narrowed to the two frozen
+  // names here, because those sweeps read a collected literal and this one
+  // reads whole lines, where a general `word=` would blank prose beside it.
+  /\b(?:de|para)=/g,
 ]);
+
+/**
+ * The lines of a source file, with the marking convention applied to comments
+ * and to nothing else (FR1).
+ *
+ * A backtick means two different things, and until this function existed the
+ * gate knew one of them. In Markdown, and in the doc comments this repository
+ * writes in Markdown's dialect, it is MARKUP: `condicao` mid-sentence is the
+ * name of a field being quoted and not a word of the sentence, so blanking it
+ * is right. In JavaScript and TypeScript it is SYNTAX — it opens a template
+ * literal — and a template literal is one of the two places a whole sentence
+ * actually lives. Reading syntax as markup blanked the sentence, which left the
+ * sweep blind in the one region where prose is most likely to be found: code
+ * and data, not documents.
+ *
+ * So the cut turns on position, the way every other cut here does. Inside a
+ * comment the span is blanked; outside one the line is handed on byte for byte
+ * and its backticks are never delimiters. The block-comment state is carried
+ * from line to line the way {@link proseOf} carries a fence, because a block
+ * comment opened on one line is still open on the next.
+ *
+ * Whole-line and regex-shaped on purpose, at the precision of
+ * {@link MACHINE_NAMES} and {@link WIRE_KEYS} next door rather than of a lexer.
+ * The one shape it does not attempt is a comment trailing code on the same
+ * line, which reads here as code. That gap fails in the safe direction: a
+ * quotation written that way goes loudly red, where the bug this replaces let a
+ * sentence pass silently.
+ *
+ * @param {string} contents The file, whole.
+ * @returns {string[]} One entry per line, comment spans blanked, code intact.
+ */
+export function codeLinesOf(contents) {
+  const read = [];
+  let open = false;
+
+  for (const raw of contents.split('\n')) {
+    const line = raw.replace(GLOSS, '');
+    const trimmed = line.trim();
+    const opener = trimmed.startsWith('/*');
+    const closed = line.includes('*/');
+    const marked = open || opener || trimmed.startsWith('//');
+
+    if (open || opener) open = !closed;
+
+    read.push(marked ? withoutSpans(line) : line);
+  }
+
+  return read;
+}
 
 /**
  * The lines of one file as this gate reads them, prose intact and rest blanked.
  *
+ * Three readings, chosen by extension (FR2), because a backtick does not mean
+ * the same thing in all three: `.md` is prose with fences and spans
+ * ({@link proseOf}); `.json` and `.jsonl` have no comment and no markup at all,
+ * so a line is read as it stands; everything else is source, where only a
+ * comment carries the marking convention ({@link codeLinesOf}).
+ *
+ * The masking below runs on all three, unchanged: it turns on shapes that
+ * cannot be a sentence, and that is true whatever the file is.
+ *
  * Blanked rather than dropped, so the index of a line in the result is still
  * its number in the file and a failure can name it.
  *
- * @param {string} relativePath Repo-relative path, which chooses two cuts.
+ * @param {string} relativePath Repo-relative path, which chooses the reading.
  * @param {string} contents The file, whole.
  * @returns {string[]} One entry per line of the input.
  */
@@ -307,10 +378,10 @@ export function linesToScan(relativePath, contents) {
   const extension = path.extname(relativePath);
   const json = extension === '.json' || extension === '.jsonl';
 
-  const lines =
-    extension === '.md'
-      ? proseOf(contents)
-      : contents.split('\n').map((line) => withoutSpans(line.replace(GLOSS, '')));
+  let lines;
+  if (extension === '.md') lines = proseOf(contents);
+  else if (json) lines = contents.split('\n').map((line) => line.replace(GLOSS, ''));
+  else lines = codeLinesOf(contents);
 
   return lines.map((line) => {
     let masked = json ? line.replace(HOSTNAME_VALUE, (match) => `"${blank(match.slice(2))}"`) : line;

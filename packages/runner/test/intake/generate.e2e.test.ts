@@ -386,7 +386,7 @@ test('AT5c — an unregistered class posts nothing, and the command exits 1', as
   const result = runCli([
     REQUEST,
     '--class',
-    'classe-que-ninguem-registrou',
+    'class-nobody-registered',
     '--url',
     plane.baseUrl,
     '--token',

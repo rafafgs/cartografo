@@ -154,11 +154,11 @@ test('t230 — the usage and the refusals of close-outcome name execution_id and
     assert.ok(!OUTCOME_USAGE.includes(gone), `the usage still shows ${gone}`);
   }
 
-  const noProposal = parseOutcomeArguments(['nao-e-numero', '7'], {});
+  const noProposal = parseOutcomeArguments(['not-a-number', '7'], {});
   assert.ok(noProposal.kind === 'usage');
   assert.match(noProposal.message, /^proposal_id has to be an integer/);
 
-  const noExecution = parseOutcomeArguments(['3', 'nao-e-numero'], {});
+  const noExecution = parseOutcomeArguments(['3', 'not-a-number'], {});
   assert.ok(noExecution.kind === 'usage');
   assert.match(noExecution.message, /^execution_id has to be an integer/);
 });

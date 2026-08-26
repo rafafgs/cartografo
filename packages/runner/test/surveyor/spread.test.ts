@@ -114,7 +114,7 @@ test('t239 AT4 — the command line of measure-executions takes one metric and a
   assert.ok(noExecution.kind === 'usage');
   assert.match(noExecution.message, /at least one execution_id/);
 
-  const notInteger = parseMeasureArguments(['agent_ms:redigir', '11', 'nao-e-numero'], {});
+  const notInteger = parseMeasureArguments(['agent_ms:redigir', '11', 'not-a-number'], {});
   assert.ok(notInteger.kind === 'usage');
   assert.match(notInteger.message, /^execution_id has to be an integer/);
 
@@ -191,7 +191,7 @@ test('t239 AT5 — the usage and the refusals of measure-executions are in Engli
 
   // The same detector the package-wide guard uses, applied to the text this
   // module owns: a diacritic or a Portuguese stopword in a message a person
-  // reads is the thing D18 forbids. `nao-e-numero` above is quoted INPUT, which
+  // reads is the thing D18 forbids. `not-a-number` above is quoted INPUT, which
   // is why no refusal is checked against the raw argument it echoes.
   const PORTUGUESE = /[áàâãéêíóôõúç]|\b(não|precisa|ser|para|com|uma|sem|deve)\b/i;
   for (const refusal of refusals) {

@@ -96,7 +96,7 @@ function scratch(t: TestContext): Scratch {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const repoRoot = path.join(root, 'principal');
+  const repoRoot = path.join(root, 'main-repo');
   mkdirSync(repoRoot, { recursive: true });
   git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
   identify(repoRoot);
@@ -105,7 +105,7 @@ function scratch(t: TestContext): Scratch {
   git(repoRoot, 'commit', '--quiet', '-m', 'base');
   const base = git(repoRoot, 'rev-parse', 'main');
 
-  const benchPath = path.join(root, 'banco-de-testes');
+  const benchPath = path.join(root, 'test-bench');
   git(root, 'clone', '--quiet', repoRoot, benchPath);
   identify(benchPath);
 
@@ -144,7 +144,7 @@ test('AT2 — a bench on another branch fails closed, naming the branch it found
   const { createMainLineAdvancer } = await loadModule();
   const { repoRoot, benchPath, base, integrated } = scratch(t);
 
-  git(benchPath, 'checkout', '--quiet', '-b', 'experimento');
+  git(benchPath, 'checkout', '--quiet', '-b', 'experiment');
 
   const advance = createMainLineAdvancer({ testBenchPath: benchPath, repoRoot });
   await assert.rejects(
@@ -153,7 +153,7 @@ test('AT2 — a bench on another branch fails closed, naming the branch it found
     },
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.ok(error.message.includes('experimento'), `names what it found: ${error.message}`);
+      assert.ok(error.message.includes('experiment'), `names what it found: ${error.message}`);
       assert.ok(error.message.includes('main'), `and what it expected: ${error.message}`);
       return true;
     },

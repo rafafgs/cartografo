@@ -172,7 +172,7 @@ test('AT3 — a node the snapshot does not carry resolves to null', async () => 
   const { doFetch, calls } = fakeFetch();
 
   const resolved = await resolveNode(
-    { current_node_id: 'um-no-que-ninguem-declarou', graph_version_id: VERSION_ID },
+    { current_node_id: 'node-nobody-declared', graph_version_id: VERSION_ID },
     reader(doFetch, ControlPlaneClientError),
   );
 

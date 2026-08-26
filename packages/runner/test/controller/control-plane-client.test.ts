@@ -490,21 +490,21 @@ test('AT4 — a refused write carries the status, like every other call of this 
 
   const { fetchImpl } = fakeFetch(() => ({
     status: 404,
-    body: { erro: 'grafo_desconhecido', class: 'nao-registrada' },
+    body: { erro: 'grafo_desconhecido', class: 'unregistered' },
   }));
   const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
 
   await assert.rejects(
     () =>
       client.createIntake({
-        class: 'nao-registrada',
+        class: 'unregistered',
         request: 'anything at all',
         items: INTAKE_ITEMS,
       }),
     (error: unknown) => {
       assert.ok(error instanceof ControlPlaneClientError);
       assert.equal(error.status, 404);
-      assert.deepEqual(error.body, { erro: 'grafo_desconhecido', class: 'nao-registrada' });
+      assert.deepEqual(error.body, { erro: 'grafo_desconhecido', class: 'unregistered' });
       return true;
     },
   );

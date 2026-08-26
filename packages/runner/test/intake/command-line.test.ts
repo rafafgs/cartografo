@@ -105,7 +105,7 @@ test('AT2 — the request is positional and --class is required; either missing 
     'the message names what is missing',
   );
   assert.match(
-    refusal(parseArguments([REQUEST, 'sobra', '--class', 'x'], EMPTY_ENV)),
+    refusal(parseArguments([REQUEST, 'leftover', '--class', 'x'], EMPTY_ENV)),
     /2|quote/i,
     'the request is ONE argument; two of them is a missing pair of quotes',
   );

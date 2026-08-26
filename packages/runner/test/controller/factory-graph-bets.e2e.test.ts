@@ -124,7 +124,7 @@ function directoryWorktrees(root: string): WorktreeManager {
       serial += 1;
       const dir = path.join(root, `session-${String(jobId)}-${String(serial)}`);
       mkdirSync(dir, { recursive: true });
-      return Promise.resolve({ path: dir, branch: `tese-${String(jobId)}` });
+      return Promise.resolve({ path: dir, branch: `thesis-${String(jobId)}` });
     },
     release: (_worktree, outcome) => Promise.resolve({ kept: outcome.keep }),
   };
@@ -229,7 +229,7 @@ const COLLECTED = {
 test('t260 — triage → collect-fundamentals crosses the real bets bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
 
-  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t260-fabrica-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t260-factory-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
@@ -272,7 +272,7 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t260-fabrica', 'the one that crosses the bets bundle');
+  await client.registerRunner('runner-t260-factory', 'the one that crosses the bets bundle');
 
   const worktrees = directoryWorktrees(root);
   let currentLines = reports(TRIAGED);
@@ -282,7 +282,7 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
   let currentRecord = path.join(root, 'triage.json');
   const controller = new Controller({
     client,
-    runnerId: 'runner-t260-fabrica',
+    runnerId: 'runner-t260-factory',
     projectId: 1,
     runnerCap: 1,
     projectCap: 4,
@@ -432,7 +432,7 @@ const RECORDED = {
 test('t270 — triage → record-monitoring closes the bets traversal on its own', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
 
-  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-fabrica-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-factory-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
@@ -471,7 +471,7 @@ test('t270 — triage → record-monitoring closes the bets traversal on its own
   );
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t270-fabrica', 'the one that closes the short bets crossing');
+  await client.registerRunner('runner-t270-factory', 'the one that closes the short bets crossing');
 
   /**
    * Every call the dispatch made, so the claim "no operator touched this" is
@@ -492,7 +492,7 @@ test('t270 — triage → record-monitoring closes the bets traversal on its own
   let currentRecord = path.join(root, 'triage.json');
   const controller = new Controller({
     client,
-    runnerId: 'runner-t270-fabrica',
+    runnerId: 'runner-t270-factory',
     projectId: 1,
     runnerCap: 1,
     projectCap: 4,
@@ -756,7 +756,7 @@ async function startCrossing(
 ): Promise<Crossing> {
   const { url: baseUrl, token } = await bootCore(t);
 
-  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t276-fabrica-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t276-factory-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });

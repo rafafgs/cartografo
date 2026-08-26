@@ -50,7 +50,13 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const FROZEN_SCRIPTS = Object.freeze([
   Object.freeze({
     file: 'scripts/no-portuguese-prose.mjs',
-    sha256: '06474259d9e64c3806fa4cf74e74a5ad572ad6ec9f7e5189318282b575f3bd12',
+    sha256: '90f2d2fe5cf650f4bd745d811f96cceb90b311dcab01c82d0636e8655e065c7a',
+    // Rehashed by t314, deliberately and in the same commit, which is what the
+    // failure message above asks for: FR3 extracted the fence and backtick
+    // blanking into this module rather than let a fourth gate transcribe it.
+    // Neither literal was touched, and `no-portuguese-prose.test.mjs` still
+    // compares both by `toString()` against the text the first two sweeps
+    // declared.
     why: 'the `DIACRITIC` and `STOPWORD` literals every D24 gate hunts by',
   }),
   Object.freeze({

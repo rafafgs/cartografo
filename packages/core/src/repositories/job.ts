@@ -291,8 +291,8 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * So a final node that PINS a skill is done when that skill reported — see
  * {@link hasConformingFinish}. A final node that pins nothing is done on
  * arrival, exactly as before. The rule is keyed on `skill_ref` and never on
- * `node_type`: `docs/spec/graph.md` §2 says a portão is "nó como qualquer
- * outro", and the minimal example graph's own final node is a gate with a pin.
+ * `node_type`: `docs/spec/graph.md` §2 says a gate is "a node whose role is to
+ * check", and the minimal example graph's own final node is a gate with a pin.
  *
  * The no-pin branch is defensive, not a supported document shape:
  * `schema/graph.schema.json` makes `skill_ref` mandatory on every node and
@@ -1146,16 +1146,20 @@ export function blockOnRepeatedFailure(
   }
   if (streak < ceiling) return;
 
-  // Portuguese, like every other block reason a person reads first
-  // (`input-request.ts:316` is the precedent for core writing one). It names the
+  // English since t314, like every line this project writes (D24). It names the
   // node and the count because those two are what tells whoever opens the job
   // which sessions to go and read.
+  //
+  // `input-request.ts` is the precedent for core writing a block reason at all,
+  // and its own text is Portuguese still: `aguardando resposta da pergunta N`
+  // carries neither a diacritic nor one of the seven stopwords, so every D24
+  // sweep runs green straight over it. Left for whoever widens the detector.
   const reason =
-    `O nó \`${nodeId}\` falhou ${String(streak)} sessões seguidas, que é o teto ` +
-    'desta classe de problema. O trabalho parou aqui em vez de continuar sendo ' +
-    'arrendado: cada tentativa custa uma sessão inteira e as últimas terminaram ' +
-    'todas do mesmo jeito. Leia a transcrição dessas sessões, corrija o que elas ' +
-    'apontam e desbloqueie.';
+    `Node \`${nodeId}\` failed ${String(streak)} sessions in a row, which is the ` +
+    'cap for this problem class. The job stopped here instead of going on being ' +
+    'leased: every attempt costs a whole session and the last ones all ended the ' +
+    'same way. Read the transcripts of those sessions, fix what they point at, ' +
+    'and unblock.';
 
   db.prepare('UPDATE job SET blocked = ?, block_reason = ?, updated_at = ? WHERE id = ?').run(
     asInteger(true),

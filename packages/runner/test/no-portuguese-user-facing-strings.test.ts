@@ -106,11 +106,10 @@ export function scannedFiles(): string[] {
  * types its own is exactly what that ficha removed.
  */
 const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 210,
-    reason: 'content of a throwaway fixture repository, not text printed to an operator',
-  },
+  // `run-graph-traversal.mjs:210` used to be here — the README of the throwaway
+  // repository the traversal builds. t314 translated it: a fixture repository is
+  // still this project's prose, and "not text printed to an operator" excused the
+  // audience rather than the language.
   {
     file: 'scripts/run-graph-traversal.mjs',
     line: 404,
@@ -134,36 +133,19 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
  */
 const VERBATIM_QUOTATIONS: ReadonlyArray<{ file: string; line: number; reason: string }> =
   Object.freeze([
-    {
-      file: 'scripts/measure-executions.mjs',
-      line: 10,
-      reason: 'quotes `notes/2026-08-15-closed-learning-loop.md`, which is Portuguese (D24)',
-    },
-    {
-      file: 'scripts/measure-executions.mjs',
-      line: 11,
-      reason: 'the same quotation, continued; its last line carries no diacritic to excuse',
-    },
-    {
-      file: 'src/surveyor/spread.ts',
-      line: 10,
-      reason: 'quotes the same note, and for the same reason: it is the sentence this module answers',
-    },
-    {
-      file: 'src/surveyor/spread.ts',
-      line: 11,
-      reason: 'the same quotation, continued',
-    },
-    {
-      file: 'scripts/spike-surveyor-flow.mjs',
-      line: 124,
-      reason: 'quotes the instruction of `test/fixtures/skill-draft-note.json`, which t309 does not translate',
-    },
-    {
-      file: 'scripts/spike-surveyor-flow.mjs',
-      line: 125,
-      reason: 'the same quotation, continued; it goes English when the fixture does, and this pin says so',
-    },
+    // **Empty since t314, and that is the finding.** All six entries quoted a
+    // source that had already been translated out from under them: the four for
+    // `measure-executions.mjs` and `src/surveyor/spread.ts` cited
+    // `notes/2026-08-15-closed-learning-loop.md`, which t300 moved to English,
+    // and the two for `spike-surveyor-flow.mjs` cited the `instructions` of
+    // `test/fixtures/skill-draft-note.json`, which reads "Do not commit, do not
+    // create a branch, do not run git" today. Each pin was keeping a Portuguese
+    // paraphrase of an English sentence — the opposite of what a verbatim
+    // quotation is for. t314 quoted the sources as they now read and dropped the
+    // pins; this assertion is what caught that they had gone stale.
+    //
+    // A new entry has to quote a source that is REALLY still Portuguese, and say
+    // which one.
   ]);
 
 /** Any of these in a message means the sentence around it is Portuguese. */

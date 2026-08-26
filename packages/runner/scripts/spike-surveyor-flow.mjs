@@ -121,8 +121,8 @@ function authorizedFetch(input, init) {
  * A minimal fake and not the real `GitWorktreeManager`, which the ficha allows
  * explicitly — and here it is the only thing that keeps the proof proving what
  * it proves. The two crossing sessions are two NODES of one work: the second
- * reads the `nota.md` the first wrote, neither commits anything ("não commite,
- * não crie branch, não rode git" is their instruction), and the evidence
+ * reads the `nota.md` the first wrote, neither commits anything ("do not commit,
+ * do not create a branch, do not run git" is their instruction), and the evidence
  * printed at the end is read out of that same directory after both are gone.
  * A real worktree per session would break all three on something this proof is
  * not about.

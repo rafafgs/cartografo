@@ -53,7 +53,7 @@ import {
 /**
  * Possible states of a proposal.
  *
- * `approved` is the human gate of princípio 5, between the hypothesis and the
+ * `approved` is the human gate of principle 5, between the hypothesis and the
  * change (t165): the topographer writes `pending`, a person approves, and only
  * then can it be applied. Rejecting is the other way out of `pending`, and it
  * is terminal.
@@ -346,7 +346,7 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
  * The human gate says yes: `pending` → `approved` (t165, FR2).
  *
  * Approving writes nothing but the status. It is a decision recorded, not the
- * change itself — applying is a second, deliberate act, and princípio 5's
+ * change itself — applying is a second, deliberate act, and principle 5's
  * ladder is exactly that separation.
  *
  * @param db Open database.
@@ -564,7 +564,7 @@ export interface VerdictRecord {
  * Writes the outcome of the hypothesis, once (t112, FR5/FR6).
  *
  * The status does NOT change: a proposal that made things worse stays
- * `applied`, and reverting remains a human decision (README, princípio 5).
+ * `applied`, and reverting remains a human decision (README, principle 5).
  * "Piorou" is data, not an action.
  *
  * The `UPDATE` is guarded by `result IS NULL AND status = 'applied'`, the

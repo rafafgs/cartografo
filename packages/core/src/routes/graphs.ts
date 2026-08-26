@@ -559,7 +559,7 @@ async function fork(
  * variant that beats the base becomes a promotion proposal FOR the base.
  *
  * It proposes and never applies. What comes out is an ordinary pending
- * proposal, judged at the same human gate as any other (README, princípio 5),
+ * proposal, judged at the same human gate as any other (README, principle 5),
  * and applied by the same `POST /proposals/:id/apply` with no special case —
  * the diff never touches `class`/`lineage_type`, so the base stays the base.
  */

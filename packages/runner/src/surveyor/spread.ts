@@ -7,9 +7,9 @@
  * product decision about what counts as 'no effect', and burying one in a
  * comparison operator is how it would never get made on purpose"). The only
  * closed cycle this project has recorded (`notes/2026-08-15-closed-learning-loop.md`)
- * ends by naming exactly what it could not say: "uma rodada só não é uma
- * medição […] nada neste ciclo separa 'a mudança piorou' de 'a sessão demorou
- * mais dessa vez'".
+ * ends by naming exactly what it could not say: "One round is not a
+ * measurement […] nothing in this cycle separates 'the change made it worse'
+ * from 'the session took longer this time'".
  *
  * This module is the other half of that sentence — the product decision made
  * OUTSIDE the comparator. Three crossings of version A and three of version B

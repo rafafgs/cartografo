@@ -376,7 +376,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
  * `POST /proposals/:id/approve` — the human gate says yes.
  *
  * Approving writes the decision and stops there. Applying is a second,
- * deliberate act — the safety ladder of princípio 5 is that separation, and
+ * deliberate act — the safety ladder of principle 5 is that separation, and
  * collapsing the two here would be undoing it in the name of one click less.
  */
 async function approve(
@@ -825,7 +825,7 @@ async function outcome(
   });
 
   // The status stays `applied` on purpose: "piorou" is data, not an action.
-  // Reverting is a human decision, through the revert route (README, princípio 5).
+  // Reverting is a human decision, through the revert route (README, principle 5).
   return { proposal: written };
 }
 

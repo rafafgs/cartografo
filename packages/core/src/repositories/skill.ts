@@ -13,8 +13,9 @@
  * difference is deliberate:
  *
  * - at least one check, **always**, when `origin.type` is `imported`
- *   (`skill-manifest.md:247`: "se não der para escrever nenhum check, a skill
- *   não entra"). A native skill keeps the schema's own weaker rule — one check
+ *   (`specs/formats/skill-manifest.md:463`: "If no check can be written at all,
+ *   the skill does not enter"). A native skill keeps the schema's own weaker
+ *   rule — one check
  *   required only for a gate — because this ticket's product rule is about
  *   importing third-party content, not about every future registration path;
  * - no unrestricted network on import (`skill-manifest.md:266-268`): a
@@ -63,9 +64,9 @@
  * The registry used to be create-only, one row per id, ever — and the reason it
  * was is written in `migrations/0005_skill.sql`: version history for a skill was
  * deferred by the rule of two consumers. D22 is the decision that arrived with
- * them, and it says what the shape has to be: "skill tem id estável e versões
- * (semver + hash de conteúdo)... o nó continua pinado por hash (D4) e nunca
- * resolve 'a mais recente'".
+ * them, and it says what the shape has to be: "A skill has a stable id and
+ * versions (semver plus a content hash)... A node stays pinned by hash (D4) and
+ * never resolves 'the latest one'".
  *
  * Three rules follow from that sentence, and every function below is one of them:
  *

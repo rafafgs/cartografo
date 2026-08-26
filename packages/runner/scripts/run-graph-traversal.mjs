@@ -207,9 +207,9 @@ function createDisposableRepo() {
   git('init', '--quiet');
   git('config', 'user.email', 'traverse@cartografo.local');
   git('config', 'user.name', 'Traversal driver');
-  writeFileSync(join(repo, 'README.md'), '# Repositório descartável da travessia\n');
+  writeFileSync(join(repo, 'README.md'), '# Throwaway repository for the traversal\n');
   git('add', '.');
-  git('commit', '--quiet', '-m', 'inicial');
+  git('commit', '--quiet', '-m', 'initial');
   return { root, repo };
 }
 

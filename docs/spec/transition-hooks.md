@@ -4,7 +4,6 @@
 [`0016_gancho`](../../packages/core/migrations/0016_gancho.sql),
 [`0018_segredo_gancho`](../../packages/core/migrations/0018_segredo_gancho.sql)
 **Format:** [`schema/graph.schema.json`](../../schema/graph.schema.json) ·
-**Tickets:** t169, t194
 
 This document is the contract for whoever writes the graph **and** for whoever
 receives the delivery, and it is deliberately self-sufficient: the hook and the
@@ -143,7 +142,7 @@ diff.
 The `value` sits in clear text in the database, and that is deliberate: the
 signature is an HMAC, so the key has to be REUSED on every delivery — it cannot
 become a digest the way `0007`'s credential does. It is exactly
-`webhook_subscription.secret`'s posture (t142); what this ticket changed was
+`webhook_subscription.secret`'s posture; what this ticket changed was
 WHERE the key lives, not how it is kept.
 
 ---
@@ -182,7 +181,7 @@ worth being explicit about both halves:
    `POST /v1/jobs/:id/transitions` answers `200` without waiting on any network
    call — not the first attempt, not the 10-second timeout, not the six retries.
 
-It is t142's discipline ("the write path never waits on a webhook"), and it is
+It is the webhooks' discipline ("the write path never waits on a webhook"), and it is
 what makes the guarantee structural rather than defensive: there is no
 `try/catch` protecting the traversal because there is no code path from the
 socket to it.
@@ -192,7 +191,7 @@ into the delivery row at the moment it is queued. A new version of the graph can
 point the same hook somewhere else, and a `PUT /v1/hook-secrets/:nome` can rotate
 the key — and a delivery in flight ends against the destination that held when it
 was born, never against the one that would hold today. It is the same instant and
-the same reason for both: only the SOURCE of the key moved (t194), the semantics
+the same reason for both: only the SOURCE of the key moved, the semantics
 of the delivery row's `secret` column are what they always were.
 
 If the job has no `graph_version_id`, if the version cited does not resolve, if
@@ -222,7 +221,7 @@ the same object `GET /v1/executions/:id/events` returns and the stream's `data:`
 carries. There is no field saying which hook produced this delivery: the receiver
 knows which one is its own because every hook has its own URL and its own secret.
 
-The signature recipe, in full — t142's, with one difference in the key:
+The signature recipe, in full — the webhooks' own, with one difference in the key:
 
 > `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 of the **raw body**, with
 > the key THIS HOOK's `destination.secret_ref` resolved to, in lowercase hex.
@@ -242,7 +241,7 @@ Three details that decide whether your verification works:
 - **With no valid signature, do not trust the body.** The URL is written in a
   graph document any client of the API reads; the signature is the only thing
   separating a delivery from the control plane from whoever found the address.
-  Since t194 the key that produces it is no longer in that document — whoever
+  The key that produces it is no longer in that document — whoever
   reads the map reads where the reaction goes, not what it signs with.
 
 In Node, the whole recipe is one line — the same one the server runs:
@@ -265,7 +264,7 @@ and process afterwards.
 
 ## 6. Retries, giving up, and the failure event
 
-The scale is t142's, step for step — the same `RETRY_BACKOFF_MS`, so that a
+The scale is the webhooks', step for step — the same `RETRY_BACKOFF_MS`, so that a
 receiver already written needs no adjustment at all:
 
 | Attempt | When |
@@ -304,7 +303,7 @@ with noise that corrects itself. And it is an **incident, not an outcome** —
 `entity.id` is the job, but nothing in its traversal changes because of it.
 
 An `esgotada` delivery is not retried, however much time passes, and there is no
-route to send it again — t142's own absence. The row is not deleted: "I tried six
+route to send it again — the webhooks' own absence. The row is not deleted: "I tried six
 times and gave up" is an audit fact.
 
 A broken hook is nobody's problem but its own: a batch's deliveries go out

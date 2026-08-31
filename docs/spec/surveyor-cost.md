@@ -169,11 +169,11 @@ by design (D15):
 }
 ```
 
-The candidate's keys have spoken English since t255
+The candidate's keys are English
 ([the glossary](glossary-wire.md) §5.5); the CONTENT of `expected_metric` is
 still `{nome, direcao, de, para}` because that is the frozen hypothesis format of
 [`domain/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) — and that
-is exactly why it is here. Until t255 this lens invented a metric of its own — a
+is exactly why it is here. This lens once invented a metric of its own — a
 sentence, a target and the knob that produced the target —, which looked like a
 hypothesis and was not: `POST /v1/proposals/:id/outcome` refused it with
 `422 invalid_expected_metric`, and no proposal from this lens could close its own
@@ -183,7 +183,7 @@ experiment.
 the `factor × median` threshold). `direcao` is always `cai`: every candidate from
 this lens is a cost cut.
 
-The `"lens": "cost"` of the example above stopped being just a label with `t246`:
+The `"lens": "cost"` of the example above is not just a label:
 it is the control plane's deduplication discriminator (D21). `POST /v1/proposals`
 keys every proposal by `(lens, target_version, operations)` — a key computed by
 the server, never accepted in the body and never returned in the response — and a
@@ -249,7 +249,7 @@ D18 explicitly takes them out of English's scope.
 The table's most important absence is `POST /v1/proposals/:id/apply`. The
 topografo **creates** and stops: applying, approving or reverting is a human
 decision at the gate (README, principle 5), and the inbox is a ticket of its own
-(`t111`). That is locked down by a test — the list of routes a real run of the
+of its own. That is locked down by a test — the list of routes a real run of the
 command touches is an acceptance assertion, not a review convention.
 
 The other half of the boundary comes out of the same test, checked by the generic

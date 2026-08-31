@@ -204,7 +204,7 @@ function createDisposableRepo() {
   mkdirSync(repo);
   const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
 
-  git('init', '--quiet');
+  git('init', '--quiet', '--initial-branch', 'main');
   git('config', 'user.email', 'traverse@cartografo.local');
   git('config', 'user.name', 'Traversal driver');
   writeFileSync(join(repo, 'README.md'), '# Throwaway repository for the traversal\n');

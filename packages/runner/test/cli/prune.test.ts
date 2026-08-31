@@ -102,7 +102,7 @@ function fixture(t: TestHook, label: string): Fixture {
   const worktreesRoot = path.join(base, 'worktrees');
   mkdirSync(repoRoot);
   mkdirSync(worktreesRoot);
-  git(repoRoot, 'init', '--quiet');
+  git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
   git(repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(repoRoot, 'config', 'user.name', 'Fixture t207');
   writeFileSync(path.join(repoRoot, TRACKED_FILE), '# Fixture repo of t207-C\n');

@@ -5,7 +5,7 @@
  * Portuguese terms does my surface still owe a rename? — and until t287 each of
  * them answered it with a parser of its own. Five readers of one spec is five
  * ways to break the day its shape changes, and the five had already drifted:
- * `packages/core/test/no-portuguese-wire.test.ts` split a multi-spelling cell on
+ * The wire gate split a multi-spelling cell on
  * ` / ` and took a qualified cell's tail past the `=`, the screen's and the
  * runner's did neither, and the two topographers tracked `### N.N` headings
  * instead of the surface column. A row the document adds tomorrow would land in

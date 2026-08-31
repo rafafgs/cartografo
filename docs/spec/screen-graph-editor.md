@@ -8,7 +8,7 @@ diff, an operation with its inverse, append-only versioning" · principle 5 of t
 [README](../../README.md) — "the safety ladder"
 
 D11 fixed the order: observability first, the inbox next, graph editing last. The
-first two arrived (`t107`, `t111`); this is the third. It is the page where a
+first two arrived; this is the third. It is the page where a
 person touches a graph's topology — adds a node, takes an edge away, corrects a
 gate's contract — without writing JSON by hand and without there being, anywhere,
 a second way to change a graph.
@@ -24,7 +24,7 @@ new route in `packages/core`, no batch write, no "just this once".
 ## 1. What this screen edits
 
 **Base-graph topology**: the nodes and edges of the current version of a `base`
-lineage. It is the slice `t170` delivered after the founder split the original
+lineage. It is the slice delivered after the founder split the original
 ticket in three.
 
 | Editable | How |
@@ -36,8 +36,8 @@ ticket in three.
 | Edit an edge | Comes out as a **removal followed by an addition**: the operation vocabulary identifies an edge by its two ends and has no edit operation. |
 
 The selector reads `GET /v1/classes`, which lists **base lineages only**. A
-variant (D13) is another conversation: forking, promotion and offering are still
-`t118`, and this page neither offers nor edits them.
+variant (D13) is another conversation: forking, promotion and offering are not
+built yet, and this page neither offers nor edits them.
 
 ---
 
@@ -94,7 +94,7 @@ limitation:
   that swapping either of them "is an operation of its own, not a field change".
 - `engine` — and along with it `model`, `escalation_policy` and
   `escalation_recipient` — is **execution policy**. The core has accepted
-  proposals for all four since `t166`/`t167`; what does not exist yet is the
+  proposals for all four; what does not exist yet is the
   screen design for them, which is the separate ticket "Per-node execution
   policies (schema + API)". They were left out for scope, not for want of an
   operation.
@@ -203,7 +203,7 @@ Every item is another ticket's declared scope, not an oversight:
   ticket "Per-node execution policies (schema + API)". The core already accepts
   proposals for `engine`, `model`, `escalation_policy` and
   `escalation_recipient`; the screen design is what is missing.
-- **Editing the skill registry** — half-solved by `t215`, and the half that is
+- **Editing the skill registry** — half-solved, and the half that is
   left is named here. The registry stopped being create-only: the versions of a
   skill coexist (D22), and this screen reads `GET /v1/skills?id=` for every
   pinned skill and offers a selector of the registered versions when there is any
@@ -229,4 +229,4 @@ Every item is another ticket's declared scope, not an oversight:
 - **Real-time updates** (polling, websocket) — the page moves when whoever is on
   it acts, like the rest of the screen.
 - **Logging in from the browser** — unchanged: the screen still presents the
-  `t124` service credential.
+  service credential.

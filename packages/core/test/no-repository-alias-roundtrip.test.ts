@@ -230,7 +230,7 @@ const LEASE_EXPRESSION_ALIASES = Object.freeze({
 /**
  * Blanks every comment, keeping the file's shape.
  *
- * The same pass `no-portuguese-database.test.ts` runs and for the same reason:
+ * The same pass the database gate ran and for the same reason:
  * prose about an alias is documentation, not a query, and this very file's
  * header would otherwise fail the sweep it defines. Copied rather than imported
  * because that module masks `AS <name>` on its way out — it is looking for what

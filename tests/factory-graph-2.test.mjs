@@ -946,7 +946,7 @@ test('FR10 — the command the README documents under "How to validate" runs gre
  * Joined, and that is not cosmetic: this repository wraps at eighty columns, so
  * the sentence "is not investment advice" arrives split across a line break and
  * no expression looking for it in the raw block would ever match. Same reading,
- * for the same reason, as `tests/readme-status-claims.test.mjs`.
+ * for the same reason.
  */
 function paragraphsOf(markdown) {
   return markdown

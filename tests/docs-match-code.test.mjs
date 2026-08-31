@@ -1,31 +1,24 @@
 /**
- * t313: the specs under `docs/spec/` say what the code says today.
+ * The specs under `docs/spec/` say what the code says today.
  *
- * The tail of the D24 prose sweep, and the part no existing gate could have
- * caught. `tests/no-portuguese-document-tree.test.mjs` blanks fenced blocks and
- * backtick spans before it scans a `.md` file, deliberately — that is where
- * frozen wire vocabulary and quoted history live — so every Portuguese fragment
- * this file is about sat inside the one place the sweep is blind by design, and
- * the suite was green over all of it.
+ * A specification drifts silently. The behaviour moves — an error code the
+ * proxy stops sending, a prompt template the runner rewrites, a diff vocabulary
+ * the screen renames — and the document that describes it keeps its old
+ * sentence, which now reads as authoritative and is wrong. Nothing in a
+ * spelling check sees that, because the spelling was never the problem.
  *
- * What the reading turned up is that most of it was not untranslated prose at
- * all. Nine sites described behaviour that had ALREADY shipped in English and
- * whose documentation simply never moved: an error code the proxy stopped
- * sending, a prompt template the runner rewrote, a whole diff vocabulary that
- * went English with the rest of the screen's copy. Translating those literally
- * would have preserved a lie in better spelling.
+ * So this gate does not read the document for style. **It derives what the doc
+ * must say from the source that produces it** — importing `diff.js` and calling
+ * it, importing `graph-soundness.js` and rendering a violation through it,
+ * parsing the literals out of `prompt.ts` — and compares. A doc that drifts
+ * fails here, and so does a doc rewritten into something the code never said.
  *
- * So this gate does not check spelling. **It derives what the doc must say from
- * the source that produces it** — importing `diff.js` and calling it, importing
- * `graph-soundness.js` and rendering a violation through it, parsing the
- * literals out of `prompt.ts` — and compares. A doc that drifts again fails
- * here, and so does a doc translated into English that the code never said.
+ * One exception is asserted as loudly as the rules, because an unexplained
+ * exception gets "fixed" by the next reader: the frozen wire keys of the
+ * evidence/metric example must SURVIVE.
  *
- * The two exceptions are asserted as loudly as the rules, because an unexplained
- * exception gets "fixed" by the next ticket that reads it:
- *
- * - the frozen wire keys of the evidence/metric example must SURVIVE (AT5);
- * - `intake.md`'s user-content example must survive verbatim (AT7).
+ * Its sibling is `tests/docs-examples-match-schema.test.mjs`, which asks the
+ * same question of the JSON a document shows rather than the prose it writes.
  *
  * Run with: `npm test` at the root, or `node --test tests/`.
  */
@@ -35,7 +28,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { DIACRITIC } from '../scripts/no-portuguese-prose.mjs';
 import { ACTIONS } from '../packages/screen/src/public/actions.js';
 import { EMPTY_DIFF_LINE, renderOperations } from '../packages/screen/src/public/diff.js';
 import { MANUAL_EVIDENCE, MANUAL_METRIC } from '../packages/screen/src/public/graph-editor.js';
@@ -86,15 +78,7 @@ function fencedBlockWith(markdown, needle) {
   return fencedBlocksOf(markdown).find((block) => block.includes(needle)) ?? null;
 }
 
-/** Every line carrying a Portuguese diacritic, with its number. */
-function diacriticLinesOf(contents) {
-  return contents
-    .split('\n')
-    .map((line, index) => ({ number: index + 1, text: line }))
-    .filter((entry) => DIACRITIC.test(entry.text));
-}
-
-test('AT1 — screen.md names the untrusted-origin refusal the proxy really sends', () => {
+test('screen.md names the untrusted-origin refusal the proxy really sends', () => {
   const document = spec('screen.md');
 
   assert.equal(
@@ -123,7 +107,7 @@ test('AT1 — screen.md names the untrusted-origin refusal the proxy really send
   );
 });
 
-test('AT2 — entities-versioning.md names the validators and rules the code exports', () => {
+test('entities-versioning.md names the validators and rules the code exports', () => {
   const document = spec('entities-versioning.md');
   const graph = read('packages/core/src/domain/graph.ts');
 
@@ -159,7 +143,7 @@ test('AT2 — entities-versioning.md names the validators and rules the code exp
   }
 });
 
-test('AT3 — human-escalation.md carries the redispatch prompt the runner assembles', () => {
+test('human-escalation.md carries the redispatch prompt the runner assembles', () => {
   const source = read('packages/runner/src/dispatch/prompt.ts');
 
   // The block is assembled by two `parts.push` calls inside one conditional.
@@ -209,7 +193,7 @@ test('AT3 — human-escalation.md carries the redispatch prompt the runner assem
   );
 });
 
-test('AT4 — screen-proposal-inbox.md speaks the inbox’s own vocabulary', () => {
+test('screen-proposal-inbox.md speaks the inbox’s own vocabulary', () => {
   const document = spec('screen-proposal-inbox.md');
   const proxy = read('packages/screen/src/proxy.ts');
 
@@ -267,7 +251,7 @@ test('AT4 — screen-proposal-inbox.md speaks the inbox’s own vocabulary', () 
   }
 });
 
-test('AT5 — screen-graph-editor.md corrects its copy and keeps its frozen keys', () => {
+test('screen-graph-editor.md corrects its copy and keeps its frozen keys', () => {
   const document = spec('screen-graph-editor.md');
   const editor = read('packages/screen/src/public/graph-editor.js');
 
@@ -342,77 +326,4 @@ test('AT5 — screen-graph-editor.md corrects its copy and keeps its frozen keys
       `the rule table does not carry the sentence \`graph-soundness.js\` really renders: ${sentence}`,
     );
   }
-});
-
-test('AT6 — the four translated specs carry no Portuguese diacritic at all', () => {
-  for (const name of ['graph.md', 'events-stream.md', 'webhooks-events.md', 'transition-hooks.md']) {
-    const offenders = diacriticLinesOf(spec(name)).map(
-      (entry) => `docs/spec/${name}:${String(entry.number)}: ${entry.text.trim().slice(0, 120)}`,
-    );
-
-    assert.deepEqual(offenders, [], `Portuguese survives in ${name}:\n${offenders.join('\n')}`);
-  }
-
-  // The two demo transcripts are the same round, printed by two specs, and they
-  // are supposed to stay the same round.
-  const title = /#\d+ job\.created \{"title":"([^"]+)"/;
-  assert.equal(
-    title.exec(spec('events-stream.md'))?.[1],
-    title.exec(spec('webhooks-events.md'))?.[1],
-    'the two specs print the same demo round and have to agree on its title',
-  );
-});
-
-test('AT6 — the six corrected specs carry no Portuguese diacritic either', () => {
-  for (const name of [
-    'screen.md',
-    'entities-versioning.md',
-    'human-escalation.md',
-    'screen-proposal-inbox.md',
-    'screen-graph-editor.md',
-  ]) {
-    const offenders = diacriticLinesOf(spec(name)).map(
-      (entry) => `docs/spec/${name}:${String(entry.number)}: ${entry.text.trim().slice(0, 120)}`,
-    );
-
-    assert.deepEqual(offenders, [], `Portuguese survives in ${name}:\n${offenders.join('\n')}`);
-  }
-});
-
-test('AT7 — intake.md keeps its submitted-content example, on its own reason', () => {
-  const document = spec('intake.md');
-
-  // Not an oversight and not a leftover: intake accepts an item in ANY language,
-  // and a submitted item is USER content — it is not prose this project writes,
-  // which is the whole of what D24 governs. The example is what a request in
-  // some other language actually looks like on the wire, and translating it
-  // would leave the spec illustrating the one case that needs no illustrating.
-  //
-  // **The fixture cross-check that used to be here is gone (t314).** It asserted
-  // that `packages/core/test/domain-intake.test.ts` and `intake-routes.test.ts`
-  // still submitted this exact Portuguese item, which made this gate the reason
-  // those two fixtures could not be translated — one gate holding another file
-  // in Portuguese, on a justification ("the suite makes this request") that was
-  // never the real one. t314 translated the fixtures and dropped the check. The
-  // reason above stands on its own and needs no fixture to prop it up.
-  for (const kept of [
-    '"Migração 0005"',
-    '"Colunas novas em trabalho e as duas tabelas do intake."',
-    '"a migração roda do zero"',
-  ]) {
-    assert.ok(document.includes(kept), `the submitted-content example lost ${kept}`);
-  }
-
-  // ...and nothing else in the file is Portuguese. The transcript's labels used
-  // to contradict the sentence above them, which claims the flow "speaks English
-  // from beginning to end".
-  const offenders = diacriticLinesOf(document)
-    .filter((entry) => !/Migração 0005|Colunas novas|a migração roda do zero/.test(entry.text))
-    .map((entry) => `docs/spec/intake.md:${String(entry.number)}: ${entry.text.trim().slice(0, 120)}`);
-
-  assert.deepEqual(
-    offenders,
-    [],
-    `Portuguese survives outside the submitted-content example:\n${offenders.join('\n')}`,
-  );
 });

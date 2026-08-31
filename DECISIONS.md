@@ -50,10 +50,13 @@ last piece, not the first.
 
 ## D7 (2026-08-14) — Publication strategy
 
-Private repository until it works. Validate it in 2–3 different domains (the
-README's starting condition). Once it is ready: the repository goes public
-together with an article in the newsletter, as a lever for growing subscribers;
-the public README carries an invitation to follow along at agentsmaestro.dev.
+Private repository until it works, validated on 2–3 different domains (the
+README's starting condition; amended to two by D14). Once it is ready the
+repository goes public, under the licence D12 records.
+
+The consequence the rest of the repository leans on is the one that matters
+here: everything written in it — prompts, specifications, comments, error
+messages — is written to be read by somebody outside it.
 
 ## D8 (2026-08-14) — The problem class is named by the user (MVP)
 

@@ -106,7 +106,7 @@ function fixture(t: TestHook, label: string): Fixture {
 
   const repoRoot = path.join(base, 'repo');
   mkdirSync(repoRoot);
-  git(repoRoot, 'init', '--quiet');
+  git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
   git(repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(repoRoot, 'config', 'user.name', 'Fixture t160');
   writeFileSync(path.join(repoRoot, TRACKED_FILE), TRACKED_CONTENT);

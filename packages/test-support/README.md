@@ -36,7 +36,7 @@ of [`docs/spec/glossary-wire.md`](../../docs/spec/glossary-wire.md)'s tables.
 Five per-package wire gates ask that document the same question, and before this
 module each answered it with a parser of its own; five readers of one spec is
 five ways to break the day its shape changes, and the five had already drifted.
-`scripts/no-anti-portuguese-duplication.test.mjs` keeps this the only copy.
+This is deliberately the only copy.
 
 ## What it is not allowed to touch
 

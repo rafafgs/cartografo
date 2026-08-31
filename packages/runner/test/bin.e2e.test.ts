@@ -99,7 +99,7 @@ function initRepo(base: string): string {
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe', encoding: 'utf8' }).trim();
 
-  git('init', '--quiet');
+  git('init', '--quiet', '--initial-branch', 'main');
   git('config', 'user.email', 'fixture@cartografo.local');
   git('config', 'user.name', 'Fixture t193');
   writeFileSync(path.join(repoRoot, 'README.md'), '# t193 fixture repository\n');

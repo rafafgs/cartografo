@@ -8,7 +8,7 @@
  * network (`docs/formats/engine-adapter.md:363-366`); this is the manual gate
  * on the other side — the half the suite cannot prove because it has no real
  * CLI. Same division `spike-real-session.mjs` (t104) and
- * `spike-t106-human-escalation.mjs` set up: evidence attached to the ficha,
+ * `spike-human-escalation.mjs` set up: evidence attached to the ficha,
  * never an automatic gate.
  *
  * What it demonstrates, end to end, with nothing simulated:
@@ -29,7 +29,7 @@
  *    current version pointer is checked at the end and has not moved.
  *
  * Every field this script reads off an answer is spelled the way `/v1` answers
- * it, in English, and `test/no-portuguese-wire.test.ts` is what keeps it that
+ * it, in English, and the wire glossary is what keeps it that
  * way (t266). It did not, for a long time: this proof was on no sweep's list,
  * so it went on destructuring `eventos` off a body that has answered `events`
  * since t226, and the run died at the hard-proof step on a `TypeError` about
@@ -149,7 +149,7 @@ function createDisposableRepo() {
   const git = (...args) =>
     execFileSync('git', args, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
 
-  git('init', '--quiet');
+  git('init', '--quiet', '--initial-branch', 'main');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t110');
   writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t110 manual proof\n');

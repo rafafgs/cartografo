@@ -51,7 +51,7 @@ hand, is an entity: `/jobs/424242` answers **404**.
 ### The package has two halves, and one port
 
 D11 asks two things of the screen: observability and the inbox. They arrived in
-different tickets — this one and `t111` — and they share the same package, the
+different slices — this one and the inbox — and they share the same package, the
 same process and the same port. A single handler
 ([`packages/screen/src/servidor.ts`](../../packages/screen/src/servidor.ts)) decides
 between them, in this order:
@@ -68,7 +68,7 @@ precisely its `null` that hands `/executions` and `/jobs/7` to the views instead
 of 404-ing them as a missing file.
 
 **Why the board is `/board` and not `/`.** The root was already the inbox's
-`index.html` when this half arrived, and changing that would break `t111`'s
+`index.html` when this half arrived, and changing that would break the inbox's
 acceptance tests with no functional gain: the two halves reach each other through
 the navigation both pages carry at the top. It is layout, not a boundary —
 changing our minds costs one line on each side.
@@ -76,11 +76,11 @@ changing our minds costs one line on each side.
 ### What the proxy refuses
 
 Everything the proxy forwards leaves here with the operator's credential stamped
-on it (`t124`), and the control plane's write routes are happy with an empty
+on it, and the control plane's write routes are happy with an empty
 body. A `fetch(url, {method:'POST', mode:'no-cors'})` is a "simple" request — it
 fires no preflight —, so, with no gate, **any page open in the same browser**
 would apply a proposal on port 4318 using the token of whoever opened the screen.
-The gate closes exactly that hole (`t192`).
+The gate closes exactly that hole.
 
 It reads **fetch metadata**, and nothing else: `Sec-Fetch-Site` and `Origin` are
 written by the browser's network stack and forbidden to the page's script — not
@@ -98,7 +98,7 @@ a method other than `GET`/`HEAD`, and this specification's
    fetch metadata is still a browser.
 
 The proxy's refusal is a `403` with the same `{error, message}` envelope as the
-`502`, and with `message` in English for the same reason (`t180`: API plumbing,
+`502`, and with `message` in English for the same reason (API plumbing,
 not rendered text):
 
 ```json
@@ -106,7 +106,7 @@ not rendered text):
 ```
 
 The form's refusal is the screen's ordinary `403` error page, in English like all
-the others since `t310`. Its title is `untrusted origin`, and under it:
+the others. Its title is `untrusted origin`, and under it:
 `This form only accepts submissions that started on this page. Reload and try again.`
 
 What is left — no `Sec-Fetch-Site`, no `Origin` and no browser signature — is
@@ -123,7 +123,7 @@ the read side: barring reads would be more complexity with no less risk.
 
 ## 2. The rule of the three buckets
 
-The timeline is flowpilot's `t81` "generic time"
+The timeline is flowpilot's "generic time"
 ([`notes/2026-08-14-learning.md`](../../notes/2026-08-14-learning.md)): a
 job's total time says nothing; what says something is how it splits.
 
@@ -155,7 +155,7 @@ Four rules close the definition:
    question hold the job however terminal the node is. It is that composite
    criterion — and only it — that closes the last queue segment.
 
-   Until `t152` the rule was only "nothing open and no block", because there was
+   The rule was once only "nothing open and no block", because there was
    no terminal field. It called every freshly created job **finished**: with a
    single `job.created` in the log, nothing is open because nothing began. A job
    sitting between two sessions fell into the same trap — precisely the wait this
@@ -200,7 +200,7 @@ Two boundary choices:
   `input_request.answered` schema accepts an empty string; writing a fact with no
   content would pollute the audit with a decision that decides nothing.
 - **`respondido_por` falls back to `"tela"`** when the field comes in empty.
-  `t124` authenticated the API, but the screen carries ONE service credential and
+  The API is authenticated, but the screen carries ONE service credential and
   asks the browser for none: a token proves possession, not a person. Honestly
   recording the door the answer came in through is still everything the system
   actually knows; inventing a user would be worse, because
@@ -216,13 +216,13 @@ field ([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3); pinned in
 which resolves the name the way a screen reader would.
 
 **The one that unblocks the job is not the screen.** The question → block →
-answer → unblock → session resume wiring is `t106`'s, and it lives in the control
+answer → unblock → session resume wiring belongs to escalation, and it lives in the control
 plane: creating the question blocks the job in the same transaction, and
 answering unblocks it with the actor of whoever answered
 ([`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts),
 the contract in [`human-escalation.md`](human-escalation.md)). The screen writes
 the fact and nothing else; the cycle happens on the other side of the HTTP. It
-was written before `t106` existed and did not change a line when it arrived —
+was written before that wiring existed and did not change a line when it arrived —
 which was exactly the bet.
 
 ---
@@ -258,7 +258,7 @@ The address's precedence: `--url` > `CARTOGRAFO_URL` >
 bringing the control plane up on another port does not demand configuring two
 things in two vocabularies. What resolves it is
 [`resolveControlPlaneUrl`](../../packages/screen/src/proxy.ts), one for the whole
-package since `t199`: until then there was a second resolver in `router.ts`, with
+package: there was once a second resolver in `router.ts`, with
 no `CARTOGRAFO_PORT`, and it was the one `bin/screen.mjs` reached. The screen
 listens on **loopback**, like the control plane and for the same reason: there is
 no authentication at this stage.
@@ -325,7 +325,7 @@ still authenticates nobody.
 Every item is another ticket's declared scope, not an oversight:
 
 - **Graph editing beyond the topology.** D11 fixed the order — observability
-  first, editing afterwards — and the topology slice arrived with `t170`:
+  first, editing afterwards — and the topology slice exists:
   `/graph-editor.html` adds, removes and edits a base graph's nodes and edges,
   saving through the same proposal calls any API client would make
   ([`screen-graph-editor.md`](screen-graph-editor.md)). Left for tickets of their
@@ -333,18 +333,18 @@ Every item is another ticket's declared scope, not an oversight:
   and **editing the skill registry**, each waiting on a backend surface that does
   not exist yet; and left out, by decision and not by oversight, are the
   draggable canvas (the graph document has no coordinate field) and the variant
-  lineages (D13, `t118`).
+  lineages (D13).
 - **The proposal approval inbox** (the `proposta` entity, distinct from
-  `pergunta`) — it is the package's other half, delivered by `t111` and served at
+  `pergunta`) — it is the package's other half, served at
   `/` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
-- **Logging in from the browser** — `t124` authenticated the API and gave the
+- **Logging in from the browser** — the API is authenticated and the
   screen a service credential (`CARTOGRAFO_SCREEN_TOKEN`, with `CARTOGRAFO_TOKEN`
   as a fallback), which it presents on every call to the control plane. The
   browser still reaches the screen with no credential at all, the screen is still
   on loopback and `respondido_por` still falls back to `"tela"`: by D11 the
   screen is an unprivileged client of the API, not a second identity boundary.
 - **A real session resume on answering** — that is the control plane's, through
-  `t106` (§3); the screen only writes the fact.
+  escalation cycle (§3); the screen only writes the fact.
 - **A node label with the `papel`/`descricao` of the graph's snapshot** — the
   board shows the raw `no_atual`; fetching the graph to label it is additive.
 - **Pagination** — no route of the API paginates today, and it is not this ticket

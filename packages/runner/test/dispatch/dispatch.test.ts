@@ -12,7 +12,7 @@
  * depend on an installed, authenticated CLI
  * (`docs/formats/engine-adapter.md:363-366`). The other half of the proof —
  * a real `claude` session emitting a real block — is the manual spike
- * (`scripts/spike-t106-human-escalation.mjs`), same discipline t104 used.
+ * (`scripts/spike-human-escalation.mjs`), same discipline t104 used.
  *
  * The control-plane boot is the same pattern as
  * `test/controller/dispatch-and-lease.e2e.test.ts`: spawn the real binary, wait
@@ -272,6 +272,36 @@ function linesWithoutBlock(): string {
     { stream: "stdout", text: "The answer was already in the prompt; I went with it." },
     { stream: "stdout", text: "I finished the work, nothing to ask." },
   ]);
+}
+
+/**
+ * ...and what a session standing on `implementar` has to print to be believed
+ * (t333).
+ *
+ * `linesWithoutBlock` above prints prose and no fenced block at all, and since
+ * t333 the control plane holds THAT absence against the pinned skill's `output`
+ * schema exactly as it holds a report that is present and wrong: `do-crossing`
+ * requires `nota`, so a session that reports nothing is refused and the work
+ * stops on the node instead of following its edge. That is the same accounting
+ * t268 did for the gate when a refusal first started blocking, and
+ * `linesWithResult` is its record of it.
+ *
+ * So every case whose subject is something ELSE — the single-edge transition,
+ * the transition the control plane refuses, the worktree bookkeeping per
+ * outcome — reports the one field the skill asks for. The absence itself is not
+ * left unproved: it has its own case, in the t268/t333 suite at the end of this
+ * file.
+ */
+const CROSSING_NOTE_LINES: readonly string[] = Object.freeze([
+  "The answer was already in the prompt; I went with it.",
+  "```resultado",
+  JSON.stringify({ nota: "the step left saida.md ready" }),
+  "```",
+]);
+
+/** {@link CROSSING_NOTE_LINES} in the fake engine's own envelope. */
+function linesWithCrossingNote(): string {
+  return JSON.stringify(CROSSING_NOTE_LINES.map((text) => ({ stream: "stdout", text })));
 }
 
 /** The engine's own answer when a tool the policy denied is attempted (t125). */
@@ -1981,6 +2011,13 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
  * so the honest fixture is the status itself, delivered through the listener the
  * interface defines.
  *
+ * It prints {@link CROSSING_NOTE_LINES} before it ends, for the reason that
+ * fixture records: AT10's cases stand on `implementar`, whose pinned skill
+ * requires an output, and since t333 a session that reports nothing there is
+ * refused — which would stop the work on a block about the report and hide the
+ * bookkeeping this test is measuring. The lines cost the stub nothing: the two
+ * outcomes it exists to produce are the terminal status and the tree.
+ *
  * @param status What `onFinished` reports.
  * @returns The adapter, with the rest of the interface answering trivially.
  */
@@ -1991,6 +2028,7 @@ function stubAdapter(status: SessionStatus): EngineAdapter {
       // On the next turn of the loop, never inside `startSession`: the dispatch
       // is entitled to have its handle before the outcome lands.
       queueMicrotask(() => {
+        for (const line of CROSSING_NOTE_LINES) listener.onOutput(line);
         listener.onFinished(status, status === "completed" ? 0 : 1);
       });
       return Promise.resolve("stub-session");
@@ -3268,7 +3306,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
-        envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+        envOverrides: { FAKE_ENGINE_LINES: linesWithCrossingNote() },
       })(job.id);
 
       assert.deepEqual(
@@ -3564,7 +3602,7 @@ test("t161 — the node's skill drives the session, and the session advances the
             engines: claudeOnly(fakeAdapter()),
             worktrees: fakeWorktrees(workDir),
             timeoutSeconds: 60,
-            envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+            envOverrides: { FAKE_ENGINE_LINES: linesWithCrossingNote() },
           })(job.id),
         (error: unknown) => {
           assert.ok(
@@ -5879,6 +5917,84 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       assert.equal(after.blocked, true);
     },
   );
+
+  /**
+   * ...and neither does a session that reported nothing at all (t333, AT4).
+   *
+   * The gap t268 left open, end to end: a report core REFUSED already stops the
+   * work, but a report core never received was accepted vacuously — the schema
+   * was not even looked up — so the single edge out of `implementar` was taken
+   * with `do-crossing`'s required `nota` never produced. That is the b3-radar
+   * failure of 2026-08-30, where the block surfaced one node later and named the
+   * consumer's manifest instead of the producer's silence.
+   *
+   * Nothing in this package changed for it to pass: `refusedReport`,
+   * `blockForOutputSchemaRefusal` and `staleBench` are the same three lines
+   * t268 wrote, and they fire the moment `finishSession` tells the truth.
+   */
+  await parent.test(
+    "t333 AT — ...and neither does a session that reported nothing at all",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t333-silent-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("implementar", "travessia-t333-silent", 3331);
+      const { doFetch, calls } = spyOn();
+
+      // Ordinary stdout and no fenced block anywhere: `parseNodeResult` answers
+      // `null`, so `report.ts` omits the `output` key from `/finish` entirely
+      // and the control plane is closing a session that reported NOTHING —
+      // against a skill that requires `nota`.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_LINES: JSON.stringify([
+            { stream: "stdout", text: "I did the step." },
+            { stream: "stdout", text: "There is nothing else to say about it." },
+          ]),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "a node that produced no report may not move the work either",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.equal(session.output, null, "there was never anything to store");
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1, "exactly one block, posted by the runner itself");
+      assert.ok(
+        reasons[0].includes(String(session.id)),
+        `the producing session is what a reader opens next: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("implementar"),
+        `...on the node that failed to produce, not the one that would read: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("nota"),
+        `...and the field nobody produced has to be quoted: ${reasons[0]}`,
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the work stays on the node it failed");
+      assert.equal(after.blocked, true);
+    },
+  );
 });
 
 // --- t272: nothing before a session may retry forever ------------------------
@@ -6597,16 +6713,16 @@ function shellGateGraph(
   return { ...document, nodes, ...extra };
 }
 
-test("t332 — a shell node advances, fails and escalates through the paths every node uses", async (parent) => {
+test("t332 — a shell node advances, fails and is refused through the paths every node uses", async (parent) => {
   const { baseUrl, token } = await bootUnpatched(parent);
   const { createClaudeCodeDispatch, DispatchError } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
   const { decodeShellSessionText } =
     await loadModule<typeof SessionTextModule>(SESSION_TEXT_MODULE);
-  // Typed inline rather than through a top-level `import type`: this file's
-  // Portuguese-prose gate pins one line by NUMBER
-  // (`no-portuguese-runner-tests.test.ts`), and an import added above it moves
-  // the pin without changing a word of what it excuses.
+  // Typed inline rather than through a top-level `import type`, like every
+  // other module this file reaches for through `loadModule`: what runs is what
+  // the loader hands back, and a second spelling of the same path above would
+  // be one more thing to keep in step.
   const { ShellAdapter } = await loadModule<
     typeof import("../../src/engine/shell-adapter.ts")
   >("src/engine/shell-adapter.ts");
@@ -6803,8 +6919,19 @@ test("t332 — a shell node advances, fails and escalates through the paths ever
     },
   );
 
+  /**
+   * A command that exits 0 and reports nothing usable (AT3).
+   *
+   * The path this lands on is t333's, not a shell one: a fence whose contents
+   * are not JSON leaves `parseNodeResult` with nothing, `/finish` closes a
+   * session that reported NOTHING against the `output` schema the node's skill
+   * pins, and the control plane refuses it — the same refusal an agent session
+   * gets for the same silence, with the missing fields quoted. That is the whole
+   * claim of FR10: the report protocol is the report protocol, and the engine
+   * that produced it is not a term in it.
+   */
   await parent.test(
-    "AT3 — a command that exits 0 with no usable report takes the escalation path",
+    "AT3 — a command that exits 0 with no usable report is refused like any other silence",
     async (t) => {
       const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t332-mute-"));
       t.after(() => {
@@ -6821,9 +6948,26 @@ test("t332 — a shell node advances, fails and escalates through the paths ever
       assert.equal(
         stuck.current_node_id,
         "conferir",
-        "a node with two exits and no label chosen may not be routed from",
+        "a node whose report was refused may not be routed from",
       );
       assert.equal(stuck.blocked, true);
+
+      const [session] = await sessionsOf(job.id);
+      assert.ok(session !== undefined);
+
+      const reason = stuck.block_reason ?? "";
+      assert.ok(
+        reason.includes(String(session.id)),
+        `the producing session is what a reader opens next: ${reason}`,
+      );
+      assert.ok(
+        reason.includes("conferir"),
+        `...on the node that produced nothing usable: ${reason}`,
+      );
+      assert.ok(
+        reason.includes("evidencia"),
+        `...and a field nobody produced has to be quoted: ${reason}`,
+      );
 
       const { input_requests: pending } = await api<{
         input_requests: Question[];
@@ -6836,12 +6980,10 @@ test("t332 — a shell node advances, fails and escalates through the paths ever
         token,
       );
       assert.ok(
-        pending.some((question) => question.job_id === job.id),
-        "the same routing escalation an agent session gets when it names no edge",
+        !pending.some((question) => question.job_id === job.id),
+        "a refused report stops the work where it is; it does not become a question",
       );
 
-      const [session] = await sessionsOf(job.id);
-      assert.ok(session !== undefined);
       assert.equal(session.status, "completed", "the command itself did not fail");
     },
   );

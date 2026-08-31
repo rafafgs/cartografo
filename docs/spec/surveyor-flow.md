@@ -115,16 +115,16 @@ reconstructs the arithmetic without trusting anyone. Evidence that summarizes
 without citing an id is an opinion, not evidence. `by_node` travels with it so
 that "why THIS node?" is answerable without running anything again.
 
-The keys above have been English since `t264`
+The keys above are English
 ([`glossary-wire.md` §5.6](glossary-wire.md)): until then the flow lens was the
 only one still writing Portuguese inside `evidence`, and the cost lens had
-already migrated in `t255`. A hypothesis opened BEFORE that ticket names
+already migrated. A hypothesis opened BEFORE that rename names
 `tempo_agente_ms:<no>`, and `measureForExpectedMetric` answers `null` for it —
 refusing is the correct behaviour: closing it with a zero would read as "the
 bottleneck is gone", which is the best possible verdict, when what happened was
 that nobody measured anything.
 
-`lens` is the field the control plane reads, and not the topografo: since `t246`
+`lens` is the field the control plane reads, and not the topografo:
 (D21), `POST /v1/proposals` deduplicates by
 `(lens, target_version, operations)` — the key is computed by the server, never
 accepted in the body and never returned in the response. Running this lens twice
@@ -133,7 +133,7 @@ answers `200` with the proposal that already existed and its evidence becomes a
 list, with the new occurrence at the end. `fonte` is still where it always was
 and was not replaced — it is the provenance this module declares, `lens` is the
 server's discriminator, and both lenses need the same field name (`cost` in the
-cost one, since `t255`) in order to fall into the same dimension. The uniqueness
+cost one) in order to fall into the same dimension. The uniqueness
 holds only while the proposal is `pending`: once rejected or applied, the same
 signal opens a new proposal.
 
@@ -146,7 +146,7 @@ open" is.
 ```
 
 `para` is 20% below `de` — declared ambition, not a threshold. Whoever judges the
-hypothesis in the following round (`t112`) compares the measured number with
+hypothesis in the following round compares the measured number with
 **`de`**, never with `para`
 ([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)): "it moved in
 the declared direction, by less than hoped" is a confirmed hypothesis, not a
@@ -217,7 +217,7 @@ The target version is the version the execution **ran** under — it is the one 
 evidence speaks about. If the graph has moved since then, the proposal stays in
 the ledger and it is `aplicar` that refuses with `409 proposta_desatualizada`;
 redoing the diff over the new base is another round's work
-([t118](entities-versioning.md)).
+([the entity spec](entities-versioning.md)).
 
 ---
 
@@ -225,7 +225,7 @@ redoing the diff over the new base is another round's work
 
 | Method | Route | Role in this layer |
 |---|---|---|
-| `GET` | `/v1/executions/:id/events` | **New (t110).** The execution's whole log, in `id` order. An execution with no event at all answers `200` with an empty list — an execution is an opaque grouper, never an entity, so there is no `404`. |
+| `GET` | `/v1/executions/:id/events` | **New.** The execution's whole log, in `id` order. An execution with no event at all answers `200` with an empty list — an execution is an opaque grouper, never an entity, so there is no `404`. |
 | `GET` | `/v1/executions/:id/metrics-by-version` | Which version the round ran under (the log does not carry `graph_version_id`). |
 | `GET` | `/v1/graph-versions/:id` | The snapshot: the nodes the measurement reports and the edges that go into the prompt. |
 | `POST` | `/v1/proposals` | The only write. Returns `201` with the `pendente` proposal. |
@@ -240,7 +240,7 @@ The command is manual, and it is that way on purpose (§8):
 npm run surveyor --workspace @cartografo/runner -- <execution_id> [url] [dir] [--token <token>]
 ```
 
-The credential is not optional in practice: since `t124` no `/v1` route answers
+The credential is not optional in practice: no `/v1` route answers
 anonymously, and the four this command uses refuse with `401`. It comes from
 `--token` or from `CARTOGRAFO_TOKEN` — the same precedence as the `cartografo`
 CLI ([`cli/url.ts`](../../packages/core/src/cli/url.ts)) and the cost topografo —,
@@ -270,7 +270,7 @@ that start printed.
 Every item here is another ticket's declared scope, not an oversight:
 
 - **Automatic firing — it exists, and it is still somebody who switches it on**
-  (`t247`, [D21]'s third child). `cartografo-surveyor watch`
+  ([D21]'s third child). `cartografo-surveyor watch`
   ([`packages/surveyor`](../../packages/surveyor)) subscribes to
   `GET /v1/events/stream?type=execution.finished`
   ([events-stream.md](events-stream.md)) and runs both lenses — this one and the
@@ -291,21 +291,21 @@ Every item here is another ticket's declared scope, not an oversight:
   rule of two consumers asks for two before freezing
   ([`notes/2026-08-14-extension-and-quality.md`](../../notes/2026-08-14-extension-and-quality.md)).
 - **The hypothesis's `resultado`** (`confirmada`/`sem_efeito`/`piorou`): that is
-  `t112`, and it exists already — it is only that this layer is not the one that
+  the inbox, and it exists already — it is only that this layer is not the one that
   calls it.
-- **Human approval or rejection** as an action (`t111`), and **variants** born of
-  a proposal (`t118`).
+- **Human approval or rejection** as an action, and **variants** born of
+  a proposal.
 - **`proposta.*` events**: the taxonomy deferred those types to a ticket of its
   own in wave 2
   ([`taxonomy.md`](../../specs/events/taxonomy.md)), so a topografo
   round emits no telemetry about itself.
 - **Concurrency** between two topografos on the same execution: v1 assumes a
   single manual invocation.
-- **Credential scope** on the new route and in the command. `t124` authenticated
+- **Credential scope** on the new route and in the command. Authentication covers
   every `/v1` route, this one included, and the command presents the token
-  (`CARTOGRAFO_TOKEN` or `--token`, §7 — it was `t146` that closed that half);
+  (`CARTOGRAFO_TOKEN` or `--token`, §7);
   what it presents is an operator credential, because the topografo's four routes
-  are outside the surface `t143` opened to a runner credential. Cutting a
+  are outside the surface a runner credential opens. Cutting a
   credential that reaches exactly these routes is another ticket.
 
 [D10]: ../../DECISIONS.md

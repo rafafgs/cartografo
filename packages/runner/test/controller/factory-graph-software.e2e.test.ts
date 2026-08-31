@@ -617,10 +617,10 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
  *
  * t280 rewrote the `project` block of `graph.json` into English, and the three
  * sweeps that keep D24 closed are all blind to what it left behind here.
- * `no-portuguese-wire.test.ts` and `no-portuguese-identifiers.test.ts` MASK
+ * The wire and identifier gates MASK
  * comments on purpose — prose about a name is documentation and not the name,
  * and explaining a rename means writing both sides of it down — while
- * `tests/no-portuguese-factory-bundles.test.mjs` reads `factory-graphs/**`
+ * A bundle sweep reads `factory-graphs/**`
  * and nothing else. A doc comment in THIS file naming a key the rename retired
  * is invisible to all three, which is how one survived the translation and a
  * second one survived beside it, four lines from an assertion that reads the

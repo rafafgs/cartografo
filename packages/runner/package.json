@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit",
     "spike": "node --import tsx scripts/spike-real-session.mjs",
     "spike:codex": "node --import tsx scripts/spike-real-session-codex.mjs",
-    "spike:escalation": "node --import tsx scripts/spike-t106-human-escalation.mjs",
+    "spike:escalation": "node --import tsx scripts/spike-human-escalation.mjs",
     "spike:permissions": "node --import tsx scripts/spike-permission-enforcement.mjs",
     "spike:resume": "node --import tsx scripts/spike-session-resume.mjs",
     "spike:surveyor": "node --import tsx scripts/spike-surveyor-flow.mjs",

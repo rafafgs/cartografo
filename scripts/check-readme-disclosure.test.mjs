@@ -12,7 +12,7 @@
  * `docs/getting-started.md` through its CLI, and pinning its RULES to the real
  * documents would mean editing this file every time a paragraph moves.
  *
- * Same pattern as `scripts/no-portuguese-prose.test.mjs`: fixed sample text,
+ * Same pattern as `scripts/markdown-prose.mjs`: fixed sample text,
  * one assertion per verdict, no filesystem.
  *
  * Run with: `npm test` at the root, or `node --test scripts/`.

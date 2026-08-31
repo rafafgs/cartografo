@@ -1,7 +1,7 @@
 /**
  * t210's gate: the helpers this package copied into every file have ONE home.
  *
- * Same shape as the D18 sweeps (`no-portuguese-identifiers.test.ts`): a
+ * Same shape as the D18 identifier sweeps: a
  * deterministic, re-runnable walk of `src/` instead of a convention a reviewer
  * has to remember. The problem it freezes is the one t210 measured — seventeen
  * private copies of `isObject`, two of `now()`, and two hand-written copies of

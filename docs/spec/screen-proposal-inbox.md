@@ -5,7 +5,7 @@
 the public API" · [D1](../../DECISIONS.md) — "only the server writes to the
 database" · principle 5 of the [README](../../README.md) — "the safety ladder"
 
-The screen is the human half of the safety ladder. The topografo (`t110`) writes
+The screen is the human half of the safety ladder. The topografo writes
 hypotheses about the graph; the soundness gate fails the ones that would break
 the execution; what is left needs somebody to look at the evidence, read the diff
 and decide. This document specifies that inbox: what it shows, which decisions it
@@ -79,7 +79,7 @@ no dependency on the core package, and that is precisely the boundary D11 asks
 for. Duplicated and pinned by a test, like the graph validator of
 [`scripts/validate-graph.mjs`](../../scripts/validate-graph.mjs).
 
-It listens on `127.0.0.1`, and it stays there after `t124`: the screen does not
+It listens on `127.0.0.1`, and it stays there: the screen does not
 ask the browser for a credential — it CARRIES its own (`CARTOGRAFO_SCREEN_TOKEN`,
 with `CARTOGRAFO_TOKEN` as a fallback) and presents it to the control plane on
 every call, including the ones the proxy passes along. Whoever exposes the screen
@@ -95,22 +95,22 @@ line on stdout, in the spirit of `cartografo.ready`:
 
 ---
 
-## 2. The control plane contract this screen assumes (`t111`)
+## 2. The control plane contract this screen assumes
 
 The screen **creates no route at all** in `packages/core`. It consumes six
-endpoints, and since `t165` all six exist. Whoever touches the core side checks
+endpoints, and all six exist. Whoever touches the core side checks
 against this section.
 
 | Method | Route | State | What the screen uses |
 |---|---|---|---|
 | `GET` | `/v1/proposals` | exists | The list for both sections. Ideally filterable by `?status=`; today the screen asks for everything and splits on the client. |
-| `GET` | `/v1/proposals/:id` | exists (`t165`) | The detail: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
-| `POST` | `/v1/proposals/:id/approve` | exists (`t165`) | `pendente` → `aprovada`. No body. |
-| `POST` | `/v1/proposals/:id/reject` | exists (`t165`) | `{motivo}` required → `rejeitada`, written into `motivo_rejeicao`. |
+| `GET` | `/v1/proposals/:id` | exists | The detail: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
+| `POST` | `/v1/proposals/:id/approve` | exists | `pendente` → `aprovada`. No body. |
+| `POST` | `/v1/proposals/:id/reject` | exists | `{motivo}` required → `rejeitada`, written into `motivo_rejeicao`. |
 | `POST` | `/v1/proposals/:id/apply` | exists | Runs the flow of §5 of `entities-versioning.md`. Demands `aprovada`. |
 | `POST` | `/v1/proposals/:id/revert` | exists | `{motivo}` required; moves the pointer back. |
 
-The paths are those of the English `/v1` surface (D18, renamed by `t127`); the
+The paths are those of the English `/v1` surface (D18); the
 **keys** of the bodies (`propostas`, `proposta`, `motivo`, `grafo_versao`) and
 the status vocabulary (`pendente`, `aprovada`, …) are still Portuguese, which is
 what D18 deliberately left out. Pinned against the real client in
@@ -125,7 +125,7 @@ wrong about it:
   showing;
 - an error: `{error, message}`, on any non-2xx status.
 
-**The incompatibility `t165` settled.** Until it landed,
+**An incompatibility that is settled.** Until it was,
 [`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) demanded
 `status === 'pendente'` in order to apply and the `aprovada` state did not even
 exist in the migration's `CHECK` — so the Apply button, which this screen only
@@ -159,7 +159,7 @@ Every proposal offers exactly the actions valid for the status it is in:
 | anything else | — (read-only) | — |
 
 The last row is the one that matters most: the core owns the status vocabulary
-and will grow it (`t112` writes `resultado`). An unknown status **fails safe** —
+and will grow it. An unknown status **fails safe** —
 it becomes read-only, never an exception in the middle of rendering. A button
 that shows up and comes back `409` teaches a person to distrust the screen, which
 is worse than one button fewer.
@@ -211,7 +211,7 @@ the operation, and hiding it would make `change_node_field` impossible to judge.
 
 The type's name is what the operation carries on the wire (English,
 `glossary-wire.md` §3), and the rendered line went English later, with the rest
-of the screen's copy (`t310`). The two halves moved for unrelated reasons — one
+of the screen's copy. The two halves moved for unrelated reasons — one
 is a wire format, the other is the sentence a person approves a change by — and
 the one thing still passed through untranslated is an edge's `condition` VALUE,
 which is free text somebody typed into the graph document.
@@ -231,12 +231,12 @@ Every item is another ticket's declared scope, not an oversight:
 - **The observability screen** (executions, sessions, the event log) — the other
   half of D11's content.
 - **Preventing a rejected proposal from being proposed again** — the topografo's
-  behaviour (`t110`); here the history is read-only.
-- **Logging in from the browser, and per-route authorization.** `t124`
-  authenticated the control plane and the screen passes its own credential along;
+  behaviour; here the history is read-only.
+- **Logging in from the browser, and per-route authorization.** The control
+  plane is authenticated and the screen passes its own credential along;
   what is left out is asking the browser for a credential and cutting down what
   each credential reaches.
 - **Pagination or virtualization** of the list — acceptable at the PoC's scale.
 - **Real-time updates** (websocket, polling) — the list moves when the user acts.
 - **Variant lineages** (D13) — the screen shows the `grafo_id` the proposal
-  carries, with no special treatment (`t118`).
+  carries, with no special treatment.

@@ -533,7 +533,7 @@ test('t261 — the escalation paragraph lands after the result-report block', as
   // the report block — and the bisected position is AFTER it, not merely
   // "somewhere below the top". (The fence is spelled only inside string
   // literals here: a triple backtick in a comment desyncs the D18 sweep's
-  // masking scanner, `test/no-portuguese-identifiers.test.ts`.)
+  // masking scanner.)
   const cases: ReadonlyArray<readonly [string | undefined, string]> = [
     [undefined, ESCALATION_PROTOCOL],
     ['always', ALWAYS_ESCALATION_PROTOCOL],

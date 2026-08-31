@@ -7,9 +7,9 @@ questions flowing through the API" with "sessions dispatched by the
 EngineAdapter"
 
 Human escalation is a first-class entity, not a special case
-([README](../../README.md), principle 5). `t102` built the entity — the question,
+([README](../../README.md), principle 5). The entity — the question,
 the answer, the auto-resolution, the queue — and stopped on purpose before wiring
-it to the job. This document describes the cycle `t106` closed:
+it to the job — is described here, as the cycle it closes:
 
 ```
 session asks → job blocks → somebody answers → job unblocks
@@ -137,7 +137,7 @@ the parser.
 
 The suite's fake engine prints plain text lines, which pass through that decoding
 untouched. Which is to say: **this is a case CI does not catch and only the
-manual proof catches** (`scripts/spike-t106-human-escalation.mjs`).
+manual proof catches** (`scripts/spike-human-escalation.mjs`).
 
 ---
 
@@ -146,7 +146,7 @@ manual proof catches** (`scripts/spike-t106-human-escalation.mjs`).
 There is no session resume. `continueSession`/resume is declaredly outside
 `EngineAdapter` v0
 ([engine-adapter.md](../formats/engine-adapter.md), "Out of scope (v0)"), and
-`t106` does not bring it in through the back door: **resuming here is always a
+It is not brought in through the back door: **resuming here is always a
 fresh dispatch**, made by the next `tick()` of the
 [controller](runner-and-controller.md), with a new session.
 
@@ -198,7 +198,7 @@ cannot be lost because the process that produced it died right afterwards.
 ## 7. The one that asks is the node, not the runner
 
 Everything above describes **one** behaviour: ask when stuck, and block until
-somebody answers. Since `t167` that behaviour is the *default*, and not the only
+somebody answers. That behaviour is the *default*, and not the only
 option — the node declares its own in the graph, in `escalation_policy`
 ([graph.md](graph.md), §2):
 
@@ -224,7 +224,7 @@ policy declared it wanted to avoid.
 So `never` is wiring, not text: the runner resolves the node's policy before any
 write and, when it is `never`, swaps the route. Both routes already existed, and
 neither of them is new — `POST /v1/jobs/:id/blocks` has been the unconditional
-block with a reason since `t102`. What `t167` picks is **which of the two
+block with a reason. What the policy picks is **which of the two
 mechanics stops the job**, and nothing else.
 
 The job stops either way. The difference is that in one of them somebody is
@@ -269,7 +269,7 @@ Every item here is another ticket's declared scope, not an oversight:
 
 - **An auto-answer policy.** The `auto_aprovavel` field is written as `true` by
   the dispatch, and nothing reads it to answer on its own. The `/auto_resolucao`
-  route exists and works; whoever calls it is a person, for now. `t167` did not
+  route exists and works; whoever calls it is a person, for now. That did not
   build it: what it left ready is the **fact** that gate will need to read — the
   node's policy, in the graph's snapshot, and the `node_id` on the question
   itself.
@@ -279,7 +279,7 @@ Every item here is another ticket's declared scope, not an oversight:
   practice the field stays `null`, and `null` here means "the engine had not said
   yet", never "this engine has no ref".
 - ~~**Node instructions coming from the registered graph.**~~ **Closed by
-  `t161`.** A job sitting at a node of a registered graph is dispatched with that
+  the graph.** A job sitting at a node of a registered graph is dispatched with that
   node's skill rendered into the session —
   [`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)
   fetches the pinned manifest, refuses the dispatch if the hash does not match
@@ -290,9 +290,9 @@ Every item here is another ticket's declared scope, not an oversight:
   block became the `ESCALATION_PROTOCOL` constant, and it goes into BOTH texts.
   It is not tidying: a session that does not know how to escalate never
   escalates, and without that composition the whole cycle described here would
-  have disappeared in silence for precisely the jobs `t161` started driving on
+  have disappeared in silence for precisely the jobs that started driving on
   its own.
-  **And it renders LAST, which is measured and not style (`t261`).** From `t161`
+  **And it renders LAST, which is measured and not style.** From there
   until the first real crossing of the bets graph (the shift of 2026-08-17) that
   paragraph OPENED the system prompt, and in that crossing every session came
   back refused by `claude --print` itself: `stop_reason: "refusal"`,
@@ -306,7 +306,7 @@ Every item here is another ticket's declared scope, not an oversight:
   text opens with the node's heading and closes with this paragraph, and that is
   how `DEFAULT_INSTRUCTIONS` (the case with no graph) always composed it — it was
   never implicated by the bisect because it already put the constant at the end.
-- **A question raised by the wiring, not by the session.** Also in `t161`, a node
+- **A question raised by the wiring, not by the session.** A node
   with two or more exits whose session ends without naming any of them — no
   block, a malformed block, or a `resultado` that matches no edge — becomes a
   question through the same route and with the same blocking effect described
@@ -324,6 +324,6 @@ Every item here is another ticket's declared scope, not an oversight:
   ought to be called, and nothing sends anything to that name: there is no
   notification system and no system of roles in this repository to deliver to.
   The field is graph data, and that is all ([graph.md](graph.md), §2).
-- **The queue's screen** (`t107`) and **the identity of whoever answers**: `t124`
+- **The queue's screen** and **the identity of whoever answers**: authentication
   authenticated these routes, but the token does not say which person is on the
   other side, and `respondido_por` still comes from the body.

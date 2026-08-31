@@ -48,12 +48,11 @@ product, with a versioned schema and a specification document:
 - **Automatic database migrations and a versioned API from v0 onwards**: an open
   project does not control when other people update.
 
-## The graph as a shareable artifact (the network effect)
+## The graph as a shareable artifact
 
 Graph + skills + contracts export as a publishable bundle; the community
-contributes **maps**, not only code. A community atlas of graphs per problem
-class is at once the viral distribution (a funnel to agentsmaestro.dev) and the
-moat a large player cannot copy by absorbing a feature.
+contributes **maps**, not only code. A shared atlas of graphs per problem class
+is the artifact this format exists to make portable.
 
 ## The rule of two consumers
 

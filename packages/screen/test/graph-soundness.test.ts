@@ -53,7 +53,7 @@ const UNDECLARED_STRUCTURE_LINE = 'structure problem with no declared message';
  *
  * Not a named import, and the reason is this package's own D18 sweep: the
  * script exports `validarGrafo`, a Portuguese identifier that
- * `no-portuguese-identifiers.test.ts` would flag the moment it appeared in an
+ * an identifier sweep would flag the moment it appeared in an
  * import binding here. The script's name is frozen (it is the repository's
  * reference validator), so the binding is the part that gives way — the export
  * is read out of the namespace by a string, which the sweep masks like any

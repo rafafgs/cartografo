@@ -40,7 +40,7 @@
  * `evidencia`, `metrica_esperada` and `proposta` on {@link SurveyorResult} are
  * NOT that surface: they are this module's own return value, read by
  * `cli.mjs` and by `packages/surveyor`, and renaming them is identifier debt
- * of another ficha (`test/no-portuguese-wire.test.ts`'s own exemption says so).
+ * of another ficha.
  */
 
 import { readFileSync } from 'node:fs';
@@ -159,7 +159,7 @@ export interface ExpectedMetric {
  * callers destructure — and not the book's. What goes into the book is what
  * `evidencia` and `metrica_esperada` CARRY, and that vocabulary went English
  * with t264; these keys did not, and renaming them is the identifier debt
- * `test/no-portuguese-wire.test.ts` already exempts by name.
+ * the wire glossary already exempts by name.
  */
 export interface SurveyorResult {
   metricas: FlowMetrics;

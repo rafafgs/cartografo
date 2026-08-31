@@ -7,92 +7,54 @@ validation report.
 
 ## What this document is (and what it is not)
 
-This glossary was born **descriptive of the INTENT** — when t213 wrote it, none
-of the names in the `becomes` column existed anywhere. It turns descriptive of
-the CODE as the children land, and this is where you read how much of it has
-turned already.
+The wire once spoke Portuguese. D20 moved every surface to English — the API's
+keys and enum values, the event names, the proposal operations, the database's
+tables, columns and stored values, the screen's routes, the CLI's flags, the
+report's keys and both evaluator lenses — and this file is the map between the
+two vocabularies. Every surface has converged; nothing here is pending.
 
-Who applies it are t213's six child tickets, in D20's own order (glossary →
-API/errors → events → operations → database → routes/flags/report → docs and
-gate). Each one filters the `surface` column down to the rows that are its own
-and renames only those. The reason the glossary comes first is simple: without
-it, the six invent five different Englishes for the same term, and the
-repository opens (D7) with two vocabularies instead of one.
+It is kept for two reasons. It is the only place the old name of a term and its
+new one sit side by side, which is what anybody reading a record written before
+the rename needs. And it is machine-read:
+`packages/core/test/glossary-wire-docs.test.ts` parses §2.1, §5.1 and §5.2 at
+run time and refuses any of those retired spellings inside a backtick span or a
+fenced block of the specifications — so a document cannot quietly go back to
+naming a field the code no longer publishes.
 
-**Where each surface stands** (updated by the child that lands):
-
-| section | tag | state | landed by |
-|---|---|---|---|
-| §1.1 to §1.5 | `api` | converged | t226 |
-| §1.6, enum values | `api` | converged | t226 on the wire, t227 on the event, t235 in the database |
-| §2 | `events` | converged | t227 |
-| §3 | `proposal-ops` | converged | t228 |
-| §4.1 and §4.2 | `database` | converged | t229 (names), t235 (values) |
-| §5.1 to §5.4 | `routes-cli-report` | converged | t230 |
-| §1.1 and §1.4 (intake), §1.7, §5.2 (cost), §5.5 | `api`, `routes-cli-report`, `cost-lens` | converged | t255 (the leftovers) |
-| §5.6 | `flow-lens` | converged | t264 |
-| all of them, in the specifications | — | converged | t231 (docs and gate) |
-
-The third row from the bottom is t255's, which is not a child of t213: it is the
-ticket the v2 review opened on finding six leftovers the gates did not catch,
-all of them because they were not mapped here. Five became a new row (the intake
-item, the screen proxy's codes, the signature header, the cost lens's command
-line, the cost lens's candidate); the sixth was about shape and not about
-language, and is accounted for in that package's `policy.ts`.
-
-The second from the bottom is t264's, for the same reason one ticket later: t227
-had left the FLOW lens's vocabulary in Portuguese on purpose, and that decision
-held for as long as no lens had migrated. t255 migrated the sibling (§5.5), and
-from there on "it is free JSON, nobody governs it" turned into two languages in
-one column. §5.6 is that leftover, found by the first real crossing
-(`notes/2026-08-17-first-bets-run.md`, hole 7).
-
-The last row is the child that closes D20: every surface's CODE already had a
-gate of its own when it started (one `no-portuguese-wire.test.ts` per package,
-plus the event, operation and database gates), and what was missing was the
-paper. `packages/core/test/glossary-wire-docs.test.ts` reads §2.1, §5.1 and
-§5.2 of this file at run time and refuses any of those spellings inside a
-backtick span or a fenced block in the specifications — the prose around them
-stays Portuguese, which is what D18 decided.
-
-Four columns of `job` and of `session` that §4.2 does not register are still in
+Four columns of `job` and of `session` are not registered in §4.2 and are still
 Portuguese (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
-`transcricao_tamanho_original`): closing the hole means adding rows here, and
-that is a ticket of its own, not the database child's.
+`transcricao_tamanho_original`). Closing that hole means adding rows here.
 
-The database speaks English **from the very first migration**, not from a
-renaming migration onward: D20 recreates the development databases, so t235
-rewrote `0001`–`0018` in place instead of stacking a nineteenth one that would
-rename what nobody had recorded yet.
+The database speaks English **from its very first migration**, not from a
+renaming migration onward: D20 recreates development databases, so `0001`–`0018`
+were rewritten in place rather than stacking a nineteenth that would rename what
+nobody had recorded yet.
 
-Complement, not substitute, of D18's already existing gate
-(`no-portuguese-identifiers.test.ts`): that one looks after code IDENTIFIERS,
-and masks exactly what this document maps — the value on the wire.
+This complements D18's identifier sweeps rather than replacing them: those look
+after code IDENTIFIERS, and this one maps the value on the wire.
 
 ## How to read the tables
 
-- **`surface`** is the tag of the child ticket the row belongs to: `api`,
+- **`surface`** is the tag of the surface the row belongs to: `api`,
   `events`, `proposal-ops`, `database`, `routes-cli-report`. The sixth,
-  `cost-lens`, arrived with t255 and is nobody's child: it is the vocabulary the
+  `cost-lens`, is the vocabulary the
   cost lens puts on the wire (§5.5), and it exists separately because the gate
   that reads it is that package's and only that one. The seventh, `flow-lens`,
-  is the same story for the flow lens (§5.6, t264) — a tag of its own for the
+  is the same story for the flow lens (§5.6) — a tag of its own for the
   same reason, with one more on top: the two lenses write into the SAME
   `proposal.evidence`, and a single tag over both would hide that each has its
   own set of keys. A surface may appear in more than one table (`api` is split
   by group, to fit in the head of whoever reads it); what counts is the row's
   tag, not the section's title.
 - **`today`** is the Portuguese term as it is written in the code right now.
-  **`becomes`** is the English name the rename will use. **`defined in`** is the
-  file that defines the term — the child ticket's starting point.
+  **`becomes`** is the English name it took. **`defined in`** is the
+  file that defines the term.
 - When a citation names a LINE (`static.ts:75,88`), the line is the one of THAT
   table row's name, not of the block around it: `erro` points at `error:` and
   `mensagem` points at the `message:` right below, even when the two sit in the
   same body. A comma separates independent lines; a hyphen is a block, and one
   line of it writing the name is enough. `glossary-wire.test.ts` resolves the
-  citations of the files it lists (the ones t255 wrote, which were born wrong
-  for having been copied out of the ticket's text instead of re-read in the
-  tree); the other ~139 have no gate yet and have drifted — whoever follows one
+  citations of the files it lists; the other ~139 have no gate yet and have drifted — whoever follows one
   of them checks before trusting it.
 - Two spellings of the SAME name (`criado_em` and `criada_em`, one column
   spelled by gender) go on one row, separated by ` / `: it is a single term,
@@ -122,8 +84,8 @@ The routes are already English (`/v1/jobs`, `/v1/input-requests`,
 ### 1.1 Entity fields
 
 The entity fields the API returns mirror the columns 1:1 — the complete table is
-**4.2**, and the API ticket translates by it. What stays here are the ones
-t213's inventory cites by name.
+**4.2**, and the API surface translates by it. What stays here are the ones
+the original inventory cited by name.
 
 | surface | today | becomes | defined in |
 |---|---|---|---|
@@ -140,8 +102,8 @@ t213's inventory cites by name.
 | api | `depende_de` | `depends_on` | `packages/core/src/domain/intake.ts` |
 
 The last four are the intake item's (`DraftItem`), which travels in the body of
-`POST /v1/intake` and comes back in `GET /v1/intake/:id`. They arrived with
-t255, not with the API child: t226 and t229 treated the item as a third party's
+`POST /v1/intake` and comes back in `GET /v1/intake/:id`. They arrived late: the item was
+first treated as a third party's
 format ("the glossary maps none of them", said the comment), when D20's own text
 already said "the API JSON's fields and query parameters". `ref` and `tier` get
 no row because they are already English.
@@ -194,8 +156,8 @@ The screen has an envelope of its own for the four answers it INVENTS (the
 control plane down, a write from another origin, a body too large, and a static
 file that does not exist). It is the same envelope — that is what the citation
 of `proxy.ts` and of `static.ts` on the first two rows is — and the four codes
-it carries arrived with t255, when the v2 review found the screen still
-answering `{erro, mensagem}` four tickets after the core had converged.
+it carries arrived late, when a review found the screen still
+answering `{erro, mensagem}` well after the core had converged.
 
 `codigo`, `mensagem` and `alvo` are also the three keys of every problem in the
 intake's item report (`domain/intake.ts`), which travels inside the `400` of
@@ -292,7 +254,7 @@ already means something else: `pergunta.tipo=pergunta` is the escalation KIND
 (question or approval) and becomes `question`, while `pergunta` on its own is
 the entity and becomes `input_request` (2.3, 4.1).
 
-`sessao.status = 'aberta'` entered this table with the database child (t235): it
+`sessao.status = 'aberta'` entered this table with the database child: it
 is the only status column with no `CHECK`, which is why nobody had registered it
 here — the value is born in migration `0003` and is read back by the route that
 closes the session. It becomes `open`, the same vocabulary as the
@@ -340,7 +302,7 @@ closes the session. It becomes `open`, the same vocabulary as the
 Not a JSON key: it is the name of the HTTP header every webhook and hook
 delivery carries, and the recipe published in `docs/spec/webhooks-events.md` §5
 is about it. It fell outside the lists of every D20 child — none of them looked
-at a header — and that is how it survived until t255. A header name is
+at a header — and that is how it survived to the end. A header name is
 case-insensitive: the specification writes `X-Cartografo-Signature`, the code
 writes the same thing in lowercase.
 
@@ -457,7 +419,7 @@ fields are in 1.6.
 
 ## 3. Proposal operations
 
-What the operation CARRIES has been English since t178 (`no` is a node of the
+What the operation CARRIES is English (`no` is a node of the
 document, and the document has `id`, `role`, `node_type`; `aresta` has `from`,
 `to`, `condition`). What is still Portuguese is the operation itself: its type
 name, its keys and the validation report. `de`/`para` become `from`/`to`
@@ -666,10 +628,10 @@ uses the entity name the API already publishes: `/perguntas` becomes
 
 What a person TYPES, and not only what starts with `--`: a subcommand is as
 typed as a flag, and `avaliar` sat one row outside the gate that would have
-caught it, because t230's reading filtered by `--`.
+caught it, because that reading filtered by `--`.
 
-`cost-surveyor`'s six rows arrived with t255. Three of them (`--execucao`,
-`--teto-tokens`, `--teto-segundos`) t230 had already renamed in the code, but
+`cost-surveyor`'s six rows arrived late. Three of them (`--execucao`,
+`--teto-tokens`, `--teto-segundos`) had already been renamed in the code, but
 left in a local array of that package's test instead of here, and the other
 three it declared outside its own scope. Neither of those was a decision: D20
 says "CLI flags" with no exception. The spelling comes from the rows already
@@ -713,7 +675,7 @@ same delivery, or the parity test falls.
 `alcançável` and the violation is annotated with that name. The term appears as
 the name of the example that exercises it
 (`schema/exemplos/grafo-invalido-no-inalcancavel.json`) and is here because
-t213's inventory cites it: the example file is renamed along with it.
+the inventory cites it: the example file is renamed along with it.
 
 | surface | today | becomes | defined in |
 |---|---|---|---|
@@ -747,7 +709,7 @@ read it.
 Two things are NOT here, and for different reasons. `tokens_total` is already
 English. And the CONTENT of `metrica_esperada` stays
 `{nome, direcao, de, para}`: it is `domain/hypothesis.ts`'s hypothesis format,
-frozen, and it is exactly what t255 started emitting — the key travels in
+frozen, and it is exactly what the lens emits — the key travels in
 English, what it carries does not travel at all.
 
 `IdentifiedCostRow` (`cost.ts`) is not here either: it is the layer `policy.ts`
@@ -779,10 +741,10 @@ its own (`flow-lens`) for §5.5's reason — it is one lens's vocabulary, read b
 one package's gate alone — and because the two lenses write into the same field
 with different key sets.
 
-t227 left these in Portuguese **on purpose**, and wrote so in `metrics.ts`'s
-header: they were free JSON (D15), no glossary row governed them, and no sibling
-lens had migrated. t255 migrated the sibling, and from there on the choice
-stopped being "not yet" and became "two languages in one column". t264 is what
+These were left in Portuguese **on purpose**, and `metrics.ts`'s header said
+so: they were free JSON (D15), no glossary row governed them, and no sibling
+lens had migrated. Once the sibling migrated, the choice
+stopped being "not yet" and became "two languages in one column". §5.6 is what
 closes it, and the first real crossing is what found it
 (`notes/2026-08-17-first-bets-run.md`, hole 7).
 
@@ -827,12 +789,11 @@ separates `evento.tipo` from `pergunta.tipo` in §4.2.
   step by step (migration, order, what to do with an already exported factory
   bundle) belongs to the database child ticket.
 - **The error envelope's final shape.** See 1.4.
-- **Whether `no-portuguese-wire.test.ts` exists.** Extending D18's gates to
+- **Whether a per-package wire gate exists.** Extending D18's gates to
   cover the value on the wire is the last child ticket (docs and gate), once
   there is an English wire to check.
 - **The brand and the frozen data.** `cartografo` is still `cartografo`. This
   document is written in English from D24 on, and the only Portuguese left in it
   is that brand name, the `today`/`becomes` pairs of every table — a map of
   retired names is written in retired names — and any path it cites that is
-  itself still Portuguese, waiting on its own renaming ticket (t282 for the
-  folders, D24's sibling tickets for the other documents).
+  itself still Portuguese, waiting on its own rename.

@@ -13,7 +13,7 @@ Two boundaries organize the whole document, and they are better read before any
 detail:
 
 - **The synthesizer registers nothing.** It stops at a draft file. What turns a
-  draft into a class is `cartografo import` ([t108](../../packages/core/src/cli/import.ts)),
+  draft into a class is `cartografo import` ([`cli/import.ts`](../../packages/core/src/cli/import.ts)),
   run by a person after they have edited the file. There is no `POST /v1/graphs`
   in this layer and its client does not even have the method — the same
   discipline that keeps `aplicar` out of the topografo's client.
@@ -101,7 +101,7 @@ prints the path + a one-line summary  ──▶  done. No POST.
 The order of the first two steps is a decision, not an accident: refusing an
 already registered class comes **before** the catalogue and before any session.
 Extending an existing lineage is a proposal flow
-([D13](../../DECISIONS.md), t118), and finding that out after spending a session
+([D13](../../DECISIONS.md)), and finding that out after spending a session
 is finding it out late. The error code echoes the API's
 (`classe_ja_registrada`, [`routes/graphs.ts`](../../packages/core/src/routes/graphs.ts))
 so that the two refusals are obviously the same refusal.
@@ -117,7 +117,7 @@ a floor of 3 characters per token, precisely so that a preposition does not
 score.
 
 The heuristic is the Jaccard of
-[t113](../../packages/core/src/domain/similarity.ts), **ported** into the runner
+[`domain/similarity.ts`](../../packages/core/src/domain/similarity.ts), **ported** into the runner
 rather than imported. It is the same trade the core already made when
 `domain/graph.ts` ported `scripts/validate-graph.mjs`: the runner is an ordinary
 client of the API ([D1](../../DECISIONS.md)/[D11](../../DECISIONS.md)), speaks
@@ -185,7 +185,7 @@ has already cost somebody an edit.
 session has no way of following — and the bill arrives as `grafo_invalido` after
 the person has already edited the draft.
 
-That is how t138 showed up in the alpha round: a draft obeyed every word of the
+That is how it showed up in the alpha round: a draft obeyed every word of the
 prompt and still came back with `soundness no_com_contrato`, because
 `contrato.verificacoes` has `minItems: 1` in the schema and the prompt said
 nothing about it. Two consequences became text:
@@ -272,7 +272,7 @@ already existed.
 |---|---|---|
 | `GET` | `/v1/classes` | Does the class already have a base graph? If it does, the command refuses before any session. |
 | `GET` | `/v1/graph-versions/:id` | Each class's current version, where `metadata.nome` and `metadata.descricao` come from for the scoring. |
-| `GET` | `/v1/skills` | The catalogue of registered capabilities ([t117](../../packages/core/src/routes/skills.ts)). |
+| `GET` | `/v1/skills` | The catalogue of registered capabilities ([`routes/skills.ts`](../../packages/core/src/routes/skills.ts)). |
 
 Three routes, **all of them reads**. The contract consumed from `/v1/skills` is
 the `{id, versao, hash, papel, descricao, entrada, saida, checks}` subset of the
@@ -286,8 +286,8 @@ is the only file to adjust.
 
 | Does not do | Why |
 |---|---|
-| Register or validate the synthesized graph | That is `cartografo import` (t108), unchanged. A second validator would give the same person two verdicts. |
-| Forking a variant | It is born of a proposal with evidence (D13, t118), not of synthesis. |
+| Register or validate the synthesized graph | That is `cartografo import`, unchanged. A second validator would give the same person two verdicts. |
+| Forking a variant | It is born of a proposal with evidence (D13), not of synthesis. |
 | Importing an external skill | That is D4's gate, with human review and contract derivation. Here the native registry is only read. |
 | Session telemetry (`sessao`/`evento`) | There is no `trabalho` and no execution to hang the session on. It arrives when there is a second consumer of the synthesis flow — the rule of two consumers. |
 | A multi-turn conversation with the copilot | One session only: resuming is outside `EngineAdapter` v0 ([`engine-adapter.md`](../formats/engine-adapter.md)). Editing the draft is the next turn, and it belongs to the person. |

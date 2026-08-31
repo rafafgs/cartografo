@@ -533,6 +533,20 @@ function stripRouteLabel(reported: Record<string, unknown>): Record<string, unkn
 }
 
 /**
+ * What a session that reported nothing is judged as (t333).
+ *
+ * An `output` schema describes the OBJECT a node produces, so the honest
+ * stand-in for "it ran and delivered no field" is the object with no fields —
+ * not `null`, which every such schema refuses on its type, including the ones
+ * that ask for nothing and have to keep accepting this close.
+ *
+ * Frozen and shared: it is only ever read, by ajv, and no validator in this
+ * package is configured to write defaults into what it checks
+ * (`domain/manifest.ts`).
+ */
+const EMPTY_REPORT: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
  * What closing a session answers: the session, plus the verdict on the report
  * it carried (t268).
  *
@@ -554,12 +568,16 @@ export interface FinishSessionResult {
   /** The closed session, exactly as it always came back. */
   session: Session;
   /**
-   * Whether the reported `output` was taken.
+   * Whether what the session reported — including reporting nothing — satisfies
+   * the schema its node pins.
    *
-   * Set on EVERY close, and `true` in two different situations that are the
-   * same one for the caller: nothing was reported (so there was nothing to
-   * refuse) and the report matched the schema. `false` only when the pinned
-   * skill's own `output` schema refused what was reported.
+   * Set on EVERY close, and `true` in two situations that are the same one for
+   * the caller: there was no schema to hold anything against, and the report
+   * satisfied the schema there was. An absent report is one of the things a
+   * schema can be asked about, and since t333 it IS asked: a skill that
+   * requires an output is not satisfied by a session that produced none, and
+   * this comes back `false` for it exactly as it does for a report that was
+   * present and wrong.
    */
   output_accepted: boolean;
   /** Why it was refused, when it was — the same list the event carries. */
@@ -588,6 +606,16 @@ export interface FinishSessionResult {
  * because core is the sole writer (D1): it is the one place that can look up the
  * registered skill without a second round trip, and the one place that must
  * never accept an event it cannot itself justify.
+ *
+ * A session that reported NOTHING is one of the reports that check reads, and
+ * not a case that skips it (t333). The skip is what let a node whose skill
+ * requires an output close accepted on a session that produced none: the work
+ * then advanced, and the failure came back three ticks later as an `input` the
+ * next dispatch could not assemble, naming a manifest that was in order. So
+ * absence is held against the same schema, standing `{}` in for it — a skill
+ * that asks for nothing still accepts it, and a skill that names a required
+ * field refuses it and says which. What "nothing reported" never becomes is a
+ * stored value: `output` is `null` on both sides of that verdict.
  *
  * A mismatch never blocks the close. `status`, `exit_code`, `usage`, `models`
  * and `transcript` are written exactly as they always were; the row's `output`
@@ -632,16 +660,28 @@ export function finishSession(
   const actor = resolveActor(input.actor, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
 
-  // Nothing reported, nothing to check: an absent `output` skips the lookup
-  // entirely, so the ordinary session pays no read for a feature it did not use.
+  // The schema is resolved on every close, whether or not anything was reported
+  // (t333). Until this ticket an absent `output` skipped the lookup to save the
+  // read, and that saving decided the verdict by accident: `problems` was hard
+  // `[]`, so a node whose pinned skill REQUIRES an output accepted a session
+  // that produced none, and the work moved on to a node that then had nothing
+  // to read.
   const reported = data.output as Record<string, unknown> | null;
-  const schema = reported === null ? null : resolveOutputSchema(db, row);
+  const schema = resolveOutputSchema(db, row);
   // The routing key comes out only when there IS a schema to hold the rest
   // against (t269, FR2): with nothing to check the report against, there is also
   // nothing to reserve a key from, and t253 AT3's doctrine stands — what was
   // reported is stored exactly as it was reported, `resultado` included.
   const judged = reported === null || schema === null ? reported : stripRouteLabel(reported);
-  const problems = judged === null ? [] : validateAgainstJsonSchema(schema, judged);
+  // `{}` and not `null` is what "reported nothing" is held against: the schemas
+  // in question describe the OBJECT a node produces, and a `null` would be
+  // refused by every one of them for its type — including the ones that ask for
+  // nothing and must keep accepting this close. An empty object is the honest
+  // reading of a node that ran and delivered no field: a schema with no
+  // `required` takes it, and one that names a field says which.
+  const problems =
+    schema === null ? [] : validateAgainstJsonSchema(schema, judged ?? EMPTY_REPORT);
+  // Never the stand-in: what is stored is what was reported, and nothing was.
   const output = problems.length === 0 ? judged : null;
   const accepted = problems.length === 0;
   // Written on every close, including the one where nothing was reported: the

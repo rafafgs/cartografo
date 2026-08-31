@@ -191,7 +191,7 @@ function createDisposableRepo() {
   mkdirSync(repo);
   const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
 
-  git('init', '--quiet');
+  git('init', '--quiet', '--initial-branch', 'main');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Spike t161');
   writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t161 manual proof\n');

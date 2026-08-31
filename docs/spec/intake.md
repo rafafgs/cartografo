@@ -60,7 +60,7 @@ and `depends_on` are optional. `ref` is an identity **local to the batch**: it
 exists so that one item can cite another, and it dies at confirmation, when every
 `ref` becomes a real `job.id`.
 
-The item's keys have spoken English since t255
+The item's keys are English
 ([the glossary](glossary-wire.md) §1.1): they travel in the body of
 `POST /v1/intake`, which is what D20 calls "the fields and query parameters of
 the API's JSON". Nothing answers to the old spelling — an item with `titulo`
@@ -91,11 +91,11 @@ first one (`validateItems`, line 242):
 | `dependency_cycle` | the dependencies close a cycle |
 
 Every problem is `{code, message, target}` — the same shape as the graph report
-(§5.3 of the glossary), and in English since t255 for the same reason as the
+(§5.3 of the glossary), and in English for the same reason as the
 item: that report IS the body of the `400`.
 
 The first two field codes are the ones the route beside it already answered with
-(`missing_required_field`, `invalid_field`): t255 folded the validator's two into
+(`missing_required_field`, `invalid_field`): the validator's two were folded into
 them rather than translating them, so that one item does not come back with two
 spellings of the same problem.
 
@@ -133,7 +133,7 @@ transaction falls if it does not affect exactly one row: confirming twice is a
 
 ### The confirmation's actor
 
-The gate is human by design, and `t124` authenticated the API — but a token
+The gate is human by design, and the API is authenticated — but a token
 proves possession, not identity: whoever presents the operator credential could
 be anybody on the team, and the control plane has no way of saying which. Rather
 than invent a user, the log honestly records the component that acted —
@@ -195,14 +195,14 @@ event's contract gained the two corresponding fields, **optional**
 |---|---|---|
 | `corpo` | TEXT | `null` when the job was born with a title alone |
 | `criterios_de_aceite` | TEXT (JSON `string[]`) | `null` is **not** `[]` |
-| `tier` | TEXT (`trivial` \| `standard`) | t175. `null` is **not** `trivial` |
+| `tier` | TEXT (`trivial` \| `standard`) | `null` is **not** `trivial` |
 
 `null ≠ []` is the distinction that matters to the node that refines: "nobody has
 written a criterion yet" and "I declare there is no criterion" are different
 statements.
 
 `null ≠ trivial` is the same discipline with a bigger price: `tier` is the cost
-triage the intake session does for free (t175, the ticket
+triage the intake session does for free (the ticket
 [`intake-generation.md`](intake-generation.md)), and it is where the runner takes
 the model that will run each node from. Reading absence as "trivial" would demote
 to a cheaper model every job born before this column existed, without anybody
@@ -233,10 +233,10 @@ Registered in [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
 | `POST /v1/intake/:id/discards` | `200 {draft}` | `404` · `409 draft_not_pending` |
 | `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `404` · `409 draft_not_pending` · `404 unknown_graph` · `400 validation_failed` |
 
-The codes, the keys and the filters above have spoken English since t226
+The codes, the keys and the filters above are English
 ([the glossary](glossary-wire.md) §1.4), and this table only found that out in
-t258's alpha round: it belongs to t122, and neither the API's migration nor
-t231's citation sweep came through here — §1.4 is precisely the glossary section
+an alpha round: it belongs to intake, and neither the API's migration nor
+the citation sweep came through here — §1.4 is precisely the glossary section
 that sweep does not read. What holds the table to account now is
 [`spec-intake-http-codes.test.ts`](../../packages/core/test/spec-intake-http-codes.test.ts):
 every status+code pair is resolved against the route's `refusal` calls, every
@@ -244,7 +244,7 @@ success body against the keys it returns, every filter against the query
 parameters it reads. The oracle is the route, never a word list — a table of
 statuses is a promise about what the client receives.
 
-Since t226 there has been **one** error envelope across the whole `/v1` surface —
+There is **one** error envelope across the whole `/v1` surface —
 `{error, message?}` with the route's context as a sibling property
 ([`routes/common.ts`](../../packages/core/src/routes/common.ts)) — and intake has
 no error shape of its own at all. What the confirmation still has of its own is
@@ -255,7 +255,7 @@ table's one code the route does not write comes from: a crooked event envelope
 `withValidation`, with the same `{error: "validation_failed", details: [...]}`
 body `POST /v1/jobs` returns. Whoever needs to fix their own `actor` should not
 have to learn a second error shape to find that out — it was a `500` until
-t139's alpha round. The refused draft is still `pending` and still confirmable;
+an alpha round. The refused draft is still `pending` and still confirmable;
 no `trabalho`, no dependency and no log row survives the transaction that fell.
 
 `PATCH` **replaces** the list of items, never merges: an intake that merged would
@@ -310,7 +310,7 @@ applied to intake.
 ## 8. What this layer does not do yet
 
 > **Generating the draft** from the request in natural language left this list
-> with t144, and is still outside **this layer**: what decomposes is a runner
+> elsewhere, and is still outside **this layer**: what decomposes is a runner
 > command that dispatches an agent session and arrives here through
 > `POST /v1/intake` like any other client — see
 > [`intake-generation.md`](./intake-generation.md). These routes still dispatch
@@ -324,6 +324,6 @@ applied to intake.
 - **A review and confirmation screen.** D11 puts observability and the inbox
   before an editing screen; here only the API is delivered, in the same spirit as
   the proposal inbox.
-- **Per-user identity** — `t124` closed the authentication of these routes, but
+- **Per-user identity** — these routes are authenticated, but
   it does not say WHO confirmed (see "The confirmation's actor") — and
   **submission idempotency**: sending the same request twice creates two drafts.

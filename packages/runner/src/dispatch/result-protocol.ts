@@ -117,7 +117,6 @@ export function resultProtocol(edges: readonly GraphEdge[], canAsk: boolean): st
   // Built with concatenation and not with a nested template literal: the D18
   // sweep's masking scanner reads one backtick at a time, and a template inside
   // a `${…}` silently desyncs it for the whole rest of the file
-  // (`test/no-portuguese-identifiers.test.ts`).
   const quoted = labels.map((label) => '`' + label + '`').join(', ');
 
   const preamble = routes

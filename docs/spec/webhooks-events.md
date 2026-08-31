@@ -3,7 +3,7 @@
 **API version:** `v1` · **Migration:**
 [`0008_webhook`](../../packages/core/migrations/0008_webhook.sql)
 **Origin:** extension point nº 5 —
-["events going out"](../../notes/2026-08-14-extension-and-quality.md) · **Ticket:** t142
+["events going out"](../../notes/2026-08-14-extension-and-quality.md)
 
 This document is the contract for whoever consumes, and it is deliberately
 self-sufficient: a whole receiver — signature verification included — can be
@@ -244,7 +244,7 @@ Before any write, the body is validated. An error is a `400`,
 Before the validation comes the credential: without a valid
 `Authorization: Bearer <token>`, `401` with `credencial_ausente` or
 `credencial_invalida`. It is the same credential that opens the whole `/v1`
-(`t124`) — there is no webhook-only scope.
+— there is no webhook-only scope.
 
 ---
 

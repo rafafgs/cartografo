@@ -65,8 +65,8 @@ opposite.
 Nothing is deleted, not even a dead lease: it becomes `expirada` with the reason
 recorded and stays in the table. It is the same append-only as
 [D15](../../DECISIONS.md) — and it is what makes it possible to cross "runner ×
-lost leases" without reconstructing anything, now that `t102`'s telemetry is in
-place (the `event` table, migration `0003`) and `t196` switched the emission on:
+lost leases" without reconstructing anything, now that the telemetry is in
+place (the `event` table, migration `0003`) and the emission is switched on:
 every lease's death is in the table **and** in the log.
 
 ---
@@ -106,15 +106,15 @@ half way:
 
 The two names are exactly those of `data.reason` in
 [`lease.expired.schema.json`](../../specs/events/schemas/lease.expired.schema.json):
-since `t196` every lease that dies records the event with the same reason the
+every lease that dies records the event with the same reason the
 column keeps, with no translation — one event per lease, even when the sweep
 kills several at once.
 
 ### A refusal's `reason` ≠ `expiration_reason`
 
 They are two distinct vocabularies and it is worth not confusing them.
-`expiration_reason` is a wire name **and**, since D20's fourth child (`t229`,
-which renamed `motivo_expiracao`), the column's: why a lease died. `reason` is a
+`expiration_reason` is a wire name **and**, since the database rename
+(`motivo_expiracao`), the column's: why a lease died. `reason` is a
 response field of `POST /v1/leases`: why a request **did not become** a lease
 (`job_already_leased`, `runner_cap`, `project_cap`).
 
@@ -141,10 +141,9 @@ write the lease                             → 201 {lease}
 new one there is a window; if it exists, N simultaneous requests all count the
 same number, all consider themselves inside the cap, and all write. The
 concurrency cap would become a suggestion. The guarantee is the same — and in the
-same form, a synchronous `db.transaction()` — that `aplicarProposta` uses in
-`t101`.
+same form, a synchronous `db.transaction()` — that `aplicarProposta` uses.
 
-**Proved with two real runners.** Until `t164` every cap test called the
+**Proved with two real runners.** Every cap test once called the
 repository or the route **in process**, one caller at a time: the guarantee above
 was a property of code nobody had seen happen.
 [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
@@ -161,7 +160,7 @@ for work is exactly who has an interest in discovering that a lease died. In the
 same transaction, the request that finds the expired lease is the request that
 replaces it — there is no instant in which the job is free and nobody noticed.
 That is why there is no sweep route: a trigger that ran with nobody asking for
-work is only useful once there is a concrete consumer (`t107`'s screen, or a
+work is only useful once there is a concrete consumer (the screen, or a
 project with every runner idle), and then it is additive.
 
 **A refusal is not an error.** A cap that was hit and a job that has an owner
@@ -193,14 +192,14 @@ stop the heartbeat + POST /v1/leases/:id/liberacoes
 
 Four design decisions hold that up:
 
-**Not every refusal means the same thing (`t208`).** The refusal's `motivo` is
+**Not every refusal means the same thing.** The refusal's `motivo` is
 what decides whether the loop carries on. `trabalho_ja_leased` is about the
 ownership of **that** job — another runner got there first —, it says nothing
 about the next candidate, and it is the common answer of a healthy pool: try the
 next. `teto_runner` and `teto_projeto` are about **capacity**, and the capacity
 belongs to this runner or this project, not to this job: every remaining
 candidate of the same pass would come back with an identical answer. The tick
-ends there. Before `t208` it went on asking, and a full project cost one
+ends there. It once went on asking, and a full project cost one
 `POST /v1/leases` per candidate to hear again what the first had already said.
 Ending early is not giving up — the loop asks again at the next interval, and by
 then some lease may have been released or expired.
@@ -223,28 +222,28 @@ the server gives the runner up for dead. Whoever passes an explicit
 lets the lease itself expire underneath the dispatch.
 
 `despachar` is an **injected callback** and is the only seam with the
-[`EngineAdapter`](../formats/engine-adapter.md) (`t104`): this layer opens no
-session at all. Whoever closes the cycle with a real session (`t106`/`t109`)
+[`EngineAdapter`](../formats/engine-adapter.md): this layer opens no
+session at all. Whoever closes the cycle with a real session
 passes the adapter through here without touching the controller.
 
-**One process, one session at a time — and the flag says so (`t208`).** The
+**One process, one session at a time — and the flag says so.** The
 `tick()` asks for **one** lease per pass and waits for the whole dispatch before
 the next pass exists: a runner process never holds more than one active lease.
 `--declared-runner-cap` (`teto_runner` in the request, `runnerCap` in the
 options) is the cap this runner **declares** to the control plane for its own
 `runner_id`, and not the concurrency inside the process — the server takes the
 SMALLER of it and the configured cap (`CARTOGRAFO_LEASE_CAP_RUNNER`) and is the
-one that imposes the result (D1). Until `t208` the flag was called `--runner-cap`
+one that imposes the result (D1). The flag was once called `--runner-cap`
 and the `--help` promised "simultaneous sessions of this runner", which was never
 true. Scaling is still **horizontal**: more runner processes under the same
 project, competing for the project cap through the server's transaction — the
 path
 [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
 already proves (§3). Running N sessions inside one process was refused by the
-founder in `t208`, and it is still reversible by another decision if the need
+founder, and it is still reversible by another decision if the need
 turns up concrete.
 
-### A failure before the session blocks, it does not retry forever (`t252`, `t270`, `t272`)
+### A failure before the session blocks, it does not retry forever
 
 A dispatch makes five reads **before** taking a worktree and opening a session:
 the job, the graph version, the engine's route, the executor environment and the
@@ -258,14 +257,14 @@ skill the node pinned. **Seven** failures on the path to the session reproduce
 | a skill outside the registry | `GET /v1/skills/:id?version=` answers 404 |
 | a pin that stopped matching | the registered hash ≠ the hash the node declares (D4) |
 | a placeholder that does not resolve | `{{input.<path>}}` with no value in the node's input |
-| an unreadable test bench (`t270`) | `git` refused at the configured path |
-| a permission policy the engine cannot apply (`t272`) | `startSession` throws `SessionStartError` with the prefix `permission policy unsupported: `, before the spawn |
+| an unreadable test bench | `git` refused at the configured path |
+| a permission policy the engine cannot apply | `startSession` throws `SessionStartError` with the prefix `permission policy unsupported: `, before the spawn |
 
-The sixth arrived with `t270`, along with the read that produces it — the
+The sixth arrived later, along with the read that produces it — the
 executor environment of the section just below.
 
 The seventh is the only one that happens **after** the worktree, inside
-`startSession` — and it is the one the `t109` run caught live: the
+`startSession` — and it is the one a real run caught live: the
 `testar-alpha` node declared `rede` by domain, the `claude-code` adapter has no
 way of expressing that, and the dispatch blew through **38 leases in two
 minutes** without opening a single session
@@ -281,7 +280,7 @@ from a momentary `EMFILE`, and codex's resume refusal is unreachable today. They
 fall under the ceiling of the subsection below, which is a strictly weaker
 statement — and a safer one.
 
-Until `t252` the first five **blew up**; the seventh, until `t272`. The error
+The first five once **blew up**, and so did the seventh. The error
 went up from the dispatch, up from the `tick()`, and the `cartografo-runner run`
 loop did the only thing it knows how to do with a failed tick: it wrote a line to
 stderr and asked again at the next interval (`--interval-ms`, two seconds by
@@ -303,13 +302,13 @@ Three limits that are part of the decision:
 
 **Only those seven.** Any other error of the same window — a 500, a 502, a 503, a
 network timeout, the 404 of reading the **job itself** — still blows up, and is
-still retried at the next interval (with a ceiling, since `t272`: see the
+still retried at the next interval (with a ceiling: see the
 subsection below). A control plane that is down passes on its own; blocking a job
 over it the first time would be asking a person to undo a hiccup by hand. That is
 why the classification is a pure, closed module
 (`packages/runner/src/dispatch/pre-session-failure.ts`): the boundary is the
 file's contents, and a new cause is another ticket's decision — which is exactly
-how the sixth came in (`t270`): a new pre-session read appeared, its refusal
+how the sixth came in: a new pre-session read appeared, its refusal
 reproduces on every retry, and a cause nobody classifies is a loop nobody sees.
 
 **The `tick()` carries on in the same pass.** A block is neither refused capacity
@@ -323,9 +322,9 @@ that won no lease at all.
 engine process and no token spent. The seventh happens with the tree already in
 hand: it is given back (retained, as on every error exit) before the block is
 posted, and even so no session exists for the control plane. A failure **after**
-the session came up is another matter — the next section's, which `t265` closed.
+the session came up is another matter — the next section's.
 
-#### And what nobody knows how to classify has a ceiling (`t272`)
+#### And what nobody knows how to classify has a ceiling
 
 The limit above is honest and, on its own, insufficient: everything the
 classifier answers `null` for went on retrying **forever**. A stubborn 5xx, a
@@ -356,7 +355,7 @@ cost.** It lives in an in-memory `Map`, inside the closure
 `createClaudeCodeDispatch` returns, and it is **not** the same fact as
 `job.blocked`'s `consecutive_failures`: that one counts `failed` **sessions** of
 the `(job, node)` pair and lives in the control plane precisely because it
-crosses leases and processes (`t265`, the section above). A pre-session failure
+crosses leases and processes (the section above). A pre-session failure
 creates no row in `sessao` at all — there is nothing for that query to see —, and
 inventing one would make the table lie about what ran. Building a parallel
 counter in the core would cost a new column, a new event and a new route for a
@@ -368,7 +367,7 @@ What is given up is written down, not swept under the carpet: the sequence
 own. Both err on the same side — the job retries *more* than the ceiling, never
 less —, which is the safe direction to err in.
 
-### The executor environment: what only the machine knows (`t270`)
+### The executor environment: what only the machine knows
 
 A dispatch assembles the node's input from **two** sources, and the split between
 them is this section's whole subject: who answers for each key.
@@ -379,7 +378,7 @@ them is this section's whole subject: who answers for each key.
 | `input.project.aplicacao`, `input.project.arquivos_de_registro` | the graph's **`project`** | The class's **static** configuration: versioned with the document, proposable and reversible like any other part of it ([graph.md](graph.md)). |
 | `input.banco_de_testes.*`, `input.referencia.*` | the **runner**, through [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | A file-system path and a live commit. Neither of the two is graph data, and neither survives being stored. |
 
-The third row is the one `t270` opened. `banco_de_testes.caminho` names a
+The third row arrived last. `banco_de_testes.caminho` names a
 directory on **one** machine — written into a graph version, it would be wrong
 for every runner but one — and `referencia.commit` is a live pointer, stale the
 instant anything keeps it. So both come from the process that is about to open
@@ -423,14 +422,14 @@ commit that already exist and merely reads them. A `git` that refuses here block
 the job with a reason (the sixth cause of the table above) instead of resolving a
 plausible value: a session that checked containment against a commit nobody chose
 is worse than one that did not open. Whoever keeps that bench **true** — whoever
-advances the main line into it and whoever prepares it — is `t273`, in the
-section just below: until it, that read watched a directory nobody ever moved.
+advances the main line into it and whoever prepares it — is the
+section just below: before it, that read watched a directory nobody ever moved.
 
-### Advancing the main line into the bench (`t273`)
+### Advancing the main line into the bench
 
 `integrate-branch`'s manifest has always promised this — "you never perform the
 final merge; ... it is IT that advances the main line onto the result" — and
-until `t273` nobody kept the promise. The t109 game run is the evidence: the session reported
+nobody kept the promise at first. A real game run is the evidence: the session reported
 `merge_commit ae41796` with every gate green, the bench's `main` stayed on the
 commit before it, and a person typed `git merge --ff-only ticket-1` by hand
 before `testar` could open
@@ -470,7 +469,7 @@ rule that applies doubly to a directory every integration touches — never a
 `git stash`. Reconciling two histories is `integrar`'s job, in a worktree of its
 own, with a session behind it.
 
-**A refusal stops the work; it does not throw.** Same reading `t252` and `t265`
+**A refusal stops the work; it does not throw.** The same reading
 wrote down: a `git` that refuses here refuses identically on every retry, so a
 throw would buy the same answer every couple of seconds forever with nothing in
 anybody's inbox. The runner posts `POST /v1/jobs/:id/blocks` with the command and
@@ -478,9 +477,9 @@ what it printed (`blockForMainLineAdvanceFailure`, the sixth block of
 [`blocks.ts`](../../packages/runner/src/dispatch/blocks.ts)), the job stays on
 its node, and the dispatch resolves `{blocked: true, reason}`.
 
-### A failure after the session came up also stops (`t265`)
+### A failure after the session came up also stops
 
-`t198` took a real thesis to the bets graph's `triagem` node and collected **four
+A real thesis went to the bets graph's `triage` node and collected **four
 refused sessions in a row** before the fifth worked: `stop_reason: "refusal"`,
 `stop_details.category: "reasoning_extraction"`, exit 1, zero output tokens and
 ~23k cache tokens burned on each one
@@ -532,13 +531,13 @@ the `PATCH /finish` and the refusal's `POST /blocks`, the job stays leasable for
 one more session — which, being refused too, blocks on **its own** first
 occurrence. The cost is one extra session, not the infinite loop.
 
-### A report the control plane refused holds the job at the node (`t268`)
+### A report the control plane refused holds the job at the node
 
 The third way a dispatch stops a job on its own account, and the first whose fact
 **comes from a read**: the other two the runner decides alone, with what it
 already has in hand.
 
-Since `t253` the `PATCH /v1/sessions/:id/finish` checks the reported `output`
+The `PATCH /v1/sessions/:id/finish` checks the reported `output`
 against the `output` schema of the skill the node pins — resolving `no_id` plus
 the job's `graph_version_id` down to the registry's `(id, version)` row — and,
 when it refuses, writes `null` into the column and the list of reasons into
@@ -590,11 +589,11 @@ posting both.
 
 What is left open, and is recorded as out of scope: the routing label
 (`resultado`) and the vocabulary of the skill's `output` schema (`outcome`,
-`evidencia`) are still two words for one concept — that is `t269`; and
-`announceFinishedExecution` (`t262`) still announces a finished round from
+`evidencia`) are still two words for one concept; and
+`announceFinishedExecution` still announces a finished round from
 `current_node_id` against `final_nodes` alone, without looking at the verdict.
 
-### Every call has a deadline (`t193`)
+### Every call has a deadline
 
 A control plane that is down answers, and every method of the client already
 knows what to do with the answer. The case that was missing is another: a control
@@ -603,10 +602,10 @@ proxy that held the request. With no deadline the call waits forever, and with i
 the `tick()` that made it, the loop that waits for the tick and the shutdown that
 waits for the loop.
 
-Since `t193` there is a single HTTP mechanism for every client of the runner
+There is a single HTTP mechanism for every client of the runner
 ([`http-client.ts`](../../packages/runner/src/controller/http-client.ts)), and it
 does three things: it puts a deadline on every request, it reads the **status
-before** decoding the body (`t156`'s discipline, now with a single owner —
+before** decoding the body (a discipline with a single owner —
 whoever answers an error is not always the control plane, and a 502 in HTML
 cannot become a raw `SyntaxError`) and it returns the error **the caller**
 built.
@@ -628,7 +627,7 @@ A call that runs past its deadline rejects with `AbortSignal.timeout`'s
 the failed tick is recorded and the loop asks again at the next interval, which
 is the retry mechanism that already existed.
 
-### Stopping always ends, and leaves no orphan session (`t193`)
+### Stopping always ends, and leaves no orphan session
 
 Stopping a runner is a request, and it has three stages:
 
@@ -669,12 +668,12 @@ runs in the lint over the whole repository, and it is exercised in the end-to-en
 test: the control plane comes up as a **separate process**, and the only surface
 between the two is the HTTP port.
 
-And, since `t143`, on another **machine**:
+And on another **machine**:
 [`cross-machine-dispatch.e2e.test.ts`](../../packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts)
 brings the binary up with `CARTOGRAFO_HOST=0.0.0.0`, reaches it over the
 interface's real IPv4 address (not `127.0.0.1`) and runs the whole cycle —
 granting, heartbeat, release — presenting **only** the credential pairing issued.
-It is what turns `t124`'s configurable `CARTOGRAFO_HOST` into a proven path, and
+It is what turns the configurable `CARTOGRAFO_HOST` into a proven path, and
 not an option nobody ever exercised. Where the machine has no external IPv4
 interface, the test skips instead of failing: what it would report there is the
 absence of a network, not a regression.
@@ -683,14 +682,14 @@ absence of a network, not a regression.
 
 ## 5. Endpoints
 
-All under `/v1` and, since `t124`, all demanding
+All under `/v1`, all demanding
 `Authorization: Bearer <token>` — the runner presents a credential on every call,
-like any other client of the API. Since `t196`, granting records `lease.granted`
+like any other client of the API. Granting records `lease.granted`
 and every lease the sweep kills records a `lease.expired`, both in the
 transaction that writes the row. What is still without a trace is the ordinary
 **release**, and for want of a type in the taxonomy — the item left over in §7.
 
-Since `t143` the runner's credential is **its own**, issued at pairing, and the
+The runner's credential is **its own**, issued at pairing, and the
 "who calls" column below is contract, not convention: whoever pairs, revokes and
 sees the whole fleet is the operator (a `usuario` credential), and the runner
 only reaches the four routes of its own dispatch plus `GET /v1/jobs`. The
@@ -780,9 +779,9 @@ SQLite driver (D1); repositories and routes are handed the database already open
 ## 6. `job_id` is an opaque integer
 
 `POST /v1/leases` **does not read the `job` table** and has no FK to it. The
-original reason was build order (the table was `t102`'s delivery, which has since
+original reason was build order (the table came first, and has since
 landed in migration `0003`), but the cut stays for the design reason — the same
-choice `t102` made for `graph_version_id`. Tightening the FK later is additive,
+choice made for `graph_version_id`. Tightening the FK later is additive,
 and it belongs to the ticket that wires the two sides together.
 
 The division of responsibility that produces is, in fact, the correct one:
@@ -800,25 +799,25 @@ Every item here is another ticket's declared scope, not an oversight:
 - **No event for the release.** The emission of
   [`lease.granted`](../../specs/events/schemas/lease.granted.schema.json)
   and [`lease.expired`](../../specs/events/schemas/lease.expired.schema.json)
-  has been switched on since `t196` — the columns already carried everything the
+  is switched on — the columns already carried everything the
   two events ask for (`runner_id`, `job_id`, `expires_at`,
   `expiration_reason`), and it was a direct mapping. **What is left over is the
-  bigger gap:** `t98`'s taxonomy does not declare `lease.released`, and the
+  bigger gap:** the taxonomy does not declare `lease.released`, and the
   reference reducer
   ([`reconstruct-state.mjs`](../../specs/events/reducers/reconstruct-state.mjs))
   projects `leases` with `active`/`expired` alone. The table has three states, so
   either the taxonomy gains a `lease.released`, or the event projection stays
   blind to the ordinary close — which is the most common case of all. Growing the
-  taxonomy is another ticket's decision; `t196` switched on the two types that
+  taxonomy is a separate decision; the two types that are switched on
   already had a contract and did not touch it.
 - **Really opening a session** through the `EngineAdapter` — `despachar` is an
-  injected callback (`t106`/`t109`). **Built by `t106`:**
+  injected callback. **Built:**
   [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts) is
   an implementation of that callback — it opens the session, records
   `session.opened` and `session.finished`, and turns an escalation request into a
   question through the API ([human-escalation.md](human-escalation.md)). The
   controller still does not know an engine exists: nothing in this file changed
-  for that to happen, which was the point of the seam. **Closed by `t161`:** the
+  for that to happen, which was the point of the seam. **Closed:** the
   node's instruction comes from the registered graph, no longer from a literal —
   [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts) reads
   the snapshot once per dispatch and
@@ -826,7 +825,7 @@ Every item here is another ticket's declared scope, not an oversight:
   fetches the pinned skill, checks the hash (a pin that does not match does not
   dispatch, D4) and renders the instructions, the node's contract, the checks and
   the permissions into the session. The **permissions** the manifest declares
-  started holding in the same movement. **Closed by `t259`:** the two holes left
+  started holding in the same movement. **Closed:** the two holes left
   in that same seam — `resolveInput`, which resolved `{}` and made every
   placeholder fail closed, now reads the real projection
   ([`GET /v1/jobs/:id/context`](../../packages/core/src/domain/context.ts),
@@ -836,7 +835,7 @@ Every item here is another ticket's declared scope, not an oversight:
   taught to return anything in it, now closes the turn with a `resultado` block
   ([`result-protocol.ts`](../../packages/runner/src/dispatch/result-protocol.ts))
   that the dispatch sends to `/finish` as `output` — which is exactly what the
-  next node's projection reads. **Corrected by `t267`:** what a session receives
+  next node's projection reads. **Corrected:** what a session receives
   today is four things, each with its own label — the manifest's body already
   interpolated, the **values** the skill's `input` names (the
   `### Valores de entrada` block, cut at 64 KB with a marker and a pointer to
@@ -847,14 +846,14 @@ Every item here is another ticket's declared scope, not an oversight:
   only the placeholders the manifest had remembered to cite, and was introduced
   to the node's `saida_schema` as though it were the validator — which it is not
   ([graph.md](graph.md)). What is still pending through the same hole is the
-  **budget the skill declares**: `t163` gave the session two watchdogs (a wall
+  **budget the skill declares**: the session has two watchdogs (a wall
   clock and silence), with the manifest declaring `orcamentos` and the runner
   resolving by the smaller of the two
   ([`resolveBudget`](../../packages/runner/src/engine/resolve-budget.ts)), but
   whoever dispatches still uses the runner's ceiling — the field exists in the
   manifest and nobody reads it into the dispatch. It is one line in the same seam
-  `t161` opened, and it belongs to the ticket that feels the pain.
-- **Advancing a node and the end of a traversal** — also closed by `t161`, and
+  that opened, and it belongs to whoever feels the pain.
+- **Advancing a node and the end of a traversal** — also closed, and
   cited here because both were gaps of this layer. A session that ends clean and
   does not escalate makes the transition POST itself, down the edge the graph
   dictates: a single exit goes straight through, a gate with two or more exits
@@ -862,10 +861,10 @@ Every item here is another ticket's declared scope, not an oversight:
   matches no edge becomes a question for a person (`ator.tipo: "sistema"`)
   instead of a failure. And `listarTrabalhosLiberados` started filtering by
   `concluido` as well as `bloqueado`: the field comes out of `GET /v1/jobs` since
-  `t152`, derived from `current_node_id` against the version's `nos_finais`, and
+  derived from `current_node_id` against the version's `final_nodes`, and
   without reading it a job that landed on the final node stayed a candidate
   forever — the controller redispatched it to the same node on every tick.
-- **The runner's life-cycle hygiene** — **closed by `t207`**, and cited here
+- **The runner's life-cycle hygiene** — **closed**, and cited here
   because all three halves were gaps of this layer. (1) Every `EngineAdapter`
   drops the session's heavy state as soon as it ends — the `ChildProcess`, the
   caller's listener, the buffers and the timers — keeping only the terminal
@@ -878,7 +877,7 @@ Every item here is another ticket's declared scope, not an oversight:
   with the tree's path in the reason, and does not advance — the old premise
   ("what was committed already lives in the branch's history") only held while
   the session committed, and nothing obliges it to commit. No new field in
-  `/finish`: that route's vocabulary is `t213`'s (D20). (3)
+  `/finish`: that route's vocabulary is the glossary's (D20). (3)
   [`cartografo-runner prune`](../../packages/runner/src/cli/prune.ts) collects
   what is left over — `ticket-<id>-<hex>` directories that `git worktree list`
   recognizes and `ticket-<id>` branches —, asking the control plane, job by job,
@@ -898,7 +897,7 @@ Every item here is another ticket's declared scope, not an oversight:
   and no acceptance criterion written anywhere in the repository. Revisit when
   there is a concrete use case.
 - **A cap configuration table** per runner or per project (§5).
-- **A sweep of the expired ones decoupled from the dispatch** (§3). What `t164`
+- **A sweep of the expired ones decoupled from the dispatch** (§3). What is
   closed here is not the trigger but the **visibility**: `GET /v1/runners` (§5)
   and the screen's `/runners` page show, per runner, how many leases it holds,
   when it was last heard from and which job it lost to the TTL — and
@@ -912,7 +911,7 @@ Every item here is another ticket's declared scope, not an oversight:
   pain.
 - **A WIP limit per stage of the graph** — here there is only the blunt cap on
   concurrent sessions.
-- **Reissuing a credential for an already paired `id`.** `t143` closed the
+- **Reissuing a credential for an already paired `id`.** Pairing closed the
   issuing at pairing and the revocation (§5), but only the `201` path issues: a
   runner that was revoked or lost its token comes back by pairing a new `id`. A
   rotation route is additive, and it belongs to the ticket that feels the pain in

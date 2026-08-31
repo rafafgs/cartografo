@@ -138,7 +138,7 @@ Since the hash IS the identity, a result identical to a version that already
 exists in the lineage is not a new version: it is a proposal with no effect, and
 applying it is refused (§5).
 
-Implementation: [`packages/core/src/dominio/hash.ts`](../../packages/core/src/dominio/hash.ts)
+Implementation: [`packages/core/src/dominio/hash.ts`](../../packages/core/src/domain/hash.ts)
 (the same `canonicalizar` function as `scripts/validar-bundle-fabrica.mjs`).
 
 ---
@@ -215,7 +215,7 @@ Five operations are the minimum that proves the apply/soundness/revert cycle —
 not the topografo's final vocabulary. Growing is additive, and the rule of two
 consumers says to wait for a second real consumer before freezing.
 
-Implementation: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/dominio/operacoes.ts).
+Implementation: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/domain/operations.ts).
 
 ### 3.1 The semantic diff between two documents
 
@@ -297,7 +297,7 @@ There is no Fastify/ajv schema declared against
 Reconfiguring the compiler is possible and waits for somebody to need complete
 shape validation at the HTTP edge.
 
-Implementation: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/dominio/grafo.ts).
+Implementation: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/domain/graph.ts).
 
 ---
 
@@ -599,10 +599,10 @@ it comes with §4's whole report (`estrutura` and `soundness`), which is what
 makes it possible to point at the rule and the target instead of only saying
 "invalid".
 
-Implementation: [`routes/grafos.ts`](../../packages/core/src/routes/grafos.ts),
-[`routes/propostas.ts`](../../packages/core/src/routes/propostas.ts),
-[`dominio/hypothesis.ts`](../../packages/core/src/dominio/hypothesis.ts) (the
-verdict, pure) and [`repositorios/`](../../packages/core/src/repositorios). Only
+Implementation: [`routes/grafos.ts`](../../packages/core/src/routes/graphs.ts),
+[`routes/propostas.ts`](../../packages/core/src/routes/proposals.ts),
+[`dominio/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) (the
+verdict, pure) and [`repositorios/`](../../packages/core/src/repositories). Only
 `src/db/` touches the SQLite driver (D1); repositories and routes are handed the
 database already open.
 

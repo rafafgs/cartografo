@@ -53,7 +53,7 @@ hand, is an entity: `/jobs/424242` answers **404**.
 D11 asks two things of the screen: observability and the inbox. They arrived in
 different slices — this one and the inbox — and they share the same package, the
 same process and the same port. A single handler
-([`packages/screen/src/servidor.ts`](../../packages/screen/src/servidor.ts)) decides
+([`packages/screen/src/servidor.ts`](../../packages/screen/src/server.ts)) decides
 between them, in this order:
 
 | Path | Who answers |

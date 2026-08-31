@@ -7,9 +7,10 @@ rule. Previous game rounds: `notes/2026-08-17-t109-game-feature.md` (round 1),
 
 The mandate, in Rafael's words: bring the service up from the README, follow
 the execution every 15 minutes, and put a simple browser game — the Chrome
-T-Rex runner — through it, "a ideia é passar pelo grafo para testar e ter uma
-execução real funcionando". Three tickets were agreed for the game, and a
-fourth was added at the end to measure a graph mutation.
+T-Rex runner — through it,
+`a ideia é passar pelo grafo para testar e ter uma execução real funcionando`.
+Three tickets were agreed for the game, and a fourth was added at the end to
+measure a graph mutation.
 
 **What this note claims, in one sentence:** the learning loop closed end to
 end for the first time — four real traversals, two surveyor lenses proposing
@@ -277,7 +278,7 @@ tool refused to commit while a job stood on `develop` or `integrate` — but
 they moved `main` under job 2, so its `integrate` had to do a real merge
 (`cc7e03d "Merge branch 'main' into ticket-2"`) instead of a fast-forward, and
 job 1's `deploy` recorded the operator's docs commit as the reference it
-checked against. Rafael noticed the commits ("VC QUE ESTÁ COMITANDO?") and the
+checked against. Rafael noticed the commits (`VC QUE ESTÁ COMITANDO?`) and the
 rule became: **the operator's log is one commit at the end of a round, with an
 author of its own** ("cartografo operator (Claude)"), never interleaved with
 the graph's work on the bench. All commits by the graph's sessions carry the

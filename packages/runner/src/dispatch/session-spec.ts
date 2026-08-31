@@ -46,6 +46,16 @@ export interface SessionSpecConfig {
   envOverrides?: Readonly<Record<string, string>>;
   /** The manifest's policy when there is one, the dispatch's otherwise. */
   permissions?: SessionPermissions;
+  /**
+   * The command this node RUNS, for a node whose skill declares one (t332).
+   *
+   * The only field here with no fallback of its own, and that is the point: a
+   * command comes from the registered manifest or it does not exist. There is no
+   * dispatch-level default to inherit — `DEFAULT_INSTRUCTIONS` can stand in for
+   * a body nobody registered, and nothing can stand in for a program nobody
+   * declared.
+   */
+  command?: { readonly argv: readonly string[]; readonly envAllowlist?: readonly string[] };
 }
 
 /**
@@ -109,5 +119,9 @@ export async function buildSessionSpec(
     ...(modelTier === undefined ? {} : { modelTier }),
     ...(config.envOverrides === undefined ? {} : { envOverrides: config.envOverrides }),
     ...(config.permissions === undefined ? {} : { permissions: config.permissions }),
+    // Absent for every agent node, which is every node of every graph registered
+    // before t332: the two agent adapters read absence, and the spec they get is
+    // byte-identical to the one they got before this field existed.
+    ...(config.command === undefined ? {} : { command: config.command }),
   };
 }

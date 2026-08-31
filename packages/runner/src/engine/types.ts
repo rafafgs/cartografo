@@ -159,6 +159,38 @@ export interface SessionSpec {
    * the behaviour of every session opened before this field existed.
    */
   readonly permissions?: SessionPermissions;
+
+  /**
+   * The command this node RUNS, when the node runs a command instead of a model
+   * (t332).
+   *
+   * The tenth additive growth of the frozen interface, and the first one that is
+   * meaningful to exactly one adapter. That is not a violation of boundary 1 —
+   * it is the same shape `permissions` already has, read from the other end: the
+   * field is engine-neutral vocabulary (an argv, a list of environment variable
+   * names), every adapter is free to ignore it, and the one that reads it is the
+   * one whose engine has no model to send `instructions` to.
+   *
+   * Absent means what it has always meant: this session is an agent session, the
+   * two agent adapters build their own argv out of `instructions` and `prompt`,
+   * and the spec is byte-identical to the one they got before this field
+   * existed. Present is a `shell` node, and there `instructions` stops being the
+   * thing that executes and becomes what it is in the registry — documentation
+   * for whoever reads the manifest.
+   *
+   * `envAllowlist` is the interface's spelling of the manifest's
+   * `command.env_allowlist`, translated at the one place the two vocabularies
+   * meet (`render-skill-instructions.ts`, exactly as `permissions` is). What it
+   * names are variables of the RUNNER'S OWN environment that the child may read;
+   * absent means it may read none of them, which is the opposite default from
+   * the full inheritance an agent session gets, and it is deliberate: an agent
+   * adapter has a documented, accepted legacy behaviour to preserve
+   * (`README.md`, "How to run it") and a shell node has none.
+   */
+  readonly command?: {
+    readonly argv: readonly string[];
+    readonly envAllowlist?: readonly string[];
+  };
 }
 
 /**

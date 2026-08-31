@@ -68,19 +68,28 @@ import {
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
+  decodeShellSessionText,
 } from '../dispatch/session-text.ts';
 import { GitWorktreeManager } from '../dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../engine/claude-code-adapter.ts';
 import { CodexAdapter } from '../engine/codex-adapter.ts';
+import { ShellAdapter } from '../engine/shell-adapter.ts';
+import { SHELL_ENGINE_NAME } from '../engine/shell-command.ts';
 import type { EngineAdapter } from '../engine/types.ts';
 
 /**
  * The engines a packaged runner can be pointed at.
  *
- * The two adapters that exist, and it is not a coincidence that there are two:
- * t141 froze the `EngineAdapter` interface only once a second consumer had
- * shipped (rule of two consumers). A third name here means a third adapter, not
- * a third branch.
+ * The two AGENT adapters, and it is not a coincidence that there are two: t141
+ * froze the `EngineAdapter` interface only once a second consumer had shipped
+ * (rule of two consumers).
+ *
+ * `shell` is deliberately NOT here, and the third adapter arriving in t332 did
+ * not change it. What `--engine` selects is which agent CLI this process
+ * authenticates as — a credential, a preflight, a model catalog, one per
+ * process — and `ShellAdapter` has none of those to choose between. It is
+ * registered unconditionally instead, beside whatever this flag picked
+ * ({@link buildEngineRoutes}).
  */
 export const ENGINE_NAMES = ['claude-code', 'codex'] as const;
 
@@ -252,6 +261,52 @@ export function defaultEngineFactory(engine: EngineName): EngineRoute {
     : { adapter: new ClaudeCodeAdapter(), decodeSessionText: decodeClaudeCodeSessionText };
 }
 
+/**
+ * Everything one runner process can route a node to: the selected agent engine,
+ * and `shell` (t332, FR9).
+ *
+ * **`shell` goes in unconditionally, with no flag to turn it off**, and there
+ * are two reasons — one about what it costs, one about what the alternative
+ * costs.
+ *
+ * It costs nothing. Every other engine in this table is a CLI that has to be
+ * installed and authenticated, which is exactly why `--engine` exists: a runner
+ * declares which one it can actually reach. `ShellAdapter` has no binary of its
+ * own to find, no credential to present and no preflight that can fail, so an
+ * operator opting out of it would be opting out of nothing.
+ *
+ * And the alternative is unsafe today. The obvious shape — one shell-capable
+ * runner beside a claude-code one, both drawing from the same queue — loses the
+ * race it depends on: a node's engine is resolved AFTER the lease is taken, and
+ * an engine with no route raises `UnknownEngineError`, which is a hard block
+ * needing a human to clear (`pre-session-failure.ts`). The claude-code-only
+ * runner that won the lease of a shell node would STOP the job rather than hand
+ * it back. Until a runner can decline work it cannot run — or give a lease back
+ * as unclaimed — every runner has to be able to run every deterministic node.
+ *
+ * The selected engine is written first and `shell` second, so the shell key can
+ * never be shadowed by a factory that answered under that name.
+ *
+ * @param engine The agent engine `--engine` selected.
+ * @param engineFactory Builds that engine's route. The suite's seam.
+ * @returns The routing table, by declared engine name.
+ */
+export function buildEngineRoutes(
+  engine: EngineName,
+  engineFactory: (engine: EngineName) => EngineRoute = defaultEngineFactory,
+): Record<string, EngineRoute> {
+  return {
+    [engine]: engineFactory(engine),
+    // Built here and never asked of the factory: that seam is typed for the two
+    // names `--engine` accepts, and a runner's ability to run a deterministic
+    // node must not depend on whoever supplied it.
+    [SHELL_ENGINE_NAME]: {
+      adapter: new ShellAdapter(),
+      decodeSessionText: decodeShellSessionText,
+    },
+  };
+}
+
 /** One line about a failure, for stderr: name and message, never a stack. */
 function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -386,12 +441,13 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // answers 404 for a runner the control plane has never heard of.
   await client.registerRunner(options.runnerId);
 
-  // Exactly one route, and the key is the engine's own name: the dispatch
+  // Two routes, and the key of each is the engine's own name: the dispatch
   // resolves the engine from the NODE the work is standing on, so a node that
-  // declares another one lands on `UnknownEngineError` instead of quietly
-  // running somewhere nobody chose (t141, FR5).
-  const route = (options.engineFactory ?? defaultEngineFactory)(options.engine);
-  const engines: Record<string, EngineRoute> = { [options.engine]: route };
+  // declares a third one lands on `UnknownEngineError` instead of quietly
+  // running somewhere nobody chose (t141, FR5). Which two, and why `shell` is
+  // not a `--engine` choice, is {@link buildEngineRoutes}.
+  const engines = buildEngineRoutes(options.engine, options.engineFactory);
+  const route = engines[options.engine] as EngineRoute;
 
   // Preflight and then discovery, in that order and after the pairing — the
   // whole of FR11's precondition, in one call (t166, t186). Neither half is on

@@ -23,6 +23,13 @@
  * `engineRefFrame` carries the line THAT engine emits with its session id,
  * because Claude Code's `system/init` and Codex's `thread.started` do not have
  * the same shape.
+ *
+ * Since t332 there is a second injected point, and it exists because the kit
+ * stopped certifying only agent CLIs: `skip` lets an adapter declare, WITH the
+ * reason, a case its own contract makes meaningless (see {@link KitOptions}).
+ * The case is still registered and still reported — as skipped, carrying the
+ * reason — so an exemption costs a visible line of test output instead of a
+ * silently shorter list.
  */
 
 import assert from 'node:assert/strict';
@@ -97,6 +104,28 @@ export interface KitOptions {
   readonly engineRefFrame?: { readonly line: string; readonly expectedRef: string };
   /** Deadline when waiting for a terminal status. Default 15s. */
   readonly deadlineMs?: number;
+  /**
+   * Cases this engine's own contract makes meaningless, keyed `C1`…`C11`, each
+   * with the reason (t332).
+   *
+   * It exists because the kit stopped certifying only agent CLIs. C2 asks
+   * whether `instructions` and `prompt` reached the process, and on an engine
+   * that runs a declared command they must NOT — the manifest's body is
+   * documentation there, and injecting it to satisfy the case would be an
+   * adapter changing its behaviour to pass a test. C11 asks about content too
+   * large for the argv, which is a question about a channel that engine does not
+   * use.
+   *
+   * Two things this deliberately is not. It is not a way to make a red case
+   * green: an entry SKIPS the case and says so in the test output, so a reader
+   * sees the exemption and its reason rather than a shorter list. And it is not
+   * open-ended — a third-party adapter that skipped C1 or C3 would be declaring
+   * that it does not run sessions, and no reason string makes that conformant.
+   * The kit does not police which keys are used, because a rule enforced here
+   * would be a rule about engines nobody has written yet; what it enforces is
+   * that the exemption is WRITTEN DOWN, next to the adapter it exempts.
+   */
+  readonly skip?: Readonly<Record<string, string>>;
 }
 
 /** One outcome, as the collector saw it — with the instant it landed (C9). */
@@ -300,8 +329,20 @@ export function runConformanceKit(
 
   const linesForEnv = (lines: FakeLine[]): string => JSON.stringify(lines);
 
+  /**
+   * One case of the kit, skipped with its reason when this engine declared one.
+   *
+   * The key is the case's own label — the `C<n>` before the em dash — read off
+   * the title rather than passed beside it, so a case can never be registered
+   * under a name the caller cannot exempt it by.
+   */
+  const kitTest = (title: string, body: () => Promise<void>): void => {
+    const reason = options.skip?.[title.split(' ')[0] ?? ''];
+    test(title, reason === undefined ? {} : { skip: reason }, body);
+  };
+
   describe('EngineAdapter conformance kit', () => {
-    test('C1 — basic session', async () => {
+    kitTest('C1 — basic session', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
@@ -365,7 +406,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C2 — skill injection', async () => {
+    kitTest('C2 — skill injection', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
@@ -403,7 +444,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C3 — timeout', async () => {
+    kitTest('C3 — timeout', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
@@ -437,7 +478,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C4 — process death (SIGTERM ignored, grandchild alive)', async () => {
+    kitTest('C4 — process death (SIGTERM ignored, grandchild alive)', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
@@ -477,7 +518,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C5 — cancellation', async () => {
+    kitTest('C5 — cancellation', async () => {
       const longSessionSpec = (scenario: Scenario): SessionSpec => ({
         workingDir: scenario.workingDir,
         instructions: 'node instructions',
@@ -525,7 +566,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C6 — event harvesting', async () => {
+    kitTest('C6 — event harvesting', async () => {
       const sequence: FakeLine[] = [
         { stream: 'stdout', text: '{"type":"assistant","text":"structured frame 1"}' },
         { stream: 'stdout', text: 'dying scream in plain text, not JSON at all' },
@@ -587,7 +628,7 @@ export function runConformanceKit(
       assert.equal(ok.exitCode, 0);
     });
 
-    test('C7 — unknown handle', async () => {
+    kitTest('C7 — unknown handle', async () => {
       const adapter = newAdapter();
       const missing = 'handle-that-never-existed';
 
@@ -603,7 +644,7 @@ export function runConformanceKit(
       );
     });
 
-    test('C8 — stop race (the first stop wins)', async () => {
+    kitTest('C8 — stop race (the first stop wins)', async () => {
       // Two independent callers can order a stop: the adapter's own clock and
       // `cancel()`. Whoever gets there FIRST decides the terminal status —
       // "recording the reason HERE is what takes the watchdog out of the race
@@ -679,7 +720,7 @@ export function runConformanceKit(
       await race('C8 (cancelled, then timed_out)', 'cancelled', 'timed_out');
     });
 
-    test('C9 — inactivity', async () => {
+    kitTest('C9 — inactivity', async () => {
       // The second watchdog (t163): a session that keeps printing is alive, and
       // one that goes quiet is stuck. The case is built so that ONLY the
       // inactivity clock can end it — the wall clock is a minute away — and so
@@ -775,7 +816,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C10 — session continuation', async () => {
+    kitTest('C10 — session continuation', async () => {
       // The first case whose EXPECTED OUTCOME depends on what the adapter
       // declares: `hasResume` split the engines in two, and both halves are
       // conformant. What is not conformant is a third answer — accepting
@@ -907,7 +948,7 @@ export function runConformanceKit(
       }
     });
 
-    test('C11 — oversized prompt', async () => {
+    kitTest('C11 — oversized prompt', async () => {
       // The case that certifies the OTHER half of C2: not "did the content
       // arrive", but "does it still arrive when there is too much of it to fit
       // where it usually goes". The ceiling is the operating system's, not

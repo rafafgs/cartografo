@@ -58,6 +58,13 @@
  *    own projection of what the job and the nodes before it produced
  *    (`packages/core/src/domain/context.ts`). A path that projection does not
  *    carry still refuses loudly, which is what the rule is for.
+ *
+ *    And since t332 the same pass covers a second surface: a shell skill's
+ *    `command.argv` (see {@link renderCommand}). There the stake is one step
+ *    higher than a wrong prompt — an unresolved token would reach `spawn` as a
+ *    literal argument, so a step meant to run for one date would run for the
+ *    characters `{{input.date}}`. The interpolation is the same one, deliberately:
+ *    two implementations of a fail-closed rule is one of them failing open.
  * 4. **The session is shown the data it has and the schema it is judged by**
  *    (t267). Two gaps, one defect: a session was told what it would be checked
  *    against, and it was the wrong thing. The VALUES of `input` reached the model
@@ -92,6 +99,7 @@ import {
   ESCALATION_PROTOCOL,
   NEVER_ESCALATION_PROTOCOL,
 } from './escalation-protocol.ts';
+import { interpolate } from './interpolate-input.ts';
 import { renderInputValues } from './render-input-values.ts';
 import { resolveEscalationPolicy, type ResolvedNode } from './resolve-node.ts';
 import { hasOutputSchema, resultProtocol } from './result-protocol.ts';
@@ -126,6 +134,35 @@ export interface RegisteredSkill {
   checks: Record<string, unknown>[];
   permissions: Record<string, unknown>;
   instructions: string;
+  /**
+   * The command a SHELL skill runs, when the manifest declares one (t332).
+   *
+   * Optional, and absent for every manifest written before the field existed —
+   * which is every manifest of an agent node, then and now. Present, it is what
+   * executes: `instructions` stays required and stays rendered, but for this
+   * skill it documents the command for whoever reads the registry rather than
+   * being the thing a model is told.
+   *
+   * Typed loosely on purpose, like `permissions` beside it: what comes back from
+   * the registry is a projection of a document this module did not write, and
+   * {@link renderCommand} is where it becomes a shape the interface will accept.
+   */
+  command?: Record<string, unknown>;
+}
+
+/**
+ * The command of a shell skill, rendered — in the ENGINE interface's spelling.
+ *
+ * The manifest is a product format and spells its keys `snake_case`
+ * (`command.env_allowlist`); `SessionSpec` is the adapter's vocabulary and
+ * spells them `camelCase`. This is the one place the two meet, exactly as
+ * {@link resolveSkillPermissions} is for `permissions` — and for the same
+ * reason: a manifest key that leaked into the interface would make every
+ * third-party adapter learn a format it has no business reading.
+ */
+export interface RenderedCommand {
+  readonly argv: readonly string[];
+  readonly envAllowlist?: readonly string[];
 }
 
 /** Everything a resolved skill gives one dispatch. */
@@ -145,6 +182,14 @@ export interface RenderedSkill {
    * reads absence the same way.
    */
   permissions: SessionPermissions | undefined;
+  /**
+   * The command this node runs, with its placeholders resolved (t332).
+   *
+   * `undefined` for every skill that declares none, which is what puts a spec
+   * with no `command` in front of the agent adapters — byte for byte the spec
+   * they got before this field existed.
+   */
+  command: RenderedCommand | undefined;
 }
 
 /** Reads one route of the control plane, rejecting on a refusal. */
@@ -312,100 +357,51 @@ export function resolveSkillPermissions(permissions: unknown): SessionPermission
 }
 
 /**
- * Every `{{input.…}}` token of a manifest body, whatever is written inside it.
+ * Resolves a shell skill's `command` block against this node's input (t332).
  *
- * Deliberately wider than the path grammar the format declares
- * (`[a-zA-Z0-9_]+` segments joined by `.`): what is NOT a valid path — a dash, a
- * space, an empty tail — is caught by {@link isPath} below and reported as
- * unresolved, instead of being left in the text because the regex did not
- * recognize it. A malformed placeholder is still a placeholder that reached the
- * model, which is the whole bug this ficha closes.
+ * Three decisions, each with a plausible opposite:
  *
- * `[^{}]*` keeps the match inside one pair of braces, so a stray `{` cannot make
- * one token swallow the paragraph that follows it.
- */
-const PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
-
-/** The path grammar the manifest format declares. */
-const PATH = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
-
-/** Nothing resolved: the value the walk hands back when a segment is missing. */
-const UNRESOLVED = Symbol('unresolved');
-
-/**
- * Walks one dotted path through the node's input.
+ * - **Every argv element goes through the SAME interpolation the body goes through**
+ *   (`interpolate-input.ts`), so the grammar, the substitution rules and the
+ *   fail-closed refusal are one implementation and not two. Element by element,
+ *   never over the joined string: a token that spans two elements is not a token
+ *   this format has, and joining to interpolate would be inventing a quoting
+ *   problem this engine exists to avoid.
+ * - **`env_allowlist` is data, and is NOT interpolated.** Its entries are names
+ *   of environment variables; a manifest that wrote a placeholder there would be
+ *   naming a variable that cannot exist, and resolving it would let a node's
+ *   input decide which of the operator's secrets the child may read — a
+ *   permission chosen at run time by whoever fed the projection.
+ * - **A malformed block is dropped, never guessed at.** The registry validates
+ *   the manifest's shape at the door (`skill-manifest.schema.json`), so a
+ *   `command` that is not an object with a string argv is a projection that
+ *   changed underneath us. Absent is the safe reading: a `shell` node then meets
+ *   the adapter's own refusal, with a message naming the field, instead of
+ *   running an argv this function repaired.
  *
- * A segment that the object being walked does not carry AS ITS OWN — and that
- * includes every segment past a value which is not a plain object, an array
- * among them — is unresolved. Inherited properties are not carriers either:
- * `{{input.constructor.name}}` resolves against nothing, because what the
- * manifest is allowed to name is data somebody put in the input, never the
- * prototype chain of the object holding it.
- *
+ * @param declared The manifest's `command` block, as the registry has it.
  * @param input The already-validated input object of this node.
- * @param path A dotted path, already known to match the grammar.
- * @returns The value found, or {@link UNRESOLVED}.
+ * @param unresolved Accumulator shared with the body's own pass.
+ * @returns The rendered command, or `undefined` when the skill declares none.
  */
-function walk(input: Record<string, unknown>, path: string): unknown {
-  let current: unknown = input;
-
-  for (const segment of path.split('.')) {
-    if (!isObject(current) || !Object.hasOwn(current, segment)) return UNRESOLVED;
-    current = current[segment];
-  }
-
-  // A key present holding `undefined` cannot come out of parsed JSON, and it is
-  // not a value that can be written into a prompt either — `String(undefined)`
-  // in the middle of an instruction is exactly the silent wrongness this module
-  // refuses. It counts as unresolved, which is the fail-closed answer.
-  return current === undefined ? UNRESOLVED : current;
-}
-
-/**
- * What one resolved value looks like inside the instruction text.
- *
- * A string goes in verbatim, with no escaping and no quoting: the manifest is
- * reviewed at the import gate (D4), the text around the placeholder was written
- * to read as prose, and quoting it would be this module editing a reviewed
- * document. Anything else — number, boolean, `null`, array, object — goes in as
- * compact JSON, which is the one rendering that is unambiguous for a model to
- * read and never invents line breaks inside a paragraph.
- *
- * @param value The value the walk found.
- * @returns The text that replaces the token.
- */
-function substitute(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value);
-}
-
-/**
- * Resolves every placeholder of a manifest body against this node's input
- * (t204, FR2–FR6).
- *
- * One pass, and the refusal comes at the END of it: a body missing three fields
- * reports three, because the caller is about to go assemble an input and
- * discovering the gaps one dispatch at a time is a round trip per field.
- *
- * @param text The manifest's `instructions`, as the registry has it.
- * @param input The already-validated input object of this node.
- * @param unresolved Accumulator, filled in first-occurrence order, deduplicated.
- * @returns The interpolated text — meaningless unless `unresolved` stayed empty.
- */
-function interpolate(
-  text: string,
+export function renderCommand(
+  declared: unknown,
   input: Record<string, unknown>,
   unresolved: string[],
-): string {
-  return text.replace(PLACEHOLDER, (token, path: string) => {
-    const value = PATH.test(path) ? walk(input, path) : UNRESOLVED;
-    if (value !== UNRESOLVED) return substitute(value);
+): RenderedCommand | undefined {
+  if (!isObject(declared)) return undefined;
 
-    if (!unresolved.includes(path)) unresolved.push(path);
-    // Returned unchanged, and never read: the caller throws before this text
-    // reaches anybody. Leaving the token in place is what keeps a half-rendered
-    // body from ever looking like a rendered one while it is being inspected.
-    return token;
-  });
+  const argv = Array.isArray(declared.argv)
+    ? declared.argv.filter((element): element is string => typeof element === 'string')
+    : [];
+  if (argv.length === 0) return undefined;
+
+  const allowlist = textList(declared.env_allowlist);
+
+  return {
+    argv: argv.map((element) => interpolate(element, input, unresolved)),
+    ...(allowlist.length === 0 ? {} : { envAllowlist: allowlist }),
+  };
 }
 
 /** One fenced JSON section of the rendered text. */
@@ -581,8 +577,14 @@ export async function renderSkillInstructions(
   // Right after the pin, and before anything is composed: the content is
   // trusted only once its hash matched, and a body that cannot be completed
   // must not become a text somebody might ship by accident.
+  // ONE accumulator for both passes, and the refusal after both of them (t332):
+  // a shell skill whose body names one missing field and whose argv names
+  // another has two gaps in one input assembly, and reporting them one dispatch
+  // at a time is a round trip per field — the same reason the body's own pass
+  // collects instead of throwing at the first token.
   const unresolved: string[] = [];
   const body = interpolate(skill.instructions, input, unresolved);
+  const command = renderCommand(skill.command, input, unresolved);
   if (unresolved.length > 0) {
     throw new UnresolvedPlaceholderError(resolved.node.id, pin.id, unresolved);
   }
@@ -591,5 +593,6 @@ export async function renderSkillInstructions(
     skill,
     instructions: render(resolved, skill, body, input),
     permissions: resolveSkillPermissions(skill.permissions),
+    command,
   };
 }

@@ -196,7 +196,7 @@
           "type": "string",
           "minLength": 1,
           "description": "Which engine executes this node (t141). Optional: absent means the runner's default engine (claude-code), resolved at dispatch time and never at validation — which is why every graph written before this field goes on being valid without touching anything. Free text on purpose, like role and skill_ref.id: what refuses an unknown engine is the runner, with UnknownEngineError, and not a closed enum that would need a schema edit for every new adapter.",
-          "examples": ["claude-code", "codex"]
+          "examples": ["claude-code", "codex", "shell"]
         },
         "model": {
           "type": "string",

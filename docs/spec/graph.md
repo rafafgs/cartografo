@@ -247,8 +247,21 @@ inferring:
   silently falls back to another engine, which would make the telemetry lie about
   what really ran.
 
-The complete example:
-[`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json).
+**And not every engine runs a model** (`t332`). `"engine": "shell"` is a node
+whose pinned skill declares a `command` block
+([`skill-manifest.md`](../../specs/formats/skill-manifest.md)): the runner spawns
+that command instead of opening a session, and everything else about the node is
+unchanged — it reports through the same fenced result block, its report is held
+against the same pinned `output` schema, and a non-zero exit meets the same
+`max_consecutive_failures` ladder an agent failure meets. It needed no new field
+here and no schema change at all, which is what the paragraph above promised
+would happen the day a new adapter arrived: `engine` is free text, and `shell` is
+one more value of it.
+
+The complete examples:
+[`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json)
+and
+[`graph-valid-shell-engine.json`](../../schema/examples/graph-valid-shell-engine.json).
 
 ### `model`: which model of that engine executes this node
 
@@ -887,6 +900,7 @@ exercised by `tests/schema-grafo.test.mjs`.
 | [`graph-valid-minimal.json`](../../schema/examples/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
 | [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json) | **The master example.** See below. |
 | [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
+| [`graph-valid-shell-engine.json`](../../schema/examples/graph-valid-shell-engine.json) | The same shape with `"engine": "shell"`: the smallest document that puts a deterministic node — a command, no session, no model — inside the trail (§2). |
 | `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
 
 ### The master example: flowpilot's flow

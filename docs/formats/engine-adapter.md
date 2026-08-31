@@ -79,6 +79,14 @@
 >   consumer to a capability declared and never implemented: `claude-code`
 >   started declaring `hasResume`, `codex` still refuses the field at the door,
 >   and C10 certifies both sides.
+> - **`SessionSpec.command`** (t332, 2026-08-31) — the argv a node RUNS, for the
+>   third adapter (`ShellAdapter`), whose engine has no model to send
+>   `instructions` to. The first growth meaningful to exactly one adapter, and it
+>   fits the rule for the reason `permissions` does: engine-neutral vocabulary,
+>   optional, and ignorable by every adapter that does not read it. It is also
+>   the first growth that came from OUTSIDE — b3-radar's D15 named "a `shell`
+>   engine" as the answer for "the day the graph needs a deterministic node
+>   inside the trail", and this is that day.
 >
 > Where the feasibility analysis below and "Out of scope (v0)" disagree, **the
 > scope decision is the one that holds**: the table is an exploratory survey of a
@@ -274,6 +282,34 @@ export interface SessionSpec {
    * behaviour of every session opened before this field existed.
    */
   readonly permissions?: SessionPermissions;
+
+  /**
+   * The command this node RUNS, when the node runs a command instead of a model
+   * (t332).
+   *
+   * The tenth additive growth, and the first one that is meaningful to exactly
+   * one adapter. That is not a breach of boundary 1 — it is the shape
+   * `permissions` already has, read from the other end: the field is
+   * engine-neutral vocabulary (an argv, a list of environment variable names),
+   * every adapter is free to ignore it, and the one that reads it is the one
+   * whose engine has no model to send `instructions` to.
+   *
+   * Absent means what it always meant: an agent session, whose argv the two
+   * agent adapters build out of `instructions` and `prompt`, byte-identical to
+   * the one they built before this field existed. Present is a `shell` node, and
+   * there `instructions` stops being what executes and becomes what it is in the
+   * registry — documentation for whoever reads the manifest.
+   *
+   * `envAllowlist` names variables of the RUNNER'S OWN environment the child may
+   * read. Absent means it may read none of them, which is the opposite default
+   * from the full inheritance an agent session gets, and it is deliberate: an
+   * agent adapter has a documented, accepted legacy behaviour to preserve
+   * (`README.md`, "How to run it") and a shell node has none.
+   */
+  readonly command?: {
+    readonly argv: readonly string[];
+    readonly envAllowlist?: readonly string[];
+  };
 }
 ```
 
@@ -978,10 +1014,11 @@ What the review *changed* is in the next section.
 
 ## Adjustments made in review
 
-Ten changes and two explicit rejections — four from the original review, plus
+Eleven changes and two explicit rejections — four from the original review, plus
 what grew after the v1 freeze (item 5, t163; item 6, t166; item 7, t173; item 8,
-t172; item 9, t175; item 10, t203). Nothing here is decorative: items 1, 3, 6, 7,
-8 and 10 came out of running the CLIs, not out of reading documentation.
+t172; item 9, t175; item 10, t203; item 11, t332). Nothing here is decorative:
+items 1, 3, 6, 7, 8 and 10 came out of running the CLIs, not out of reading
+documentation.
 
 1. **A closed `stdin` became a normative invariant (new).** Running `codex exec`
    with a non-TTY stdin, the CLI printed
@@ -1252,6 +1289,63 @@ and the kit's C2, which verifies it by what the process received.
     `permissions` already follow — but it does not exist today, and a refusal
     path with no consumer is the same dead field this section rejects on every
     other line.
+
+11. **A node that runs a command instead of a model** (t332, 2026-08-31). The
+    third adapter, `ShellAdapter`, and the growth that carries it:
+    `SessionSpec.command`. It arrived from outside this repository — b3-radar's
+    D15 rejected route A of its own #331 (an agent session opened to invoke a
+    deterministic step) and left "a `shell` engine" as the right answer "for the
+    day the graph needs a deterministic node inside the trail". Its D18 then
+    recorded that day twice: one step running from `bin/crossing.sh` beside the
+    job "because a graph node cannot run a script", and another opening a whole
+    session to type one command.
+
+    **Additive, and it had to be.** The interface is frozen at v1, so the field
+    is optional and every adapter is free to ignore it; the two agent adapters
+    never read it, and a spec that carries none produces the argv it produced
+    before it existed. Nothing downstream of `onFinished` changed at all — the
+    fenced ```resultado``` block, the pinned `output` schema at `/finish`, the
+    routing, the retry ladder and the human escalation were already
+    engine-agnostic, and that is the whole reason route B is one more adapter
+    rather than a second execution model.
+
+    **Two divergences from the two agent adapters, both deliberate:**
+
+    - **the environment is closed by default.** `README.md` documents, as a
+      known and accepted risk, that an agent session inherits the operator's
+      whole shell environment through `buildEnvironment`. That is a
+      compatibility decision about sessions that predate the risk being written
+      down. A shell node has none to preserve, so it inherits nothing unless the
+      manifest's `command.env_allowlist` names it — including no `PATH`, so a
+      skill either spells an absolute path in `argv[0]` or allowlists it;
+    - **no permission policy of its own, and no refusal for one.** The other two
+      refuse a policy they cannot express, which is right for an engine that HAS
+      a permission surface and might enforce less than was asked. This one has
+      none to be dishonest about: what it really controls is the working
+      directory (invariant 7) and the environment. A skill's declared
+      `permissions` therefore describe the command's own promise and are not
+      enforced by this adapter. It is a real gap, written down as one, and
+      closing it is the OS sandbox this document has kept out of scope since v0
+      for every engine.
+
+    **The kit certifies nine of eleven cases** (`conformance.shell.test.ts`), and
+    the two exemptions are declared through a new `KitOptions.skip`, which
+    reports them as skipped WITH the reason instead of silently shortening the
+    list. C2 asks whether `instructions` and `prompt` reached the process, and
+    here they must NOT — the body is documentation and the argv is the behaviour
+    — so it is replaced by a case asking the same question in this engine's
+    vocabulary: the declared argv reaches `spawn` byte for byte, with no shell
+    and no quoting layer. C11 (oversized content in the argv) is out of scope:
+    the ceiling is real, the first known consumers are dates and file paths, and
+    dodging it is a ticket of its own.
+
+    **And this is the third copy of the process lifecycle.** The duplication was
+    a recorded decision at two adapters — no evidence yet of the right shape for
+    the abstraction — and it is deliberately not resolved here, because
+    refactoring two certified adapters to serve a third that has not run in
+    production would be the wrong ticket. What changed is that it stopped being a
+    hypothesis: three copies of a SIGTERM→SIGKILL escalation is a measured cost,
+    and the simplification the other two headers predicted now has its evidence.
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

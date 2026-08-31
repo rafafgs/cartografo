@@ -292,6 +292,8 @@ export function createClaudeCodeDispatch(
         silenceSeconds,
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
         ...(permissions === undefined ? {} : { permissions }),
+        // Only the manifest can supply this one, and only a shell skill does (t332).
+        ...(rendered?.command === undefined ? {} : { command: rendered.command }),
       });
 
       // What this session PRODUCES, wired in one place (t296): its lines, its

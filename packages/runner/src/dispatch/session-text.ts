@@ -150,3 +150,24 @@ export function decodeClaudeCodeSessionText(lines: readonly string[]): string {
 export function decodeCodexSessionText(lines: readonly string[]): string {
   return decode(lines, codexFrameText);
 }
+
+/**
+ * Everything a `shell` node printed, which is exactly what it printed (t332).
+ *
+ * The one decoder in this module with nothing to decode, and that is a fact
+ * about the engine rather than a stub. There are no frames: what reached
+ * `onOutput` is the command's own stdout and stderr, merged in arrival order,
+ * and a program's output is already the text. Anything else here would be this
+ * module inventing a format for somebody else's program.
+ *
+ * It exists as its own function rather than reusing one of the two above, and
+ * for a reason a passing test would hide: both of those RECOGNIZE frames, and a
+ * command that legitimately prints a JSON object — a `jq` filter, a `--json`
+ * flag on some tool — would hit `claudeCodeFrameText`'s `type: "result"` branch
+ * or `codexFrameText`'s "any object with a string `type` is this engine
+ * talking" rule and have its own output rewritten, or dropped, on the way to the
+ * report parser.
+ */
+export function decodeShellSessionText(lines: readonly string[]): string {
+  return lines.join('\n');
+}

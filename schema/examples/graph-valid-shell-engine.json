@@ -1,0 +1,103 @@
+{
+  "problem_class": "shell-engine-proof",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "A deterministic node inside the trail",
+    "description": "Two work nodes on one edge: the first declares engine \"shell\" and runs the command its pinned skill carries — no session, no model — and the second says nothing about an engine and falls into the runner's default. The smallest document that puts a script inside the graph instead of beside it (t332).",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-31",
+    "source": "a manual port (t332's deterministic-node proof)"
+  },
+  "nodes": [
+    {
+      "id": "measure",
+      "role": "analyst",
+      "node_type": "work",
+      "engine": "shell",
+      "description": "Runs the arithmetic as a command. Its pinned skill declares a `command` block, so the runner spawns that argv instead of opening a session.",
+      "skill_ref": {
+        "id": "echo-measurement",
+        "version": "1.0.0",
+        "hash": "sha256:3c028d3eacc4577883f11c1f49138d277bc8d7ff9a01cc2f8d7b812333ca63d3"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["measurement"],
+          "properties": {
+            "measurement": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["measurement"],
+          "properties": {
+            "measurement": { "type": "string", "minLength": 1 }
+          }
+        },
+        "produces": "measurement",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -n \"${MEASUREMENT}\"",
+            "description": "The command printed a measurement, and not an empty one."
+          }
+        ]
+      }
+    },
+    {
+      "id": "write-up",
+      "role": "developer",
+      "node_type": "work",
+      "description": "Writes down what the measurement said. Declares no engine: the one that runs is the runner's default engine, with a model behind it.",
+      "skill_ref": {
+        "id": "develop",
+        "version": "1.0.0",
+        "hash": "sha256:5c43c000df06145617b3a3df9baac269473eef51ce7235bcbf6a2ebd29f1a108"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["measurement"],
+          "properties": {
+            "measurement": {
+              "type": "object",
+              "required": ["measurement"],
+              "properties": {
+                "measurement": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["branch"],
+          "properties": {
+            "branch": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Does the write-up state the measurement it was given, without adding one nobody produced? Quote the line that carries it.",
+            "required_evidence": true,
+            "description": "A judgement about faithfulness to the deterministic step, with evidence of its own."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "measure",
+      "to": "write-up",
+      "condition": "sempre",
+      "description": "A single exit: what was measured always goes on to be written down."
+    }
+  ],
+  "initial_node": "measure",
+  "final_nodes": ["write-up"],
+  "custom_fields": []
+}

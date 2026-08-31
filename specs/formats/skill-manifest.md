@@ -22,6 +22,9 @@ also **read at execution time**: the runner fetches the exact version the node
 pins, refuses the dispatch if the hash does not match the registry's, and renders
 `instructions`, `checks` and `permissions` into the session
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
+Since `t332` it also renders `command`, for a skill that declares one: a node on
+the `shell` engine runs that argv instead of opening a session at all (see
+*`command`*).
 Since `t204` it also **interpolates** `{{input.<path>}}` inside `instructions`,
 failing closed: a path that does not resolve aborts the dispatch before any
 session is opened. What still does not exist is whoever **builds** that input —
@@ -36,6 +39,7 @@ dispatch.
 | [`skill-manifest.schema.json`](./skill-manifest.schema.json) | JSON Schema draft 2020-12; the normative definition. |
 | [`examples/skill-manifest.develop.json`](./examples/skill-manifest.develop.json) | A complete example, `role: "work"` — a behavioural port of flowpilot's `feature-dev`/`development.py`. |
 | [`examples/skill-manifest.verify-develop.json`](./examples/skill-manifest.verify-develop.json) | A complete example, `role: "gate"` — a behavioural port of flowpilot's `testing.py`. |
+| [`examples/skill-manifest.shell-echo.json`](./examples/skill-manifest.shell-echo.json) | A complete example, `role: "work"` on the **shell** engine — the smallest manifest that declares a `command` instead of being run by a model (`t332`). |
 | [`examples/skill-manifest.invalid.fixture.json`](./examples/skill-manifest.invalid.fixture.json) | A negative fixture, test material only: it proves the schema refuses a malformed manifest. |
 
 ## Why this format exists
@@ -80,7 +84,7 @@ Two things the format has to carry, and carries in a field rather than in prose:
 
 The hash is computed over the canonical JSON serialization (keys sorted, no
 insignificant whitespace — RFC 8785) of the subset
-`{instructions, input, output, checks, permissions, budgets}`:
+`{instructions, input, output, checks, permissions, budgets, command}`:
 
 ```bash
 node -e '
@@ -89,16 +93,17 @@ const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 const canon=v=>Array.isArray(v)?v.map(canon):(v&&typeof v==="object"
   ?Object.keys(v).sort().reduce((o,k)=>(o[k]=canon(v[k]),o),{}):v);
 const sub={instructions:m.instructions,input:m.input,output:m.output,
-           checks:m.checks,permissions:m.permissions,budgets:m.budgets};
+           checks:m.checks,permissions:m.permissions,budgets:m.budgets,
+           command:m.command};
 console.log("sha256:"+c.createHash("sha256")
   .update(JSON.stringify(canon(sub)),"utf8").digest("hex"));
 ' specs/formats/examples/skill-manifest.develop.json
 ```
 
-(The two examples of this directory carry the real hash: the command above
+(The three examples of this directory carry the real hash: the command above
 reproduces the value recorded in each of them, and
 [`skill-manifest.test.mjs`](./skill-manifest.test.mjs) checks that on every
-`npm test`, along with the four validation commands of the *How to validate*
+`npm test`, along with the five validation commands of the *How to validate*
 section.)
 
 What is **inside** the hash is behaviour: the text that will be injected into the
@@ -113,7 +118,10 @@ manifest: it does not run.
 Growing the subset is cheap on purpose: an absent field serializes to nothing
 (`JSON.stringify` drops a key whose value is `undefined`), so only a manifest that
 starts declaring the new field changes hash. That is how `budgets` entered
-without touching the pin of any manifest already registered.
+without touching the pin of any manifest already registered, and how `command`
+entered after it (`t332`) — the field where this rule matters most, because on a
+shell skill the argv is not a declaration about the behaviour, it **is** the
+behaviour.
 
 ### Version lineage (D22)
 
@@ -307,6 +315,61 @@ project in question (`{{input.project.test_command}}` in both examples). That
 half is **not implemented yet**, and not by oversight: no code executes a check's
 `command` today, so there is nowhere to connect it. The rule holds identically for
 when there is — a command that still contains `{{` is never executed.
+
+### `command`
+
+Optional, and what a **shell** skill runs instead of opening a session (`t332`).
+A skill that declares none is every skill written before this field existed, and
+every skill whose node runs on an agent engine.
+
+```json
+{
+  "command": {
+    "argv": ["/usr/local/bin/radar", "promote", "--since", "{{input.date}}"],
+    "env_allowlist": ["RADAR_LEDGER"]
+  }
+}
+```
+
+- **`argv`** (required, at least one element) is the program and its arguments,
+  spawned with **no shell in between**: no quoting, no globbing, no variable
+  expansion, and exactly one element per argument. That is what lets a path with
+  a space in it, a `$`, a backtick or a whole JSON document travel as data
+  without anybody thinking about escaping — and it is why `argv[0]` is a program
+  and never a command line.
+- **`env_allowlist`** (optional) names variables of the **runner's own**
+  environment the command may read. Absent or empty means the child inherits
+  **nothing** — including no `PATH` — so a skill either spells an absolute path
+  in `argv[0]` or allowlists `PATH` itself.
+
+Two decisions that look arbitrary and are not:
+
+- **`instructions` stays required, and its meaning is unchanged.** For a shell
+  skill it documents the command for whoever reads the registry; it is not
+  rendered into anything that executes, because there is nothing there to render
+  into. Making it optional would have removed the one place a human reviewing an
+  imported skill finds out what the argv does (D4's gate reviews text, not
+  behaviour it has to infer from an argv).
+- **The environment is closed by default**, which is the opposite of what an
+  agent session gets. `README.md` records, as a known and accepted risk, that a
+  session inherits the operator's whole shell environment; that is a
+  compatibility decision about sessions that predate the risk being written down.
+  A shell node has no such history, so it starts from nothing.
+
+`{{input.<path>}}` is resolved in every element of `argv`, by the same resolver
+and under the same fail-closed rule as `instructions` — an unresolved path aborts
+the dispatch before any process is spawned. It is **not** resolved inside
+`env_allowlist`: those are variable names, and which of the operator's variables
+a command may read is not a decision a node's input gets to take.
+
+`command` is inside the hash, alongside `permissions` and `budgets` and for the
+same reason taken to its limit: an edit to the argv that left the pin standing
+would be a skill whose whole executed behaviour moved under a version somebody
+already approved.
+
+This is unrelated to `checks[].command`, and the two stay independent: a check's
+command **gates** an artifact after the fact, and this one **is** the node's
+execution.
 
 ### `origin`
 
@@ -509,15 +572,19 @@ npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
 npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
   -d specs/formats/examples/skill-manifest.verify-develop.json --spec=draft2020
 
-# 4. the negative fixture is REFUSED (a non-zero exit is the expected result here)
+# 4. the "shell" skill example validates against the schema
+npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
+  -d specs/formats/examples/skill-manifest.shell-echo.json --spec=draft2020
+
+# 5. the negative fixture is REFUSED (a non-zero exit is the expected result here)
 npx --yes ajv-cli@5 validate -s specs/formats/skill-manifest.schema.json \
   -d specs/formats/examples/skill-manifest.invalid.fixture.json --spec=draft2020
 ```
 
-The first three exit 0; the fourth exits with something other than 0 — that is
+The first four exit 0; the fifth exits with something other than 0 — that is
 what proves the schema is not too permissive.
 
-All four run automatically on `npm test`, through
+All five run automatically on `npm test`, through
 [`skill-manifest.test.mjs`](./skill-manifest.test.mjs), with `ajv` imported
 directly instead of through `npx`: a gate that needs the network is a gate that is
 red on a plane. The file also checks what no `ajv` would check — that the `hash`

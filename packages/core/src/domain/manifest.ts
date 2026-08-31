@@ -63,7 +63,7 @@ export const MANIFEST_ROLES = ['work', 'gate'];
 /**
  * Content hash of a skill manifest, by the procedure of
  * `specs/formats/skill-manifest.md`: sha256 of the canonical JSON of
- * `{instructions, input, output, checks, permissions, budgets}`.
+ * `{instructions, input, output, checks, permissions, budgets, command}`.
  *
  * It covers only that subset — and not the whole manifest, as the graph version
  * hash does — because catalogue metadata (`id`, `version`, `description`,
@@ -78,6 +78,16 @@ export const MANIFEST_ROLES = ['work', 'gate'];
  * manifests already registered — an absent key serializes to nothing, because
  * `JSON.stringify` drops a key whose value is `undefined` — so only a manifest
  * that actually declares budgets gets a different hash than it had.
+ *
+ * `command` joined it in t332, under the same rule and with the highest stake of
+ * the three. On a skill whose node runs on the `shell` engine, the argv is not a
+ * declaration ABOUT the behaviour, it IS the behaviour: `instructions` there
+ * documents the command for whoever reads the registry, and what executes is
+ * `command.argv`. A subset without it would let the one field that decides what
+ * runs move under a pin somebody already approved — which is precisely the
+ * tamper D4 exists to catch. It is `env_allowlist`'s reason too: which of the
+ * runner's environment variables a command may read is a permission, and
+ * permissions have been inside this subset from the beginning.
  *
  * The KEY NAMES are part of what is hashed, so t178's rename moved every pin in
  * the repository at once. That is the mechanical, expected consequence of
@@ -95,6 +105,7 @@ export function manifestHash(manifest: Record<string, unknown>): string {
     checks: manifest.checks,
     permissions: manifest.permissions,
     budgets: manifest.budgets,
+    command: manifest.command,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')

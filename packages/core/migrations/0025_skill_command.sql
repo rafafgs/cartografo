@@ -1,0 +1,38 @@
+-- 0025_skill_command — the argv a shell skill runs, kept with the manifest (t332).
+--
+-- The registry stores a manifest column by column, so a field the schema gains
+-- and the table does not is a field that survives `POST /v1/skills` and comes
+-- back missing. That is harmless for catalogue metadata and fatal for this one:
+-- `command` is what a node on the `shell` engine EXECUTES, so a registry that
+-- dropped it would hand the runner a skill with nothing to run and a session
+-- that refuses at the door — the manifest validating perfectly on the way in.
+--
+-- - `command` is JSON in a TEXT, the same convention `input`, `output`,
+--   `checks`, `permissions` and `source` already follow on this table. It is not
+--   two columns (`argv`, `env_allowlist`) because the block is one field of the
+--   format, versioned and hashed as one: splitting it here would let the two
+--   halves be written apart and would need a migration the next time the format
+--   grows a third key inside it.
+-- - **It is inside the pin, and this column is not where that is enforced.**
+--   `manifestHash` covers `{instructions, input, output, checks, permissions,
+--   budgets, command}` since t332, and `POST /v1/skills` recomputes it before
+--   writing (D4). The database keeps; what judges is the control plane, which is
+--   the only writer (D1).
+-- - **No `CHECK`.** What a valid block looks like is
+--   `specs/formats/skill-manifest.schema.json`'s answer — `argv` non-empty, no
+--   unknown key inside — and the registry checks the manifest's shape at its own
+--   door. A constraint here would be a second, weaker copy of that rule, in the
+--   one place nobody reads it from.
+--
+-- Nullable and without backfill, like `output` on `session` and `tier` on `job`
+-- before it: every skill registered before this migration declares no command,
+-- which is exactly what NULL says. There is nothing to invent for a manifest
+-- that never had the field, and inventing an empty argv would turn every agent
+-- skill in the registry into a shell skill that runs nothing.
+--
+-- English top to bottom: the t279 frozen-names rule protects the pre-existing
+-- Portuguese migration files, and this one is new (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE skill ADD COLUMN command TEXT;  -- JSON: {argv, env_allowlist?}; NULL = not a shell skill

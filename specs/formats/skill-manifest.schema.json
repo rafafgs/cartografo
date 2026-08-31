@@ -33,7 +33,7 @@
     "hash": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "the content pin (D4): sha256 of the canonical JSON serialization of {instructions, input, output, checks, permissions, budgets}"
+      "description": "the content pin (D4): sha256 of the canonical JSON serialization of {instructions, input, output, checks, permissions, budgets, command}"
     },
     "role": {
       "type": "string",
@@ -70,6 +70,7 @@
       "minLength": 1,
       "description": "the body in Markdown; it may carry {{input.<path>}} placeholders, resolved by the runner before injection"
     },
+    "command": { "$ref": "#/$defs/command" },
     "origin": { "$ref": "#/$defs/origin" }
   },
   "allOf": [
@@ -154,6 +155,25 @@
           "type": "integer",
           "minimum": 1,
           "description": "seconds with no output at all before the session is considered stalled; the clock restarts on every output"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "required": ["argv"],
+      "additionalProperties": false,
+      "description": "what a shell node RUNS instead of opening a session (t332). Optional: absent is every skill written before this field, and every skill whose node runs on an agent engine. Present, this is the executed behaviour and `instructions` documents it for whoever reads the registry. It is inside the hash, for the reason `permissions` and `budgets` are: behaviour may not move without the pin moving with it (D4). Unrelated to a check's own `command`, which gates an artifact — this one IS the node's execution",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "the program and its arguments, spawned with no shell in between: no quoting, no globbing, no variable expansion, and one element per argument. The first element is the program — an absolute path, or a name resolved against a PATH the allowlist below has to name. Every element may carry {{input.<path>}} placeholders, resolved exactly as they are in `instructions` and failing closed the same way"
+        },
+        "env_allowlist": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "names of the runner's own environment variables the command may read. Absent or empty means the child inherits NOTHING — including no PATH — which is the opposite default from an agent session and is deliberate: an agent adapter has a documented legacy behaviour to preserve, a shell node has none. The entries are names and are never interpolated: which of the operator's variables a command may read is not a decision a node's input gets to take"
         }
       }
     },

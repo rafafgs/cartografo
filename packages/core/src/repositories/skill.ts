@@ -111,6 +111,16 @@ export interface Skill {
   checks: Record<string, unknown>[];
   permissions: Record<string, unknown>;
   instructions: string;
+  /**
+   * What a SHELL skill runs, when the manifest declares it (t332).
+   *
+   * Absent — never `null` — for every skill whose node runs on an agent engine,
+   * which is every skill registered before this field existed. The runner reads
+   * absence as "this is not a shell skill" and the two agent adapters never look
+   * at it at all, so an optional key here is what keeps the projection of an
+   * ordinary manifest byte-identical to what it always was.
+   */
+  command?: Record<string, unknown>;
   origin: Record<string, unknown>;
   /**
    * When the manifest entered the registry.
@@ -156,6 +166,8 @@ interface SkillRow {
   checks: string;
   permissions: string;
   instructions: string;
+  /** JSON, or NULL for a manifest that declares no command (t332). */
+  command: string | null;
   source: string;
   registered_at: string;
   deprecated_at: string | null;
@@ -202,7 +214,7 @@ const CHECK_TYPES = ['deterministic', 'agentic'];
 
 const COLUMNS = `
   id, version, hash, role, description, input, output, preconditions,
-  checks, permissions, instructions, source, registered_at, deprecated_at
+  checks, permissions, instructions, command, source, registered_at, deprecated_at
 `;
 
 function isText(value: unknown): value is string {
@@ -225,7 +237,7 @@ function hydrate(row: SkillRow): Skill {
   // `source` is destructured OUT before the spread, and it has to be: a spread
   // copies what the driver returned, so leaving it in would publish the column's
   // name beside `origin` on every skill the API serves.
-  const { source, ...rest } = row;
+  const { source, command, ...rest } = row;
   return {
     ...rest,
     input: JSON.parse(row.input) as Record<string, unknown>,
@@ -233,6 +245,11 @@ function hydrate(row: SkillRow): Skill {
     preconditions: JSON.parse(row.preconditions) as string[],
     checks: JSON.parse(row.checks) as Record<string, unknown>[],
     permissions: JSON.parse(row.permissions) as Record<string, unknown>,
+    // Destructured out and spread back conditionally, so a NULL column becomes
+    // an ABSENT key rather than a present one holding null (t332). The runner
+    // reads absence; a `command: null` on the wire would be a third state for a
+    // field the format has two of.
+    ...(command === null ? {} : { command: JSON.parse(command) as Record<string, unknown> }),
     origin: JSON.parse(source) as Record<string, unknown>,
   };
 }
@@ -568,8 +585,8 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
     db.prepare(
       `INSERT INTO skill (
          id, version, hash, role, description, input, output, preconditions,
-         checks, permissions, instructions, source, registered_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         checks, permissions, instructions, command, source, registered_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       version,
@@ -582,6 +599,10 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
       JSON.stringify(verified.checks),
       JSON.stringify(verified.permissions),
       verified.instructions as string,
+      // NULL for a manifest that declares none, which is every agent skill: the
+      // pin already covers the field, so what is stored here has to be exactly
+      // what was hashed — including its absence (t332).
+      verified.command === undefined ? null : JSON.stringify(verified.command),
       JSON.stringify(verified.origin),
       timestamp,
     );

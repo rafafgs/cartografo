@@ -190,11 +190,14 @@ test(
       // place stops the startup by name instead of surfacing later as an
       // unrelated `no such column`. t283 moved it once more with
       // `0024_graph_version_contracts_state.sql`, which is what stops a job from
-      // running against a version nobody ever contract-checked.
+      // running against a version nobody ever contract-checked — and t332 once
+      // again with `0025_skill_command.sql`, the column a shell skill's argv is
+      // kept in, without which the registry would accept a manifest and hand the
+      // runner a node with nothing to run.
       assert.equal(
         first.readiness.migrationsApplied,
-        24,
-        'a brand-new database applies the twenty-four migrations the package ships',
+        25,
+        'a brand-new database applies the twenty-five migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

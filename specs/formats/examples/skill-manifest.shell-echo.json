@@ -1,0 +1,67 @@
+{
+  "id": "echo-measurement",
+  "version": "1.0.0",
+  "hash": "sha256:3c028d3eacc4577883f11c1f49138d277bc8d7ff9a01cc2f8d7b812333ca63d3",
+  "role": "work",
+  "description": "Echoes a measurement the previous step produced, as the report block the next step reads.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "measurement"
+    ],
+    "properties": {
+      "measurement": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the value this step is asked to record, already computed upstream"
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "measurement"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "measurement": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "the value to record is already in this node's input: this step computes nothing"
+  ],
+  "checks": [
+    {
+      "id": "block-is-well-formed",
+      "type": "deterministic",
+      "description": "The command prints one fenced result block, and it parses as JSON.",
+      "command": "test -n \"$(printf '%s' \"{{input.measurement}}\")\"",
+      "timeout_s": 10
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "command": {
+    "argv": [
+      "/bin/echo",
+      "```resultado\n{\"measurement\": \"{{input.measurement}}\"}\n```"
+    ],
+    "env_allowlist": []
+  },
+  "instructions": "# Echo one measurement\n\nThis skill runs on the `shell` engine: there is no session and no model. What\nexecutes is `command.argv`, and this body is here so that whoever reads the\nregistry can tell what the command does without running it.\n\nThe command prints one fenced `resultado` block carrying the measurement it was\ngiven, which is the same report protocol every other node uses. It reads nothing\nfrom the filesystem, talks to no network, and inherits no environment variable\nof the runner: `env_allowlist` is empty, so `argv[0]` names an absolute path.",
+  "origin": {
+    "type": "native"
+  }
+}

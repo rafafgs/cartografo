@@ -272,11 +272,16 @@ function canonicalize(value) {
 /**
  * Content hash of the manifest, by the procedure in
  * `specs/formats/skill-manifest.md`: sha256 of the canonical JSON of
- * `{instructions, input, output, checks, permissions, budgets}`.
+ * `{instructions, input, output, checks, permissions, budgets, command}`.
  *
  * What is left out (`id`, `version`, `description`, `origin`) is catalogue
  * metadata: renaming the skill does not invalidate the pin, changing a line of
- * the instructions, loosening a check or stretching a budget does.
+ * the instructions, loosening a check, stretching a budget or editing the argv
+ * of a shell skill does. `command` (t332) carries no bundle consumer yet and is
+ * in the subset all the same: this recipe and the control plane's own
+ * (`packages/core/src/domain/manifest.ts`) have to agree about every field, and
+ * a copy that agrees only about the fields somebody has used so far is a copy
+ * waiting to disagree.
  *
  * @param {object} manifest Manifest, already parsed.
  * @returns {string} `sha256:` followed by 64 hex characters.
@@ -289,6 +294,7 @@ export function manifestHash(manifest) {
     checks: manifest.checks,
     permissions: manifest.permissions,
     budgets: manifest.budgets,
+    command: manifest.command,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')

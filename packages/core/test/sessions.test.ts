@@ -1433,7 +1433,7 @@ const NOTE_OUTPUT_SCHEMA = {
  * design (t333).
  *
  * This is the case t268's vacuous accept was actually protecting, and the only
- * one that survives this ficha: an empty report satisfies this schema, so the
+ * one that survives this ticket: an empty report satisfies this schema, so the
  * close stays accepted WITH the check run, instead of accepted because no check
  * was made.
  */

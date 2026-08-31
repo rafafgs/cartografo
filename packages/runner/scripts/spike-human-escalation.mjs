@@ -124,7 +124,7 @@ function createDisposableRepo() {
   const git = (...args) =>
     execFileSync('git', args, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
 
-  git('init', '--quiet');
+  git('init', '--quiet', '--initial-branch', 'main');
   git('config', 'user.email', 'spike@cartografo.local');
   git('config', 'user.name', 'Escalation Spike');
   writeFileSync(join(repo, 'README.md'), '# Disposable repo of the human-escalation manual proof\n');

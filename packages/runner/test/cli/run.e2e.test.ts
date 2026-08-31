@@ -232,7 +232,7 @@ function workspace(t: TestHook, label: string): Workspace {
 function initRepo(t: TestHook, label: string): Workspace {
   const space = workspace(t, label);
 
-  git(space.repoRoot, 'init', '--quiet');
+  git(space.repoRoot, 'init', '--quiet', '--initial-branch', 'main');
   git(space.repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(space.repoRoot, 'config', 'user.name', 'Fixture t179');
   writeFileSync(path.join(space.repoRoot, 'README.md'), '# Fixture repo of t179\n');

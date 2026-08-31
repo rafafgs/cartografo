@@ -5879,6 +5879,84 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       assert.equal(after.blocked, true);
     },
   );
+
+  /**
+   * ...and neither does a session that reported nothing at all (t333, AT4).
+   *
+   * The gap t268 left open, end to end: a report core REFUSED already stops the
+   * work, but a report core never received was accepted vacuously — the schema
+   * was not even looked up — so the single edge out of `implementar` was taken
+   * with `do-crossing`'s required `nota` never produced. That is the b3-radar
+   * failure of 2026-08-30, where the block surfaced one node later and named the
+   * consumer's manifest instead of the producer's silence.
+   *
+   * Nothing in this package changed for it to pass: `refusedReport`,
+   * `blockForOutputSchemaRefusal` and `staleBench` are the same three lines
+   * t268 wrote, and they fire the moment `finishSession` tells the truth.
+   */
+  await parent.test(
+    "t333 AT — ...and neither does a session that reported nothing at all",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t333-silent-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("implementar", "travessia-t333-silent", 3331);
+      const { doFetch, calls } = spyOn();
+
+      // Ordinary stdout and no fenced block anywhere: `parseNodeResult` answers
+      // `null`, so `report.ts` omits the `output` key from `/finish` entirely
+      // and the control plane is closing a session that reported NOTHING —
+      // against a skill that requires `nota`.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_LINES: JSON.stringify([
+            { stream: "stdout", text: "I did the step." },
+            { stream: "stdout", text: "There is nothing else to say about it." },
+          ]),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "a node that produced no report may not move the work either",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.equal(session.output, null, "there was never anything to store");
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1, "exactly one block, posted by the runner itself");
+      assert.ok(
+        reasons[0].includes(String(session.id)),
+        `the producing session is what a reader opens next: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("implementar"),
+        `...on the node that failed to produce, not the one that would read: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("nota"),
+        `...and the field nobody produced has to be quoted: ${reasons[0]}`,
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the work stays on the node it failed");
+      assert.equal(after.blocked, true);
+    },
+  );
 });
 
 // --- t272: nothing before a session may retry forever ------------------------

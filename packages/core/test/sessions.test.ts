@@ -1429,13 +1429,32 @@ const NOTE_OUTPUT_SCHEMA = {
 };
 
 /**
+ * The same schema with nothing required — a node whose output is optional by
+ * design (t333).
+ *
+ * This is the case t268's vacuous accept was actually protecting, and the only
+ * one that survives this ficha: an empty report satisfies this schema, so the
+ * close stays accepted WITH the check run, instead of accepted because no check
+ * was made.
+ */
+const OPTIONAL_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { texto: { type: 'string', minLength: 1 } },
+};
+
+/**
  * Registers a skill whose `output` schema demands exactly one non-empty string.
  *
  * @param ctx Control plane running.
+ * @param output The `output` schema the skill declares. Defaults to the
+ *   demanding one above; t333 passes {@link OPTIONAL_OUTPUT_SCHEMA} to prove
+ *   the other half of the same rule.
  * @returns The pin the graph node has to carry.
  */
 async function registerNoteSkill(
   ctx: TestContext,
+  output: unknown = NOTE_OUTPUT_SCHEMA,
 ): Promise<{ id: string; version: string; hash: string }> {
   const manifest: Record<string, unknown> = {
     id: 'redigir-nota',
@@ -1444,7 +1463,7 @@ async function registerNoteSkill(
     role: 'work',
     description: 'Drafts a short note from the stated theme.',
     input: { type: 'object', properties: { theme: { type: 'string' } } },
-    output: NOTE_OUTPUT_SCHEMA,
+    output,
     preconditions: [],
     checks: [],
     permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
@@ -1469,13 +1488,17 @@ async function registerNoteSkill(
  * can never be registered.
  *
  * @param ctx Control plane running.
+ * @param output The `output` schema the pinned skill declares (t333).
  * @returns Id of the version born with the lineage.
  */
-async function registerGraphPinningNoteSkill(ctx: TestContext): Promise<string> {
+async function registerGraphPinningNoteSkill(
+  ctx: TestContext,
+  output: unknown = NOTE_OUTPUT_SCHEMA,
+): Promise<string> {
   const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
   document.problem_class = 'nota-curta-com-saida';
   const nodes = document.nodes as Array<Record<string, unknown>>;
-  nodes[0].skill_ref = await registerNoteSkill(ctx);
+  nodes[0].skill_ref = await registerNoteSkill(ctx, output);
 
   // Since t283 a version whose pins do not all resolve is `unchecked`, and no
   // job may cite one: the node this suite registered a manifest for is already
@@ -1639,21 +1662,96 @@ test('t253 AT2 — an output that does NOT match still closes the session', asyn
 });
 
 /**
- * Nothing reported is not a refusal (t268, FR1).
+ * Nothing reported is JUDGED, not waved through (t333, AT1/AT3).
  *
- * The third case of the verdict, and the one that decides the default: a node
- * that pins a skill with an `output` schema and prints no report at all is
- * ordinary — every session before t259 looked like this — so the check is
- * skipped entirely and there is nothing to refuse. Reading that absence as
- * `false` would stop the job of every node that does not report.
+ * t268 read an absent report as "nothing to refuse" and skipped the schema
+ * lookup entirely, so a node whose pinned skill REQUIRES an output accepted a
+ * session that produced none — and the job moved on. The b3-radar run of
+ * 2026-08-30 paid for it: a session closed `completed` with an empty output, the
+ * control plane transitioned anyway, and the failure surfaced one node later as
+ * an `input` the next dispatch could not assemble — pointing at a manifest that
+ * was in perfect order, three ticks away from the session that had said nothing.
+ *
+ * So the absence is now held against the node's own schema, with an empty object
+ * standing in for "nothing reported": what the schema requires it still
+ * requires, and the refusal names the missing field ON the session that failed
+ * to produce it, which is where a reader can do something about it.
  */
-test('t268 AT — a session that reported nothing at all is accepted, vacuously', async (t) => {
+test('t333 AT1/AT3 — nothing reported against a required field is refused', async (t) => {
   requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
   const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
 
   const versionId = await registerGraphPinningNoteSkill(ctx);
   const job = await createJob(ctx, {
     title: 'with no report at all',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<FinishedSession>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'completed', exit_code: 0, usage: USAGE, models: ['claude-sonnet-5'] },
+  );
+
+  // FR7: the close is still a close. A refused report never costs the session
+  // its ending — that is t253 FR4, and it stands whether the report was wrong
+  // or absent.
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.status, 'completed');
+  assert.equal(finished.body.exit_code, 0);
+  assert.deepEqual(finished.body.usage, USAGE);
+  assert.deepEqual(finished.body.models, ['claude-sonnet-5']);
+
+  assert.equal(finished.body.output, null, 'nothing was reported, so nothing is stored');
+  assert.equal(
+    finished.body.output_accepted,
+    false,
+    'the skill requires `texto` and the session produced none: that is a refusal',
+  );
+  assert.ok(
+    (finished.body.output_schema_error ?? []).includes(
+      "output must have required property 'texto'",
+    ),
+    `the missing field has to be named: ${JSON.stringify(finished.body.output_schema_error)}`,
+  );
+
+  const [stored] = await readSessions(ctx, job.id);
+  assert.equal(stored.output, null, 'and the column keeps the NULL it always kept');
+
+  // AT3: the same two facts in the log, exactly as t253 AT2 records them for a
+  // report that WAS present and wrong — the event is where the block's reader
+  // reconstructs what the session did not say.
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
+  const data = events[1].data;
+  assert.equal(data.output, null, 'the log does not invent a report either');
+  assert.ok(Array.isArray(data.output_schema_error), 'the reason is recorded');
+  assert.ok(
+    (data.output_schema_error as string[]).some((detail) => detail.includes('texto')),
+    `the log has to name the missing field: ${JSON.stringify(data.output_schema_error)}`,
+  );
+});
+
+/**
+ * ...and a schema that asks for nothing still accepts nothing (t333, AT2).
+ *
+ * The half of t268 that survives, now for the reason it was written for: a node
+ * whose output is optional BY DESIGN declares no `required`, an empty report
+ * satisfies that schema, and the close is accepted because the check ran and
+ * found nothing wrong — not because no check was made. Reading the absence as a
+ * refusal here would stop the job of every node that legitimately reports
+ * nothing.
+ */
+test('t333 AT2 — ...and nothing reported against a schema that requires nothing is accepted', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphPinningNoteSkill(ctx, OPTIONAL_OUTPUT_SCHEMA);
+  const job = await createJob(ctx, {
+    title: 'with nothing to report, by design',
     entry_node_id: 'redigir',
     graph_version_id: versionId,
   });
@@ -1670,7 +1768,7 @@ test('t268 AT — a session that reported nothing at all is accepted, vacuously'
   assert.equal(
     finished.body.output_accepted,
     true,
-    'nothing was reported, so nothing was refused — and the job keeps moving',
+    'the schema asks for nothing, so an empty report refuses nothing — the job keeps moving',
   );
   assert.equal(
     Object.hasOwn(finished.body as unknown as Record<string, unknown>, 'output_schema_error'),

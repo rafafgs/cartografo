@@ -34,29 +34,41 @@ Four things are different when it goes through this server:
 The server is meant to be **started by an MCP client**, not by hand. It speaks
 JSON-RPC on stdin/stdout, and everything a human reads goes to stderr.
 
-```jsonc
-// .mcp.json, or whatever your client calls it
+For this repository that is already wired: [`.mcp.json`](../../.mcp.json) at the
+root declares it, so a client opened on this checkout finds it with no setup.
+
+```json
 {
   "mcpServers": {
     "cartografo": {
-      "command": "npx",
-      "args": ["cartografo-mcp"],
+      "type": "stdio",
+      "command": "node",
+      "args": ["packages/mcp/bin/mcp.mjs"],
       "env": {
-        "CARTOGRAFO_URL": "http://127.0.0.1:4317",
-        "CARTOGRAFO_MCP_TOKEN": "the token printed when the control plane started"
+        "CARTOGRAFO_URL": "${CARTOGRAFO_URL:-http://127.0.0.1:4317}"
       }
     }
   }
 }
 ```
 
-`npx cartografo-mcp` resolves through this repository's own `node_modules/.bin`,
-so it works when the client's working directory is this checkout. To drive the
-cartografo from **another** project — which is most of the point — name the file
-instead, with no `npx` in the way:
+**The credential is not in that file, and it is not an oversight.** `.mcp.json`
+is versioned and read by whoever opens the repository; a token written there is
+a token published. The server reads it from the environment the client was
+started in — `CARTOGRAFO_MCP_TOKEN` first, `CARTOGRAFO_TOKEN` after — so
+exporting the one the control plane printed, in the shell you start the client
+from, is the whole of the setup. Without it every call comes back refused, in
+one line naming the variable to set.
 
-```jsonc
-{ "command": "node", "args": ["/absolute/path/to/cartografo/packages/mcp/bin/mcp.mjs"] }
+To drive the cartografo from **another** project — which is most of the point —
+register it there instead, where the token is your own machine's configuration
+and not a file in a repository:
+
+```bash
+claude mcp add cartografo \
+  -e CARTOGRAFO_URL=http://127.0.0.1:4317 \
+  -e CARTOGRAFO_MCP_TOKEN=<the token printed when the control plane started> \
+  -- node /absolute/path/to/cartografo/packages/mcp/bin/mcp.mjs
 ```
 
 The control plane has to be up (`npx cartografo`); this server starts nothing.

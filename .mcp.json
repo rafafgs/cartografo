@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cartografo": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["packages/mcp/bin/mcp.mjs"],
+      "env": {
+        "CARTOGRAFO_URL": "${CARTOGRAFO_URL:-http://127.0.0.1:4317}"
+      }
+    }
+  }
+}

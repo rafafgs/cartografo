@@ -331,7 +331,9 @@ with its sessions and its timeline, a session's transcript, the pending
 questions, the surveyor's proposals — and, on the writing side, opening a job, answering a question,
 blocking and unblocking one, registering a graph. It holds the credential in its
 own process, so the token stops travelling through the shell history of whoever
-is driving.
+is driving — and `.mcp.json` at the root already declares the command, with the
+credential deliberately left out of it: that file is versioned, and a token
+written there is a token published.
 
 What it deliberately does not publish is the other half of the point. **No tool
 decides a proposal** — approve, apply, reject and revert are the human gate

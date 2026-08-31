@@ -1,7 +1,7 @@
 /**
  * The glossary rows the two D20 database sweeps read (t235, FR7/FR8).
  *
- * `no-portuguese-database.test.ts` asks it of the QUERIES this package writes
+ * A sibling gate asks it of the QUERIES this package writes
  * and `migrate.test.ts` asks it of the SCHEMA the migrations build, and both
  * questions are the same one: does a Portuguese name the glossary retired still
  * stand? Declaring the vocabulary twice is how the two start disagreeing about

@@ -3,7 +3,7 @@
 **API version:** `v1` · **Migration:** none (it reads the `event` table of
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
 **Origin:** extension point nº 5 —
-["events going out"](../../notes/2026-08-14-extension-and-quality.md) · **Ticket:** t123
+["events going out"](../../notes/2026-08-14-extension-and-quality.md)
 
 This document is the contract for whoever consumes. It is deliberately
 self-sufficient: a whole client can be written without opening a line of the
@@ -43,7 +43,7 @@ Accept: text/event-stream
 |---|---|
 | Response | `200` with `content-type: text/event-stream`, a body open indefinitely |
 | Headers | `cache-control: no-cache, no-transform`, `connection: keep-alive`, `x-accel-buffering: no` |
-| Authentication | `Authorization: Bearer <token>` — mandatory, as on every v1 route since `t124` |
+| Authentication | `Authorization: Bearer <token>` — mandatory, as on every v1 route |
 | Connection limit | none; there is no rate limit and no per-client backpressure either |
 
 The token is the one the control plane prints on its first start
@@ -88,8 +88,8 @@ execution.finished
 They are the taxonomy's nineteen, and the growth was additive as promised: the
 filter never declared a list of its own — it validates against `KNOWN_TYPES`
 (`packages/core/src/db/event-validation.ts`) —, so switching on the emission of
-`lease.*` and `graph_version.*` in `t196` made them askable without a line of
-contract change here, and `execution.finished` (D21, `t245`) came in the same
+`lease.*` and `graph_version.*` made them askable without a line of
+contract change here, and `execution.finished` (D21) came in the same
 way: whoever wants to know only about the end of rounds subscribes with
 `?type=execution.finished` and receives nothing else. A type outside the taxonomy
 is still a `400`, and not an open connection that never delivers anything —
@@ -127,24 +127,24 @@ type's whole specific payload inside `data`.
 the same eight fields; what lives inside `data` is per type, and gaining a new
 field there never asked for a contract change here — the same path §3 describes
 for the set of types. `session.finished` is the most touched of the nineteen: it
-got `output` and `output_schema_error` in `t253`, `failure_kind` and
-`refusal_category` in `t265`, and `output_accepted` in `t268`.
+grew `output` and `output_schema_error`, then `failure_kind` and
+`refusal_category`, and finally `output_accepted`.
 
 **`output_accepted` is the verdict on the session's structured report** — whether
 it was accepted when checked against the `output` schema of the skill the node
 pins (D9). Of the three, it is the only one that appears in **every** closure
-from `t268` on: `true` when the report matched and also when nothing was
+from that field on: `true` when the report matched and also when nothing was
 reported, `false` only on a refusal — and it is only on a refusal that `output`
 comes back `null` and the reasons come whole in `output_schema_error`. For
 whoever reads this stream that is what makes counting possible: a refused report
 is `output_accepted === false`, and not the absence of the reasons list, because
 "it was not refused" and "it was not checked" would be the same absence. Absent
 is not `false` either, and that is why the schema declares it optional: the log
-written before `t268` does not have the field, and is still valid. The one that
+written before it does not have the field, and is still valid. The one that
 decides whether the job moves from that verdict is the runner, and it reads it
 **synchronously** in the answer of the `PATCH /finish` itself, not from here
 ([runner-and-controller.md](runner-and-controller.md), "A report the control
-plane refused holds the job at the node", `t268`): this stream is observation,
+plane refused holds the job at the node"): this stream is observation,
 never a decision path.
 
 The field-by-field of each type is still the
@@ -318,7 +318,7 @@ stream.addEventListener('job.transitioned', (message) => {
 });
 ```
 
-With one caveat since `t124`: `EventSource` does not allow a header to be sent,
+With one caveat: `EventSource` does not allow a header to be sent,
 and the route demands one. That snippet only works behind an origin that attaches
 the credential for the browser — which is exactly the screen's role (D11: it
 keeps a service token and passes it along, the browser presents none). The
@@ -341,7 +341,7 @@ What does **not** exist in this version: guaranteed delivery (if nobody is
 connected, nobody receives — the log is what is the source of truth, and it is
 still there), a limit on simultaneous connections, and a read-only credential.
 
-Credential scope came into existence in `t143`, and it is not this one: the
+Credential scope exists, and it is not this one: the
 runner credential, issued at pairing, reaches a literal list of five dispatch
 routes ([runner-and-controller.md](runner-and-controller.md) §5) — and this route
 is not among them. A runner presenting its token here takes a
@@ -354,7 +354,7 @@ credential, the same one that opens the whole `/v1`; a read credential, telling
 ## 10. What does not exist yet
 
 The *push* transport has come into existence: **signed webhooks, with retries**
-([`docs/spec/webhooks-events.md`](webhooks-events.md), `t142`), for whoever does
+([`docs/spec/webhooks-events.md`](webhooks-events.md)), for whoever does
 not want to keep a connection open. With it, extension point nº 5 is closed on
 both halves — this document is the *pull* one. Its §1 compares the two and says
 when each one serves.

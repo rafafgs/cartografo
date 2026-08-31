@@ -3,13 +3,13 @@
 > **Status:** v1, **frozen**. The rule of two consumers
 > (`notes/2026-08-14-extension-and-quality.md:58-64`) demands two *implemented*
 > adapters before a format is locked, and both exist:
-> `packages/runner/src/engine/claude-code-adapter.ts` (t104) and
-> `packages/runner/src/engine/codex-adapter.ts` (t119), each certified by the
+> `packages/runner/src/engine/claude-code-adapter.ts` and
+> `packages/runner/src/engine/codex-adapter.ts`, each certified by the
 > kit's cases against the fake engine — seven at the freeze, nine since the
-> inactivity watchdog added C9 (t163), ten since session continuation added C10
-> (t173), eleven since a prompt too big for the argv added C11 (t203).
+> inactivity watchdog added C9, ten since session continuation added C10
+>, eleven since a prompt too big for the argv added C11.
 >
-> **Gap recorded at the freeze (t119):** the manual proof of the Codex adapter
+> **Gap recorded at the freeze:** the manual proof of the Codex adapter
 > against the real CLI ran as far as the 401 — the machine has no OpenAI
 > credential (`codex doctor`: "no Codex credentials were found") — so its
 > credentialed half, the one that demands that the session *did work*, is
@@ -18,14 +18,14 @@
 > `packages/runner/scripts/spike-real-session-codex.mjs`; the freeze stands on
 > the C1–C7 certification, which is green.
 >
-> **Gap CLOSED (t141, 2026-08-15).** The credential turned up and
+> **Gap CLOSED (2026-08-15).** The credential turned up and
 > `spike-real-session-codex.mjs` ran, without a line changed in its body,
 > against an authenticated `codex-cli 0.147.0`: a `completed` session with exit
 > 0 in 11.8s, `onEngineRef` receiving the `thread_id` of the `thread.started`
 > frame (`01a00665-7730-…`), both events validating against the taxonomy's
 > schemas and — the half that was missing — `PROVA-T119.md` created in the
 > workdir with exactly the sentence asked for. The session *worked*. Along with
-> it ran `scripts/spike-two-engine-traversal.mjs` (t141/FR9): one graph, one
+> it ran `scripts/spike-two-engine-traversal.mjs`: one graph, one
 > job, two `Controller.tick()`s, `redigir` on `claude-code` and `conferir` on
 > `codex`, each `session.opened` recording its own engine and the Codex node
 > reading the file the Claude node wrote.
@@ -35,13 +35,13 @@
 > prepare:
 >
 > - **Of the three credential variables, only `CODEX_API_KEY` really
->   authenticates.** t119 measured what `codex doctor` REPORTS about each one
+>   authenticates.** A measurement of what `codex doctor` REPORTS about each one
 >   (`codex-adapter.ts`, `CODEX_CREDENTIAL_VARIABLES`); what was missing was
 >   running a session with each and seeing which of them actually closes the
 >   handshake. `OPENAI_API_KEY` exported and nothing else — which was the path
 >   this ticket assumed — makes every turn die at
 >   `401 Unauthorized ... wss://api.openai.com/v1/responses`, consistent with the
->   `auth mode none` t119 had already noted for it. With the SAME key exported as
+>   `auth mode none` already noted for it. With the SAME key exported as
 >   `CODEX_API_KEY`, and a `CODEX_HOME` with no `auth.json` at all, the session
 >   comes up and completes. Both proofs of this ticket ran that way: environment
 >   only, no `codex login`, no credential in any file.
@@ -66,15 +66,15 @@
 > that rule, in order, each one optional and touching none of the symbols that
 > already existed:
 >
-> - **`SessionSpec.permissions`** (t125) — a declared permission policy, with the
+> - **`SessionSpec.permissions`** — a declared permission policy, with the
 >   adapter applying what it can and refusing what it cannot.
-> - **`SessionSpec.silenceSeconds` and `onFinished`'s third argument** (t163) —
+> - **`SessionSpec.silenceSeconds` and `onFinished`'s third argument** —
 >   the second watchdog, and the cause beside the status.
 > - **`SessionSpec.model`, `listModels()`, `EngineModel` and `ModelCatalog`**
->   (t166) — the model pinned per node, and the catalogue each adapter publishes.
+>   — the model pinned per node, and the catalogue each adapter publishes.
 >   The first growth that added a METHOD, and therefore optional in the member
 >   itself (`listModels?()`), not only in the fields.
-> - **`SessionSpec.resumeFrom`** (t173) — continuing an earlier session from the
+> - **`SessionSpec.resumeFrom`** — continuing an earlier session from the
 >   `engineRef` `onEngineRef` was already capturing. It is the growth that gave a
 >   consumer to a capability declared and never implemented: `claude-code`
 >   started declaring `hasResume`, `codex` still refuses the field at the door,
@@ -211,7 +211,7 @@ export interface SessionSpec {
    * continued.
    *
    * What continuing demands beyond the ref is the engine's business, and it is
-   * not always the ref alone. Measured on `claude-code` (t173, see "Adjustments
+   * not always the ref alone. Measured on `claude-code` (see "Adjustments
    * made in review", item 7): there the ref is enough, and the `workingDir` does
    * not take part.
    */
@@ -234,7 +234,7 @@ export interface SessionSpec {
   readonly model?: string;
 
   /**
-   * How much this work COSTS to run, as intake triaged it (t175).
+   * How much this work COSTS to run, as intake triaged it.
    *
    * It is not `model` under another name, and the difference is one of layer.
    * `model` is the id the GRAPH fixed for this node: engine vocabulary, crossing
@@ -318,7 +318,7 @@ A corollary for the kit: the skill injection case is verified by what the
 ### The session's permissions
 
 This is the field tension 1 of this specification recorded as missing and left
-"for D4's ticket" (t125). It is **additive and optional**, for the capabilities'
+"for D4's ticket". It is **additive and optional**, for the capabilities'
 own compatibility reason: a third party's adapter that builds the `SessionSpec`
 literally cannot stop compiling because a permission policy came into being.
 
@@ -345,14 +345,14 @@ applied, the session comes up with no restriction (the policy is absent), or the
 session does not come up.
 
 **The state today, with no make-up:** **both** adapters read this field, each
-with the mechanism its engine has. It was not always so: until t195 the
+with the mechanism its engine has. It was not always so: the
 `CodexAdapter` **ignored** the field — it neither applied nor refused — and in
 that state it did not honour the rule of the paragraph above. It was tolerable
-only while nothing populated `permissions`, and that stopped holding at t161,
+only while nothing populated `permissions`, and that stopped holding,
 when `render-skill-instructions.ts` started deriving the policy from the
 registered skill's manifest and the dispatch started handing it to whichever
 engine the node resolved to — `codex` included. The ticket that closed the hole
-is t195, and it followed the answer this paragraph had already foreseen: **not**
+is what followed the answer this paragraph had already foreseen: **not**
 to reuse `claude-code`'s gating by tool name, but to map both axes onto the
 native `-s, --sandbox`, which is a guarantee of another nature (see tension 1).
 
@@ -447,7 +447,7 @@ subcommand):
 
 The second row is what decides the design: the key **has no effect** under
 `read-only`. This answers, with a measurement rather than a reading of `--help`,
-the question t195 left open — there is no combination of closed writing with an
+the question left open — there is no combination of closed writing with an
 open network to ask for, and that is why it is refused instead of approximated.
 
 **The residual gap, here too.** The sandbox is the OS's, so `Bash` is not the
@@ -457,7 +457,7 @@ telemetry: `session.permission_denied` is fed by `parse-permission-denial.ts`,
 which matches `claude-code` tool names against `tool_use`/`tool_result` frames. A
 Codex sandbox denial is a signal of a completely different shape (stderr and the
 process's exit code, not a tool-call frame), and the tracker as it stands records
-**nothing** for this engine. That is outside t195's scope and is a ticket of its
+**nothing** for this engine. That is outside this scope and is a piece of
 own.
 
 ### Capabilities
@@ -471,8 +471,8 @@ own.
  * that builds the object literally. Absent is `false` — the safe direction to
  * err in.
  *
- * `hasResume` gained a consumer in t173 (`SessionSpec.resumeFrom`) and
- * `reportsUsage` in t172 (`SessionFinishDetail.usage`), down the same path: the
+ * `hasResume` gained a consumer (`SessionSpec.resumeFrom`) and
+ * `reportsUsage` another (`SessionFinishDetail.usage`), down the same path: the
  * capability had been in the CLI all along, and what was missing was somebody to
  * read it. All three have a consumer now, and the rule that governed the three
  * still holds for the fourth — declaring the fourth, the fifth and the sixth
@@ -521,7 +521,7 @@ demands is made of.
  * A session's token totals, frozen at the end of its life.
  *
  * The four keys are exactly the ones the event taxonomy's `uso` has demanded
- * since t98 — this type is the adapter's side of the same accounting, and the
+ * from the start — this type is the adapter's side of the same accounting, and the
  * equality of the names is what lets it cross from the interface to the log with
  * no translation in between. There is no field for cost in money: cost is engine
  * vocabulary, and the price ruler belongs to whoever has the table.
@@ -549,7 +549,7 @@ export interface SessionUsage {
  * and loses nothing" (see *Rejected — a richer `SessionStatus`*). One status,
  * one cause beside it.
  *
- * It is also this frozen interface's additive growth point, and t172 collected
+ * It is also this frozen interface's additive growth point, and usage collected
  * on it: the two accounting fields below came in here without touching
  * `EngineAdapter`'s shape or `onFinished`'s signature.
  *
@@ -569,19 +569,19 @@ export interface SessionFinishDetail {
   readonly timeoutReason?: "wall_clock" | "silence";
 
   /**
-   * The tokens the session spent, when the engine reported them (t172).
+   * The tokens the session spent, when the engine reported them.
    *
    * Absent is "the engine did not count" — a session that died before the
    * terminal frame, a malformed frame, or a build of the CLI that does not carry
    * the count. An object of zeros in place of the absence is the one forbidden
    * reading: zero is a measurement, absence is silence, and putting the two
    * together destroys the whole cost metric (the same rule the taxonomy's `uso`
-   * has carried since t98).
+   * has carried from the start).
    */
   readonly usage?: SessionUsage;
 
   /**
-   * Which models ran the session, when the engine named them (t172).
+   * Which models ran the session, when the engine named them.
    *
    * A list, and not a single identifier, because a session runs more than one
    * model: measured against the real CLI, a single turn already returned two —
@@ -595,16 +595,16 @@ export interface SessionFinishDetail {
 
   /**
    * What KIND of failure this was, when the engine said something the status
-   * cannot carry (t265, t296).
+   * cannot carry.
    *
    * The third use of this interface's additive growth point, and it is here for
    * the same reason `timeoutReason` is: `failed` is one word for facts that
    * deserve different answers. A crash is worth retrying — the process died and
-   * the next attempt may not. An engine REFUSAL is not: measured in t198, the
+   * the next attempt may not. An engine REFUSAL is not: measured on a real run, the
    * same prompt was refused four times in a row before a fifth session worked,
    * so a consumer that retries it buys the same answer again. A `quota` is worth
    * retrying LATER: the account hit its own limit, which is nobody's mistake and
-   * stops being true at an instant the engine usually names — measured in t296,
+   * stops being true at an instant the engine usually names — measured,
    * three attempts burned in twenty seconds and a work flagged as broken for it.
    *
    * A closed set, and the opposite openness decision from `refusalCategory`
@@ -620,7 +620,7 @@ export interface SessionFinishDetail {
   readonly failureKind?: "engine_refusal" | "quota";
 
   /**
-   * How the engine itself classified the refusal, when it classified it (t265).
+   * How the engine itself classified the refusal, when it classified it.
    *
    * The engine's own word, verbatim and unmapped — `reasoning_extraction` is
    * what the bisection read off the real frame. Open vocabulary, like `models`
@@ -634,7 +634,7 @@ export interface SessionFinishDetail {
   readonly refusalCategory?: string;
 
   /**
-   * When the account's quota resets, as the engine best said it (t296).
+   * When the account's quota resets, as the engine best said it.
    *
    * An ISO 8601 instant, and the one field here that never reaches the wire:
    * there is no key for it in the control plane's session closure and no row in
@@ -673,7 +673,7 @@ export interface SessionListener {
    * Optional and an opaque string: every CLI calls it something different and
    * none guarantees the format. It was captured for telemetry and audit before
    * anybody could use it, "cheap to add before there is a published adapter and
-   * expensive to bolt on afterwards" — and t173 collected on that bet: it is
+   * expensive to bolt on afterwards" — and resume collected on that bet: it is
    * this value that comes back in `SessionSpec.resumeFrom` to continue a
    * session.
    */
@@ -687,7 +687,7 @@ export interface SessionListener {
    * cancellation cases. `null` is "there was none", not "zero".
    *
    * `detail` is only filled in when the adapter has something the status does
-   * not carry — which of the two watchdogs stopped the session, and since t172
+   * not carry — which of the two watchdogs stopped the session, and
    * the tokens and the models it consumed. A consumer written before it existed
    * still works: an extra argument to a two-parameter callback is ignored.
    */
@@ -870,11 +870,11 @@ The first six cases are mandatory. C7 comes along because it is the only check o
 the error contract and costs one line, C8 because it is the only one that proves
 the `cancel()` contract under concurrency — the stopping callers (the clock, the
 inactivity watchdog and `cancel()`) competing for the same session —, and C9
-because the second watchdog (t163) is the only thing in this adapter that is only
+because the second watchdog is the only thing in this adapter that is only
 proved by time: that it rearms on every output, and that it bites when the output
 stops.
 
-C10 (t173) comes in for another reason, and it is the first case whose expected
+C10 comes in for another reason, and it is the first case whose expected
 outcome **depends on what the adapter declares**: `hasResume` splits the engines
 in two, and both sides are conformant — continuing, or refusing. What is not
 conformant is the third answer, accepting `resumeFrom` and opening a new session
@@ -883,7 +883,7 @@ session that continued nothing is identical, from outside, to one that continued
 It is the same honesty rule `permissions` already made normative, applied to the
 field where the silent loss costs most.
 
-C11 (t203) comes in for a reason none of the earlier ones had: it is the only
+C11 comes in for a reason none of the earlier ones had: it is the only
 case whose failure mode is **outside** the adapter and **below** it. The ceiling
 is the operating system's, the `spawn` dies with `E2BIG` before a process exists,
 and there is no session and no `onFinished` for the problem to be reported
@@ -951,7 +951,7 @@ against `codex-cli 0.147.0` executed through `npx --yes @openai/codex@latest`
 | `startSession` | `codex exec [OPTIONS] [PROMPT]` — "Run Codex non-interactively". An ordinary subprocess, with no daemon. | `codex --help`: `exec  Run Codex non-interactively [aliases: e]` |
 | `SessionSpec.workingDir` | `-C, --cd <DIR>` ("use the specified directory as its working root"). It needs `--skip-git-repo-check` when the directory is not a git repository — a real trap for a test worktree. | `codex exec --help` |
 | `SessionSpec.instructions` | **No system prompt flag.** Three paths internal to the adapter: concatenating into the prompt; writing an ephemeral `AGENTS.md` in the workdir; or `-c base_instructions=<...>`. | `codex exec --help` lists no system prompt flag; `grep -a` on the distributed binary finds `AGENTS.md` (70 occurrences) and `base_instructions` (14). The measured contrast: `claude --help` lists `--system-prompt <prompt>` and `--append-system-prompt <prompt>`. |
-| `SessionSpec.prompt` | A positional argument **preceded by `--`**, and stdin when the content does not fit in the argv (t203). The `--` is not decoration: `codex exec "-1 apples"` answers `error: unexpected argument '-1' found` and does not open. On the stdin path the positional **disappears with it** — the `<stdin>` block is only appended when both channels carry content, and omitting the positional entirely was measured by reading the prompt clean. No shell in between in either case: a direct argv, with zero quoting-injection surface. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin is appended as a `<stdin>` block"; the `-1` error and the `--` success measured against `codex-cli 0.147.0` in t203 |
+| `SessionSpec.prompt` | A positional argument **preceded by `--`**, and stdin when the content does not fit in the argv. The `--` is not decoration: `codex exec "-1 apples"` answers `error: unexpected argument '-1' found` and does not open. On the stdin path the positional **disappears with it** — the `<stdin>` block is only appended when both channels carry content, and omitting the positional entirely was measured by reading the prompt clean. No shell in between in either case: a direct argv, with zero quoting-injection surface. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin is appended as a `<stdin>` block"; the `-1` error and the `--` success measured against `codex-cli 0.147.0` |
 | `SessionSpec.timeoutSeconds` | **There is no timeout flag** — neither here nor in Claude Code. It is the adapter's clock over the process, exactly as the interface presumes. | its absence in `codex exec --help` |
 | `SessionSpec.envOverrides` | The subprocess's environment, plus `-c key=value` for configuration. | `codex exec --help` |
 | `SessionListener.onOutput` | `--json` ("Print events to stdout as JSONL"). Runtime error lines come out as plain **non-JSON** text in the same stream — which confirms the contract of a raw, unparsed line. | A real execution: among the JSON frames came lines like `ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized` |
@@ -979,8 +979,7 @@ What the review *changed* is in the next section.
 ## Adjustments made in review
 
 Ten changes and two explicit rejections — four from the original review, plus
-what grew after the v1 freeze (item 5, t163; item 6, t166; item 7, t173; item 8,
-t172; item 9, t175; item 10, t203). Nothing here is decorative: items 1, 3, 6, 7,
+what grew after the v1 freeze (items 5 to 10). Nothing here is decorative: items 1, 3, 6, 7,
 8 and 10 came out of running the CLIs, not out of reading documentation.
 
 1. **A closed `stdin` became a normative invariant (new).** Running `codex exec`
@@ -1026,7 +1025,7 @@ how a format-as-product starts accumulating a dead field. What the divergence
 produced was the **normative rule** of the separation, which is now written down,
 and the kit's C2, which verifies it by what the process received.
 
-5. **`SessionSpec.silenceSeconds` and `onFinished`'s third argument** (t163). The
+5. **`SessionSpec.silenceSeconds` and `onFinished`'s third argument**. The
    first additive growth after the v1 freeze that touches the listener, and it
    obeys the same rule `SessionSpec.permissions` obeyed: an optional field, an
    optional parameter, no published symbol changing its name or its shape. A
@@ -1043,8 +1042,8 @@ and the kit's C2, which verifies it by what the process received.
    `session.finished.data.timeout_reason`.
 
 6. **`SessionSpec.model`, `listModels()`, `EngineModel` and `ModelCatalog`**
-   (t166). The second additive growth after the v1 freeze, and it obeys the same
-   rule `permissions` (t125) and `silenceSeconds` (t163) obeyed: an optional
+  . The second additive growth after the v1 freeze, and it obeys the same
+   rule `permissions` and `silenceSeconds` obeyed: an optional
    field, no published symbol changing its name or its shape. The difference is
    that this time what grew was a METHOD of the interface, and that is why
    `listModels?()` is optional in the member itself, not only in the fields — a
@@ -1070,8 +1069,8 @@ and the kit's C2, which verifies it by what the process received.
    and it is what `origin` exists for: without it, "these are the models" would be
    a statement nobody can weigh.
 
-7. **`SessionSpec.resumeFrom`, and what the real CLI answered about it** (t173,
-   2026-08-16). The same additive growth as the three before it: an optional
+7. **`SessionSpec.resumeFrom`, and what the real CLI answered about it**
+   (2026-08-16). The same additive growth as the three before it: an optional
    field, no published symbol changing its name or its shape, and a new case in
    the kit (C10) for what came into being. The difference is that this field gave
    a consumer to a capability the interface had declared since the freeze and no
@@ -1088,7 +1087,7 @@ and the kit's C2, which verifies it by what the process received.
      never told, measured in the `result` frame — not in a reproduced transcript
      line, which would be an echo and not memory;
    - **and it does NOT demand the same `workingDir`** — which **contradicts what
-     the ticket assumed**. t173 started from a reading of
+     the work assumed**. It started from a reading of
      `packages/runner/src/dispatch/session-worktree.ts:16-26` (every dispatch
      creates a new worktree) supposing that Claude Code's resume was keyed by
      directory, and therefore useless in production until somebody reused the
@@ -1103,7 +1102,7 @@ and the kit's C2, which verifies it by what the process received.
      on the second continuation.
 
 8. **`SessionFinishDetail.usage` and `SessionFinishDetail.models`, and the frame
-   that measured them** (t172, 2026-08-16; the evidence fixed here in t174). The
+   that measured them** (2026-08-16; the evidence fixed here). The
    same additive growth as the earlier ones: two optional fields on a type that
    already existed, no published symbol changing its name or its shape,
    `EngineAdapter` and `onFinished`'s signature untouched. And the second case in
@@ -1162,9 +1161,9 @@ and the kit's C2, which verifies it by what the process received.
    one of the four counts, or a session that died before the terminal frame
    report no field at all. Zero is a measurement; filling the silence with zeros
    is the one forbidden reading, and it is the same rule the taxonomy's `uso` has
-   carried since t98.
+   carried from the start.
 
-9. **`SessionSpec.modelTier`** (t175, 2026-08-16). The ninth additive growth, the
+9. **`SessionSpec.modelTier`** (2026-08-16). The ninth additive growth, the
    same shape as the earlier ones: an optional field, no published symbol
    changing its name or its shape, no adapter obliged to move. What it adds is a
    vocabulary, not a piece of data: `model` (item 6) crosses the boundary because
@@ -1196,7 +1195,7 @@ and the kit's C2, which verifies it by what the process received.
    made up — the same posture as `origin: 'catalog'` in item 6.
 
 10. **The large content left the argv, and the prompt stopped being readable as a
-    flag** (t203, 2026-08-16). The first item of this list that does **not**
+    flag** (2026-08-16). The first item of this list that does **not**
     touch the interface: no new symbol, no new field, nothing in `types.ts`. What
     it exercises is a path the normative rule already allowed for and that no
     adapter had taken — each adapter decides how it injects, through the engine's
@@ -1261,7 +1260,7 @@ holds for the status vocabulary as much as for the methods. It stays `failed`,
 and the real reason lives in the event log, which is append-only and loses
 nothing.
 
-t163 applied that same reasoning to a case that was no engine's, but ours: the
+That same reasoning applies to a case that is no engine's, but ours: the
 second watchdog. A `stalled`/`travada` separate from `timed_out` was the obvious
 port from flowpilot and would have been the wrong decision for the identical
 reason — what changes between the two stops is not the outcome, it is the cause,
@@ -1275,20 +1274,20 @@ Recorded so that whoever reads later does not presume an oversight:
   flowpilot; the PoC's ruler (D16) asks for dispatched sessions and complete
   telemetry, and mentioned neither of the two.
 
-  **Both left this list.** The transcript in t159; usage counting in t172, and it
+  **Both left this list.** The transcript first; usage counting after, and it
   too **only for `claude-code`**: that CLI's terminal `result` frame always
   brought `usage` and `modelUsage`, the reference adapter now reads them,
   declares `reportsUsage` and hands them over through `SessionFinishDetail`. What
   stays out is **Codex**'s counting — its `reportsUsage` is still "to be
-  confirmed against a real corpus" in the mapping table above, even after t141's
+  confirmed against a real corpus" in the mapping table above, even after the
   credentialed spike, and declaring the capability without having measured the
   frame would be exactly the unbacked statement this document refuses everywhere.
-  A ticket of its own, with the same gate t172 used here: run the real CLI and
+  A piece of its own, with the same gate used here: run the real CLI and
   look at the frame.
 
-  **Resume LEFT this list in t173, only for `claude-code`** (recorded here rather
+  **Resume LEFT this list, only for `claude-code`** (recorded here rather
   than disappearing without a trace, like the two entries of the freeze below).
-  `onEngineRef` had always captured "the key resume is going to need", and t173
+  `onEngineRef` had always captured "the key resume is going to need", and it
   gave that key back through `SessionSpec.resumeFrom`: the reference adapter
   declares `hasResume` and assembles `--resume <ref>`. What stays out, and stays
   undeclared, is **Codex**'s resume: `codex exec resume` exists, but it is a
@@ -1298,7 +1297,7 @@ Recorded so that whoever reads later does not presume an oversight:
   the adapter the original hypothesis wanted: N:M telemetry between a session and
   a work item, a recycling policy as graph data and worktree reuse across
   dispatches. Nothing in `dispatch` calls `resumeFrom` yet.
-- **An operating-system sandbox.** Skill permissions **left** this list in t125
+- **An operating-system sandbox.** Skill permissions **left** this list
   (see "The session's permissions" and tension 1, now resolved); what stays out
   is process isolation — `sandbox-exec`, a network namespace, a container. What
   exists today is gating by tool name, within what the engine allows, with the
@@ -1306,10 +1305,10 @@ Recorded so that whoever reads later does not presume an oversight:
 - **SDK versus subprocess.** A CLI subprocess is assumed, in line with D17 and
   with flowpilot's precedent.
 
-Two entries **left** this list at the freeze for v1 (t119), for having stopped
+Two entries **left** this list at the freeze for v1, for having stopped
 being true — recorded here rather than disappearing without a trace:
 "implementing any adapter at all, neither Claude Code nor Codex" (the first left
-in t104, the second in this ticket) and "freezing the interface: two real
+with the reference adapter, the second here) and "freezing the interface: two real
 adapters first" (which is what this document has just done).
 
 ## A review against the recorded decisions
@@ -1323,14 +1322,14 @@ adapters first" (which is what this document has just done).
   what came from there were the decisions and the scars.
 - **D9 (the contract format)** — a tension recorded, not decided here, in the
   section below.
-- **D4 (the skill import gate)** — tension 1 below came off the page in t125: the
+- **D4 (the skill import gate)** — tension 1 below came off the page: the
   field exists, the reference adapter applies what it can and refuses what it
   cannot.
 
 ### Tensions found (for the human gate, not decided here)
 
 1. **D4 × the absence of a permission policy in `SessionSpec` — RESOLVED in
-   t125.** The field is `permissions?: SessionPermissions` (see "The session's
+   permissions.** The field is `permissions?: SessionPermissions` (see "The session's
    permissions"), and the question the tension said was not neutral — who answers
    for the policy, the manifest or the adapter — was answered like this: **the
    manifest declares, the adapter applies or refuses**. The adapter's default
@@ -1340,7 +1339,7 @@ adapters first" (which is what this document has just done).
    the field) belongs to the skill rendering pipeline, which does not exist yet.
    The original record, which is still true about the CLIs, stays below.
 
-   > *As it was recorded, before t125:* both CLIs have first-class permission
+   > *As it was recorded, before that:* both CLIs have first-class permission
    > control — `codex exec` brings
    > `-s, --sandbox <read-only|workspace-write|danger-full-access>`,
    > `--approve-for-me` and `--dangerously-bypass-approvals-and-sandbox`;
@@ -1357,13 +1356,13 @@ adapters first" (which is what this document has just done).
    > it is additive but it is not neutral (it defines who answers for the policy:
    > the manifest or the adapter). It waits for D4's ticket.
 
-   That record left a warning, and t195 resolved it — without working around it.
+   That record left a warning, and it was resolved — without working around it.
    The warning was: `codex exec`'s `-s/--sandbox` is a real sandbox, of another
    nature than `claude-code`'s gating by tool name, and reusing the gating logic
    there would be translating a hard guarantee into a weak one with nobody asking
-   for it. t161 brought the second real consumer the rule of two consumers
+   for it. The second real consumer the rule of two consumers
    ordered waiting for (the skill's manifest started populating `permissions` for
-   any engine), and with it t195 gave Codex a policy of its own: a
+   any engine), and with it Codex got a policy of its own: a
    `codex-permission-policy.ts` that maps both axes onto the CLI's real sandbox
    modes, without sharing a line with the other engine's tool vocabulary. The
    hard guarantee stays hard, and what the CLI does not know how to combine

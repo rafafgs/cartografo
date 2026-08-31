@@ -340,7 +340,7 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
     assert.ok(tables.has(wanted), `the table "${wanted}" has to exist in a fresh database`);
   }
 
-  // The same term source as `no-portuguese-database.test.ts` (FR7/FR8): that
+  // The same term source the database gate used (FR7/FR8): that
   // gate asks it of the QUERIES and this one of the SCHEMA those queries run
   // against, and a word retired in one place but not the other is precisely the
   // drift a second declared list would let through.

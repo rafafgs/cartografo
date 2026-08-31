@@ -43,15 +43,15 @@ on purpose (see §7).
 | `edges` | list | yes | The transitions. See §3. |
 | `initial_node` | node id | yes | Where every traversal begins. It has to exist in `nodes`. |
 | `final_nodes` | list of ids | yes | Where the traversal ends. At least one; all of them have to exist in `nodes`. |
-| `project` | object | no | The class's **static** configuration, published by the input projection at `input.project` (`t253`). Absent means `{}`. See below. |
-| `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job (`t265`). Absent means **3**. See below. |
+| `project` | object | no | The class's **static** configuration, published by the input projection at `input.project`. Absent means `{}`. See below. |
+| `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job. Absent means **3**. See below. |
 
 ### `project`: what the class declares for itself
 
 What comes from no job and is produced by no node: the repository, the main
-branch, the test command, the conventions, the ledger documents. Until `t253`
-that material had nowhere to live — the software factory graph's skills already
-read `{{input.projeto.*}}` and nothing assembled that object. `t259` closed both
+branch, the test command, the conventions, the ledger documents. That material
+once had nowhere to live — the software factory graph's skills already read
+`{{input.projeto.*}}` and nothing assembled that object. Both halves are closed
 sides: those manifests started reading `{{input.project.*}}`, which is the name
 the projection publishes, and the software bundle declares the object.
 
@@ -83,7 +83,7 @@ Three things the field decides:
   project's **variant** (D13); what lives here is what the class declares for
   itself.
 
-### `input.traversal`: the walk the control plane projects (`t270`)
+### `input.traversal`: the walk the control plane projects
 
 Nothing here is a field of the document — it is `input.project`'s **sibling** on
 the other side of the projection. `project` is what the class declares and it
@@ -122,9 +122,9 @@ Three things the projection decides:
   first node on, instead of refusing the entry dispatch.
 - **Only the control plane can assemble this (D1).** It is a read of the
   append-only log, and a runner that reconstructed it through the public routes
-  would be a second author of the same fact. Before `t270` nobody assembled it:
-  `registrar-travessia` named `{{input.nos_executados}}` and
-  `{{input.data_de_registro}}`, the dispatch refused closed, and the second real
+  would be a second author of the same fact. Nobody assembled it at first:
+  the recording node named traversal fields nothing filled in,
+  the dispatch refused closed, and the second real
   bets crossing was unblocked by a person typing both values into `fields` by
   hand.
 
@@ -136,10 +136,10 @@ not a precedent.
 
 ### `max_consecutive_failures`: how many times in a row a node may fail
 
-Until `t265` there was no ceiling: a job whose sessions kept failing went back to
+There was once no ceiling: a job whose sessions kept failing went back to
 the queue, got a lease again and opened the next session, forever. What stopped
 the loop was the operator watching the log — which is what happened in the first
-real crossing of the bets graph (`t198`).
+real crossing of the bets graph.
 
 ```json
 {
@@ -176,7 +176,7 @@ semantic operation, not a cosmetic rename.
 
 The field names are **in Portuguese**, like the rest of the repository. It is
 worth reconsidering English when the schema is close to freezing (the rule of two
-consumers: after factory graph 2, `t116`), not before.
+consumers: after factory graph 2), not before.
 
 ---
 
@@ -211,7 +211,7 @@ contract; what changes is the role — **doing, checking, routing**.
 
 ### `engine`: which engine executes this node
 
-A graph can mix engines, and the choice is **per node** (t141). A node that
+A graph can mix engines, and the choice is **per node**. A node that
 declares `"engine": "codex"` runs on Codex; the next node, which declares
 nothing, runs on the default.
 
@@ -253,7 +253,7 @@ The complete example:
 ### `model`: which model of that engine executes this node
 
 Choosing the engine is half the decision; the other half is **how much** model
-the node needs (t166). A gate that checks a diff does not ask for the same model
+the node needs. A gate that checks a diff does not ask for the same model
 as the node that wrote the diff, and `model` is where that difference is written
 down — per node, in the graph, and not in a machine's flag.
 
@@ -278,7 +278,7 @@ inferring:
   installation has access to, and a constant here would put into every session a
   choice no graph made. In practice: no model flag is assembled, and the argv
   comes out identical to the one before this field existed. Every graph written
-  before t166 is still valid and still behaves exactly as before.
+  before this field existed is still valid and still behaves exactly as before.
 - **It is free text, and the refusal is the engine's.** There is no closed enum
   in the schema, for `engine`'s reason: an enum would force a schema edit on
   every new model. An unknown or mistyped `model` is refused by the CLI itself
@@ -289,7 +289,7 @@ inferring:
 - **Changing the model is a version change.** `model` is graph data, so changing
   it is a proposal: `change_node_field` with `field: "model"` goes down the same
   path as ever — apply, validate soundness, write a new `grafo_versao`, move the
-  pointer (D15) — and the same holds for `engine` since t166. It comes with an
+  pointer (D15) — and the same holds for `engine`. It comes with an
   inverse and with evidence, like any other proposal, and what ran under which
   decision stays in the history.
 - **It holds on the next traversal, not on the one running.** The graph is frozen
@@ -302,7 +302,7 @@ The complete example:
 
 ### `escalation_policy`: when this node calls a person
 
-Until `t167` the answer was one for the whole graph: every node asked when it got
+The answer was once one for the whole graph: every node asked when it got
 stuck, and every request for a decision blocked the job until somebody answered.
 That is the right behaviour for an architecture node and the wrong behaviour for
 a node that runs in the middle of the night with nobody on the other side. The
@@ -401,7 +401,7 @@ Two consequences the format inherits from that choice:
 ```
 
 An **opaque** pointer: the skill manifest's internal format is another document
-(`t97`); here only the pin matters. All three fields are required because a skill
+here only the pin matters. All three fields are required because a skill
 imported from an external repository is a prompt-injection vector (D4) — the hash
 is what stops a skill's content being swapped in silence underneath an already
 validated graph. `versao` is semver; `hash` is `sha256:` followed by 64 hex
@@ -422,9 +422,9 @@ with a contract, composing a graph becomes **matching contracts**.
 | `input_schema` | yes | The JSON Schema of the state projection the node receives. A projection, not a common window (README principle 4). |
 | `output_schema` | yes | The JSON Schema of what the node hands back to the board. Documentation of the expected shape and the source of the edges' routing vocabulary — it is **not** the schema the session's report is checked against. It is here that the `resultado` of a node with two or more exits is declared; it never enters the skill's `output`. See below. |
 | `checks` | yes | A list with **at least one** check. How what the node produced is verified. |
-| `produces` | no | The name of the **bucket** this node's structured output accumulates in, in the input projection of the following nodes (`t253`). Absent = merged at the top of `input`. See below. |
+| `produces` | no | The name of the **bucket** this node's structured output accumulates in, in the input projection of the following nodes. Absent = merged at the top of `input`. See below. |
 
-#### `output_schema` documents; the skill is what validates (`t267`)
+#### `output_schema` documents; the skill is what validates
 
 The two are different schemas on purpose, and confusing them cost three refused
 reports in the second real crossing of the bets graph. The node's `output_schema`
@@ -442,8 +442,7 @@ The practical consequence for whoever writes a node's prompt: showing the
 against is false. The runner renders both today, each with its own label
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 
-**The `resultado` key is reserved by the protocol and stays OUT of that check
-(`t269`).** The fenced block is a single one, so the routing label travels inside
+**The `resultado` key is reserved by the protocol and stays OUT of that check.** The fenced block is a single one, so the routing label travels inside
 the same object as the report — but it is THIS graph's vocabulary (an edge's
 `condition`), never the skill's `output`. When the reported object carries a
 `resultado` that is a usable label (a non-empty string after `trim`, the same
@@ -455,8 +454,8 @@ with the skill's fields and nothing else. The consequences, at both ends:
 
 - a skill can close its own `output` (`additionalProperties: false`) without
   declaring `resultado`, which is `derrubar-tese@1.0.0`'s case, and still accept
-  the report of a node with two exits — before `t269` it refused them all, and
-  since `t268` a refusal like that **blocks** the node;
+  the report of a node with two exits — it once refused them all, and such a
+  refusal now **blocks** the node;
 - declaring `resultado` as a property of a skill's `output` is not legal: the key
   never gets checked and never gets stored, so the declaration describes nothing.
   Whoever needs the label reads the edge that was taken in `job.transitioned`,
@@ -473,7 +472,7 @@ report beside a decision no edge carries.
 A node's structured output — what the session reports in
 `PATCH /v1/sessions/:id/finish` and the control plane keeps after checking it
 against the pinned skill's `output` (D9), already without the routing key
-`resultado` (`t269`) — has to land somewhere in the next node's `input`.
+`resultado` — has to land somewhere in the next node's `input`.
 `produces` is that somewhere, and it is a **bucket**, not a box per session: two
 nodes that declare the same name write into the same object.
 
@@ -549,7 +548,7 @@ A labelled transition between two nodes.
 There is no boolean expression language, and that is deliberate: designing one
 before two real graphs are pressing on the format is designing for a use case
 that does not exist yet (the rule of two consumers). When the second factory
-graph (`t116`) asks for more, the format gains more — with evidence.
+graph asks for more, the format gains more — with evidence.
 
 A cycle is legitimate (the `test → develop` rework is one), as long as the
 `terminates` rule (§6) still holds. What is **not** legitimate is a node picking
@@ -565,7 +564,7 @@ a list because a graph can end in more than one way (approved and archived are
 both legitimate endings). A final node does not have to be a topological leaf —
 it only has to be a point where the traversal may stop.
 
-### Reaching the final node is not having finished (`t262`)
+### Reaching the final node is not having finished
 
 **A final node is the node you do not leave — it is not the node that does
 nothing.** A final node is a node like any other (§2): it has a `skill_ref`, it
@@ -691,7 +690,7 @@ node scripts/validate-graph.mjs schema/examples/*.json
 The tests are `node --test` (the repository still has no `package.json`, by
 choice — zero dependencies).
 
-### 6.1 Contract matching: every required input has a producer (`t278`)
+### 6.1 Contract matching: every required input has a producer
 
 Structure and soundness judge the document's shape and its topology. Neither one
 asks the question a session actually depends on: **when a job arrives at this
@@ -704,7 +703,7 @@ is that question, answered statically, before any session opens.
 
 **It checks the PINNED SKILL's `input`/`output`, never the node's own
 `input_schema`/`output_schema`.** The subsection [`output_schema` documents; the
-skill is what validates](#output_schema-documents-the-skill-is-what-validates-t267)
+skill is what validates](#output_schema-documents-the-skill-is-what-validates)
 already draws this line for output, and it holds for input too — where the two
 have already drifted: the software bundle's `refine` node declares
 `required: ["ticket_id", "request"]`, while `refine-ticket@1.0.0` really requires
@@ -722,7 +721,7 @@ skill's schema is checked.
 `job.type` is **not** on the list: the column does not exist, the projection
 omits the key when it is absent, and a skill that requires it is refused even at
 the initial node. `resultado` is never counted as produced: it is the routing
-label, stripped before storage (`t269`).
+label, stripped before storage.
 
 **A node is judged on every path into it, not on some path.** A node can have
 more than one incoming edge — a rework loop, three edges into one final node — so
@@ -766,9 +765,9 @@ reference validators
 [`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs))
 do not carry this check: it needs a skill lookup, and they have none by design.
 
-**The outcome is on the answer, whichever it is (`t284`).** `POST /v1/graphs`
-publishes `contracts` on the `201` too, and not only inside the `422`. Until
-`t284` the success said `{graph, graph_version}` and nothing more, so "every
+**The outcome is on the answer, whichever it is.** `POST /v1/graphs`
+publishes `contracts` on the `201` too, and not only inside the `422`. The
+success once said `{graph, graph_version}` and nothing more, so "every
 contract was checked and they hold" and "no contract was read at all" arrived at
 a client as the same body — and the second one is a graph nobody has judged yet.
 
@@ -777,16 +776,16 @@ a client as the same body — and the second one is a graph nobody has judged ye
 | `{"status": "checked", "valid": …, "problems": […]}` | every pin resolved | the report above. `valid: false` is the `422`; on a `201` it is always `true` |
 | `{"status": "skipped", "reason": "skill_ref_unresolved", "problems": […]}` | at least one pin unresolved | the `skill_ref_unresolved` problems and nothing else — no `valid`, because a check that did not run neither passed nor failed, and no `unproduced_input`, because those were computed with an ancestor that produces nothing only for want of a manifest |
 
-`skipped` is what happened to the CALL, and since `t283` it is no longer the end
+`skipped` is what happened to the CALL, and it is not the end
 of the story: the same `201` carries `graph_version.contracts`, the state the
 version was stored with, and §6.2 is what becomes of it. The two keys are not
 the same shape and must not be read as one — `status`/`valid` is the verdict of
 this call, `state` is where the version stands.
 
-### 6.2 The state a version carries, and the one gate that reads it (`t283`)
+### 6.2 The state a version carries, and the one gate that reads it
 
 Registering a document and running work against it are two different promises,
-and until `t283` they were the same code path. `POST /v1/graphs` is permissive on
+and they were once the same code path. `POST /v1/graphs` is permissive on
 purpose — a graph whose skills arrive afterwards is the ordinary case for the
 screen's editor, for a forked example and for every fixture in
 `schema/examples/` — so the check standing aside there is right. It stops being
@@ -851,7 +850,7 @@ an absence would break the manual and imported flows for a fact it cannot check.
 
 We version the way git thinks, with no git in the core (D15). A graph version's
 snapshot is **this whole document**, and that is what `graph_version`'s
-`snapshot` column keeps once the control plane exists (`t100`/`t101`). Since the
+`snapshot` column keeps once the control plane exists. Since the
 document is self-contained, it **is already the minimal exportable bundle**: any
 version comes out as one file, crosses the border (an atlas, a backup, a mirror
 in the user's repository, a future approval via PR) and comes back without
@@ -893,7 +892,7 @@ exercised by `tests/schema-grafo.test.mjs`.
 
 [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json)
 is flowpilot's software delivery flow expressed in this format, and it is
-**direct input to factory graph 1 (`t105`)**: the factory graph's ticket starts
+**direct input to factory graph 1**: the factory graph's ticket starts
 from this file instead of from a blank sheet. By D17 flowpilot is a behavioural
 reference **with no code dependency** — the port is a reimplementation, and
 nothing here reads anything from there at run time.
@@ -933,5 +932,5 @@ Two modelling decisions the port took:
 
 The three edges of `TRIVIAL_EXTRA_TRANSITIONS` (the `work_tier` shortcuts) were
 deliberately left out: a tier is a scheduling policy applied on top of the
-topology, not topology. If the port needs them, they come in as a `t105`
-decision, on the record.
+topology, not topology. If the port needs them, they come in as a recorded
+decision.

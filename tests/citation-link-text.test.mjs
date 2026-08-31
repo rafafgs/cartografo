@@ -44,7 +44,7 @@
  * other, not either half with the filesystem, and a citation where both halves
  * spell the same dead name passes here — that is the dimension
  * `tests/decisions-rename-integrity.test.mjs` and
- * `tests/no-portuguese-document-tree.test.mjs` already sweep.
+ * the document sweeps already cover.
  *
  * The boundary is deliberate, not an oversight. A target-existence sweep over
  * this tree goes red today on

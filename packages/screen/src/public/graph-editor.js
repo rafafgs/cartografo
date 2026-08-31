@@ -94,7 +94,7 @@ export const MANUAL_EVIDENCE = Object.freeze({
  * `nome`, `direcao`, `de`, `para` and the value `sobe` are what
  * `packages/core`'s `metrica_esperada` validation demands of every proposal
  * (`domain/hypothesis.ts`, `routes/proposals.ts`), and `packages/core`'s own
- * `no-portuguese-user-facing-strings.test.ts` protects them on that side. They
+ * the copy gates protected them on that side. They
  * stayed exactly as they are through t310; only the free-text name moved.
  */
 export const MANUAL_METRIC = Object.freeze({

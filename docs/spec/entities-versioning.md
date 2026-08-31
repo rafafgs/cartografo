@@ -12,7 +12,7 @@ vocabulary; and the API that exposes all of it.
 The whole idea fits in one sentence: we version the way git thinks, with no git
 in the core. A version is addressed by the hash of its own content, points at its
 parent, and is never rewritten; what moves is a pointer. A rollback moves the
-pointer back and deletes nothing — it is what lets the topografo (`t110`) cross
+pointer back and deletes nothing — it is what lets the topografo cross
 "version × telemetry" with a join later, in the abandoned versions too.
 
 ---
@@ -29,7 +29,7 @@ pointer back and deletes nothing — it is what lets the topografo (`t110`) cros
 identity named by the user and a **versioning root**, and D13 describes class and
 variant as attributes of the graph, not as an entity with a life cycle of its
 own. That is why a class's base lineage is born with `id = class`. If a navigable
-class with no graph ever exists (t118), extracting the table is additive.
+class with no graph ever exists, extracting the table is additive.
 
 ```sql
 CREATE TABLE graph (
@@ -58,7 +58,7 @@ CREATE TABLE graph_version (
   created_at       TEXT NOT NULL,
   contracts_state  TEXT NOT NULL DEFAULT 'unchecked'
                      CHECK (contracts_state IN ('checked', 'unchecked', 'failed')),
-  contracts_report TEXT NOT NULL DEFAULT '[]'   -- JSON: ContractProblem[] (t283)
+  contracts_report TEXT NOT NULL DEFAULT '[]'   -- JSON: ContractProblem[]
 );
 
 CREATE TABLE proposal (
@@ -79,7 +79,7 @@ CREATE TABLE proposal (
 ```
 
 **`contracts_state` is the one column of `graph_version` that changes after the
-row is written (`t283`).** Everything else about a version is frozen — the
+row is written.** Everything else about a version is frozen — the
 snapshot, the parent and the hash that IS its identity — and this is a mutable
 STATUS on an otherwise append-only row, the same shape `skill.deprecated_at`
 already has. It records whether the contract check of `graph.md` §6.1 ever got to
@@ -100,7 +100,7 @@ Reading notes:
 - **The column names copy the event schemas literally**, as already specified in
   [`specs/events/schemas/`](../../specs/events/schemas)
   (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). That is what
-  made the emission `t196` switched on a direct mapping and not a translation:
+  made the emission a direct mapping and not a translation:
   every path that writes a version records `graph_version.registered` and —
   because writing and coming into force happen in the same transaction in all
   three cases — also `graph_version.applied`. Reverting records a
@@ -213,7 +213,7 @@ Two boundaries:
 
 Five operations are the minimum that proves the apply/soundness/revert cycle —
 not the topografo's final vocabulary. Growing is additive, and the rule of two
-consumers says to wait for a second real consumer (`t110`) before freezing.
+consumers says to wait for a second real consumer before freezing.
 
 Implementation: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/dominio/operacoes.ts).
 
@@ -277,7 +277,7 @@ unlike this document's other links.
 
 Every document that enters the database — registered directly or produced by a
 proposal — goes through the same pair of checks, which is the TypeScript port of
-`t96`'s reference validator ([`graph.md` §6](graph.md)):
+The reference validator ([`graph.md` §6](graph.md)):
 
 - `validateStructure` — shape and referential integrity (`{valid, errors}`);
 - `validateSoundness` — the four workflow-net rules, in the order `reachable`,
@@ -404,7 +404,7 @@ topografo, not rubbish.
 
 `motivo` is **mandatory**, mirroring the `data.reason` of the
 [`graph_version.reverted`](../../specs/events/schemas/graph_version.reverted.schema.json)
-event — which since `t196` is really written, with `entity.id` on the abandoned
+event — which is really written, with `entity.id` on the abandoned
 version: it is the evidence the topografo will cross with that version's
 telemetry. Reverting without saying why loses the useful half of the fact.
 
@@ -447,10 +447,10 @@ into a failure.
 Three guarantees around the arithmetic:
 
 - **`depois` belongs to the caller.** There is no named-metric engine in v1; who
-  computes it is the topografo (`t110`), which already had to compute the same
+  computes it is the topografo, which already had to compute the same
   metric in order to write `metrica_esperada` when it created the proposal.
 - **The following execution is demonstrated, not claimed.** `execucao_id` is
-  checked against `metricasPorVersao` (delivered by `t102`, FR17): without at
+  checked against `metricasPorVersao`: without at
   least one `job` of that execution recorded under `applied_version_id`, it is a
   `422 execucao_sem_evidencia`. It is the join that proves the applied version
   really ran.
@@ -481,10 +481,10 @@ active notification, if one ever exists, is another ticket's decision.
                 revert (with a reason)
 ```
 
-`approved` is principle 5's human gate, and since `t165` it is mandatory:
+`approved` is principle 5's human gate, and it is mandatory:
 applying demands `approved`, and a proposal that skips the gate takes a
 `409 proposta_nao_aprovada`. It is the same ladder the screen has drawn since
-`t111` ([`screen-proposal-inbox.md` §3](screen-proposal-inbox.md)) — `pending`
+The inbox ([`screen-proposal-inbox.md` §3](screen-proposal-inbox.md)) reads `pending`
 offers Approve/Reject, `approved` offers Apply.
 
 Approving writes nothing beyond the status: applying is a deliberate second act,
@@ -499,7 +499,7 @@ purpose:
 | A person, through the inbox | `pending` | `rejection_reason` (free text, mandatory) |
 | The soundness gate, during the `aplicar` | `approved` | `result` (§4's whole report) |
 
-A `rejected` row older than `t165` has `rejection_reason = NULL`, and that is the
+A `rejected` row written before that rule has `rejection_reason = NULL`, and that is the
 correct thing: it was never rejected by a person. There was no backfill.
 
 The verdict is orthogonal to this diagram: it writes `result` and leaves the
@@ -512,8 +512,8 @@ justified the reversal.
 
 ## 6. Endpoints
 
-All under `/v1` and, since `t124`, all demanding
-`Authorization: Bearer <token>`. Since `t196`, the four that write a version or
+All under `/v1`, all demanding
+`Authorization: Bearer <token>`. The four that write a version or
 move the pointer — `POST /graphs`, `POST /graphs/:id/fork`,
 `POST /proposals/:id/apply` and `POST /proposals/:id/revert` — **write the
 corresponding event in the same transaction as the row**. The two that only open
@@ -521,7 +521,7 @@ a pending proposal (`/promote` and `/offer`) write nothing, because no version
 changed.
 
 The paths below are in this document's Portuguese spelling; the implemented
-surface was renamed to English by `t127` (D18), and it is the one that holds:
+surface was renamed to English (D18), and it is the one that holds:
 `/v1/graphs`, `/v1/graphs/:id/fork`, `/v1/graph-versions/:id`, `/v1/proposals`,
 `/v1/proposals/:id/apply` and so on. Rewriting the whole table is another ticket.
 
@@ -621,19 +621,19 @@ Every item here is another ticket's declared scope, not an oversight:
   changes, offering to a variant that has moved on its own is a decision for
   whoever approves the proposal, not an implementation detail. A diff anchored on
   the ancestor (`base-at-the-fork` → `current-base`) is real future work.
-- **Running an operation's inverse** — here only its shape is validated (`t118`).
+- **Running an operation's inverse** — here only its shape is validated.
 - **Registering a new manual version over an existing lineage**, outside the
   proposal flow.
 - **Reverting to an arbitrary version**, outside a proposal's
   `target_version` / `applied_version_id` pair.
-- **Human approval/rejection** as an API action (`t111`).
+- **Human approval/rejection** as an API action.
 - **Computing `depois` automatically** from the telemetry, and firing the verdict
   "when the execution ends": there is no named-metric engine and no
   finished-execution entity or event in v1
   ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
   Closing the experiment is always an explicit API call (§5).
-- **The identity of the caller.** `t124` closed the authentication — every one of
+- **The identity of the caller.** Authentication is closed — every one of
   these routes demands a credential —, but a token proves possession, not a
-  person: the `actor` of the events `t196` switched on is
+  person: the `actor` of the events is
   `{type: "system", ref: "control-plane"}`, the component that acted, and none of
   these routes accepts an `actor` in the body.

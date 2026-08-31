@@ -19,7 +19,7 @@
  *   as a string literal of its own. Naming it in prose is fine; a literal is a
  *   second copy of the announcement contract.
  *
- * Same shape as `scripts/no-portuguese-identifiers.test.mjs` and
+ * Same shape as
  * `scripts/check-single-writer.mjs`: exported functions plus a CLI, zero
  * dependencies, and a report that comes out whole instead of stopping at the
  * first offender. It runs inside the root `node --test scripts/**\/*.test.mjs`

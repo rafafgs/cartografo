@@ -50,7 +50,7 @@ import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 
-const PHRASE = 'the t106 human escalation cycle, end to end';
+const PHRASE = 'the human escalation cycle, end to end';
 const CHOSEN_NAME = 'PROOF-T106.md';
 const TIMEOUT_SECONDS = 300;
 const DEADLINE_MS = 60_000;
@@ -118,7 +118,7 @@ function sharedWorktree(repo) {
 
 /** A disposable git repository — the session's `workingDir`. */
 function createDisposableRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-t106-'));
+  const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-escalation-'));
   const repo = join(root, 'repo');
   mkdirSync(repo);
   const git = (...args) =>
@@ -126,8 +126,8 @@ function createDisposableRepo() {
 
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
-  git('config', 'user.name', 'Spike t106');
-  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the t106 manual proof\n');
+  git('config', 'user.name', 'Escalation Spike');
+  writeFileSync(join(repo, 'README.md'), '# Disposable repo of the human-escalation manual proof\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
   return { root, repo };
@@ -210,10 +210,10 @@ async function main() {
 
   try {
     const client = new ControlPlaneClient({ urlBase: plane.url });
-    await client.registerRunner('spike-t106', 'the manual proof of human escalation');
+    await client.registerRunner('spike-escalation', 'the manual proof of human escalation');
 
     const work = await api('POST', '/v1/jobs', {
-      title: 'Create the t106 proof file, with the name the person chooses',
+      title: 'Create the escalation proof file, with the name the person chooses',
       entry_node_id: 'implementar',
       execution_id: 106,
     });
@@ -229,7 +229,7 @@ async function main() {
 
     const controller = new Controller({
       client,
-      runnerId: 'spike-t106',
+      runnerId: 'spike-escalation',
       projectId: 1,
       runnerCap: 1,
       projectCap: 2,
@@ -267,7 +267,7 @@ async function main() {
     // --- 2. a human answers ---------------------------------------------------
     const answered = await api('PATCH', `/v1/input-requests/${question.id}/answer`, {
       answer: `Use the name ${CHOSEN_NAME}`,
-      answered_by: 'spike-t106',
+      answered_by: 'spike-escalation',
     });
     log(`answer recorded: ${answered.resposta} (origem ${answered.origem})`);
 

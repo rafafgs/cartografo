@@ -200,7 +200,7 @@ export const MACHINE_PREFIXES = Object.freeze(['~/flowpilot', '~/bootstrap-core'
  * What t121 did to them was mechanical and is the reason they are here: it
  * renamed `docs/o-que-e-o-cartografo.md` and the bets closing note, and these
  * five cited one or the other. A citation left pointing at a path that no
- * longer exists is the exact failure `tests/notes-rename-integrity.test.mjs`
+ * longer exists is the exact failure a citation sweep
  * was written for, so leaving them alone was not an option either.
  */
 export const TOUCHABLE = Object.freeze([

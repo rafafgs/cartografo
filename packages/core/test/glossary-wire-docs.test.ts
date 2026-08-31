@@ -2,9 +2,9 @@
  * D20 gate: the specifications cite the wire the code really publishes (t231).
  *
  * The five surface children of t213 each built a sweep over the CODE of their
- * own surface — `no-portuguese-wire.test.ts` in four packages,
+ * own surface — a wire gate in four packages,
  * `event-validation.test.ts`, `domain-operations.test.ts`,
- * `no-portuguese-database.test.ts`. None of them reads a Markdown file, and
+ * plus a database one. None of them reads a Markdown file, and
  * that is the hole this one fills: a specification that still spells
  * `trabalho.criado` or `--classe` is wrong in exactly the way a renamed
  * identifier would be, and until now nothing said so.
@@ -32,7 +32,7 @@
  * §5.3 and §5.4 — the validation report — are deliberately NOT swept. Their
  * rows are common Portuguese words (`estrutura`, `erros`, `codigo`, `regra`),
  * and a backtick span is not a narrow enough position for those: the documents
- * quote `erros` as a plain noun. `no-portuguese-wire.test.ts` can sweep them
+ * quote `erros` as a plain noun. A wire gate can sweep them
  * because it masks TypeScript down to key and value positions, and there is no
  * equivalent narrowing for prose. No document was found citing that vocabulary
  * stale, so nothing is lost by leaving it to the code gate that can judge it.

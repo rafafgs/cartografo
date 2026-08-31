@@ -18,7 +18,7 @@
  *
  * ## The oracle is the database, not a word list
  *
- * The sibling gate `no-portuguese-database.test.ts` reads the glossary and asks
+ * A sibling gate reads the glossary and asks
  * of a name in a query: is this Portuguese? That is the wrong question to put to
  * documents which are bilingual ON PURPOSE. Almost everything they spell in
  * Portuguese, D20 leaves in Portuguese: the prose, the domain vocabulary, the
@@ -48,7 +48,7 @@
  *   glossary never retired is not a hit, because a specification is allowed to
  *   describe a column before a migration builds it. Quoted runs and the `--`
  *   tail of a line are blanked first — a stored value is not a citation of a
- *   name (`no-portuguese-database.test.ts` is the gate that reads those), and a
+ *   name (a separate gate reads those), and a
  *   trailing comment is prose.
  * - **A backticked `<table>.<column>`**, and only when BOTH halves resolve: the
  *   prefix has to be a table (today's spelling or one the migrations renamed
@@ -510,7 +510,7 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
     // A trailing comment inside a body, naming the word a column is named after.
     'CREATE TABLE graph (\n  id  TEXT PRIMARY KEY,  -- classe, for the base lineage (D8)\n);',
     // A stored value inside a body: this sweep reads NAMES, and the value is
-    // `no-portuguese-database.test.ts`'s to judge.
+    // the database gate's to judge.
     "CREATE TABLE proposal (\n  status  TEXT NOT NULL DEFAULT 'pending'\n);",
   ];
   for (const line of allowed) {

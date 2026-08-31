@@ -204,8 +204,7 @@ export async function escalateRouting(
   // Built with concatenation and not with a nested template literal: the D18
   // sweep's masking scanner reads one backtick at a time, and a template
   // inside a `${…}` silently desyncs it for the whole rest of the file
-  // (`test/no-portuguese-identifiers.test.ts`, "one backtick in a comment can
-  // swallow the quoted strings that follow it").
+  // — one backtick in a comment can swallow the quoted strings that follow it.
   const routes = edges
     .map((edge) => '`' + (edge.condition ?? '') + '` → `' + edge.to + '`')
     .join(', ');

@@ -12,7 +12,7 @@
  * depend on an installed, authenticated CLI
  * (`docs/formats/engine-adapter.md:363-366`). The other half of the proof —
  * a real `claude` session emitting a real block — is the manual spike
- * (`scripts/spike-t106-human-escalation.mjs`), same discipline t104 used.
+ * (`scripts/spike-human-escalation.mjs`), same discipline t104 used.
  *
  * The control-plane boot is the same pattern as
  * `test/controller/dispatch-and-lease.e2e.test.ts`: spawn the real binary, wait

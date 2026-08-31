@@ -1,11 +1,11 @@
 # Specification: generating the intake draft, from the request to the proposed breakdown
 
 **API version:** `v1` · **Implementation:** [`packages/runner/src/intake/`](../../packages/runner/src/intake)
-**Layer consumed:** [`docs/spec/intake.md`](./intake.md) (t122) — this ticket adds
+**Layer consumed:** [`docs/spec/intake.md`](./intake.md) — this ticket adds
 no route, no column and no migration; it is the first client that **produces**
 `items`
 
-[t122](./intake.md) delivered intake in two phases: `POST /v1/intake` proposes a
+[Intake](./intake.md) happens in two phases: `POST /v1/intake` proposes a
 draft from an already decomposed list of `items`, and
 `POST /v1/intake/:id/confirmations` is the human gate that turns the draft into
 `trabalho`. §8 of that specification named exactly what was missing — *generating
@@ -27,7 +27,7 @@ ticket.
 | Command line | [`command-line.ts`](../../packages/runner/src/intake/command-line.ts) | argv, the environment, the credential, the two ports and the refusal message. | Yes. |
 | Entrypoint | [`cli.mjs`](../../packages/runner/src/intake/cli.mjs) | The engine, the draft directory, stdout and the exit code. | — |
 
-The split is the topografo's (t146) and the synthesizer's, for the reason
+The split is the topografo's and the synthesizer's, for the reason
 `synthesize.ts` records: **what a test reaches without starting a process is what
 stays covered.** That is why reading argv does not live in the `.mjs`.
 
@@ -54,7 +54,7 @@ The credential's precedence is `--token` > `CARTOGRAFO_TOKEN` > none, the same a
 topografo, the flow topografo and the synthesizer. With no credential at all the
 client sends no header and takes a `401` — an empty header would look like a
 credential. This has been here since the first commit because of
-[t146](./surveyor-flow.md): the topografo was born with no token flag and was
+[The topografo](./surveyor-flow.md) was born with no token flag and was
 entirely unusable until it got one.
 
 The exit codes are the contract, because that is what a person (or a script)
@@ -116,10 +116,10 @@ and a write to the control plane", and they decided differently **on purpose**:
 
 | Ticket | What the session produces | Who writes | Why |
 |---|---|---|---|
-| Synthesizer ([t115](./synthesizer.md), [D10](../../DECISIONS.md)) | A local draft file | A person, running `cartografo import` | Registering a graph has no undo at the API level: **the import IS the gate**. |
-| Topografo ([t110](./surveyor-flow.md)) | The operations of a semantic diff | The command itself, in `POST /v1/proposals` | A proposal is born `pendente` and nobody applies it: the safety ladder is the **absence** of an `apply` method in the client. |
+| Synthesizer ([spec](./synthesizer.md), [D10](../../DECISIONS.md)) | A local draft file | A person, running `cartografo import` | Registering a graph has no undo at the API level: **the import IS the gate**. |
+| Topografo ([spec](./surveyor-flow.md)) | The operations of a semantic diff | The command itself, in `POST /v1/proposals` | A proposal is born `pendente` and nobody applies it: the safety ladder is the **absence** of an `apply` method in the client. |
 
-Intake follows the topografo, and the reason is t122's own design: the draft is
+Intake follows the topografo, and the reason is intake's own design: the draft is
 born `pendente`, is freely editable by `PATCH`, discardable by `/discards`,
 **emits no event at all**, and only becomes work at `/confirmations`
 ([§1](./intake.md)). The human gate is already there. Stopping at a file for
@@ -159,7 +159,7 @@ The session writes `intake-proposto.json` in the current directory, with exactly
 ```
 
 A file and not a ` ```fenced``` ` block on stdout, and this is the scar of
-[t148](./synthesizer.md): the output of a real CLI is a stream of `stream-json`
+[The synthesizer](./synthesizer.md) reads a real CLI, whose output is a stream of `stream-json`
 frames, one per line, so the block's quotes arrive as `\"` and its breaks as `\n`
 — and the fence scanner matches neither. It cost the synthesizer a whole round of
 real executions with every fake-engine test green. Nothing here needs to watch
@@ -178,7 +178,7 @@ the same reason.
 [`domain/intake.ts`](../../packages/core/src/domain/intake.ts). Every rule
 `validateItems` applies and the prompt does not state is a rule the session has
 no way of following — and the bill arrives as an `invalid_items` nobody asked
-for. It is t138's lesson, one floor up.
+for. It is the same lesson, one floor up.
 
 So the prompt says, in full:
 
@@ -201,7 +201,7 @@ statements, and the node that refines is precisely the one that needs to tell
 them apart. An empty list passes validation and lies to the rest of the graph —
 the worst kind of error, because it does not show.
 
-The last one arrived with t175 and is the reason the triage is **free**: this
+The last one is the reason the triage is **free**: this
 session is already reading the request and proposing the breakdown, so asking it
 to classify each item as well costs no new session, no new call and no new model.
 The prompt teaches both values and where the line sits — `trivial` for a rename,
@@ -238,7 +238,7 @@ first, and the person would be left with two verdicts to reconcile.
 | `POST` | `/v1/intake` | The only write. Returns `201 {rascunho}`, always `pendente`. |
 
 One read and one write. `/confirmations`, `/discards` and `PATCH` exist
-([§6 of t122](./intake.md)) and are **not** called from here.
+([§6 of the intake spec](./intake.md)) and are **not** called from here.
 
 ---
 
@@ -246,7 +246,7 @@ One read and one write. `/confirmations`, `/discards` and `PATCH` exist
 
 | Does not do | Why |
 |---|---|
-| Confirm, amend or discard the draft | That is t122's human gate, intact. The client does not even have the methods. |
+| Confirm, amend or discard the draft | That is intake's human gate, intact. The client does not even have the methods. |
 | Revalidate `items` on the runner's side | §7. |
 | `--projeto-id` / `--execucao-id` | The route has a default for both (`DEFAULT_PROJECT`); the flag arrives the day somebody needs it. |
 | Join the traversal or the runner's dispatch loop | Manual and one-shot, like `synthesize` and the topografo (README, principle 5). |

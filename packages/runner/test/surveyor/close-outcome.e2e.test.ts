@@ -36,7 +36,7 @@
  *
  * English per D18; the graph fixture's node ids, the frozen hypothesis body
  * (`execucao_id`, `depois`) and the metric's own keys (`nome`, `direcao`, `de`,
- * `para`) stay Portuguese — see `no-portuguese-wire.test.ts`'s header for which
+ * `para`) stay Portuguese — see the wire glossary for which
  * decision freezes each.
  */
 

@@ -69,7 +69,13 @@ const ANY_DIACRITIC =
 /**
  * Every surviving diacritic under `notes/`, by file and line, with its reason.
  *
- * Measured 2026-08-26. Ten files, twenty-six lines, zero violations.
+ * Measured 2026-08-26: ten files, twenty-six lines, zero violations. The
+ * eleventh file and its two lines arrived with the MCP server's branch — the
+ * round's own note, whose two quotations are the founder speaking, and which
+ * had to be re-wrapped to be seen as marked at all: the mandate's sentence was
+ * correctly quoted and wrapped across a line break, which the `SPAN` matcher
+ * cannot see (the reason is on `SPAN` itself, and the second assertion below is
+ * what caught it).
  */
 const SANCTIONED = Object.freeze([
   Object.freeze({
@@ -121,6 +127,11 @@ const SANCTIONED = Object.freeze([
     file: 'notes/2026-08-25-t309-closing-note.md',
     lines: [94, 100, 194],
     why: 'quoted source text, and a fenced block citing the literal string split on',
+  }),
+  Object.freeze({
+    file: 'notes/2026-08-26-dino-runner-a-b.md',
+    lines: [11, 281],
+    why: "the founder's own words: the round's mandate, and what he said on seeing the commits",
   }),
 ]);
 
@@ -195,7 +206,7 @@ test('AT12 — the inventory is complete: no diacritic under notes/ is unaccount
     `a line under notes/ carries Portuguese and is not in the inventory:\n${unlisted.join('\n')}`,
   );
 
-  assert.equal(found.length, 26, `the inventory measured 26 lines and now finds ${String(found.length)}`);
+  assert.equal(found.length, 28, `the inventory measured 28 lines and now finds ${String(found.length)}`);
 });
 
 test('AT12 — the D24 detector is narrower than this inventory, and that is written down', () => {

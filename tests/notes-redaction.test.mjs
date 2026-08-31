@@ -247,6 +247,17 @@ export const TOUCHABLE = Object.freeze([
   // and nothing redacted was reintroduced. Twice in one day says the wrap is a
   // recurring hazard of long quotations in agent-written notes, not a one-off.
   'notes/2026-08-26-t314-closing-note.md',
+  // Third incident fix of the same shape, on the branch that added the MCP
+  // server: the round's own note carried the founder's mandate as a quotation
+  // wrapped across a line break, and one more quotation marked with plain
+  // double quotes rather than a span. Both now sit on one line, inside
+  // backticks; not one character of quoted text changed, and nothing redacted
+  // was reintroduced. Three times says what the two before it suspected — the
+  // hazard is the wrap, and the answer is the inventory in
+  // `tests/t313-notes-quotation-inventory.test.mjs`, which this branch extends
+  // to this note so the next reader finds the two lines listed rather than
+  // rediscovers them.
+  'notes/2026-08-26-dino-runner-a-b.md',
 ]);
 
 /** Every `.md` under `notes/`, repo-relative, in directory order. */

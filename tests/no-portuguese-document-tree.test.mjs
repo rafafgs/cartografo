@@ -48,9 +48,12 @@
  *   literals of `specs/events/tests/schemas.test.mjs` are where its
  *   per-schema test titles are BUILT — blank those and the sweep goes green over
  *   the very lines that opened t301. The gloss is still honoured: it is D24's
- *   escape hatch in every reading, not markdown's alone. The cost of having no
- *   other one is that a bare URL in a comment trips `com`; a whole-string
- *   hostname is spared only where JSON's carve-out reaches it.
+ *   escape hatch in every reading, not markdown's alone. What replaced the
+ *   markdown cut is {@link DOTTED_NAME}: `.md` has the backtick to escape with
+ *   and `.json` has its whole-string carve-out, and `.mjs` had neither, so a
+ *   `user.email=noreply@anthropic.com` in a `git` invocation read as the
+ *   Portuguese function word `com` — which is the very collision JSON's
+ *   carve-out was written for, met one extension over.
  *
  * The third reading is t301's, and what it replaced was an argument with a hole
  * in it. That argument said `.mjs` belonged to
@@ -158,6 +161,24 @@ const SPAN = /(`+)(.+?)\1/g;
 /** A JSON string whose whole content is a URL or a bare dotted hostname. */
 const HOSTNAME_VALUE = /"(?:https?:\/\/)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/[^"\s]*)?"/gi;
 
+/**
+ * A dotted machine name: a hostname, an event type, a property access.
+ *
+ * Lifted verbatim from `tests/no-portuguese-repo-sweep.test.mjs`'s
+ * `MACHINE_NAMES`, which lifted it from
+ * `packages/core/test/no-portuguese-core-tests.test.ts`, and narrow there for
+ * the reason it is narrow here: a whole-file pass has no idea whether it is
+ * reading a message or a fixture, so the only shapes blanked are the ones that
+ * CANNOT be a Portuguese sentence. `anthropic.com` is one. `job.created` is
+ * one. A sentence is not — prose does not glue two words with a dot and no
+ * space.
+ *
+ * Applied to `.mjs` alone, because that is the only reading with no escape of
+ * its own: markdown quotes with a backtick, JSON spares a whole-string
+ * hostname, and source has neither. That is the hole, and this is its size.
+ */
+const DOTTED_NAME = /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]+)+\b/g;
+
 /** The line with every backtick span blanked out; the backticks stay. */
 function withoutSpans(line) {
   let kept = line;
@@ -216,7 +237,11 @@ export function linesToScan(relativePath, contents) {
 
   const extension = path.extname(relativePath);
   if (extension === '.md') return proseOf(contents);
-  if (extension === '.mjs') return contents.split('\n').map((line) => line.replace(GLOSS, ''));
+  if (extension === '.mjs') {
+    return contents
+      .split('\n')
+      .map((line) => line.replace(GLOSS, '').replace(DOTTED_NAME, blank));
+  }
   if (extension === '.json' || extension === '.jsonl') {
     return contents
       .split('\n')

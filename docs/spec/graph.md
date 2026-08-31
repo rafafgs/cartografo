@@ -24,25 +24,25 @@ on purpose (see §7).
 
 ```json
 {
-  "classe": "software-development",
-  "linhagem": { "tipo": "base" },
-  "metadata": { "nome": "...", "versao_schema": "1.0.0" },
-  "nos": [ /* ... */ ],
-  "arestas": [ /* ... */ ],
-  "no_inicial": "refinar",
-  "nos_finais": ["implantar"]
+  "problem_class": "software-development",
+  "lineage": { "type": "base" },
+  "metadata": { "name": "...", "schema_version": "1.0.0" },
+  "nodes": [ /* ... */ ],
+  "edges": [ /* ... */ ],
+  "initial_node": "refine",
+  "final_nodes": ["deploy"]
 }
 ```
 
 | Field | Type | Required | What it is |
 |---|---|---|---|
-| `classe` | string | yes | The identity of the problem class, named by the user (D8). The graph's versioning root and the telemetry's aggregation unit. |
-| `linhagem` | object | yes | The position in the class's lineage: base or variant (D13). See §5. |
+| `problem_class` | string | yes | The identity of the problem class, named by the user (D8). The graph's versioning root and the telemetry's aggregation unit. |
+| `lineage` | object | yes | The position in the class's lineage: base or variant (D13). See §5. |
 | `metadata` | object | yes | Name, description, schema version, date, origin. A drawer deliberately open to extra keys. |
-| `nos` | list | yes | The steps. At least one. See §2. |
-| `arestas` | list | yes | The transitions. See §3. |
-| `no_inicial` | node id | yes | Where every traversal begins. It has to exist in `nos`. |
-| `nos_finais` | list of ids | yes | Where the traversal ends. At least one; all of them have to exist in `nos`. |
+| `nodes` | list | yes | The steps. At least one. See §2. |
+| `edges` | list | yes | The transitions. See §3. |
+| `initial_node` | node id | yes | Where every traversal begins. It has to exist in `nodes`. |
+| `final_nodes` | list of ids | yes | Where the traversal ends. At least one; all of them have to exist in `nodes`. |
 | `project` | object | no | The class's **static** configuration, published by the input projection at `input.project` (`t253`). Absent means `{}`. See below. |
 | `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job (`t265`). Absent means **3**. See below. |
 
@@ -60,8 +60,8 @@ the projection publishes, and the software bundle declares the object.
   "project": {
     "repo": "git@github.com:octo-org/cartografo.git",
     "branch_principal": "main",
-    "comando_testes": "npm test",
-    "comandos_qualidade": ["npm test", "npm run lint", "npm run typecheck"]
+    "test_command": "npm test",
+    "quality_commands": ["npm test", "npm run lint", "npm run typecheck"]
   }
 }
 ```
@@ -75,7 +75,7 @@ Three things the field decides:
   the same non-breaking posture as `hooks` and the node's `engine`.
 - **The keys inside belong to the CLASS.** The schema opens the drawer
   (`additionalProperties: true`) for the same reason `custom_fields` exists:
-  `comando_testes` is software-development vocabulary and would make no sense in
+  `test_command` is software-development vocabulary and would make no sense in
   asymmetric bets, and closing the set would ask for a schema edit per class.
 - **Static, and therefore versioned with the document.** Change the test command
   and you change the graph, and the change is proposable and reversible like any
@@ -94,9 +94,9 @@ travels frozen in the snapshot; `traversal` is what the log says happened to
 ```json
 {
   "traversal": {
-    "nodes_visited": ["triagem", "coleta-fundamentos", "analise-assimetria"],
+    "nodes_visited": ["triage", "collect-fundamentals", "analyze-asymmetry"],
     "entered_at": "2026-08-17T22:41:03.117Z",
-    "sessions_by_node": { "triagem": [11], "coleta-fundamentos": [12, 14] }
+    "sessions_by_node": { "triage": [11], "collect-fundamentals": [12, 14] }
   }
 }
 ```
@@ -187,27 +187,27 @@ contract; what changes is the role — **doing, checking, routing**.
 
 ```json
 {
-  "id": "testar",
-  "papel": "tester",
-  "tipo_no": "portao",
-  "descricao": "Exercita o comportamento entregue e roteia.",
-  "skill_ref": { "id": "cartografo/testar-alpha", "versao": "1.0.0", "hash": "sha256:5f5184…" },
-  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+  "id": "test",
+  "role": "tester",
+  "node_type": "gate",
+  "description": "Exercises the delivered behaviour and routes.",
+  "skill_ref": { "id": "cartografo/alpha-test", "version": "1.0.0", "hash": "sha256:5f5184…" },
+  "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
 }
 ```
 
 | Field | Required | What it is |
 |---|---|---|
 | `id` | yes | A unique identifier in the document. |
-| `papel` | yes | Who does the work, in the domain's language: `arquiteto`, `desenvolvedor`, `red-team`. |
-| `tipo_no` | yes | `trabalho` or `portao`. |
-| `descricao` | no | What the node does, in one sentence. |
+| `papel` | yes | Who does the work, in the domain's language: `architect`, `developer`, `red-team`. |
+| `node_type` | yes | `work` or `gate`. |
+| `description` | no | What the node does, in one sentence. |
 | `engine` | no | Which engine executes this node. Absent = the runner's default engine. See below. |
 | `model` | no | Which model of that engine executes this node. Absent = the engine's own default. See below. |
 | `escalation_policy` | no | When this node calls a person: `always`, `on_uncertainty`, `never`. Absent = `on_uncertainty`. See below. |
 | `escalation_recipient` | no | Who ought to be called when this node escalates. Free text. See below. |
 | `skill_ref` | yes | A pinned pointer to the registry's skill. |
-| `contrato` | yes | Input, output and verifications. |
+| `contract` | yes | Input, output and verifications. |
 
 ### `engine`: which engine executes this node
 
@@ -218,11 +218,11 @@ nothing, runs on the default.
 ```json
 {
   "id": "conferir",
-  "papel": "revisor",
-  "tipo_no": "trabalho",
+  "role": "reviewer",
+  "node_type": "work",
   "engine": "codex",
-  "skill_ref": { "id": "cartografo/revisar-nota", "versao": "1.0.0", "hash": "sha256:2df09e…" },
-  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+  "skill_ref": { "id": "cartografo/review-note", "version": "1.0.0", "hash": "sha256:2df09e…" },
+  "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
 }
 ```
 
@@ -260,12 +260,12 @@ down — per node, in the graph, and not in a machine's flag.
 ```json
 {
   "id": "conferir",
-  "papel": "revisor",
-  "tipo_no": "portao",
+  "role": "reviewer",
+  "node_type": "gate",
   "engine": "codex",
   "model": "gpt-5.6-luna",
-  "skill_ref": { "id": "cartografo/revisar-nota", "versao": "1.0.0", "hash": "sha256:2df09e…" },
-  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+  "skill_ref": { "id": "cartografo/review-note", "version": "1.0.0", "hash": "sha256:2df09e…" },
+  "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
 }
 ```
 
@@ -312,12 +312,12 @@ revertible like any other field.
 ```json
 {
   "id": "publicar",
-  "papel": "publicador",
-  "tipo_no": "trabalho",
+  "role": "publisher",
+  "node_type": "work",
   "escalation_policy": "never",
   "escalation_recipient": "editor-de-plantao",
-  "skill_ref": { "id": "cartografo/publicar-nota", "versao": "1.0.0", "hash": "sha256:e6952f…" },
-  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+  "skill_ref": { "id": "cartografo/publish-note", "version": "1.0.0", "hash": "sha256:e6952f…" },
+  "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
 }
 ```
 
@@ -376,11 +376,11 @@ an oversight: notification and roles are a future ticket, and the field exists n
 so that the policy and the recipient are born together instead of the graph
 having to be rewritten when delivery arrives. It is not even read by the runner.
 
-### `tipo_no`: why a gate is a node
+### `node_type`: why a gate is a node
 
 **A gate is not a separate entity.** A gate is a node whose role is to check and
 route, and it carries a skill and a contract exactly like any other node
-(`notes/2026-08-14-learning.md`). The `trabalho` / `portao` distinction exists
+(`notes/2026-08-14-learning.md`). The `work` / `gate` distinction exists
 for reading and for telemetry — "how much time did the job spend in verification?"
 —, not to give a gate a privileged place in the format.
 
@@ -388,16 +388,16 @@ Two consequences the format inherits from that choice:
 
 - A gate is **deterministic wherever possible** (run a test, validate a schema,
   build) and **agentic only where there is judgement**. That shows up in the
-  contract, in `verificacoes`, not in a field of the node's own.
+  contract, in `checks`, not in a field of the node's own.
 - An agentic gate verifies with **its own evidence** — it runs the result — never
-  with the report of whoever did the work. Hence `evidencia_obrigatoria` being
+  with the report of whoever did the work. Hence `required_evidence` being
   `const: true` in the schema: an agentic check with no evidence attached is not
   a verification, it is an opinion.
 
 ### `skill_ref`: a pinned pointer
 
 ```json
-{ "id": "cartografo/testar-alpha", "versao": "1.0.0", "hash": "sha256:<64 hex>" }
+{ "id": "cartografo/alpha-test", "version": "1.0.0", "hash": "sha256:<64 hex>" }
 ```
 
 An **opaque** pointer: the skill manifest's internal format is another document
@@ -411,7 +411,7 @@ characters.
 > the `sha256` of the string `placeholder:<the skill's id>@<versao>`. No real
 > skill exists yet to be pinned.
 
-### `contrato`: the load-bearing piece
+### `contract`: the load-bearing piece
 
 Input and output in JSON Schema, verification as a list of typed checks (D9,
 README principle 3). With no contract the synthesizer composes by hallucination;
@@ -419,15 +419,15 @@ with a contract, composing a graph becomes **matching contracts**.
 
 | Field | Required | What it is |
 |---|---|---|
-| `entrada_schema` | yes | The JSON Schema of the state projection the node receives. A projection, not a common window (README principle 4). |
-| `saida_schema` | yes | The JSON Schema of what the node hands back to the board. Documentation of the expected shape and the source of the edges' routing vocabulary — it is **not** the schema the session's report is checked against. It is here that the `resultado` of a node with two or more exits is declared; it never enters the skill's `output`. See below. |
-| `verificacoes` | yes | A list with **at least one** check. How what the node produced is verified. |
+| `input_schema` | yes | The JSON Schema of the state projection the node receives. A projection, not a common window (README principle 4). |
+| `output_schema` | yes | The JSON Schema of what the node hands back to the board. Documentation of the expected shape and the source of the edges' routing vocabulary — it is **not** the schema the session's report is checked against. It is here that the `resultado` of a node with two or more exits is declared; it never enters the skill's `output`. See below. |
+| `checks` | yes | A list with **at least one** check. How what the node produced is verified. |
 | `produces` | no | The name of the **bucket** this node's structured output accumulates in, in the input projection of the following nodes (`t253`). Absent = merged at the top of `input`. See below. |
 
-#### `saida_schema` documents; the skill is what validates (`t267`)
+#### `output_schema` documents; the skill is what validates (`t267`)
 
 The two are different schemas on purpose, and confusing them cost three refused
-reports in the second real crossing of the bets graph. The node's `saida_schema`
+reports in the second real crossing of the bets graph. The node's `output_schema`
 is what THIS graph expects from here, and it is where the edges' vocabulary comes
 from (an edge's `condition` matches the `outcome` it declares). What
 `PATCH /v1/sessions/:id/finish` checks the fenced block's object against is the
@@ -438,7 +438,7 @@ more than one graph, and that is why the validation lives in it and not in the
 node.
 
 The practical consequence for whoever writes a node's prompt: showing the
-`saida_schema` to a session and saying it is what the output will be checked
+`output_schema` to a session and saying it is what the output will be checked
 against is false. The runner renders both today, each with its own label
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 
@@ -478,15 +478,15 @@ against the pinned skill's `output` (D9), already without the routing key
 nodes that declare the same name write into the same object.
 
 ```json
-{ "id": "desenvolver", "contrato": { "produces": "artefato", "…": "…" } }
-{ "id": "testar",      "contrato": { "…": "…" } }
-{ "id": "integrar",    "contrato": { "produces": "artefato", "…": "…" } }
+{ "id": "develop", "contract": { "produces": "artifact", "…": "…" } }
+{ "id": "test",      "contract": { "…": "…" } }
+{ "id": "integrate",    "contract": { "produces": "artifact", "…": "…" } }
 ```
 
-With those three declarations, `desenvolver` writes `artefato.branch`, `integrar`
-writes `artefato.merge_commit` — and `implantar`, two hops later, reads both. The
-`testar` gate in the middle declares **no** bucket: it produces no artifact of its
-own, it merges at the top, and the `artefato` that already existed stays exactly
+With those three declarations, `develop` writes `artifact.branch`, `integrate`
+writes `artifact.merge_commit` — and `deploy`, two hops later, reads both. The
+`test` gate in the middle declares **no** bucket: it produces no artifact of its
+own, it merges at the top, and the `artifact` that already existed stays exactly
 as it was. Were it a box per session, the `merge_commit` would arrive in an
 object that no longer carries the `branch`, and it is that chaining — not the
 isolated step — that the traversal needs.
@@ -509,13 +509,13 @@ other route.
 Every verification is of one of two types:
 
 ```json
-{ "tipo": "deterministico", "comando": "make check", "descricao": "…" }
+{ "type": "deterministic", "command": "make check", "description": "…" }
 ```
 ```json
-{ "tipo": "agentico",
-  "instrucao": "Run the behaviour and check every acceptance criterion. Attach the output.",
-  "evidencia_obrigatoria": true,
-  "descricao": "…" }
+{ "type": "agentic",
+  "instruction": "Run the behaviour and check every acceptance criterion. Attach the output.",
+  "required_evidence": true,
+  "description": "…" }
 ```
 
 The framework's honest limit is here: **verification density** (README principle
@@ -529,38 +529,38 @@ gate, the graph is decorative.
 A labelled transition between two nodes.
 
 ```json
-{ "de": "testar", "para": "desenvolver", "condicao": "retrabalho", "descricao": "…" }
+{ "from": "test", "to": "develop", "condition": "rework", "description": "…" }
 ```
 
 | Field | Required | What it is |
 |---|---|---|
-| `de` | yes | The id of the source node; it has to exist in `nos`. |
-| `para` | yes | The id of the destination node; it has to exist in `nos`. |
-| `condicao` | yes | A non-empty string. See below. |
-| `descricao` | no | When this transition happens. |
+| `from` | yes | The id of the source node; it has to exist in `nodes`. |
+| `to` | yes | The id of the destination node; it has to exist in `nodes`. |
+| `condition` | yes | A non-empty string. See below. |
+| `description` | no | When this transition happens. |
 
-**`condicao` is a label, not an expression.** Two forms:
+**`condition` is a label, not an expression.** Two forms:
 
-- **The source node's outcome label** (`"aprovado"`, `"retrabalho"`) when the
+- **The source node's outcome label** (`"approved"`, `"rework"`) when the
   source has multiple exits — typically a gate. The label matches the `resultado`
-  the source node's `saida_schema` declares.
-- **The literal `"sempre"`** when the source has a single exit.
+  the source node's `output_schema` declares.
+- **The literal `"always"`** when the source has a single exit.
 
 There is no boolean expression language, and that is deliberate: designing one
 before two real graphs are pressing on the format is designing for a use case
 that does not exist yet (the rule of two consumers). When the second factory
 graph (`t116`) asks for more, the format gains more — with evidence.
 
-A cycle is legitimate (the `testar → desenvolver` rework is one), as long as the
+A cycle is legitimate (the `test → develop` rework is one), as long as the
 `terminates` rule (§6) still holds. What is **not** legitimate is a node picking
 a path freely at run time: the only decisions in flight are the gates', over
 edges already declared (README principle 2).
 
 ---
 
-## 4. `no_inicial` and `nos_finais`
+## 4. `initial_node` and `final_nodes`
 
-`no_inicial` is single: every traversal begins in the same place. `nos_finais` is
+`initial_node` is single: every traversal begins in the same place. `final_nodes` is
 a list because a graph can end in more than one way (approved and archived are
 both legitimate endings). A final node does not have to be a topological leaf —
 it only has to be a point where the traversal may stop.
@@ -586,14 +586,14 @@ never stores:
   older than the field, degrades instead of blowing up, the same posture as
   `resolveNode` and `resolveOutputSchema`.
 
-The rule is about the **presence of the pin**, never about `tipo_no`: a gate is
+The rule is about the **presence of the pin**, never about `node_type`: a gate is
 not a separate entity (§2), and a final gate with a skill runs exactly like a
 final work node with a skill.
 
 Why this is here and not only in the code: the bets factory graph ends at
 `registro-monitoramento`, which pins `registrar-travessia` — D14's recording and
-monitoring step —, and the software one ends at `implantar`, which pins
-`implantar-release`. While completion came from arrival, those two steps never
+monitoring step —, and the software one ends at `deploy`, which pins
+`verify-release`. While completion came from arrival, those two steps never
 got a session, and the traversal ended in silence: no failure, no event, no
 record. It was gap 2 of the first real execution
 (`notes/2026-08-17-first-bets-run.md`).
@@ -607,31 +607,31 @@ of the graph.
 
 ## 5. Class and lineage
 
-`classe` (D8) is named by the user in the problem declaration; the synthesizer
+`problem_class` (D8) is named by the user in the problem declaration; the synthesizer
 only suggests an existing class when it recognizes a resemblance. It is the
 graph's versioning root and the telemetry's aggregation unit — two graphs of the
 same class are comparable; of different classes, not.
 
-`linhagem` (D13) positions this graph inside the class:
+`lineage` (D13) positions this graph inside the class:
 
 ```json
-{ "tipo": "base" }
+{ "type": "base" }
 ```
 ```json
-{ "tipo": "variante", "base_classe": "software-development",
-  "origem_proposta_id": "prop-2026-08-31-004" }
+{ "type": "variante", "base_class": "software-development",
+  "source_proposal_id": "prop-2026-08-31-004" }
 ```
 
 | Field | Required | What it is |
 |---|---|---|
-| `tipo` | yes | `base` (the class's canonical graph) or `variante` (a fork of a base). |
-| `base_classe` | when `variante` | The class of the base graph the variant came out of. |
-| `origem_proposta_id` | no | The topografo's proposal that originated the fork. |
+| `type` | yes | `base` (the class's canonical graph) or `variante` (a fork of a base). |
+| `base_class` | when `variante` | The class of the base graph the variant came out of. |
+| `source_proposal_id` | no | The topografo's proposal that originated the fork. |
 
-A `base` declares neither `base_classe` nor `origem_proposta_id` — the schema
+A `base` declares neither `base_class` nor `source_proposal_id` — the schema
 forbids it.
 
-`origem_proposta_id` is optional, but almost always present: **a fork is never
+`source_proposal_id` is optional, but almost always present: **a fork is never
 born of an a-priori decision**, but of a topografo's proposal with evidence of
 systematic divergence in the telemetry (D13). The foreseen exception is the
 variant imported from an external atlas, which has no local proposal of origin.
@@ -653,7 +653,7 @@ validarSoundness(doc) // → { valid, violations: [{ rule, target }] }
 ```
 
 `validarEstrutura` covers shape and referential integrity: the required keys
-present, node ids unique, every edge and every id in `no_inicial`/`nos_finais`
+present, node ids unique, every edge and every id in `initial_node`/`final_nodes`
 pointing at a node that exists. `validarSoundness` runs the four rules below, in
 this order. Neither of them throws on a malformed document: the synthesizer needs
 the whole report, not the first error.
@@ -664,10 +664,10 @@ formally verify the graphs the AI proposes"**.
 
 | Rule | What it demands | Reported target | Counterexample |
 |---|---|---|---|
-| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/examples/graph-invalid-unreachable-node.json) |
-| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/examples/graph-invalid-without-termination.json) |
-| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/examples/graph-invalid-edge-without-condition.json) |
-| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/examples/graph-invalid-node-without-contract.json) |
+| `reachable` | Every node is reachable from `initial_node` by following `edges`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/examples/graph-invalid-unreachable-node.json) |
+| `terminates` | From every node there is a path to some node in `final_nodes`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/examples/graph-invalid-without-termination.json) |
+| `edge_with_condition` | No edge with a `condition` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/examples/graph-invalid-edge-without-condition.json) |
+| `node_with_contract` | No node without a `skill_ref` or a `contract`, nor with an empty `checks`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/examples/graph-invalid-node-without-contract.json) |
 
 Reading notes:
 
@@ -703,11 +703,11 @@ crossings answered that at dispatch time, after the sessions were paid for
 is that question, answered statically, before any session opens.
 
 **It checks the PINNED SKILL's `input`/`output`, never the node's own
-`entrada_schema`/`saida_schema`.** The subsection [`saida_schema` documents; the
-skill is what validates](#saida_schema-documents-the-skill-is-what-validates-t267)
+`input_schema`/`output_schema`.** The subsection [`output_schema` documents; the
+skill is what validates](#output_schema-documents-the-skill-is-what-validates-t267)
 already draws this line for output, and it holds for input too — where the two
-have already drifted: the software bundle's `refinar` node declares
-`required: ["ticket_id", "pedido"]`, while `refinar-ticket@1.0.0` really requires
+have already drifted: the software bundle's `refine` node declares
+`required: ["ticket_id", "request"]`, while `refine-ticket@1.0.0` really requires
 `["job", "project"]`. Only the skill's schema is enforced anywhere, so only the
 skill's schema is checked.
 
@@ -729,7 +729,7 @@ more than one incoming edge — a rework loop, three edges into one final node �
 availability is a meet over predecessors:
 
 ```
-avail(no_inicial) = BASE
+avail(initial_node) = BASE
 avail(N)          = BASE ∪ ⋂ over every predecessor P of (avail(P) ∪ produced(P))
 ```
 
@@ -884,7 +884,7 @@ exercised by `tests/schema-grafo.test.mjs`.
 
 | File | What it is for |
 |---|---|
-| [`graph-valid-minimal.json`](../../schema/examples/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
+| [`graph-valid-minimal.json`](../../schema/examples/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"always"` edge. A skeleton for the first graph. |
 | [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json) | **The master example.** See below. |
 | [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
 | `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
@@ -900,22 +900,22 @@ nothing here reads anything from there at run time.
 
 Five nodes, one per activity state:
 
-| Node | Role | `tipo_no` | State in flowpilot |
+| Node | Role | `node_type` | State in flowpilot |
 |---|---|---|---|
-| `refinar` | arquiteto | trabalho | `refining` |
-| `desenvolver` | desenvolvedor | trabalho | `developing` |
-| `integrar` | integrador | trabalho | `integrating` |
-| `testar` | tester | **portao** | `testing` |
-| `implantar` | deployer | trabalho | `deploying` |
+| `refine` | architect | work | `refining` |
+| `develop` | developer | work | `developing` |
+| `integrate` | integrator | work | `integrating` |
+| `test` | tester | **gate** | `testing` |
+| `deploy` | deployer | work | `deploying` |
 
 Five edges, following `ALLOWED_TRANSITIONS`:
 
 ```
-refinar ──sempre──▶ desenvolver ──sempre──▶ integrar ──sempre──▶ testar
-                          ▲                                        │
-                          └──────────── retrabalho ────────────────┤
-                                                                   │
-                                                    implantar ◀──aprovado
+refine ──always──▶ develop ──always──▶ integrate ──always──▶ test
+                       ▲                                      │
+                       └──────────── rework ──────────────────┤
+                                                              │
+                                              deploy ◀──approved
 ```
 
 Two modelling decisions the port took:
@@ -924,12 +924,12 @@ Two modelling decisions the port took:
    `to_integrate`, `to_test` and `to_deploy` are the controller's scheduling
    plumbing — where the work waits, not what the work does. The graph's edges are
    the transitions of `ALLOWED_TRANSITIONS` with those queues collapsed. By the
-   same criterion, `backlog` and `done` stay out: `implantar` is the final node,
+   same criterion, `backlog` and `done` stay out: `deploy` is the final node,
    and flowpilot's `deploying → done` has no destination node here.
-2. **`testar` is a `portao`.** It is the only node with multiple exits, and what
-   it produces is a verdict that routes — `aprovado` carries on to deployment,
-   `retrabalho` goes back to development (flowpilot's alpha test cycle). The rest
-   are `trabalho`: they deliver an artifact and have a single exit.
+2. **`test` is a `gate`.** It is the only node with multiple exits, and what
+   it produces is a verdict that routes — `approved` carries on to deployment,
+   `rework` goes back to development (flowpilot's alpha test cycle). The rest
+   are `work`: they deliver an artifact and have a single exit.
 
 The three edges of `TRIVIAL_EXTRA_TRANSITIONS` (the `work_tier` shortcuts) were
 deliberately left out: a tier is a scheduling policy applied on top of the

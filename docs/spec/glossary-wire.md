@@ -48,7 +48,7 @@ one column. §5.6 is that leftover, found by the first real crossing
 (`notes/2026-08-17-first-bets-run.md`, hole 7).
 
 The last row is the child that closes D20: every surface's CODE already had a
-gate of its own when it started (one `no-portuguese-wire.test.ts` per package,
+gate of its own when it started (one wire gate per package,
 plus the event, operation and database gates), and what was missing was the
 paper. `packages/core/test/glossary-wire-docs.test.ts` reads §2.1, §5.1 and
 §5.2 of this file at run time and refuses any of those spellings inside a
@@ -66,7 +66,7 @@ rewrote `0001`–`0018` in place instead of stacking a nineteenth one that would
 rename what nobody had recorded yet.
 
 Complement, not substitute, of D18's already existing gate
-(`no-portuguese-identifiers.test.ts`): that one looks after code IDENTIFIERS,
+(the identifier sweeps): those look after code IDENTIFIERS,
 and masks exactly what this document maps — the value on the wire.
 
 ## How to read the tables
@@ -827,7 +827,7 @@ separates `evento.tipo` from `pergunta.tipo` in §4.2.
   step by step (migration, order, what to do with an already exported factory
   bundle) belongs to the database child ticket.
 - **The error envelope's final shape.** See 1.4.
-- **Whether `no-portuguese-wire.test.ts` exists.** Extending D18's gates to
+- **Whether a per-package wire gate exists.** Extending D18's gates to
   cover the value on the wire is the last child ticket (docs and gate), once
   there is an English wire to check.
 - **The brand and the frozen data.** `cartografo` is still `cartografo`. This

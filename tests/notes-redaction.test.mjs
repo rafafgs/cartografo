@@ -223,6 +223,13 @@ export const TOUCHABLE = Object.freeze([
   'notes/2026-08-25-t303-closing-note.md',
   'notes/2026-08-25-t305-closing-note.md',
   'notes/2026-08-25-t306-closing-note.md',
+  // 2026-08-31, on the founder's instruction before the repository opens: this
+  // note's "network effect" paragraph named a distribution funnel and a moat —
+  // business direction rather than a technical decision, which is the line he
+  // drew between what this repository documents and what it does not. Only that
+  // paragraph changed; nothing t307 redacted was touched, and AT1-AT5 still
+  // sweep this file like every other.
+  'notes/2026-08-14-extension-and-quality.md',
   // Incident fix, 2026-08-26, direct on main: three Portuguese quotations this
   // note keeps ON PURPOSE were flagged by the document-tree gate, because the
   // backtick spans marking them WRAPPED and that matcher is line-scoped. Each

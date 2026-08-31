@@ -6525,3 +6525,324 @@ test("t273 — the bench is advanced before the transition, and a bench that ref
     },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t332 — a `shell` node crosses the graph on the paths every other node uses  */
+/* -------------------------------------------------------------------------- */
+
+/** The command a shell node runs in this suite. */
+const SHELL_NODE = fileURLToPath(
+  new URL("../fixtures/shell-node.mjs", import.meta.url),
+);
+
+/**
+ * The pin of a manifest, recomputed here rather than asked for.
+ *
+ * `command` is in the subset since t332, and that is not a detail of this test:
+ * the registry recomputes the same pin at `POST /v1/skills` and refuses a
+ * manifest whose hash does not match its content (D4). If the two recipes
+ * disagreed about `command`, every registration below would answer `400` — which
+ * is precisely the drift FR6 exists to prevent, proven here by a real
+ * registration rather than by a unit test of a hash function.
+ */
+function manifestContentHash(manifest: Record<string, unknown>): string {
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+    budgets: manifest.budgets,
+    command: manifest.command,
+  };
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonicalValue(subset)), "utf8")
+    .digest("hex")}`;
+}
+
+/**
+ * The gate manifest of the traversal fixture, turned into a SHELL skill.
+ *
+ * Everything else is left exactly as it is — the same `output` schema, the same
+ * checks, the same permissions, the same body — so what the three cases below
+ * measure is the engine and nothing else. The body stays because a shell skill
+ * still has one: it documents, for whoever reads the registry, what the command
+ * does. What executes is `command.argv`.
+ */
+function shellSkillManifest(): Record<string, unknown> {
+  const base = manifest(GATE_SKILL);
+  const shell: Record<string, unknown> = {
+    ...base,
+    id: "shell-crossing",
+    description:
+      "Runs the deterministic check as a command, with no session and no model.",
+    command: { argv: [process.execPath, SHELL_NODE] },
+  };
+  shell.hash = manifestContentHash(shell);
+  return shell;
+}
+
+/** The traversal fixture with its gate moved onto the `shell` engine. */
+function shellGateGraph(
+  className: string,
+  pin: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const document = traversalGraph(className);
+  const nodes = (document.nodes as Array<Record<string, unknown>>).map((node) =>
+    node.id === "conferir"
+      ? { ...node, engine: "shell", skill_ref: pin }
+      : node,
+  );
+  return { ...document, nodes, ...extra };
+}
+
+test("t332 — a shell node advances, fails and escalates through the paths every node uses", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+  const { createClaudeCodeDispatch, DispatchError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { decodeShellSessionText } =
+    await loadModule<typeof SessionTextModule>(SESSION_TEXT_MODULE);
+  // Typed inline rather than through a top-level `import type`: this file's
+  // Portuguese-prose gate pins one line by NUMBER
+  // (`no-portuguese-runner-tests.test.ts`), and an import added above it moves
+  // the pin without changing a word of what it excuses.
+  const { ShellAdapter } = await loadModule<
+    typeof import("../../src/engine/shell-adapter.ts")
+  >("src/engine/shell-adapter.ts");
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+
+  const shellSkill = shellSkillManifest();
+  // The registration is the first assertion of this test: a `201` here means
+  // the control plane recomputed the pin over a subset that includes `command`.
+  await api(baseUrl, "POST", "/v1/skills", shellSkill, 201, token);
+  const pin = {
+    id: shellSkill.id,
+    version: shellSkill.version,
+    hash: shellSkill.hash,
+  };
+
+  /**
+   * A dispatch with BOTH routes wired: the agent engine for the nodes that
+   * declare none, and `shell` for the one that does.
+   *
+   * The shell route carries no `commandBuilder` seam, unlike every other engine
+   * in this file: there is no binary to swap out. What runs is the argv the
+   * registered manifest declared, through the adapter's own path, which is the
+   * only way these cases could prove anything about it.
+   */
+  const dispatchWith = (
+    workDir: string,
+    envOverrides: Record<string, string>,
+  ): ((jobId: number) => Promise<DispatchModule.DispatchOutcome>) =>
+    createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      engines: {
+        ...claudeOnly(fakeAdapter()),
+        shell: {
+          adapter: new ShellAdapter({ graceMs: 300 }),
+          decodeSessionText: decodeShellSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      resolveInput: gateInput,
+      envOverrides,
+    });
+
+  /** A job standing on the shell gate, in a class of its own. */
+  async function jobOnTheGate(
+    className: string,
+    executionId: number,
+    extra: Record<string, unknown> = {},
+  ): Promise<Work> {
+    const versionId = await registerGraph(
+      baseUrl,
+      token,
+      shellGateGraph(className, pin, extra),
+    );
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: `a deterministic node inside the trail (${className})`,
+        entry_node_id: "conferir",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  const jobNow = async (id: number): Promise<Work> =>
+    await api<Work>(baseUrl, "GET", `/v1/jobs/${id}`, undefined, 200, token);
+
+  const sessionsOf = async (id: number): Promise<Session[]> =>
+    (
+      await api<{ sessions: Session[] }>(
+        baseUrl,
+        "GET",
+        `/v1/sessions?job_id=${id}`,
+        undefined,
+        200,
+        token,
+      )
+    ).sessions;
+
+  await parent.test(
+    "AT1 — a command that prints a valid report and exits 0 routes the job like any other node",
+    async (t) => {
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t332-ok-"));
+      const record = path.join(workDir, "received.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnTheGate("shell-node-advances", 3320);
+
+      const outcome = await dispatchWith(workDir, {
+        SHELL_NODE_RECORD: record,
+        SHELL_NODE_REPORT: JSON.stringify({
+          resultado: "aprovado",
+          outcome: "pass",
+          evidencia: "the command read saida.md and exited 0",
+        }),
+      })(job.id);
+
+      assert.deepEqual(outcome, { blocked: false });
+      assert.equal(
+        (await jobNow(job.id)).current_node_id,
+        "publicar",
+        "the report of a command routes exactly like the report of a session",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.ok(session !== undefined, "the shell node opened a session row");
+      assert.equal(
+        session.engine,
+        "shell",
+        "the engine the node declared is the engine the telemetry records",
+      );
+      assert.equal(session.status, "completed");
+      assert.equal(session.exit_code, 0);
+
+      // ...and the command really ran, in the worktree the dispatch minted for
+      // it. The sidecar is the only channel that can say so.
+      const received = JSON.parse(readFileSync(record, "utf8")) as {
+        argv: string[];
+        env: Record<string, string>;
+        cwd: string;
+      };
+      assert.deepEqual(
+        received.argv,
+        [],
+        "the manifest declared no argument past the script, and none was invented",
+      );
+      assert.equal(received.cwd, realpathSync(workDir));
+      assert.ok(
+        !("PATH" in received.env),
+        `the skill allowlisted nothing, so nothing of the runner's environment may cross: ${Object.keys(
+          received.env,
+        ).join(", ")}`,
+      );
+    },
+  );
+
+  await parent.test(
+    "AT2 — a command that exits non-zero blocks the job through the same failure ladder",
+    async (t) => {
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t332-fail-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      // One failure is enough to block, so the case is one dispatch instead of
+      // three. The ceiling is the GRAPH's own field (t265) and it is what the
+      // control plane counts against — no shell-specific branch anywhere.
+      const job = await jobOnTheGate("shell-node-fails", 3321, {
+        max_consecutive_failures: 1,
+      });
+
+      await assert.rejects(
+        () =>
+          dispatchWith(workDir, { SHELL_NODE_EXIT_CODE: "7" })(job.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof DispatchError,
+            `expected DispatchError, got: ${String(error)}`,
+          );
+          return true;
+        },
+        "a session that did not complete fails the dispatch, whichever engine ran it",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.ok(session !== undefined);
+      assert.equal(session.status, "failed");
+      assert.equal(
+        session.exit_code,
+        7,
+        "the exit code is never masked: it is what the command answered",
+      );
+
+      const blocked = await jobNow(job.id);
+      assert.equal(
+        blocked.blocked,
+        true,
+        "the streak the control plane counts is the same one it counts for a session",
+      );
+      assert.equal(
+        blocked.current_node_id,
+        "conferir",
+        "and a job that failed did not move",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT3 — a command that exits 0 with no usable report takes the escalation path",
+    async (t) => {
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t332-mute-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnTheGate("shell-node-says-nothing", 3322);
+
+      await dispatchWith(workDir, {
+        SHELL_NODE_REPORT: "garbled",
+      })(job.id);
+
+      const stuck = await jobNow(job.id);
+      assert.equal(
+        stuck.current_node_id,
+        "conferir",
+        "a node with two exits and no label chosen may not be routed from",
+      );
+      assert.equal(stuck.blocked, true);
+
+      const { input_requests: pending } = await api<{
+        input_requests: Question[];
+      }>(
+        baseUrl,
+        "GET",
+        "/v1/input-requests?status=pending",
+        undefined,
+        200,
+        token,
+      );
+      assert.ok(
+        pending.some((question) => question.job_id === job.id),
+        "the same routing escalation an agent session gets when it names no edge",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.ok(session !== undefined);
+      assert.equal(session.status, "completed", "the command itself did not fail");
+    },
+  );
+});

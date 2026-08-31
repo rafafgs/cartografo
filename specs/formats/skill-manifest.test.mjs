@@ -38,8 +38,15 @@ const SCHEMA_PATH = fileURLToPath(new URL('./skill-manifest.schema.json', import
 const DOC_PATH = fileURLToPath(new URL('./skill-manifest.md', import.meta.url));
 const EXAMPLES_DIR = new URL('./examples/', import.meta.url);
 
-/** The two examples the document lists as complete manifests. */
-const EXAMPLES = ['skill-manifest.develop.json', 'skill-manifest.verify-develop.json'];
+/** The examples the document lists as complete manifests. */
+const EXAMPLES = [
+  'skill-manifest.develop.json',
+  'skill-manifest.verify-develop.json',
+  'skill-manifest.shell-echo.json',
+];
+
+/** The shell-role example, which is the only one carrying a `command` block. */
+const SHELL_EXAMPLE = 'skill-manifest.shell-echo.json';
 
 /** The negative fixture: material of test, never an example (see the doc). */
 const NEGATIVE = 'skill-manifest.invalid.fixture.json';
@@ -50,8 +57,23 @@ const NEGATIVE = 'skill-manifest.invalid.fixture.json';
  * `budgets` joined it in t163 for the reason `permissions` is already there: it
  * is behaviour-affecting, and D4's whole point is that behaviour cannot move
  * without the hash moving with it.
+ *
+ * `command` joined it in t332 for the same reason taken to its limit. On a shell
+ * skill the argv is not a declaration ABOUT the behaviour, it IS the behaviour —
+ * `instructions` there is documentation for whoever reads the registry, and the
+ * process that runs is `command.argv`. A subset without it would let the one
+ * field that decides what executes move under an unchanged pin, which is exactly
+ * the tamper D4 exists to catch.
  */
-const PINNED_FIELDS = ['instructions', 'input', 'output', 'checks', 'permissions', 'budgets'];
+const PINNED_FIELDS = [
+  'instructions',
+  'input',
+  'output',
+  'checks',
+  'permissions',
+  'budgets',
+  'command',
+];
 
 /**
  * Every key the rename retired, with the new name it answers to (t178).
@@ -153,7 +175,7 @@ test('the schema compiles as a draft 2020-12 document', () => {
   assert.doesNotThrow(() => compileSchema());
 });
 
-test('both examples validate against the schema', () => {
+test('every committed example validates against the schema', () => {
   const validate = compileSchema();
   for (const name of EXAMPLES) {
     assert.ok(
@@ -353,4 +375,103 @@ test('t184 — the citation scan bites, and spares what was never a format key',
   assert.deepEqual(retiredNamesIn('artifact.declared_gates'), []);
   assert.deepEqual(retiredNamesIn('{{input.project.test_command}}'), []);
   assert.deepEqual(retiredNamesIn('packages/runner/src/engine/permission-policy.ts'), []);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t332 — `command`: the field that IS the behaviour of a shell skill          */
+/* -------------------------------------------------------------------------- */
+
+test('t332 — the shell example declares a command, and instructions all the same', () => {
+  const manifest = example(SHELL_EXAMPLE);
+
+  assert.ok(Array.isArray(manifest.command?.argv), 'the example carries no command.argv');
+  assert.ok(manifest.command.argv.length >= 1, 'an argv with no first element runs nothing');
+  assert.ok(
+    typeof manifest.instructions === 'string' && manifest.instructions.length > 0,
+    '`instructions` stays REQUIRED for a shell skill: it is what a human reading the ' +
+      'registry finds out the command from, and it is reviewed at the import gate (D4)',
+  );
+});
+
+test('t332 — the schema refuses an unknown key inside command', () => {
+  const validate = compileSchema();
+  const manifest = example(SHELL_EXAMPLE);
+  manifest.command = { ...manifest.command, envAllowlist: ['PATH'] };
+
+  assert.equal(
+    validate(manifest),
+    false,
+    'the manifest spells this key `env_allowlist`; a typo has to be refused, never ignored',
+  );
+});
+
+test('t332 — the schema refuses a command with no argv, and an empty one', () => {
+  const validate = compileSchema();
+
+  for (const command of [{}, { argv: [] }, { env_allowlist: ['PATH'] }]) {
+    const manifest = example(SHELL_EXAMPLE);
+    manifest.command = command;
+    assert.equal(
+      validate(manifest),
+      false,
+      `command: ${JSON.stringify(command)} was accepted — a command with nothing to run is not a command`,
+    );
+  }
+});
+
+test('t332 — changing command.argv moves the pin', () => {
+  const base = example(SHELL_EXAMPLE);
+  assert.equal(base.hash, manifestHash(base), 'the committed pin has to match to begin with');
+
+  const edited = example(SHELL_EXAMPLE);
+  edited.command.argv = [...edited.command.argv, '--and-one-more-argument'];
+
+  assert.notEqual(
+    manifestHash(edited),
+    base.hash,
+    'the argv IS what the node executes: an edit to it that left the pin standing ' +
+      'is exactly the tamper D4 exists to catch',
+  );
+});
+
+test('t332 — changing command.env_allowlist moves the pin too', () => {
+  const base = example(SHELL_EXAMPLE);
+  const edited = example(SHELL_EXAMPLE);
+  edited.command = { ...edited.command, env_allowlist: ['PATH', 'AWS_SECRET_ACCESS_KEY'] };
+
+  assert.notEqual(
+    manifestHash(edited),
+    base.hash,
+    'which of the operator\'s variables the child may read is a permission, and permissions ' +
+      'have been inside the pin since the beginning',
+  );
+});
+
+test('t332 — the catalogue metadata of a shell skill still moves nothing', () => {
+  const base = example(SHELL_EXAMPLE);
+  const renamed = example(SHELL_EXAMPLE);
+  renamed.id = 'another-id';
+  renamed.version = '9.9.9';
+  renamed.description = 'the same command, described differently';
+  renamed.origin = { type: 'native' };
+
+  assert.equal(
+    manifestHash(renamed),
+    base.hash,
+    'renaming a skill still cannot invalidate the pin a reviewer approved',
+  );
+});
+
+test('t332 — a manifest that declares no command keeps the hash it always had', () => {
+  // The growth rule of this format, stated once more where it can be run:
+  // `JSON.stringify` drops a key whose value is `undefined`, so widening the
+  // subset changes nothing for the manifests already registered. The two
+  // examples that predate `command` carry their original committed hashes, and
+  // the sweep above recomputes them under the widened subset.
+  for (const name of EXAMPLES) {
+    if (name === SHELL_EXAMPLE) continue;
+    const manifest = example(name);
+    assert.ok(!('command' in manifest), `${name} was supposed to predate the field`);
+    assert.equal(manifest.hash, manifestHash(manifest));
+  }
 });

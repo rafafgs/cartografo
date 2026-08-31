@@ -1183,3 +1183,149 @@ test('AT24 — the node contract still renders, and no longer claims to be the v
     'and it says what it IS instead, so the session knows why it is being shown',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t332 — the command of a shell skill renders like its instructions           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Renders the standard node against a manifest carrying a `command` block.
+ *
+ * The whole point of these cases is that `command.argv` goes through the SAME
+ * interpolation `instructions` goes through — same grammar, same substitution rules,
+ * same fail-closed refusal — so the fixtures below deliberately reuse the
+ * placeholder shapes AT12–AT17 already pinned for the body.
+ */
+async function renderCommandOf(
+  command: Record<string, unknown>,
+  input: Record<string, unknown>,
+): Promise<RenderModule.RenderedSkill> {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill({ command }))).read,
+    input,
+  );
+  assert.ok(rendered !== null);
+  return rendered;
+}
+
+test('AT25 — a placeholder inside an argv element resolves exactly as it does in the body', async () => {
+  const rendered = await renderCommandOf(
+    { argv: ['node', 'script.mjs', '{{input.date}}'] },
+    { date: '2026-08-31' },
+  );
+
+  assert.deepEqual(
+    rendered.command?.argv,
+    ['node', 'script.mjs', '2026-08-31'],
+    'the token is replaced INSIDE the element, and the element stays one element',
+  );
+});
+
+test('AT25 — every element is scanned, and a non-string value goes in as compact JSON', async () => {
+  const rendered = await renderCommandOf(
+    { argv: ['{{input.binary}}', '--window', '{{input.window}}', '--assets', '{{input.assets}}'] },
+    { binary: '/usr/local/bin/radar', window: 30, assets: ['NVLR3', 'PETR4'] },
+  );
+
+  assert.deepEqual(rendered.command?.argv, [
+    '/usr/local/bin/radar',
+    '--window',
+    '30',
+    '--assets',
+    '["NVLR3","PETR4"]',
+  ]);
+});
+
+test('AT25 — env_allowlist crosses the boundary into the interface\'s own spelling', async () => {
+  // The manifest is a product format and spells its keys `snake_case`; the
+  // `EngineAdapter` interface is the adapter's vocabulary and spells them
+  // `camelCase`. This is the one place the two meet, exactly as
+  // `resolveSkillPermissions` is for `permissions`.
+  const rendered = await renderCommandOf(
+    { argv: ['/bin/true'], env_allowlist: ['PATH', 'HOME'] },
+    {},
+  );
+
+  assert.deepEqual(rendered.command?.envAllowlist, ['PATH', 'HOME']);
+});
+
+test('AT25 — the allowlist is data, never interpolated as a placeholder carrier', async () => {
+  // A name is an environment variable's name: it is not a template, and a
+  // manifest that writes one is naming a variable that does not exist. Leaving
+  // it alone is what keeps the refusal below about the argv, which is the half
+  // that executes.
+  const rendered = await renderCommandOf(
+    { argv: ['/bin/true'], env_allowlist: ['PATH'] },
+    { PATH: '/nope' },
+  );
+
+  assert.deepEqual(rendered.command?.envAllowlist, ['PATH']);
+});
+
+/** Renders a manifest that cannot resolve, and hands back the refusal. */
+async function refusalOfManifest(
+  overrides: Record<string, unknown>,
+): Promise<RenderModule.UnresolvedPlaceholderError> {
+  const { renderSkillInstructions } = await loadModule();
+  const UnresolvedPlaceholderError = await loadUnresolvedError();
+
+  let refusal: RenderModule.UnresolvedPlaceholderError | null = null;
+  await assert.rejects(
+    async () =>
+      renderSkillInstructions(
+        resolvedNode(SINGLE_EDGE),
+        (await makeReader(registeredSkill(overrides))).read,
+        {},
+      ),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof UnresolvedPlaceholderError,
+        `expected UnresolvedPlaceholderError, got: ${String(error)}`,
+      );
+      refusal = error;
+      return true;
+    },
+  );
+
+  assert.ok(refusal !== null);
+  return refusal;
+}
+
+test('AT26 — an unresolved placeholder in the argv refuses before any session opens', async () => {
+  const refusal = await refusalOfManifest({ command: { argv: ['node', '{{input.date}}'] } });
+
+  assert.deepEqual(refusal.paths, ['date']);
+  assert.equal(refusal.nodeId, 'conferir');
+  assert.equal(refusal.skillId, SKILL_ID);
+});
+
+test('AT26 — the body and the argv report their gaps on ONE refusal, in order', async () => {
+  // The body is read first and the argv second, and both are read completely
+  // before anything is thrown: whoever is assembling this input fixes both gaps
+  // in one round trip, which is the reason AT16 exists for the body alone.
+  const refusal = await refusalOfManifest({
+    instructions: 'Run it for {{input.window}}.',
+    command: { argv: ['node', '{{input.date}}', '{{input.window}}'] },
+  });
+
+  assert.deepEqual(refusal.paths, ['window', 'date']);
+});
+
+test('AT27 — a manifest with no command block renders exactly what it always rendered', async () => {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill())).read,
+    {},
+  );
+
+  assert.ok(rendered !== null);
+  assert.equal(
+    rendered.command,
+    undefined,
+    'absent means absent: every agent node in every registered graph produces a spec with no command',
+  );
+  assert.ok(rendered.instructions.length > 0, 'and the rest of the rendering is untouched');
+});

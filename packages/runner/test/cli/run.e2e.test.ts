@@ -106,10 +106,15 @@ function canonical(value: unknown): unknown {
  * The pin of a manifest, recomputed here rather than imported (t215).
  *
  * `packages/runner` declares no dependency on `packages/core` — it is an HTTP
- * client of the public API and nothing more (D1, D11) — so the six-field
+ * client of the public API and nothing more (D1, D11) — so the field-by-field
  * procedure of `specs/formats/skill-manifest.md` is written out. It
  * is the same reason `packages/core/test/skill-routes.test.ts` writes it out:
  * a hash the test asks the implementation for proves nothing about the pin.
+ *
+ * `command` (t332) is in the subset even though no manifest this file registers
+ * declares one: an absent key serializes to nothing, so it costs these fixtures
+ * nothing, and a copy of the recipe that agrees with the control plane only
+ * about the fields it happens to use is a copy waiting to disagree.
  */
 function manifestContentHash(manifest: Record<string, unknown>): string {
   const subset = {
@@ -119,6 +124,7 @@ function manifestContentHash(manifest: Record<string, unknown>): string {
     checks: manifest.checks,
     permissions: manifest.permissions,
     budgets: manifest.budgets,
+    command: manifest.command,
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
 }
@@ -1421,4 +1427,79 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
       'what was reported is this adapter\'s own catalog, entry for entry',
     );
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* t332 — every runner process can run a `shell` node, whatever --engine says  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The engines map of a runner, built the way `runRunner` builds it.
+ *
+ * This is the one wiring claim of t332 and it does not need a control plane:
+ * what FR9 decides is that `shell` is in the table unconditionally, beside
+ * whichever agent CLI `--engine` selected, and the table is a pure function of
+ * that flag. Booting a server to observe it would be measuring the loop instead
+ * of the decision.
+ *
+ * The reason it is unconditional rather than a third `--engine` value: an
+ * `UnknownEngineError` is a hard block that needs a human to clear
+ * (`pre-session-failure.ts`), so a claude-code-only runner that won the lease of
+ * a shell node would STOP the job rather than hand it back to a shell-capable
+ * one. There is no credential and no preflight behind this adapter, so there is
+ * nothing an opt-out would buy.
+ */
+test('t332 — the engines map always carries a shell route, on top of --engine', async () => {
+  const { buildEngineRoutes, defaultEngineFactory, ENGINE_NAMES } =
+    await loadModule<typeof RunModule>(RUN_MODULE);
+
+  assert.deepEqual(
+    [...ENGINE_NAMES],
+    ['claude-code', 'codex'],
+    '`shell` is not a value on the --engine axis: that flag says which agent CLI this ' +
+      'process authenticates as, and this adapter authenticates as nobody',
+  );
+
+  for (const engine of ENGINE_NAMES) {
+    const routes = buildEngineRoutes(engine, defaultEngineFactory);
+
+    assert.deepEqual(
+      Object.keys(routes).sort(),
+      [engine, 'shell'].sort(),
+      `--engine ${engine} has to route its own engine AND shell, and nothing else`,
+    );
+    assert.equal(
+      routes[engine]?.adapter.engineName,
+      engine,
+      'the selected engine is still the one the factory built',
+    );
+    assert.equal(
+      routes.shell?.adapter.engineName,
+      'shell',
+      'and the shell route is the shell adapter, never the agent one under another key',
+    );
+    assert.equal(
+      typeof routes.shell?.decodeSessionText,
+      'function',
+      'a route without a decoder is a route whose output nobody can read',
+    );
+  }
+});
+
+test('t332 — the shell route is built here, never asked of the --engine factory', async () => {
+  const { buildEngineRoutes } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  // The suite's `engineFactory` seam exists to swap an agent CLI for the fake
+  // engine, and it is typed for the two names `--engine` accepts. Asking it for
+  // `shell` would push a third name through a seam every existing test wired for
+  // two — and would make a runner's shell capability depend on whoever supplied
+  // the factory.
+  const asked: string[] = [];
+  const routes = buildEngineRoutes('claude-code', (engine) => {
+    asked.push(engine);
+    return { adapter: new ClaudeCodeAdapter(), decodeSessionText: decodeClaudeCodeSessionText };
+  });
+
+  assert.deepEqual(asked, ['claude-code']);
+  assert.equal(routes.shell?.adapter.engineName, 'shell');
 });

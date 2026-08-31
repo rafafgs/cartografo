@@ -37,8 +37,9 @@ product, with a versioned schema and a specification document:
 - **Formal graph validation at the synthesis gate**: the soundness of workflow
   nets (van der Aalst) is mechanically verifiable — every node reachable,
   termination guaranteed, no edge without a condition, no node without a
-  skill/contract. Part formal code, part human judgement. The positioning
-  sentence: "we formally verify the graphs the AI proposes".
+  skill/contract. Part formal code, part human judgement — which is what lets
+  the project say a graph a model proposed is verified before anything runs on
+  it.
 - **Replayability by event sourcing**: graph vN + inputs ⇒ an execution
   replayable from the log (it makes a third party's bug report tractable).
 - **Skill safety**: permissions in the manifest (filesystem, network), a pin by

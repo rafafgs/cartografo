@@ -274,6 +274,36 @@ function linesWithoutBlock(): string {
   ]);
 }
 
+/**
+ * ...and what a session standing on `implementar` has to print to be believed
+ * (t333).
+ *
+ * `linesWithoutBlock` above prints prose and no fenced block at all, and since
+ * t333 the control plane holds THAT absence against the pinned skill's `output`
+ * schema exactly as it holds a report that is present and wrong: `do-crossing`
+ * requires `nota`, so a session that reports nothing is refused and the work
+ * stops on the node instead of following its edge. That is the same accounting
+ * t268 did for the gate when a refusal first started blocking, and
+ * `linesWithResult` is its record of it.
+ *
+ * So every case whose subject is something ELSE — the single-edge transition,
+ * the transition the control plane refuses, the worktree bookkeeping per
+ * outcome — reports the one field the skill asks for. The absence itself is not
+ * left unproved: it has its own case, in the t268/t333 suite at the end of this
+ * file.
+ */
+const CROSSING_NOTE_LINES: readonly string[] = Object.freeze([
+  "The answer was already in the prompt; I went with it.",
+  "```resultado",
+  JSON.stringify({ nota: "the step left saida.md ready" }),
+  "```",
+]);
+
+/** {@link CROSSING_NOTE_LINES} in the fake engine's own envelope. */
+function linesWithCrossingNote(): string {
+  return JSON.stringify(CROSSING_NOTE_LINES.map((text) => ({ stream: "stdout", text })));
+}
+
 /** The engine's own answer when a tool the policy denied is attempted (t125). */
 const DENIAL_TEXT =
   "Claude requested permissions to use WebFetch, but you have not granted it.";
@@ -1981,6 +2011,13 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
  * so the honest fixture is the status itself, delivered through the listener the
  * interface defines.
  *
+ * It prints {@link CROSSING_NOTE_LINES} before it ends, for the reason that
+ * fixture records: AT10's cases stand on `implementar`, whose pinned skill
+ * requires an output, and since t333 a session that reports nothing there is
+ * refused — which would stop the work on a block about the report and hide the
+ * bookkeeping this test is measuring. The lines cost the stub nothing: the two
+ * outcomes it exists to produce are the terminal status and the tree.
+ *
  * @param status What `onFinished` reports.
  * @returns The adapter, with the rest of the interface answering trivially.
  */
@@ -1991,6 +2028,7 @@ function stubAdapter(status: SessionStatus): EngineAdapter {
       // On the next turn of the loop, never inside `startSession`: the dispatch
       // is entitled to have its handle before the outcome lands.
       queueMicrotask(() => {
+        for (const line of CROSSING_NOTE_LINES) listener.onOutput(line);
         listener.onFinished(status, status === "completed" ? 0 : 1);
       });
       return Promise.resolve("stub-session");
@@ -3268,7 +3306,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
-        envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+        envOverrides: { FAKE_ENGINE_LINES: linesWithCrossingNote() },
       })(job.id);
 
       assert.deepEqual(
@@ -3564,7 +3602,7 @@ test("t161 — the node's skill drives the session, and the session advances the
             engines: claudeOnly(fakeAdapter()),
             worktrees: fakeWorktrees(workDir),
             timeoutSeconds: 60,
-            envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+            envOverrides: { FAKE_ENGINE_LINES: linesWithCrossingNote() },
           })(job.id),
         (error: unknown) => {
           assert.ok(

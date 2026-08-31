@@ -131,7 +131,7 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
   },
   {
     file: 'dispatch/dispatch.test.ts',
-    line: 446,
+    line: 476,
     reason:
       '`packages/core/src/repositories/input-request.ts:265` WRITES this block reason; the assertion reads it back off a live control plane and has to spell it the way the wire does',
   },
@@ -1309,7 +1309,7 @@ test('t319 — the one block reason that stays is the one the control plane writ
   assert.match(
     source,
     /reason: `aguardando resposta da pergunta \$\{id\}`/,
-    'core no longer writes this block reason; translate dispatch.test.ts:446 and drop the pin',
+    'core no longer writes this block reason; translate dispatch.test.ts:476 and drop the pin',
   );
 });
 

@@ -242,7 +242,7 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
   },
   {
     file: 'sessions.test.ts',
-    line: 1822,
+    line: 1920,
     reason:
       "the input property of the bets red-team gate at 1.0.0; the fixture's own docstring pins that version's names on purpose",
   },

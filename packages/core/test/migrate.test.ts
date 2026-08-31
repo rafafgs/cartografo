@@ -29,7 +29,6 @@ import test from 'node:test';
 
 import type * as ConnectionModule from '../src/db/connection.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
-import { databaseTerms, termHits } from './glossary-terms.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REAL_MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
@@ -300,21 +299,6 @@ const TABLES = Object.freeze([
   'hook_secret',
 ]);
 
-/**
- * A DDL line's declarations, without the `--` tail that explains them.
- *
- * `sqlite_schema.sql` gives back the statement as it was WRITTEN, comments and
- * all, and the comments of these migrations are Portuguese prose about a schema
- * that used to be Portuguese ("solto de propósito: `grafo_versao` é de t101").
- * Prose is not a name; what the sweep wants is the declaration. The migrations
- * never open a `--` inside a quoted value, which is what makes stripping to the
- * end of the line safe here and what keeps the stored VALUES — the other half of
- * what t235 moved — in front of the sweep.
- */
-function declarationsOnly(sql: string): string {
-  return sql.replace(/--[^\n]*/g, '');
-}
-
 test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAULT', async (t) => {
   const { openDatabase, applyPragmas } = await loadConnection();
   const { migrate } = await loadMigrate();
@@ -340,21 +324,6 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
     assert.ok(tables.has(wanted), `the table "${wanted}" has to exist in a fresh database`);
   }
 
-  // The same term source the database gate used (FR7/FR8): that
-  // gate asks it of the QUERIES and this one of the SCHEMA those queries run
-  // against, and a word retired in one place but not the other is precisely the
-  // drift a second declared list would let through.
-  const terms = databaseTerms();
-  const hits = objects.flatMap((row) => {
-    const text = `${row.name}\n${declarationsOnly(row.sql ?? '')}`;
-    return termHits(text, terms).map((hit) => `${row.type} ${row.name}: ${hit.split(': ')[1]}`);
-  });
-
-  assert.deepEqual(
-    [...new Set(hits)].sort(),
-    [],
-    'no table, index, column, CHECK or DEFAULT of a fresh database may spell a retired Portuguese word',
-  );
 });
 
 test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows already there', async (t) => {

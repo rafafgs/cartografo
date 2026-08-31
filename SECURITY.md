@@ -7,6 +7,11 @@ Advisories](https://github.com/rafafgs/cartografo/security/advisories/new)** —
 "Report a vulnerability" on the Security tab. That keeps the report between you
 and the maintainer until there is something to publish.
 
+If that page is not available, reach the maintainer directly on GitHub
+([@rafafgs](https://github.com/rafafgs)) and say only that you have a security
+report to send; the details belong in the private channel, not in the opening
+message.
+
 Please do not open a public issue for a suspected vulnerability, and do not
 include a working exploit in the first message: the class of problem, the file
 or route it lives in, and what an attacker gets are enough to start.

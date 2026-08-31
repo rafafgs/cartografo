@@ -1,0 +1,31 @@
+{
+  "name": "@cartografo/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The cartografo MCP server: one more client of the public API, so a model can read and drive the map through typed tools (D11).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "bin": {
+    "cartografo-mcp": "./bin/mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "start": "node bin/mcp.mjs",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@cartografo/test-support": "^0.1.0",
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3"
+  }
+}

@@ -317,6 +317,30 @@ queueing, agent working and waiting on a human
 Both are ordinary clients of the public API, with no privilege at all over the
 control plane: another process, another port, no access to the database.
 
+And, for a model to read the map and drive it without a terminal, the same kind
+of client again — this one speaking MCP over a pipe instead of HTTP to a browser:
+
+```bash
+npx cartografo-mcp                                        # started BY an MCP client, not by hand
+```
+
+It publishes eleven read tools and five write ones
+([`packages/mcp/README.md`](packages/mcp/README.md)): the status of the control
+plane, the map of a graph version, the capability registry, the board, one job
+with its sessions and its timeline, a session's transcript, the pending
+questions, the surveyor's proposals — and, on the writing side, opening a job, answering a question,
+blocking and unblocking one, registering a graph. It holds the credential in its
+own process, so the token stops travelling through the shell history of whoever
+is driving.
+
+What it deliberately does not publish is the other half of the point. **No tool
+decides a proposal** — approve, apply, reject and revert are the human gate
+(principle 5), and a model approving the proposal its own surveyor wrote would
+close the learning loop with no judge outside it. **No tool moves a job across
+the graph**: a transition is the runner writing down what it did, and an invented
+one would corrupt the record the surveyor reads. And it starts nothing: the
+control plane, the runner and the surveyor stay commands an operator runs.
+
 Configuration: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` and `CARTOGRAFO_HOST` at
 startup — the last one decides the listening address, and the default is still
 `127.0.0.1`, because opening the port to the network is the operator's decision,
@@ -341,7 +365,10 @@ runner present; `CARTOGRAFO_SCREEN_PORT` to change the screen's port and
 the screen uses the one in `CARTOGRAFO_TOKEN`. The screen presents that
 credential to the control plane on every call and asks the browser for none: it
 is an unprivileged client of the API (D11), and that is why it listens on
-loopback.
+loopback. `CARTOGRAFO_MCP_TOKEN` does the same for the MCP server,
+falling back to `CARTOGRAFO_TOKEN` in the same way — and there is deliberately no
+`--token` flag on that command: an MCP client starts it from a configuration file
+that lives in a repository, and a token written there is a token published.
 
 ## The hole it fills
 

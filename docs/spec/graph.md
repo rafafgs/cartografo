@@ -658,8 +658,8 @@ this order. Neither of them throws on a malformed document: the synthesizer need
 the whole report, not the first error.
 
 The rules come from workflow nets (van der Aalst) and are one of the project's
-quality non-negotiables. It is where the positioning sentence comes from: **"we
-formally verify the graphs the AI proposes"**.
+quality non-negotiables, and they are what lets the project say plainly that **a
+graph a model proposed is formally verified before anything runs on it**.
 
 | Rule | What it demands | Reported target | Counterexample |
 |---|---|---|---|

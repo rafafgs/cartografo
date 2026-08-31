@@ -55,7 +55,7 @@ it is.
 - The seven copies of the anti-Portuguese sweep → one in `packages/test-support`, with a
   single, current exception list.
 - The root test that failed 1 in 7: hunt it in a loop, fix whatever it is.
-- After that, and only then: product / packaging (t216).
+- After that, and only then: the packaging work already on the backlog (t216).
 
 ## From Rafael (clicks)
 Close/delete t214; accept or repeat t109; ship the game feature (round 1) or not; the n=3 gate

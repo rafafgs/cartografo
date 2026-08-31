@@ -230,6 +230,15 @@ export const TOUCHABLE = Object.freeze([
   // paragraph changed; nothing t307 redacted was touched, and AT1-AT5 still
   // sweep this file like every other.
   'notes/2026-08-14-extension-and-quality.md',
+  // Same instruction, same day. `2026-08-14-market.md` was two documents in one:
+  // a survey of what exists in this space, and a reading of where the business
+  // should push (the verdict, the funding and shutdown signals, the section
+  // titled "Positioning implications (for the article and for the product)").
+  // The survey stays and is the reason the note is kept; the reading is gone.
+  // `2026-08-18-action-plan.md` is engineering sequencing throughout and was
+  // left alone but for one line that named a destination for the product.
+  'notes/2026-08-14-market.md',
+  'notes/2026-08-18-action-plan.md',
   // Incident fix, 2026-08-26, direct on main: three Portuguese quotations this
   // note keeps ON PURPOSE were flagged by the document-tree gate, because the
   // backtick spans marking them WRAPPED and that matcher is line-scoped. Each
@@ -474,7 +483,13 @@ test('AT6 — no file the redaction governs changes without being declared', () 
 
 test('AT6 — the rule reads governance, not the size of the branch', () => {
   const REDACTED = 'notes/2026-08-18-third-bets-run.md';
-  const UNDECLARED = 'notes/2026-08-18-action-plan.md';
+  // Deliberately a path no note has, and the reason is a bug this fixture
+  // already caused twice: it used to name a real note, so the day somebody
+  // legitimately declared that note this assertion went red for a reason that
+  // had nothing to do with what it tests. `undeclaredEdits` judges membership
+  // of TOUCHABLE and nothing else, so a name that can never be in the list is
+  // the honest fixture for "not declared".
+  const UNDECLARED = 'notes/0000-00-00-not-a-note.md';
   // What the tree held when the redaction ran: two notes it declared, one it
   // read and left alone, and the five non-note files.
   const governed = [

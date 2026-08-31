@@ -281,14 +281,60 @@ async function api<T>(
   return (text === '' ? undefined : JSON.parse(text)) as T;
 }
 
-/** Waits for something to become true, with a deadline and a message of its own. */
-async function waitFor(label: string, check: () => Promise<boolean>): Promise<void> {
+/**
+ * What the control plane holds right now, as one line per entity.
+ *
+ * Only ever read on the failure path. A dispatch that does not happen says
+ * nothing about WHY on its own — the job may be blocked with a reason, may be
+ * held by a lease that never came back, or may have opened a session that never
+ * finished, and those are three different bugs. This is what tells them apart
+ * on a machine nobody can attach a debugger to.
+ */
+async function planeState(plane: RunningControlPlane): Promise<string> {
+  const lines: string[] = [];
+  try {
+    const { jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
+    for (const job of jobs) {
+      lines.push(
+        `job ${String(job.id)} node=${job.current_node_id ?? '-'} blocked=${String(job.blocked)}` +
+          ` reason=${JSON.stringify((job as { block_reason?: string }).block_reason ?? null)}`,
+      );
+      for (const lease of await leasesOfJob(plane, job.id)) {
+        lines.push(`  lease ${String(lease.id)} runner=${lease.runner_id} status=${lease.status}`);
+      }
+    }
+    const { sessions } = await api<{ sessions: Session[] }>(plane, 'GET', '/v1/sessions');
+    for (const session of sessions) {
+      lines.push(
+        `session ${String(session.id)} status=${session.status}` +
+          ` execution=${String((session as { execution_id?: number }).execution_id ?? 0)}`,
+      );
+    }
+  } catch (error) {
+    lines.push(`could not read the control plane: ${String(error)}`);
+  }
+  return lines.length === 0 ? '(the control plane holds nothing)' : lines.join('\n');
+}
+
+/**
+ * Waits for something to become true, with a deadline and a message of its own.
+ *
+ * The deadline reports the state that outlasted it. Without that a timeout is
+ * only the sentence "it did not happen", which is where a CI-only failure goes
+ * to sit undiagnosed.
+ */
+async function waitFor(
+  label: string,
+  check: () => Promise<boolean>,
+  plane?: RunningControlPlane,
+): Promise<void> {
   const deadline = Date.now() + DEADLINE_MS;
   while (Date.now() < deadline) {
     if (await check()) return;
     await delay(50);
   }
-  throw new Error(`${label} did not happen within ${DEADLINE_MS}ms`);
+  const state = plane === undefined ? '' : `\n${await planeState(plane)}`;
+  throw new Error(`${label} did not happen within ${DEADLINE_MS}ms${state}`);
 }
 
 /** Every lease of one job — the route ignores filters it does not know. */
@@ -532,7 +578,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     await waitFor('the runner pairing with the control plane', async () => {
       after = await probe();
       return after.status !== 404;
-    });
+    }, plane);
 
     assert.doesNotMatch(
       after.body,
@@ -590,7 +636,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         '/v1/sessions?execution_id=1629',
       );
       return sessions.some((session) => session.status === 'completed');
-    });
+    }, plane);
 
     await runner.stop();
 
@@ -654,7 +700,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         '/v1/sessions?execution_id=16210',
       );
       return sessions.some((session) => session.status === 'completed');
-    });
+    }, plane);
 
     await runner.stop();
 
@@ -741,7 +787,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     await waitFor('the failing dispatch blocking its own work', async () => {
       const current = await api<Job>(plane, 'GET', `/v1/jobs/${poison.id}`);
       return current.blocked;
-    });
+    }, plane);
 
     const blocked = await api<Job>(plane, 'GET', `/v1/jobs/${poison.id}`);
     assert.match(
@@ -792,7 +838,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         '/v1/sessions?execution_id=16212',
       );
       return sessions.some((session) => session.status === 'completed');
-    });
+    }, plane);
 
     await runner.stop();
 
@@ -926,7 +972,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         '/v1/sessions?execution_id=16213',
       );
       return sessions.length > 0;
-    });
+    }, plane);
 
     const live = await leasesOfJob(plane, job.id);
     assert.deepEqual(
@@ -1007,7 +1053,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         '/v1/sessions?execution_id=17901',
       );
       return sessions.some((session) => session.status === 'completed');
-    });
+    }, plane);
 
     await runner.stop();
 
@@ -1107,7 +1153,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
           `/v1/sessions?execution_id=${executionId}`,
         );
         return sessions.some((session) => session.status === 'completed');
-      });
+      }, plane);
 
       await runner.stop();
       await blockEveryJob(plane);

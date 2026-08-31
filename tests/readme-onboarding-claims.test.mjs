@@ -1,7 +1,7 @@
 /**
  * Gate: the README hands a stranger the two things a licence cannot (t121, AT3).
  *
- * t297 made the README honest and `tests/readme-status-claims.test.mjs` holds
+ * A companion gate holds
  * it that way. Honest is not the same as usable, and the rescope of this ticket
  * named the two gaps precisely:
  *
@@ -29,7 +29,7 @@
  * `npm install`. So the assertion is a co-occurrence inside one paragraph: an
  * invitation to copy AND a named pattern. Either one alone passes nothing.
  *
- * The paragraph is the unit for the reason `readme-status-claims.test.mjs`
+ * The paragraph is the unit for the reason a prose gate
  * records: this repository wraps at eighty columns and a sentence with a
  * subordinate clause routinely spans three lines, so a sentence splitter would
  * have to know about `§`, `US$` and `D14.` to find its own boundaries.
@@ -42,12 +42,12 @@
  * searched for.
  *
  * AT3b reads PROSE — fenced blocks and backtick spans blanked, the cut
- * `tests/no-portuguese-document-tree.test.mjs` established. An invitation is a
+ * a document sweep establishes. An invitation is a
  * claim made TO a reader, and a claim inside a code fence is data: a shell
  * transcript that happens to contain the word `copy` invites nobody.
  *
  * The reading is restated here rather than imported from the sibling gate, for
- * the reason `scripts/no-portuguese-prose.mjs` gives in its own header: what is
+ * the reason `scripts/markdown-prose.mjs` gives in its own header: what is
  * shared between these sweeps is the signals, never the decision about which
  * lines to point them at. Importing it from a `*.test.mjs` module would also
  * run that module's tests a second time under this file's name.
@@ -60,7 +60,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { blank } from '../scripts/no-portuguese-prose.mjs';
+import { blank } from '../scripts/markdown-prose.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -78,7 +78,7 @@ export const QUICKSTART_HEADING = '## How to run it';
  *
  * Verbs rather than a phrase, because the sentence is Rafael's to write and
  * this ticket corrects a gap rather than dictating a voice — the same posture
- * `readme-status-claims.test.mjs` takes for the status paragraph.
+ * a gate should take for prose somebody else has to write.
  */
 const INVITATION =
   /\b(copy|copied|copying|reuse|reused|reusing|re-use|borrow|borrowed|lift|lifted|steal|stolen|adapt|adapted|adapting|fork|forked)\b/i;

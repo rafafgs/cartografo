@@ -6,10 +6,10 @@
  * things that must not leave his machine: the identity of every live security
  * the asymmetric-bets graph was crossed with, and the absolute path of every
  * sibling repository the rounds were run from. He chose explicitly to KEEP the
- * notes rather than delete them, because they hold the one record the README
- * leans on as evidence against itself — that the learning loop never got past
- * n=1 (`README.md`, and `tests/readme-status-claims.test.mjs` AT7 pins the
- * citation). Deleting the notes would have deleted the honesty.
+ * notes rather than delete them, because they hold the record of what the
+ * rounds actually did and did not prove — including that the learning loop
+ * never got past n=1. Deleting them would have deleted that record, so AT3/AT4
+ * pin the unflattering half in place.
  *
  * So this gate is two-sided by construction, and that is the whole design:
  *
@@ -228,7 +228,7 @@ export const TOUCHABLE = Object.freeze([
   // backtick spans marking them WRAPPED and that matcher is line-scoped. Each
   // quotation now sits on one line; not one character of quoted text changed,
   // and nothing redacted was reintroduced. See the SPAN comment in
-  // `tests/no-portuguese-document-tree.test.mjs` for why the matcher was not
+  // A document sweep records why the matcher was not
   // widened instead.
   'notes/2026-08-25-t309-closing-note.md',
   // t326: the five notes whose citation of the wire glossary had to move with
@@ -254,7 +254,7 @@ export const TOUCHABLE = Object.freeze([
   // backticks; not one character of quoted text changed, and nothing redacted
   // was reintroduced. Three times says what the two before it suspected — the
   // hazard is the wrap, and the answer is the inventory in
-  // `tests/t313-notes-quotation-inventory.test.mjs`, which this branch extends
+  // the quotation inventory this branch once extended
   // to this note so the next reader finds the two lines listed rather than
   // rediscovers them.
   'notes/2026-08-26-dino-runner-a-b.md',

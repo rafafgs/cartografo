@@ -264,3 +264,39 @@ which every agent reads at the start of every session. Origin: Rafael, 2026-08-1
 structure, configuration, anything else — and that nothing is born in Portuguese any
 more". Tickets: t280, t281, t282, t293, t299, t300, t301, t302, t303, t304, t305,
 t306, t307 and t121. Recorded by the agent with Rafael's authorization (2026-08-25).
+
+## D25 (2026-09-05) — A class is unique per project, not per database
+
+D8 made the problem class the graph's versioning root and the telemetry's
+aggregation unit, named by the user. The base lineage was then born with
+`id = class`, under a unique index over `class` for base lineages
+(`entities-versioning.md` §1). That made a class unique across the whole
+database, which D8 never asked for: what D8 fixes is *who names the class* and
+*what aggregates under it*, not how many projects may use the name.
+
+Decision: the partition by project goes ahead in the 2026-09 round, and a class
+is unique **per project**. Two projects in one database may each hold a base
+lineage named `software-development`; each is its own root, with its own
+versions, proposals and telemetry. D8 stands, read within a project.
+
+What the tickets that carry it inherit from here:
+
+- `graph`'s key and its unique index move from `class` to `(project, class)`.
+  How the scope travels on the wire (the `project_id` the job and lease routes
+  already take, default project `1`) and the shape of the row key are the
+  ticket's design, reviewed at the spec gate — not decided here.
+- The graph document stays project-agnostic: it carries `problem_class` and
+  never a project. The same document imported into two projects yields the
+  same canonical version hash in each, as two rows in two lineages; D15's
+  round-trip guarantee (export here, import there, same id) is unchanged.
+- Every read of a table that carries `project_id` filters by it. The tables
+  that inherit the partition through a foreign key (session, input request,
+  job dependency, webhook delivery) are filtered through their owner and never
+  gain the column — a second copy of the same fact is where two truths diverge.
+- D13's per-project variants stay the answer to "this project needs the class's
+  map configured differently": a variant is a fork of a base lineage inside one
+  project. Partition separates projects; variants separate configurations of
+  one class. They are orthogonal.
+
+Recorded by the agent with Rafael's authorization (2026-09-05: "it stays in;
+adjust D8 to reflect it").

@@ -62,6 +62,35 @@ edge, `domain/` the pure logic (graph hashing, semantic diffs, hypotheses,
 similarity), and `cli/` a plain HTTP client of the public API like anybody else —
 `import`, `export` and `status` hold no privilege over the screen or the runner.
 
+## Reading its own TypeScript after install
+
+Every command here is a `.mjs` shell that imports a `.ts` entry point, so that
+whoever types `cartografo` needs no Node flag and no build step. Inside this
+checkout Node's own type stripping covers that for free. A **published** package
+gets nothing: Node refuses to strip types from any file under a `node_modules`
+directory, and `npm install` puts everything it installs under exactly that
+directory. [`bin/register-typescript.mjs`](bin/register-typescript.mjs) closes
+the gap with a synchronous loader hook, and the six shells import it before
+anything else (t248, D23).
+
+The stripper is `amaro`: the very package Node vendors to implement the native
+behaviour, so the tarball is stripped by the same code that would have stripped
+it natively, in `strip-only` mode — types blanked in place, line and column
+numbers surviving into stack traces, and only erasable syntax allowed.
+
+It replaced `tsx`, which this repository carried for the same job until t248, for
+two measured reasons: `tsx` pulls `fsevents`, a native optional dependency whose
+`node-gyp` build fails outright on macOS with a current Node, taking the whole
+`npm install -g cartografo` down with it; and it is an order of magnitude larger,
+since it carries esbuild. `amaro` has no dependencies at all and nothing to
+compile.
+
+This paragraph is where that name lives now. What the packages ship — every
+`package.json` and every `bin/*.mjs` — must not mention it at all, not even in a
+comment, because the sweep that proves the loader is gone reads those files
+literally; [`tests/removed-loader.test.mjs`](../../tests/removed-loader.test.mjs)
+is the gate that holds the line.
+
 ## How it relates to the others
 
 Everything else in this monorepo is a **client** of this package over HTTP, never

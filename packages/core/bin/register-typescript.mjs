@@ -21,20 +21,24 @@
  * sufficient: it buys native stripping for development, and nothing at all for
  * the artifact that ships.
  *
- * ## Why amaro, and not tsx
+ * ## Why amaro
  *
  * `amaro` is the very stripper Node vendors to implement the native behaviour,
  * published as an ordinary package — so the tarball is stripped by the same
  * code that would have stripped it natively, and `strip-only` keeps the rule
  * that only erasable syntax is allowed (which is why `UnknownSessionError` in
  * `packages/runner/src/engine/types.ts` no longer uses a parameter property).
+ * It has no dependencies at all and nothing to compile, which is the whole of
+ * what makes `npm install -g cartografo` finish on a machine this project has
+ * never seen.
  *
- * It replaces `tsx`, which this repository carried for the same job until t248,
- * for two measured reasons: `tsx` pulls `fsevents`, a native optional
- * dependency whose `node-gyp` build fails outright on macOS with a current Node,
- * taking the whole `npm install -g cartografo` down with it; and it is an order
- * of magnitude larger, since it carries esbuild. `amaro` has no dependencies at
- * all and nothing to compile.
+ * It replaced a loader this repository carried for the same job until t248, and
+ * that one is named — with the two measured reasons it lost on — in
+ * `packages/core/README.md`, under "Reading its own TypeScript after install".
+ * Not here: the sweep that proves the old loader is gone reads every manifest
+ * and every `bin` shell under `packages/` literally, so a comment that says the
+ * name fails it exactly as loudly as a dependency that installs it (t399,
+ * `tests/removed-loader.test.mjs`).
  *
  * ## Why only `packages/core/bin` imports it
  *

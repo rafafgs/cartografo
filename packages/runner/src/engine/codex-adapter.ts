@@ -48,6 +48,7 @@ import {
   type EngineCommand,
 } from './codex-command.ts';
 import { PERMISSION_REFUSAL_PREFIX, resolveCodexPermissions } from './codex-permission-policy.ts';
+import { parseCodexMcpListJson, readMcpConfigToml } from './mcp-discovery.ts';
 import {
   SessionStartError,
   UnknownSessionError,
@@ -55,6 +56,7 @@ import {
   type EngineAdapter,
   type EngineCapabilities,
   type EngineModel,
+  type McpDiscovery,
   type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
@@ -73,6 +75,14 @@ const CODEX_HOME_VARIABLE = 'CODEX_HOME';
 
 /** Name of the credential file inside that directory. */
 const CREDENTIAL_FILE = 'auth.json';
+
+/**
+ * Name of the configuration file inside that same directory.
+ *
+ * Measured, not assumed: `codex mcp add my-tool -- my-command --flag` in an
+ * isolated `CODEX_HOME` wrote `[mcp_servers.my-tool]` into exactly this file.
+ */
+const CONFIG_FILE = 'config.toml';
 
 /**
  * Credentials which, present in the environment, suggest an authenticable
@@ -154,6 +164,12 @@ export interface CodexAdapterOptions {
   readonly probeEnvironment?: NodeJS.ProcessEnv;
   /** Credential file the preflight reads. Default `$CODEX_HOME/auth.json`. */
   readonly credentialsPath?: string;
+  /** Test seam: the MCP discovery command. Default `codex mcp list --json`. */
+  readonly mcpListCommandBuilder?: () => EngineCommand;
+  /** Configuration file the file fallback reads. Default `$CODEX_HOME/config.toml`. */
+  readonly mcpConfigPath?: string;
+  /** Test seam: deadline of the MCP discovery probe. Default 10s. */
+  readonly mcpProbeDeadlineMs?: number;
 }
 
 /** Which of the two watchdogs stopped a session, when one of ours did. */
@@ -253,6 +269,9 @@ export class CodexAdapter implements EngineAdapter {
   readonly #probeCommandBuilder: () => EngineCommand;
   readonly #probeEnvironment: NodeJS.ProcessEnv;
   readonly #credentialsPath: string;
+  readonly #mcpListCommandBuilder: () => EngineCommand;
+  readonly #mcpConfigPath: string;
+  readonly #mcpProbeDeadlineMs: number;
 
   constructor(options: CodexAdapterOptions = {}) {
     this.#commandBuilder = options.commandBuilder ?? ((spec) => buildCommand(spec));
@@ -262,6 +281,11 @@ export class CodexAdapter implements EngineAdapter {
       options.probeCommandBuilder ?? (() => ({ command: CODEX_BINARY, args: ['--version'] }));
     this.#probeEnvironment = options.probeEnvironment ?? process.env;
     this.#credentialsPath = options.credentialsPath ?? this.#defaultCredentialsPath();
+    this.#mcpListCommandBuilder =
+      options.mcpListCommandBuilder ??
+      (() => ({ command: CODEX_BINARY, args: ['mcp', 'list', '--json'] }));
+    this.#mcpConfigPath = options.mcpConfigPath ?? this.#defaultConfigPath();
+    this.#mcpProbeDeadlineMs = options.mcpProbeDeadlineMs ?? PROBE_DEADLINE_MS;
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
@@ -498,6 +522,41 @@ export class CodexAdapter implements EngineAdapter {
   }
 
   /**
+   * Which MCP servers this machine's `codex` currently sees (t400).
+   *
+   * The CLI first, on the same principle as the first adapter — prefer the
+   * binary, because it applies the engine's own rules — and here the binary is
+   * strictly better placed to be preferred: `codex mcp list --json` really is a
+   * machine-readable mode (measured against `codex-cli 0.147.0`; the other CLI
+   * has none), and it reflects `enabled`/`disabled_reason` and whatever
+   * configuration sources the CLI grows, none of which a hand-scan of a
+   * `config.toml` reproduces. That is a default this ticket took and wrote
+   * down: the file read stays exactly as decided, as the fallback.
+   *
+   * **Exit 0 is the CLI having answered, whatever it printed.** With nothing
+   * configured the real CLI prints "No MCP servers configured yet. …" instead
+   * of `[]`, even under `--json`, and treating unparsable output as a failure
+   * would report `origin: 'file'` for a question the engine already answered.
+   * So a successful run always yields `origin: 'cli'`, and what did not parse
+   * is zero servers.
+   *
+   * No project-local file on this side: `codex mcp`'s configuration is
+   * `$CODEX_HOME`-scoped, with no per-directory equivalent to `.mcp.json`.
+   *
+   * It never rejects.
+   */
+  async discoverMcpServers(): Promise<McpDiscovery> {
+    const output = await this.#probeMcpList();
+    const resolvedAt = new Date().toISOString();
+
+    if (output !== null) {
+      return { servers: parseCodexMcpListJson(output), origin: 'cli', resolvedAt };
+    }
+
+    return { servers: readMcpConfigToml(this.#mcpConfigPath), origin: 'file', resolvedAt };
+  }
+
+  /**
    * `$CODEX_HOME/auth.json`, falling back to `~/.codex/auth.json`.
    *
    * Both halves are measured: `codex doctor` reports `CODEX_HOME  ~/.codex
@@ -507,6 +566,19 @@ export class CodexAdapter implements EngineAdapter {
   #defaultCredentialsPath(): string {
     const home = this.#probeEnvironment[CODEX_HOME_VARIABLE]?.trim();
     return join(home ? home : join(homedir(), '.codex'), CREDENTIAL_FILE);
+  }
+
+  /**
+   * `$CODEX_HOME/config.toml`, falling back to `~/.codex/config.toml`.
+   *
+   * The same resolution as the credential file's, and it has to be the same
+   * one: both files live in the directory `CODEX_HOME` names, so an operator
+   * who moved that directory moved both, and a second rule here would send the
+   * discovery to read a config the CLI itself never opens.
+   */
+  #defaultConfigPath(): string {
+    const home = this.#probeEnvironment[CODEX_HOME_VARIABLE]?.trim();
+    return join(home ? home : join(homedir(), '.codex'), CONFIG_FILE);
   }
 
   /**
@@ -740,6 +812,56 @@ export class CodexAdapter implements EngineAdapter {
         const trimmed = out.trim();
         settle(code === 0 && trimmed !== '' ? trimmed : null);
       });
+    });
+  }
+
+  /**
+   * `codex mcp list --json`: the stdout of a run that exited 0, or `null`.
+   *
+   * The shape of `#probeVersion`, and no `cwd` of its own: this CLI's MCP
+   * configuration is `$CODEX_HOME`-scoped, so the answer does not depend on
+   * which directory it was asked from — the difference from the first adapter,
+   * and a measured one.
+   *
+   * `null` is every way the question went unanswered (missing binary, non-zero
+   * exit, deadline). Exit 0 is an answer even when what came back is prose:
+   * deciding that here, and not in the parser, is what keeps the empty state
+   * `origin: 'cli'`.
+   */
+  #probeMcpList(): Promise<string | null> {
+    const command = this.#mcpListCommandBuilder();
+
+    return new Promise((resolve) => {
+      let child: ChildProcess;
+      try {
+        child = spawn(command.command, [...command.args], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: this.#probeEnvironment,
+        });
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      let out = '';
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        out += chunk;
+      });
+
+      const deadline = setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve(null);
+      }, this.#mcpProbeDeadlineMs);
+
+      const settle = (output: string | null): void => {
+        clearTimeout(deadline);
+        resolve(output);
+      };
+
+      // A missing binary arrives here as ENOENT: the file fallback, no throw.
+      child.once('error', () => settle(null));
+      child.once('close', (code: number | null) => settle(code === 0 ? out : null));
     });
   }
 

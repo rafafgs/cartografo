@@ -39,6 +39,11 @@ import {
   ENGINE_STDIO,
   type EngineCommand,
 } from './command.ts';
+import {
+  mergeServerRefs,
+  parseClaudeMcpListOutput,
+  readMcpServersJsonFile,
+} from './mcp-discovery.ts';
 import { resolvePermissions } from './permission-policy.ts';
 import {
   SessionStartError,
@@ -47,6 +52,7 @@ import {
   type EngineAdapter,
   type EngineCapabilities,
   type EngineModel,
+  type McpDiscovery,
   type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
@@ -127,6 +133,18 @@ export interface ClaudeCodeAdapterOptions {
   readonly probeEnvironment?: NodeJS.ProcessEnv;
   /** Credential file the preflight reads. Default `~/.claude.json`. */
   readonly credentialsPath?: string;
+  /** Test seam: the MCP discovery command. Default `claude mcp list`. */
+  readonly mcpListCommandBuilder?: () => EngineCommand;
+  /**
+   * Directory MCP discovery answers FOR. Default `process.cwd()`.
+   *
+   * Both the `cwd` of the probe — so the CLI applies the scoping rules of the
+   * right project, which is what makes its answer worth preferring — and where
+   * that project's `.mcp.json` is looked for on the file fallback.
+   */
+  readonly mcpWorkingDir?: string;
+  /** Test seam: deadline of the MCP discovery probe. Default 10s. */
+  readonly mcpProbeDeadlineMs?: number;
 }
 
 /** Which of the two watchdogs stopped a session, when one of ours did. */
@@ -581,6 +599,9 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   readonly #probeCommandBuilder: () => EngineCommand;
   readonly #probeEnvironment: NodeJS.ProcessEnv;
   readonly #credentialsPath: string;
+  readonly #mcpListCommandBuilder: () => EngineCommand;
+  readonly #mcpWorkingDir: string;
+  readonly #mcpProbeDeadlineMs: number;
 
   constructor(options: ClaudeCodeAdapterOptions = {}) {
     this.#commandBuilder = options.commandBuilder ?? ((spec) => buildCommand(spec));
@@ -590,6 +611,10 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       options.probeCommandBuilder ?? (() => ({ command: CLAUDE_BINARY, args: ['--version'] }));
     this.#probeEnvironment = options.probeEnvironment ?? process.env;
     this.#credentialsPath = options.credentialsPath ?? join(homedir(), '.claude.json');
+    this.#mcpListCommandBuilder =
+      options.mcpListCommandBuilder ?? (() => ({ command: CLAUDE_BINARY, args: ['mcp', 'list'] }));
+    this.#mcpWorkingDir = options.mcpWorkingDir ?? process.cwd();
+    this.#mcpProbeDeadlineMs = options.mcpProbeDeadlineMs ?? PROBE_DEADLINE_MS;
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
@@ -834,6 +859,47 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    */
   async listModels(): Promise<ModelCatalog> {
     return { models: CLAUDE_CODE_MODELS, resolvedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Which MCP servers this machine's `claude` currently sees (t400).
+   *
+   * The CLI first, and that is the whole design: `claude mcp list` applies this
+   * engine's own scoping and approval rules — user scope, project scope, and
+   * whether a `.mcp.json` server was ever approved — and no read of ours
+   * reproduces them. Measured on 2026-09-06: the repository's own `cartografo`
+   * server is listed by the CLI as "Pending approval" while `.mcp.json` names
+   * it flatly.
+   *
+   * The files second, and honestly labelled. When the binary is missing,
+   * refuses, errors or runs past the deadline, the two sources the founder's
+   * decision named are read directly — `~/.claude.json`'s user scope and the
+   * working directory's `.mcp.json` — and the answer says `origin: 'file'`,
+   * because it CAN disagree with what the CLI would have said. The third
+   * location this engine really has (`projects[<dir>].mcpServers`, nested in
+   * the same `~/.claude.json`) is deliberately out of scope: the decision named
+   * two files, and folding in a third unasked is how a report starts claiming
+   * more than anyone approved.
+   *
+   * It never rejects. Every source unreadable resolves zero servers from a
+   * file — a real "this engine names none", not an error swallowed into a lie.
+   */
+  async discoverMcpServers(): Promise<McpDiscovery> {
+    const output = await this.#probeMcpList();
+    const resolvedAt = new Date().toISOString();
+
+    if (output !== null) {
+      return { servers: parseClaudeMcpListOutput(output), origin: 'cli', resolvedAt };
+    }
+
+    return {
+      servers: mergeServerRefs(
+        readMcpServersJsonFile(this.#credentialsPath),
+        readMcpServersJsonFile(join(this.#mcpWorkingDir, '.mcp.json')),
+      ),
+      origin: 'file',
+      resolvedAt,
+    };
   }
 
   /**
@@ -1160,6 +1226,58 @@ export class ClaudeCodeAdapter implements EngineAdapter {
         const trimmed = out.trim();
         settle(code === 0 && trimmed !== '' ? trimmed : null);
       });
+    });
+  }
+
+  /**
+   * `claude mcp list`: the stdout of a run that exited 0, or `null`.
+   *
+   * The shape of `#probeVersion` — spawn, accumulate stdout, race `close`
+   * against `error` against the deadline — with one difference that is not
+   * cosmetic: the `cwd`. This CLI answers per project, so asking it from the
+   * wrong directory is asking a different question.
+   *
+   * `null` is every way the question went unanswered (missing binary, non-zero
+   * exit, deadline), and the caller turns each of them into the same honest
+   * fallback. Only stdout is read: `--json` does not exist for this subcommand,
+   * but it does for the other adapter's, and folding stderr into the capture
+   * would be a habit that corrupts a JSON parse there.
+   */
+  #probeMcpList(): Promise<string | null> {
+    const command = this.#mcpListCommandBuilder();
+
+    return new Promise((resolve) => {
+      let child: ChildProcess;
+      try {
+        child = spawn(command.command, [...command.args], {
+          cwd: this.#mcpWorkingDir,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: this.#probeEnvironment,
+        });
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      let out = '';
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        out += chunk;
+      });
+
+      const deadline = setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve(null);
+      }, this.#mcpProbeDeadlineMs);
+
+      const settle = (output: string | null): void => {
+        clearTimeout(deadline);
+        resolve(output);
+      };
+
+      // A missing binary arrives here as ENOENT: the file fallback, no throw.
+      child.once('error', () => settle(null));
+      child.once('close', (code: number | null) => settle(code === 0 ? out : null));
     });
   }
 

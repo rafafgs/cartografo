@@ -504,6 +504,42 @@ export interface CliProbe {
   readonly authenticated: boolean;
 }
 
+/**
+ * One MCP server the engine currently knows about, by name and nothing else.
+ *
+ * Deliberately narrow. `claude mcp list` has no `--json` mode (measured against
+ * `claude 2.1.263`), so everything past the name — the target, the transport,
+ * the "Connected"/"Needs authentication"/"Pending approval" status it prints —
+ * is unversioned CLI prose, and promising it as a field would be the same
+ * overreach `CliProbe.authenticated`'s "best effort, never a guarantee" already
+ * exists to prevent. The name is what both engines really agree on.
+ */
+export interface McpServerRef {
+  readonly name: string;
+}
+
+/**
+ * Which MCP servers this machine's engine sees, at one instant.
+ *
+ * `origin` carries the same honesty discipline as `EngineModel.origin`, and it
+ * is not a formality here either. `'cli'` means the engine's own binary was
+ * asked and answered, applying its own scoping and approval rules; `'file'`
+ * means the binary was unavailable, refused, errored or ran past the deadline,
+ * and this is a direct read of the engine's configuration file(s) — which CAN
+ * disagree with what the CLI would have said. A server declared in a
+ * repository's `.mcp.json` and never approved is exactly such a case: the file
+ * lists it flatly, the CLI reports it as pending.
+ *
+ * `resolvedAt` for the reason `ModelCatalog.resolvedAt` exists: a consumer with
+ * no stamp cannot tell a fresh report from one a runner left behind before it
+ * died.
+ */
+export interface McpDiscovery {
+  readonly servers: readonly McpServerRef[];
+  readonly origin: 'cli' | 'file';
+  readonly resolvedAt: string;
+}
+
 export interface EngineAdapter {
   /** Stable identifier, persisted on the session row. */
   readonly engineName: string;
@@ -559,6 +595,26 @@ export interface EngineAdapter {
    * bad identifier itself, where the truth actually lives.
    */
   listModels?(): Promise<ModelCatalog>;
+
+  /**
+   * Which MCP servers this machine's engine currently sees.
+   *
+   * Optional in the METHOD, exactly as `listModels?()` is and for the identical
+   * compatibility reason: a third-party adapter written before MCP discovery
+   * existed keeps compiling, which is what "growth of a published format is
+   * additive" has to mean after the v1 freeze.
+   *
+   * And the guard is not optional for the caller. An adapter that does not
+   * implement this is NOT an engine with zero MCP servers — an absent
+   * capability and an empty answer are different facts, and a caller that
+   * collapses them tells an operator a lie about their own machine. Check
+   * `typeof adapter.discoverMcpServers === 'function'` and, when it is absent,
+   * report that discovery is not implemented for this engine.
+   *
+   * Discovery, never invocation: this says which servers the engine names, and
+   * nothing here calls one.
+   */
+  discoverMcpServers?(): Promise<McpDiscovery>;
 }
 
 export class EngineError extends Error {}

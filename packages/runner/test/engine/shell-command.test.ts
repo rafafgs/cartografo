@@ -24,7 +24,11 @@ import {
   buildEnvironment,
 } from '../../src/engine/shell-command.ts';
 import { ShellAdapter } from '../../src/engine/shell-adapter.ts';
-import { SessionStartError, type SessionSpec } from '../../src/engine/types.ts';
+import {
+  SessionStartError,
+  type EngineAdapter,
+  type SessionSpec,
+} from '../../src/engine/types.ts';
 
 const spec = (extra: Partial<SessionSpec> = {}): SessionSpec => ({
   workingDir: '/tmp/test-worktree',
@@ -104,8 +108,9 @@ test('this adapter discovers no MCP server, because it has no engine to ask (t40
   // command is not one. The contract is additive, so an adapter that implements
   // neither is conformant and not degraded — what would be wrong is answering
   // `{ servers: [] }`, which reads as "this engine knows of no MCP server"
-  // rather than "there is no engine here to know of any".
-  const adapter = new ShellAdapter();
+  // rather than "there is no engine here to know of any". Read through the
+  // interface, because that is where the claim lives.
+  const adapter: EngineAdapter = new ShellAdapter();
 
   assert.equal(adapter.discoverMcpServers, undefined);
   assert.equal(adapter.listModels, undefined);

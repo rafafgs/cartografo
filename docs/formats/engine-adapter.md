@@ -87,6 +87,13 @@
 >   the first growth that came from OUTSIDE — b3-radar's D15 named "a `shell`
 >   engine" as the answer for "the day the graph needs a deterministic node
 >   inside the trail", and this is that day.
+> - **`discoverMcpServers()`, `McpServerRef` and `McpDiscovery`** (2026-09-06)
+>   — which MCP servers this machine's engine already sees, read from the engine
+>   itself. The second growth to add a METHOD, and therefore optional in the
+>   member (`discoverMcpServers?()`) on the precedent `listModels?()` set: an
+>   adapter written before MCP existed here still compiles. `ShellAdapter`
+>   implements it no more than it implements `listModels`, and is conformant for
+>   it — which is what the optional member is FOR.
 >
 > Where the feasibility analysis below and "Out of scope (v0)" disagree, **the
 > scope decision is the one that holds**: the table is an exploratory survey of a
@@ -783,6 +790,41 @@ export interface CliProbe {
   readonly authenticated: boolean;
 }
 
+/**
+ * One MCP server the engine currently knows about, by name and nothing else.
+ *
+ * Deliberately narrow. `claude mcp list` has no `--json` mode (measured against
+ * `claude 2.1.263`), so everything past the name — the target, the transport,
+ * the "Connected" / "Needs authentication" / "Pending approval" status it
+ * prints — is unversioned CLI prose, and promising it as a field would be the
+ * same overreach `CliProbe.authenticated`'s demotion already exists to prevent.
+ * The name is what both engines really agree on.
+ */
+export interface McpServerRef {
+  readonly name: string;
+}
+
+/**
+ * Which MCP servers this machine's engine sees, at one instant.
+ *
+ * `origin` carries the same honesty discipline as `EngineModel.origin`. `"cli"`
+ * means the engine's own binary was asked and answered, applying its own
+ * scoping and approval rules; `"file"` means the binary was unavailable,
+ * refused, errored or ran past the deadline, and this is a direct read of the
+ * engine's configuration file(s) — which CAN disagree with what the CLI would
+ * have said. A server declared in a repository's `.mcp.json` and never approved
+ * is exactly that disagreement, and it was measured.
+ *
+ * `resolvedAt` for the reason `ModelCatalog.resolvedAt` exists: a consumer with
+ * no stamp cannot tell a fresh report from one a runner left behind before
+ * dying.
+ */
+export interface McpDiscovery {
+  readonly servers: readonly McpServerRef[];
+  readonly origin: "cli" | "file";
+  readonly resolvedAt: string;
+}
+
 export interface EngineAdapter {
   /** A stable identifier, persisted on the session's row. */
   readonly engineName: string;
@@ -838,6 +880,25 @@ export interface EngineAdapter {
    * refuses a bad id on its own, which is where the truth actually lives.
    */
   listModels?(): Promise<ModelCatalog>;
+
+  /**
+   * Which MCP servers this machine's engine currently sees.
+   *
+   * Optional in the METHOD, exactly as `listModels?()` is and for the identical
+   * compatibility reason: a third party's adapter written before MCP discovery
+   * existed still compiles.
+   *
+   * And the guard is not optional for whoever consumes it. An adapter that does
+   * not implement this is NOT an engine with zero MCP servers — an absent
+   * capability and an empty answer are different facts, and a caller that
+   * collapses them tells an operator a lie about their own machine. Check
+   * `typeof adapter.discoverMcpServers === "function"` and, when it is absent,
+   * report that discovery is not implemented for this engine.
+   *
+   * Discovery, never invocation: this says which servers the engine names, and
+   * nothing here calls one.
+   */
+  discoverMcpServers?(): Promise<McpDiscovery>;
 }
 ```
 
@@ -1344,6 +1405,64 @@ and the kit's C2, which verifies it by what the process received.
     production would be the wrong ticket. What changed is that it stopped being a
     hypothesis: three copies of a SIGTERM→SIGKILL escalation is a measured cost,
     and the simplification the other two headers predicted now has its evidence.
+
+12. **Which MCP servers the engine already sees** (2026-09-06).
+    `discoverMcpServers?()`, `McpServerRef` and `McpDiscovery`: the twelfth
+    growth, the second one to add a method, and optional in the member for the
+    reason item 6 established for `listModels?()`. It reads the engine's OWN
+    configuration on the runner's machine — no curated list of ours — and the
+    direction matters: this discovers servers the HOST ENGINE knows about, the
+    opposite of `packages/mcp/`, which is cartografo's own MCP server exposing
+    cartografo to whatever calls it.
+
+    **Both CLIs were run, because this document's habit is to measure.**
+
+    - `claude 2.1.263`. `claude mcp list --help` documents no `--json` and no
+      other machine-readable mode; only `-h, --help`. A real run, from this
+      repository, prints a `Checking MCP server health…` banner, a blank line
+      and then one line per server shaped `<name>: <target> - <status>` —
+      `flowpilot: /Users/…/flowpilot-mcp  - ✔ Connected`,
+      `cartografo: node packages/mcp/bin/mcp.mjs - ⏸ Pending approval (run
+      \`claude\` to approve)`, three `claude.ai` connectors on
+      `! Needs authentication`. Unstructured and unversioned, so `name` is the
+      only thing this format promises off it.
+    - `codex-cli 0.147.0`. Unlike the assumption this growth started from,
+      `codex mcp list` exists AND documents `--json` ("Output the configured
+      servers as JSON"). Measured in an isolated `CODEX_HOME`,
+      `codex mcp add my-tool -- my-command --flag` then `codex mcp list --json`
+      answers an array of objects carrying `name`, `enabled`, `disabled_reason`,
+      `transport`, `auth_status`; the `config.toml` it wrote is
+      `[mcp_servers.my-tool]` with `command` and `args` under it. With nothing
+      configured, `codex mcp list` answers the plain line
+      `No MCP servers configured yet. Try \`codex mcp add my-tool -- my-command\`.`
+      — a genuinely empty answer that is not JSON, and therefore not a parse
+      failure to fall through on.
+
+    **So both adapters ask the CLI first**, on the ticket's own principle —
+    prefer the binary, because it applies the engine's scoping and approval
+    rules that no read of ours reproduces — and fall back to reading files,
+    saying `origin: "file"` when they do. For Codex that was a default taken
+    beyond the ticket's text (which had named a CLI path only for Claude Code),
+    written down as reversible in one line; `--json` is strictly more
+    trustworthy than hand-scanning a TOML, and the file read stays exactly as
+    decided, as the fallback.
+
+    **The gaps, written down as gaps.** (a) Claude Code has a THIRD place a
+    server name can live — `projects["<dir>"].mcpServers`, nested inside the same
+    `~/.claude.json` as the user-scope key — and it is not read: the decision
+    named two files, and folding in a third unasked is how a report starts
+    claiming more than anybody approved. (b) The
+    `enabledMcpjsonServers`/`disabledMcpjsonServers` approval state beside it is
+    not read either, which is precisely why the file path can disagree with the
+    CLI. (c) There is no health or connection status per server, for the reason
+    `McpServerRef` gives. (d) The call takes no `SessionSpec` — it mirrors
+    `verifyCli()`/`listModels()` and answers for a constructor-level working
+    directory, not for one job's worktree; in practice `.mcp.json` is a tracked
+    file identical across a repository's worktrees.
+
+    **No conformance-kit case**, on item 6's posture for `listModels`: an
+    optional method the kit does not demand. `ShellAdapter` implements neither,
+    and is conformant.
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

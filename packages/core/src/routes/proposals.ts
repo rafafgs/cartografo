@@ -38,6 +38,28 @@
  * not one byte of what is inside them (FR5). Whoever renames them does it on
  * purpose, in a ticket that says so.
  *
+ * ## Every handler here resolves a project first (t412)
+ *
+ * `proposal` has carried `project_id` since t354 and none of these routes read
+ * it: `load()` resolved a `:id` with `WHERE id = ?` alone, the listing crossed
+ * every project, and `create()` looked its graph and its version up in the
+ * default project whatever the caller declared — so a proposal posted with
+ * `?project_id=2` could only ever be refused or written to project 1.
+ *
+ * So the first thing every handler does is `requireProject`, the same call
+ * `routes/hook-secrets.ts` and `routes/graphs.ts` already open with, and a
+ * declared project nothing answers to is a `404 unknown_project` before a
+ * proposal is read at all. A proposal that exists in ANOTHER project answers
+ * the `404 unknown_proposal` an unknown id answers: same shape
+ * `routes/graphs.ts` chose for `unknown_origin_proposal`, because two codes
+ * would leak which ids are taken elsewhere and would make a partition read as
+ * a permission problem.
+ *
+ * That is also why every registration below is wrapped in `withValidation`:
+ * `requireProject` reads the scope off the wire, and a `?project_id=` that is
+ * not an integer is a `ValidationError` — a `400` about the request, not a
+ * `500` about the server.
+ *
  * t255 is the ticket that proved the freeze is load-bearing rather than an
  * oversight, and it changed nothing here: the cost surveyor was writing an
  * `expected_metric` of its own invention (`{descricao, alvo, teto_ou_fator}`),
@@ -82,7 +104,13 @@ import {
 } from '../repositories/proposals.ts';
 import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
-import { ERROR_RESPONSE_SCHEMA, OPEN_OBJECT_SCHEMA, refusal } from './common.ts';
+import {
+  ERROR_RESPONSE_SCHEMA,
+  OPEN_OBJECT_SCHEMA,
+  refusal,
+  requireProject,
+  withValidation,
+} from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -124,6 +152,9 @@ const CREATE_PROPOSAL_SCHEMA = {
     200: OPEN_OBJECT_SCHEMA,
     201: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
+    // Since t412: the scope is resolved before the body is read, so a
+    // `project_id` nothing answers to is refused here like anywhere else.
+    404: ERROR_RESPONSE_SCHEMA,
   },
 } as const;
 
@@ -205,11 +236,16 @@ const LIST_PROPOSALS_SCHEMA = {
   querystring: {
     type: 'object',
     properties: {
+      // A STRING like its two neighbours, and for the same reason they are:
+      // declaring `integer` hands the request to ajv, which would refuse a
+      // malformed scope with the framework's own body instead of the
+      // `validation_failed` every other route in this package answers.
+      project_id: { type: 'string' },
       status: { type: 'string' },
       veredito: { type: 'string' },
     },
   },
-  response: { 200: OPEN_OBJECT_SCHEMA },
+  response: { 200: OPEN_OBJECT_SCHEMA, 404: ERROR_RESPONSE_SCHEMA },
 } as const;
 
 /** `GET /proposals/:id` — one proposal, or the `404` that says there is none. */
@@ -229,7 +265,7 @@ const READ_PROPOSAL_SCHEMA = {
  */
 export function registerProposals(app: FastifyInstance, db: Database): void {
   app.post('/proposals', { schema: CREATE_PROPOSAL_SCHEMA }, (request, reply) =>
-    create(db, request, reply),
+    withValidation(reply, () => create(db, request, reply)),
   );
 
   /* ------------------------------------------------------------------------ */
@@ -238,16 +274,16 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
   /* ------------------------------------------------------------------------ */
 
   app.post<IdParam>('/proposals/:id/approve', { schema: APPROVE_SCHEMA }, (request, reply) =>
-    approve(db, request, reply),
+    withValidation(reply, () => approve(db, request, reply)),
   );
   app.post<IdParam>('/proposals/:id/reject', { schema: REASONED_DECISION_SCHEMA }, (request, reply) =>
-    reject(db, request, reply),
+    withValidation(reply, () => reject(db, request, reply)),
   );
   app.post<IdParam>('/proposals/:id/apply', { schema: APPLY_SCHEMA }, (request, reply) =>
-    apply(db, request, reply),
+    withValidation(reply, () => apply(db, request, reply)),
   );
   app.post<IdParam>('/proposals/:id/revert', { schema: REASONED_DECISION_SCHEMA }, (request, reply) =>
-    revert(db, request, reply),
+    withValidation(reply, () => revert(db, request, reply)),
   );
 
   /* ------------------------------------------------------------------------ */
@@ -258,12 +294,14 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
   /* ------------------------------------------------------------------------ */
 
   app.post<IdParam>('/proposals/:id/outcome', { schema: OUTCOME_SCHEMA }, (request, reply) =>
-    outcome(db, request, reply),
+    withValidation(reply, () => outcome(db, request, reply)),
   );
 
-  app.get('/proposals', { schema: LIST_PROPOSALS_SCHEMA }, (request) => list(db, request));
+  app.get('/proposals', { schema: LIST_PROPOSALS_SCHEMA }, (request, reply) =>
+    withValidation(reply, () => list(db, request, reply)),
+  );
   app.get<IdParam>('/proposals/:id', { schema: READ_PROPOSAL_SCHEMA }, (request, reply) =>
-    read(db, request, reply),
+    withValidation(reply, () => read(db, request, reply)),
   );
 }
 
@@ -291,15 +329,24 @@ function lensOf(evidence: unknown): string | null {
 
 /** `POST /proposals` — opens a hypothesis over a version that exists. */
 async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  // The scope first, and everything else inside it (t412, FR5). Before this the
+  // three lookups below were unscoped, so `POST /v1/proposals?project_id=2`
+  // could only ever answer `unknown_graph` — it was reading project 1's
+  // lineages — and the row it wrote landed in project 1 regardless.
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
   const body = isObject(request.body) ? request.body : {};
 
   const graphId = body.graph_id;
-  if (typeof graphId !== 'string' || getGraph(db, graphId) === undefined) {
+  if (typeof graphId !== 'string' || getGraph(db, graphId, project.id) === undefined) {
     return refusal(reply, 400, 'unknown_graph', undefined, { graph_id: graphId ?? null });
   }
 
   const targetVersion = body.target_version;
-  const version = typeof targetVersion === 'string' ? getVersion(db, targetVersion) : undefined;
+  const version =
+    typeof targetVersion === 'string' ? getVersion(db, targetVersion, project.id) : undefined;
   if (version === undefined || version.graph_id !== graphId) {
     return refusal(
       reply,
@@ -350,7 +397,11 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     rawOperations,
   );
 
-  const pending = findPendingProposalByDedupeKey(db, dedupeKey);
+  // Keyed INSIDE the project (FR2). The unique index this mirrors has been
+  // `(project_id, dedupe_key)` since migration 0026, and a lookup wider than
+  // the index it backs is how the same signal replayed in one project quietly
+  // absorbed another project's still-pending proposal.
+  const pending = findPendingProposalByDedupeKey(db, dedupeKey, project.id);
   if (pending !== undefined) {
     // 200, not 201: nothing was created. The evidence of the proposal that
     // already exists grows by one occurrence and everything else about it —
@@ -360,6 +411,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   }
 
   const proposal = createProposal(db, {
+    project_id: project.id,
     graph_id: graphId,
     target_version: targetVersion as string,
     operations: rawOperations as Operation[],
@@ -384,10 +436,9 @@ async function approve(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
 
   if (proposal.status !== 'pending') {
     return notPending(reply, proposal, 'approved');
@@ -402,10 +453,9 @@ async function reject(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
 
   // Reason before status, like `revert`: a rejected proposal is negative
   // knowledge for the topographer, and "no" with no reason is the half of the
@@ -538,10 +588,9 @@ async function apply(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
 
   // `aprovada`, not `pendente` (t165): a change to the graph passes a human
   // gate, and a proposal that skipped it has to fail loudly. The code is its
@@ -671,10 +720,9 @@ async function revert(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
 
   // Reason before status: it is the field the `graph_version.reverted` event
   // demands — and since t196 really carries into the log —, and it is the
@@ -736,10 +784,9 @@ async function outcome(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
 
   // `execucao_id` and `depois` are the frozen hypothesis vocabulary (FR5): this
   // body is the other half of the `{veredito, antes, depois, execucao_id,
@@ -829,8 +876,11 @@ async function outcome(
   return { proposal: written };
 }
 
-/** `GET /proposals` — the listing, with its two optional filters. */
-async function list(db: Database, request: FastifyRequest): Promise<unknown> {
+/** `GET /proposals` — the listing, within one project and with its two filters. */
+async function list(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+
   const filter = request.query as { status?: string; veredito?: string };
   // `?status=` speaks the wire's five values and is translated back to the
   // column's; `?veredito=` is the frozen hypothesis vocabulary and is not (FR5).
@@ -838,6 +888,7 @@ async function list(db: Database, request: FastifyRequest): Promise<unknown> {
   // through unmapped would silently widen the query.
   const status = optionalFilter(filter.status);
   const proposals = listProposals(db, {
+    project_id: scope.project.id,
     status: status === undefined ? undefined : (proposalStatusColumn(status) ?? status),
     veredito: optionalFilter(filter.veredito),
   });
@@ -858,10 +909,9 @@ async function read(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const proposal = load(db, request.params.id);
-  if (proposal === undefined) {
-    return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
-  }
+  const found = resolve(db, request, reply);
+  if (found.proposal === undefined) return found.refusal;
+  const proposal = found.proposal;
   return { proposal };
 }
 
@@ -892,9 +942,56 @@ function optionalFilter(value: string | undefined): string | undefined {
   return value === undefined || value === '' ? undefined : value;
 }
 
-/** Resolves a route's `:id` into a proposal; a non-numeric id is a 404, not a 500. */
-function load(db: Database, id: string): Proposal | undefined {
+/**
+ * Resolves a route's `:id` into a proposal OF THIS PROJECT.
+ *
+ * Two ways of not being there, one answer. A non-numeric id is a 404 and not a
+ * 500 (the coercion hazard `ID_PARAM_SCHEMA` above guards), and since t412 a
+ * perfectly numeric id naming a proposal of ANOTHER project is a 404 too: from
+ * inside this project that row is not a row that exists.
+ *
+ * @param db Open database.
+ * @param id The path segment, exactly as it arrived.
+ * @param projectId The project the request resolved to.
+ * @returns The proposal, or `undefined`.
+ */
+function load(db: Database, id: string, projectId: number): Proposal | undefined {
   const parsed = Number(id);
   if (!Number.isInteger(parsed)) return undefined;
-  return getProposal(db, parsed);
+  return getProposal(db, parsed, projectId);
+}
+
+/**
+ * The two refusals every `:id` handler here opens with, resolved in one place.
+ *
+ * The ORDER is the contract and not a detail: the project is resolved first, so
+ * a scope nothing answers to is `404 unknown_project` before any proposal is
+ * read — "there is nothing here" and "there is no here" are different answers,
+ * and giving the first for the second turns a typo into a wrong conclusion
+ * (`routes/common.ts`, `requireProject`).
+ *
+ * Shaped like `ResolvedScope`, and for the same reason: a handler has to RETURN
+ * the refusal body, so handing back a bare `undefined` would make all six call
+ * sites rebuild it — which is how two spellings of one refusal appear.
+ *
+ * @param db Open database.
+ * @param request The incoming request, carrying both the scope and the `:id`.
+ * @param reply Fastify reply, already marked when this refuses.
+ * @returns The proposal, or the body to hand back.
+ */
+function resolve(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): { proposal?: Proposal; refusal?: unknown } {
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return { refusal: scope.refusal };
+
+  const proposal = load(db, request.params.id, scope.project.id);
+  if (proposal === undefined) {
+    return {
+      refusal: refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id }),
+    };
+  }
+  return { proposal };
 }

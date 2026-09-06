@@ -68,6 +68,15 @@
  * makes, in a transaction of its own. On every release that does not finish a
  * round, the function's own three guards make it a no-op.
  *
+ * Since t412 the GRANT has a second exception, and it is a refusal rather than
+ * an observation: a `job_id` that names a job of ANOTHER project than the one
+ * the claim declares is `409 cross_project_reference`, and nothing is granted.
+ * The job stays opaque everywhere it ever was — an id naming no row at all is
+ * still leased over without comment, because the controller is what decides
+ * eligibility and a lease may perfectly well be held over work this database
+ * has not been told about. What is refused is the one case where the job
+ * itself contradicts the claim (D25).
+ *
  * A lease that clears by EXPIRING has the same theoretical gap and is not
  * closed here: `claimExpired`/`expireOverdue` kill a batch with one `UPDATE`,
  * which is a differently shaped problem, and it is not what t198 hit.
@@ -201,6 +210,41 @@ export function registerLeases(
     // refusal — it is a runner that does not exist for the control plane.
     if (getRunner(db, runnerId) === undefined) {
       return refusal(reply, 404, 'unknown_runner', undefined, { runner_id: runnerId });
+    }
+
+    // The one place `job_id` stops being opaque on the GRANT path (t412, FR7).
+    // `grantLease` says in its own doc that it does not read the `job` table, so
+    // until this check a runner could claim a lease naming one project and a job
+    // that belongs to another, and nothing anywhere would refuse it — the lease
+    // would count against the wrong project's cap and put the wrong project's
+    // work behind it.
+    //
+    // A job that does not exist is deliberately NOT refused. Three of the four
+    // verbs here never look a job up and the column carries no foreign key: a
+    // lease is about who holds WHAT, not about whether the what is eligible,
+    // and inventing a refusal for an unknown id would break every caller that
+    // leases over a job this control plane has not been told about yet. What
+    // is refused is a job that exists and says, itself, that it lives
+    // somewhere else.
+    //
+    // A `409` and not a `404`: both sides of the reference exist, and it is the
+    // pairing that is impossible. It is also not the `{lease: null, reason}`
+    // shape a full cap answers with — that one means "not now, try the next
+    // one", and this request will never succeed however many times it is
+    // retried.
+    const job = getJob(db, body.job_id as number);
+    if (job !== null && job.project_id !== body.project_id) {
+      return refusal(
+        reply,
+        409,
+        'cross_project_reference',
+        `job ${job.id} belongs to project ${job.project_id}, and this claim declares project ${String(body.project_id)}: a lease may not cross a project boundary (D25)`,
+        {
+          job_id: body.job_id,
+          project_id: body.project_id,
+          job_project_id: job.project_id,
+        },
+      );
     }
 
     // The clamp, and not a refusal: a declaration above the ceiling is not a

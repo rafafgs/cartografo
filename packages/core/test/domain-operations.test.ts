@@ -225,6 +225,80 @@ test('t167 — escalation_policy and escalation_recipient are fields change_node
   }
 });
 
+test('t369 — external and unsafe_to_retry are fields change_node_field may swap', async () => {
+  const { CHANGEABLE_FIELDS, validateOperation, applyOperations } = await loadOperations();
+
+  for (const field of ['external', 'unsafe_to_retry'] as const) {
+    assert.ok(
+      CHANGEABLE_FIELDS.includes(field),
+      `${field} has to be changeable, got ${CHANGEABLE_FIELDS.join(', ')}`,
+    );
+  }
+
+  // What a step reaches for outside, and whether it may be run twice, are node
+  // DATA — so they change through the machinery that already versions and
+  // re-validates, with an inverse and with evidence, and not through a path of
+  // their own. `contract` already proves the carrier takes an object; the only
+  // new thing here is that a boolean rides it just as well.
+  const external = {
+    inputs: [
+      {
+        name: 'prices',
+        server: 'drive',
+        tool: 'download_file',
+        arguments: { path: 'finance/prices.xlsx' },
+        as: 'prices.xlsx',
+      },
+    ],
+    outputs: [],
+  };
+
+  const cases = [
+    { field: 'external' as const, from: null, to: external },
+    { field: 'unsafe_to_retry' as const, from: false, to: true },
+  ];
+
+  for (const { field, from, to } of cases) {
+    const operation = {
+      type: 'change_node_field' as const,
+      node_id: 'revisar',
+      field,
+      from,
+      to,
+      inverse: { type: 'change_node_field' as const, node_id: 'revisar', field, from: to, to: from },
+    };
+
+    assert.deepEqual(
+      validateOperation(operation),
+      { valid: true, errors: [] },
+      `"${field}" has to be accepted, with its inverse`,
+    );
+
+    const input = minimalGraph();
+    const result = applyOperations(input, [operation]);
+    assert.deepEqual(
+      (requireNode(result, 'revisar') as unknown as Record<string, unknown>)[field],
+      to,
+      `applying has to write "${field}" on the target node`,
+    );
+    assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
+
+    // And the inverse, applied over the result, puts the node back where it was.
+    // It carries an inverse of its own because `applyOperations` validates every
+    // operation it is handed, and D15 asks the same of an undo as of a do.
+    const undo = {
+      ...operation.inverse,
+      inverse: { type: 'change_node_field' as const, node_id: 'revisar', field, from, to },
+    };
+    const back = applyOperations(result, [undo as OperationsModule.Operation]);
+    assert.deepEqual(
+      (requireNode(back, 'revisar') as unknown as Record<string, unknown>)[field],
+      from,
+      `the inverse of "${field}" has to round-trip`,
+    );
+  }
+});
+
 test('AT5 — an unknown type, a missing inverse and an incompatible inverse fail with an identifiable error', async () => {
   const { validateOperation } = await loadOperations();
 

@@ -457,6 +457,102 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
   );
 });
 
+/**
+ * t369 — "not safe to repeat" is node data, and it travels the same road.
+ *
+ * The flag is what a later ticket reads in the retry path and in the escalation
+ * ladder (RF-36), so declaring it has to be a versioned decision with a way
+ * back: AT11's assertions on the way in — the new snapshot carries it, the
+ * parent is byte-for-byte what it always was — and AT12's on the way out.
+ */
+test('t369 — a proposal that marks a node unsafe_to_retry applies and reverts with the field intact', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  assert.ok(
+    !Object.hasOwn(requireNode(document, 'revisar'), 'unsafe_to_retry'),
+    'the base fixture declares nothing: absent is the default, which means false',
+  );
+
+  const proposal = await createProposal(address, graph.id, version.id, [
+    {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'unsafe_to_retry',
+      from: false,
+      to: true,
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'unsafe_to_retry',
+        from: true,
+        to: false,
+      },
+    },
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.graph_version !== undefined);
+  assert.notEqual(body.graph_version.id, version.id, 'marking a node is a new version');
+  assert.equal(body.graph_version.parent_version, version.id);
+
+  const changed = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
+  );
+  assert.equal(
+    (requireNode(changed.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    true,
+    'the new snapshot carries the flag',
+  );
+
+  // Append-only: the version somebody already ran under does not learn the flag
+  // retroactively (D15).
+  const parent = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+  assert.deepEqual(
+    parent.graph_version.snapshot,
+    document,
+    'the parent version has to be byte-for-byte what it always was',
+  );
+
+  // And AT12's half: reverting moves the pointer back, and the abandoned
+  // version stays whole — flag included, because nothing is ever deleted.
+  const reversion = await post(address, `/v1/proposals/${proposal.id}/revert`, {
+    reason: 'the delivery turned out to be idempotent after all',
+  });
+  const reverted = await jsonBody<ApplyResponse>(reversion);
+  assert.equal(reversion.status, 200, JSON.stringify(reverted));
+  assert.equal(reverted.proposal.status, 'reverted');
+
+  const after = await getGraph(address, graph.id);
+  assert.equal(after.current_version_id, version.id, 'the pointer goes back to the target version');
+
+  const current = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+  assert.equal(
+    (requireNode(current.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    undefined,
+    'back on the version that never declared it, absence is the default again',
+  );
+
+  const abandoned = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
+  );
+  assert.equal(
+    (requireNode(abandoned.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    true,
+    'append-only: the abandoned version keeps the flag it was written with',
+  );
+});
+
 test('AT12 — reverting restores the pointer and the history stays whole', async (t) => {
   const address = await startApp(t);
 

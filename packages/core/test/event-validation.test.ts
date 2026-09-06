@@ -725,3 +725,42 @@ test('t268 FR3 — output_accepted is a boolean, and false is a measurement', ()
     refuses('session.finished', { status: 'completed', output_accepted: value }, 'output_accepted');
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t354 — the project becomes an entity, and its birth an event.               */
+/* -------------------------------------------------------------------------- */
+
+test('t354 — project.created carries the name, and nothing else', () => {
+  assert.deepEqual(requireValidData('project.created', { name: 'second' }), { name: 'second' });
+  refuses('project.created', {}, 'name');
+  refuses('project.created', { name: '' }, 'name');
+  refuses('project.created', { name: 'second', owner: 'rafael' }, 'owner');
+});
+
+test('t354 — the envelope accepts a project as a subject, and only for its own type', () => {
+  const envelope = {
+    type: 'project.created',
+    project_id: 2,
+    execution_id: null,
+    entity: { type: 'project', id: 2 },
+    actor: { type: 'system', ref: 'control-plane' },
+    occurred_at: '2026-09-06T12:00:00.000Z',
+    data: { name: 'second' },
+  };
+  assert.equal(requireValidEvent(envelope).entity.type, 'project');
+
+  assert.throws(
+    () => requireValidEvent({ ...envelope, entity: { type: 'job', id: 2 } }),
+    ValidationError,
+    'project.created talks about a project and about nothing else',
+  );
+  assert.throws(
+    () => requireValidEvent({ ...envelope, type: 'project.renamed' }),
+    ValidationError,
+    'an unknown type is still refused: renaming a project is out of scope',
+  );
+});
+
+test('t354 — project.created is one of the known types', () => {
+  assert.ok(KNOWN_TYPES.includes('project.created'));
+});

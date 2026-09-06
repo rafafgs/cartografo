@@ -773,3 +773,162 @@ test('t284 — the 201 of a document whose pins all resolve reports the check as
   assert.deepEqual(body.contracts.problems, []);
   assert.equal(body.contracts.reason, undefined);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t354 — the class is unique PER PROJECT, and the scope travels on the wire.  */
+/* -------------------------------------------------------------------------- */
+
+/** Declares a project and returns its id (t354, FR1). */
+async function declareProject(address: string, name: string): Promise<number> {
+  const response = await post(address, '/v1/projects', { name });
+  const body = await jsonBody<{ id: number }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return body.id;
+}
+
+/**
+ * The same document twice, in two projects (D25).
+ *
+ * This is the assertion that the composite key really is composite:
+ * `graph.class` used to be globally unique for a base lineage and
+ * `graph_version.id` (a content hash) was the primary key of the whole
+ * database, so before this ticket the second registration could only ever be a
+ * `409`. Two rows come out, and the two versions carry the SAME hash — a
+ * snapshot is content-addressed, and content that has not changed cannot get a
+ * new id just because somebody else registered it (`docs/spec/graph.md` §2).
+ */
+test('t354 — the same class registers once per project, with the same version hash', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(FACTORY_GRAPH);
+
+  assert.equal(await declareProject(address, 'second'), 2);
+
+  const inDefault = await post(address, '/v1/graphs', { ...document, project_id: 1 });
+  const defaultBody = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(inDefault);
+  assert.equal(inDefault.status, 201, JSON.stringify(defaultBody));
+
+  const inSecond = await post(address, '/v1/graphs', { ...document, project_id: 2 });
+  const secondBody = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(inSecond);
+  assert.equal(
+    inSecond.status,
+    201,
+    `a class is unique per project, not per database (D25): ${JSON.stringify(secondBody)}`,
+  );
+
+  assert.equal(defaultBody.graph.class, 'software-development');
+  assert.equal(secondBody.graph.class, 'software-development');
+  assert.equal(
+    secondBody.graph_version.id,
+    defaultBody.graph_version.id,
+    'the hash is the content, and the content did not change between the two calls',
+  );
+
+  // `project_id` never reaches the stored snapshot: it is the SCOPE of the
+  // write, not a field of the document, and a document that carried it would
+  // hash differently and stop round-tripping through `cartografo export`.
+  const version = await fetch(
+    `${address}/v1/graph-versions/${encodeURIComponent(secondBody.graph_version.id)}?project_id=2`,
+  );
+  assert.equal(version.status, 200);
+  const versionBody = await jsonBody<{ graph_version: GraphVersion & { snapshot: unknown } }>(
+    version,
+  );
+  assert.deepEqual(versionBody.graph_version.snapshot, document);
+});
+
+test('t354 — GET /v1/classes answers within one project, and 404s on an unknown one', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
+
+  await declareProject(address, 'second');
+  assert.equal((await post(address, '/v1/graphs', { ...document, project_id: 2 })).status, 201);
+
+  const inDefault = await jsonBody<{ classes: { class: string }[] }>(
+    await fetch(`${address}/v1/classes`),
+  );
+  assert.deepEqual(inDefault.classes, [], 'the default project registered nothing');
+
+  const inSecond = await jsonBody<{ classes: { class: string }[] }>(
+    await fetch(`${address}/v1/classes?project_id=2`),
+  );
+  assert.deepEqual(
+    inSecond.classes.map((entry) => entry.class),
+    [document.problem_class],
+  );
+
+  // An unknown project is a refusal and never an empty list: "there is nothing
+  // here" and "there is no here" are different answers, and silently returning
+  // the first for the second is how a typo becomes a wrong conclusion.
+  const unknown = await fetch(`${address}/v1/classes?project_id=99`);
+  assert.equal(unknown.status, 404);
+  const unknownBody = await jsonBody<{ error: string; project_id: number }>(unknown);
+  assert.equal(unknownBody.error, 'unknown_project');
+  assert.equal(unknownBody.project_id, 99);
+});
+
+test('t354 — a fork cannot take its origin proposal from another project', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
+  const className = document.problem_class as string;
+
+  await declareProject(address, 'second');
+
+  // The same lineage in both projects, so the fork below fails for the reason
+  // this test is about and not for a missing base.
+  assert.equal((await post(address, '/v1/graphs', { ...document, project_id: 1 })).status, 201);
+  assert.equal((await post(address, '/v1/graphs', { ...document, project_id: 2 })).status, 201);
+
+  const base = await jsonBody<{ graph: Graph }>(
+    await fetch(`${address}/v1/graphs/${className}?project_id=1`),
+  );
+  assert.notEqual(base.graph.current_version_id, null);
+
+  // A proposal that belongs to project 1 — written with no scope at all, which
+  // is what the default is for.
+  const proposal = await post(address, '/v1/proposals', {
+    graph_id: className,
+    target_version: base.graph.current_version_id,
+    operations: [
+      {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'role',
+        from: 'redator',
+        to: 'writer',
+        inverse: {
+          type: 'change_node_field',
+          node_id: 'redigir',
+          field: 'role',
+          from: 'writer',
+          to: 'redator',
+        },
+      },
+    ],
+    evidence: { lens: 't354' },
+    expected_metric: { nome: 'x', direcao: 'sobe', de: 1, para: 2 },
+  });
+  const proposalBody = await jsonBody<{ proposal: { id: number } }>(proposal);
+  assert.equal(proposal.status, 201, JSON.stringify(proposalBody));
+
+  const crossed = await post(address, `/v1/graphs/${className}/fork`, {
+    project_id: 2,
+    id: `${className}-crossed`,
+    origin_proposal_id: proposalBody.proposal.id,
+  });
+  assert.equal(crossed.status, 400);
+  const crossedBody = await jsonBody<{ error: string }>(crossed);
+  assert.equal(
+    crossedBody.error,
+    'unknown_origin_proposal',
+    'a reference may never cross a project boundary silently',
+  );
+
+  // ...and the same fork inside project 1 is accepted, so the refusal above is
+  // about the boundary and not about the proposal being unusable.
+  const inOwnProject = await post(address, `/v1/graphs/${className}/fork`, {
+    project_id: 1,
+    id: `${className}-variant`,
+    origin_proposal_id: proposalBody.proposal.id,
+  });
+  assert.equal(inOwnProject.status, 201, JSON.stringify(await inOwnProject.clone().json()));
+});

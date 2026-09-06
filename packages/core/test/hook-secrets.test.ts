@@ -336,3 +336,71 @@ test('AT7 — a runner credential is out of scope on all three routes', async (t
   };
   assert.equal(rows.total, 0, 'a refused request writes nothing');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t354 — the revoke-before-insert is scoped by project (FR5).                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The write path this ticket's own column addition must not leave broken.
+ *
+ * `setHookSecret` revokes "the active secret with this name" before inserting
+ * the new one. With `project_id` on the table and not in that `WHERE`, project
+ * 2 registering a name would silently revoke project 1's live key of the same
+ * name — the day the column is born, before the sibling ticket ever reaches
+ * "filtering reads". Both rows stay live here, and each name resolves to its
+ * own project's value.
+ */
+test('t354 — the same hook-secret name is live in two projects at once', async (t) => {
+  requireArtifacts(T194_ARTIFACTS.migration, T194_ARTIFACTS.repository, T194_ARTIFACTS.routes);
+  const ctx = await startControlPlane(t);
+
+  const second = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(second.status, 201, JSON.stringify(second.body));
+
+  const inDefault = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
+    value: VALUE,
+  });
+  assert.equal(inDefault.status, 201, JSON.stringify(inDefault.body));
+
+  const inSecond = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
+    value: ROTATED,
+    project_id: 2,
+  });
+  assert.equal(
+    inSecond.status,
+    201,
+    `a name never registered in project 2 is a creation there: ${JSON.stringify(inSecond.body)}`,
+  );
+
+  const live = ctx.db
+    .prepare(
+      'SELECT project_id, value FROM hook_secret WHERE name = ? AND revoked_at IS NULL ORDER BY project_id',
+    )
+    .all(NAME) as Array<{ project_id: number; value: string }>;
+  assert.deepEqual(
+    live,
+    [
+      { project_id: 1, value: VALUE },
+      { project_id: 2, value: ROTATED },
+    ],
+    'project 2 writing its own key may not revoke project 1\'s',
+  );
+});
+
+test('t354 — PUT /v1/hook-secrets refuses an unknown project before writing anything', async (t) => {
+  requireArtifacts(T194_ARTIFACTS.migration, T194_ARTIFACTS.routes);
+  const ctx = await startControlPlane(t);
+
+  const refused = await request<{ error?: string }>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
+    value: VALUE,
+    project_id: 99,
+  });
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project');
+
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM hook_secret').get() as {
+    total: number;
+  };
+  assert.equal(rows.total, 0);
+});

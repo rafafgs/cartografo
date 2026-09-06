@@ -167,12 +167,21 @@ manual.
 
 #### `job.unblocked` — [schema](schemas/job.unblocked.schema.json)
 
-Emitted when the flag comes down. Actor: `system` or `user`. No payload — the
-fact is the falling of the flag itself.
+Emitted when the flag comes down. Actor: `system` or `user`. The fall of the
+flag is the fact; `reason` is what a **person** adds to it.
 
 ```json
-{}
+{"reason":"three weeks of real trades back this rule; releasing the promotion"}
 ```
+
+`reason` is **optional**, and deliberately not required the way
+`job.blocked.reason` is. It is populated by a human override — the screen's
+unblock action on the board, or any caller that states why — and is `null` for
+the control plane's own unblock: answering an input request lowers the flag in
+the same transaction, and there the answer already IS the reason, so inventing
+a sentence would put words in nobody's mouth. It is the same reading
+`job.blocked.consecutive_failures` gets, `null` for every block the failure cap
+did not raise.
 
 #### `job.amended` — [schema](schemas/job.amended.schema.json)
 
@@ -560,10 +569,12 @@ never the actor that happened to push the job that closed the account.
 {}
 ```
 
-**No payload**, for the same reason as `job.unblocked`: the envelope's
-`execution_id`, `entity.id` and `occurred_at` already say which round ended and
-when, and repeating that inside `data` would be duplicated data within the event
-itself.
+**No payload**, because the envelope's `execution_id`, `entity.id` and
+`occurred_at` already say which round ended and when, and repeating that inside
+`data` would be duplicated data within the event itself. `job.unblocked` used to
+be cited here as the precedent; it stopped being payload-free in t339, when a
+human unblock gained a reason to state. The reasoning is the one that outlived
+the example.
 
 **Once, forever.** The fact is recorded the first time the condition holds, in
 the SAME transaction as the transition that made it true, and never again — a

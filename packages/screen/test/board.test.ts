@@ -1,13 +1,13 @@
 /**
- * Acceptance test of the board (t107, FR5).
+ * Acceptance test of the board (t107, t416).
  *
- * Criterion 1 of the ticket's original body: "I see the board". Here it is
- * demanded end to end — a real control plane as a process, a real screen
- * reading from it over HTTP only, and real HTML coming out the other side.
- *
- * Grouping by `no_atual` is the reason the screen exists: a board that only
- * lists jobs in id order does not answer "where is work getting stuck?", which
- * is the question D16 wants answered before the PoC is accepted.
+ * Split in two halves, the same way the ticket itself is: tests 1-8 drive
+ * `boardPage` against a FAKE `ApiClient` (canned JSON), because orchestrating
+ * real sessions/leases for all six derived states end to end is t415's own
+ * `jobs.test.ts` (AT9-17) and is not re-proven here — this file only proves
+ * the SCREEN reads `state`/`state_since` correctly once they exist on the
+ * wire. Tests 9, 11, 12 and 13 stay end to end against a real control plane,
+ * for the states reachable through existing screen-visible writes.
  */
 
 import assert from 'node:assert/strict';
@@ -26,120 +26,342 @@ import {
   startScreen,
 } from './support.ts';
 
-test('t107 AT4 — GET /board shows jobs grouped by node, with the block reason', async (t) => {
+/** One board.test.ts-local factory, since a fake job here needs the full wire shape. */
+async function loadPagesAndClient(): Promise<{
+  boardPage: typeof PagesModule.boardPage;
+  ApiClient: typeof ClientModule.ApiClient;
+}> {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages);
+  const { boardPage } = (await import(
+    new URL('../src/pages.ts', import.meta.url).href
+  )) as typeof PagesModule;
+  const { ApiClient } = (await import(
+    new URL('../src/client.ts', import.meta.url).href
+  )) as typeof ClientModule;
+  return { boardPage, ApiClient };
+}
+
+/** A full `Job`, as the wire sends it, with sensible defaults for what a test does not care about. */
+function fakeJob(overrides: Partial<ClientModule.Job> & { id: number }): ClientModule.Job {
+  return {
+    execution_id: null,
+    title: `job #${overrides.id}`,
+    entry_node_id: 'refinar',
+    current_node_id: 'refinar',
+    blocked: false,
+    block_reason: null,
+    graph_version_id: null,
+    completed: false,
+    state: 'queued',
+    state_since: '2026-09-06T00:00:00.000Z',
+    fields: null,
+    created_at: '2026-09-06T00:00:00.000Z',
+    updated_at: '2026-09-06T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A client whose one call answers with exactly these jobs. */
+function fakeBoardClient(ApiClient: typeof ClientModule.ApiClient, jobs: ClientModule.Job[]): ClientModule.ApiClient {
+  return new ApiClient({
+    baseUrl: 'http://127.0.0.1:4317',
+    doFetch: async () =>
+      new Response(JSON.stringify({ jobs }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  });
+}
+
+test('t416 AT1 — GET /board renders the six state bands, in attention order, each carrying its own jobs', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Ask me something', state: 'awaiting_you', state_since: '2026-09-01T00:00:00.000Z' }),
+    fakeJob({
+      id: 2,
+      title: 'Blocked, nobody asked',
+      state: 'blocked_unasked',
+      blocked: true,
+      block_reason: 'waiting on a decision',
+      state_since: '2026-09-02T00:00:00.000Z',
+    }),
+    fakeJob({ id: 3, title: 'Actively running', state: 'running', state_since: '2026-09-03T00:00:00.000Z' }),
+    fakeJob({ id: 4, title: 'Lease past its deadline', state: 'unowned', state_since: '2026-09-04T00:00:00.000Z' }),
+    fakeJob({ id: 5, title: 'Arrived', state: 'completed', state_since: '2026-09-05T00:00:00.000Z' }),
+    fakeJob({ id: 6, title: 'Sitting in the queue', state: 'queued', state_since: '2026-09-06T00:00:00.000Z' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const bands = blocks(page.html, 'state');
+  assert.deepEqual(
+    bands.map((band) => band.value),
+    ['awaiting_you', 'blocked_unasked', 'running', 'unowned', 'completed', 'queued'],
+    'the bands are not in attention-priority order',
+  );
+
+  for (const job of jobs) {
+    const band = bands.find((one) => one.value === job.state);
+    assert.ok(band !== undefined, `no band found for state "${job.state}"`);
+    assert.ok(band.excerpt.includes(job.title), `job "${job.title}" is not inside its own band`);
+  }
+});
+
+test('t416 AT2 — a state with no job in it renders no band at all', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Queued job', state: 'queued', state_since: '2026-09-06T00:00:00.000Z' }),
+    fakeJob({ id: 2, title: 'Waiting on me', state: 'awaiting_you', state_since: '2026-09-01T00:00:00.000Z' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const bands = blocks(page.html, 'state');
+  assert.deepEqual(
+    bands.map((band) => band.value),
+    ['awaiting_you', 'queued'],
+    'an empty state must not draw a band at all',
+  );
+});
+
+test('t416 AT3 — within a band, jobs sort by state_since ascending — the oldest wait first', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  // Fed out of order on purpose: the fake client answers in whatever order the
+  // fixture lists them, and the board is what has to put them straight.
+  const jobs = [
+    fakeJob({ id: 1, title: 'Newest wait', state: 'queued', state_since: '2026-09-06T00:00:00.000Z' }),
+    fakeJob({ id: 2, title: 'Oldest wait', state: 'queued', state_since: '2026-09-01T00:00:00.000Z' }),
+    fakeJob({ id: 3, title: 'Middle wait', state: 'queued', state_since: '2026-09-03T00:00:00.000Z' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const band = blocks(page.html, 'state').find((one) => one.value === 'queued');
+  assert.ok(band !== undefined);
+  const order = ['Oldest wait', 'Middle wait', 'Newest wait'].map((title) => band.excerpt.indexOf(title));
+  assert.ok(
+    order[0] < order[1] && order[1] < order[2],
+    `expected ascending state_since order, got positions ${order.join(', ')}`,
+  );
+});
+
+test('t416 AT4 — a shared state_since ties break by ascending job id', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 5, title: 'Higher id', state: 'queued', state_since: '2026-09-06T00:00:00.000Z' }),
+    fakeJob({ id: 2, title: 'Lower id', state: 'queued', state_since: '2026-09-06T00:00:00.000Z' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const band = blocks(page.html, 'state').find((one) => one.value === 'queued');
+  assert.ok(band !== undefined);
+  assert.ok(
+    band.excerpt.indexOf('Lower id') < band.excerpt.indexOf('Higher id'),
+    'the lower id must sort first when state_since is shared',
+  );
+});
+
+test('t416 AT5 — twelve jobs board-wide still render as cards, grouped by node inside each band', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = Array.from({ length: 12 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      title: `Job ${index + 1}`,
+      state: index % 2 === 0 ? 'queued' : 'running',
+      current_node_id: index < 4 ? 'refinar' : 'implementar',
+      state_since: `2026-09-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }),
+  );
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  assert.ok(!page.html.includes('<table>'), 'twelve jobs must stay in card mode — no table anywhere');
+  const nodeGroups = blocks(page.html, 'no-atual');
+  assert.ok(nodeGroups.length >= 2, 'the per-node grouping has to nest inside the state bands');
+});
+
+test('t416 AT6 — thirteen jobs board-wide render every band as a flat table, sorted by state_since', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = Array.from({ length: 13 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      // Zero-padded so no title is a prefix of another ("Job 01" vs "Job 12"),
+      // which `indexOf` below would otherwise find inside the wrong one.
+      title: `Job ${String(index + 1).padStart(2, '0')}`,
+      state: 'queued',
+      current_node_id: index % 2 === 0 ? 'refinar' : 'implementar',
+      state_since: `2026-09-${String(13 - index).padStart(2, '0')}T00:00:00.000Z`,
+    }),
+  );
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  assert.ok(page.html.includes('<table>'), 'thirteen jobs must switch to row mode');
+  assert.deepEqual(blocks(page.html, 'no-atual'), [], 'row mode is flat — no per-node grouping');
+
+  const band = blocks(page.html, 'state').find((one) => one.value === 'queued');
+  assert.ok(band !== undefined);
+  // state_since descended as `index` grows, so titles must appear in REVERSE
+  // index order (job 13 has the oldest state_since and sorts first).
+  const positions = jobs.map((job) => band.excerpt.indexOf(job.title));
+  for (let i = 1; i < positions.length; i += 1) {
+    assert.ok(positions[i - 1] > positions[i], `job ${i} is not in state_since order`);
+  }
+  jobs.forEach((job) => {
+    assert.ok(band.excerpt.includes(job.current_node_id), `row for ${job.title} is missing its node`);
+  });
+});
+
+test('t416 AT7 — the same grammar shows on a card and on a row, and every job on the page shares one render instant', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const cardBoard = Array.from({ length: 12 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      title: index === 0 ? 'Fixture job' : `Filler ${index}`,
+      state: 'awaiting_you',
+      current_node_id: 'refinar',
+      state_since: '2026-09-01T00:00:00.000Z',
+    }),
+  );
+  const rowBoard = Array.from({ length: 13 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      title: index === 0 ? 'Fixture job' : `Filler ${index}`,
+      state: 'awaiting_you',
+      current_node_id: 'refinar',
+      state_since: '2026-09-01T00:00:00.000Z',
+    }),
+  );
+
+  const cardPage = await boardPage(fakeBoardClient(ApiClient, cardBoard));
+  const rowPage = await boardPage(fakeBoardClient(ApiClient, rowBoard));
+
+  for (const page of [cardPage, rowPage]) {
+    const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+    assert.ok(card !== undefined);
+    assert.ok(card.excerpt.includes('Fixture job'), 'the title is missing');
+    assert.ok(card.excerpt.includes('awaiting you'), 'the state must read with spaces, not underscores');
+    assert.ok(card.excerpt.includes('refinar'), 'the current node id is missing');
+    assert.match(card.excerpt, /for [^<\n]+/, 'the duration ("for …") is missing');
+    assert.match(card.excerpt, /as of [^<\n]+/, 'the anchor ("as of …") is missing');
+  }
+
+  // The same page, two different jobs: their anchors must be byte-identical.
+  const anchors = [...rowPage.html.matchAll(/as of ([^<\n]+)/g)].map((match) => match[1]);
+  assert.ok(anchors.length >= 2, 'expected at least two anchors to compare');
+  assert.ok(
+    anchors.every((anchor) => anchor === anchors[0]),
+    `every job on the page must share one render instant, got: ${anchors.join(' | ')}`,
+  );
+});
+
+test('t416 AT8 — awaiting_you and blocked_unasked cards carry the attention class; a running card does not', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Waiting on me', state: 'awaiting_you', state_since: '2026-09-01T00:00:00.000Z' }),
+    fakeJob({
+      id: 2,
+      title: 'Blocked, nobody asked',
+      state: 'blocked_unasked',
+      blocked: true,
+      block_reason: 'because',
+      state_since: '2026-09-02T00:00:00.000Z',
+    }),
+    fakeJob({ id: 3, title: 'Running along', state: 'running', state_since: '2026-09-03T00:00:00.000Z' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const cards = blocks(page.html, 'trabalho');
+  const waiting = cards.find((one) => one.value === '1');
+  const blocked = cards.find((one) => one.value === '2');
+  const running = cards.find((one) => one.value === '3');
+  assert.ok(waiting !== undefined && blocked !== undefined && running !== undefined);
+
+  assert.match(waiting.excerpt, /class="[^"]*\battention\b[^"]*"/, 'awaiting_you must carry .attention');
+  assert.match(blocked.excerpt, /class="[^"]*\battention\b[^"]*"/, 'blocked_unasked must carry .attention');
+  assert.doesNotMatch(running.excerpt, /class="[^"]*\battention\b[^"]*"/, 'running must not carry .attention');
+});
+
+test('t416 AT9 — a job with fields.demo truthy shows the demo badge; one without does not', async (t) => {
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const refining = await createJob(cp, {
-    title: 'Minimal observability screen',
+  const demoJob = await createJob(cp, {
+    title: 'Demo job',
     entry_node_id: 'refinar',
-    execution_id: 7,
+    fields: { demo: true },
   });
-  const implementing = await createJob(cp, {
-    title: 'Question and resume cycle',
+  const plainJob = await createJob(cp, {
+    title: 'Ordinary job',
     entry_node_id: 'refinar',
-    execution_id: 7,
-  });
-  const stuck = await createJob(cp, {
-    title: 'Factory graph 2',
-    entry_node_id: 'refinar',
-    execution_id: 7,
   });
 
-  await api(cp, 'POST', `/v1/jobs/${implementing.id}/transitions`, {
-    to_node_id: 'implementar',
-  });
-  await api(cp, 'POST', `/v1/jobs/${stuck.id}/transitions`, { to_node_id: 'implementar' });
-  await api(cp, 'POST', `/v1/jobs/${stuck.id}/blocks`, {
+  const screen = await startScreen(t, cp);
+  const page = await openPage(screen, '/board');
+
+  const demoCard = blocks(page.html, 'trabalho').find((one) => one.value === String(demoJob.id));
+  const plainCard = blocks(page.html, 'trabalho').find((one) => one.value === String(plainJob.id));
+  assert.ok(demoCard !== undefined && plainCard !== undefined);
+
+  assert.ok(demoCard.excerpt.includes('demo-badge'), 'the demo job must show the demo badge');
+  assert.ok(!plainCard.excerpt.includes('demo-badge'), 'a job with no fields.demo must not show the badge');
+});
+
+test('t416 AT10 — the auto-refresh meta tag is scoped to /board alone', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const board = await openPage(screen, '/board');
+  assert.ok(
+    board.html.includes('<meta http-equiv="refresh" content="30">'),
+    '/board must carry the 30s auto-refresh',
+  );
+
+  for (const path of ['/', '/input-requests', '/executions', '/runners']) {
+    const page = await openPage(screen, path);
+    assert.ok(
+      !page.html.includes('<meta http-equiv="refresh"'),
+      `${path} must not auto-refresh`,
+    );
+  }
+});
+
+test('t416 AT11 — a job blocked with no pending question lands in blocked_unasked, and still shows why', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'Stuck job', entry_node_id: 'refinar' });
+  await api(cp, 'POST', `/v1/jobs/${job.id}/blocks`, {
     reason: 'waiting on the founder to decide',
   });
 
   const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/board');
 
-  assert.equal(page.status, 200);
-  assert.match(page.contentType ?? '', /text\/html/, 'the screen returns HTML, not JSON');
-
-  // t124: the control plane behind this page denies anonymous requests, and the
-  // browser that just rendered it presented none. Both halves of that sentence
-  // are asserted here — the unit-level proxy test proves the header is built,
-  // this one proves the whole real stack still works once it is required.
-  assert.equal(
-    (await fetch(`${cp.url}/v1/jobs`)).status,
-    401,
-    'the real control plane behind the screen requires a credential',
-  );
-
-  for (const job of [refining, implementing, stuck]) {
-    assert.ok(page.html.includes(job.title), `the board does not show the title "${job.title}"`);
-  }
-
-  const groups = blocks(page.html, 'no-atual');
-  assert.deepEqual(
-    groups.map((group) => group.value),
-    ['implementar', 'refinar'],
-    'one group per occupied node, in node order',
-  );
-
-  const [inImplement, inRefine] = groups;
+  const band = blocks(page.html, 'state').find((one) => one.value === 'blocked_unasked');
+  assert.ok(band !== undefined, 'no blocked_unasked band was rendered');
+  assert.ok(band.excerpt.includes(job.title), 'the blocked job is not inside its band');
   assert.ok(
-    inImplement.excerpt.includes(implementing.title) &&
-      inImplement.excerpt.includes(stuck.title),
-    'the two that transitioned are under the "implementar" group',
-  );
-  assert.ok(
-    !inImplement.excerpt.includes(refining.title),
-    'whoever did not move cannot show up in the next node group',
-  );
-  assert.ok(
-    inRefine.excerpt.includes(refining.title),
-    'whoever did not move stays under the entry node group',
-  );
-
-  const cards = blocks(page.html, 'trabalho');
-  assert.deepEqual(
-    [...cards.map((card) => card.value)].sort(),
-    [refining.id, implementing.id, stuck.id].map(String).sort(),
-    'one card per job, marked with its id',
-  );
-
-  const stuckCard = cards.find((card) => card.value === String(stuck.id));
-  assert.ok(stuckCard !== undefined);
-  assert.ok(
-    stuckCard.excerpt.includes('waiting on the founder to decide'),
-    'the blocked card has to say WHY it is blocked',
-  );
-
-  const looseCard = cards.find((card) => card.value === String(refining.id));
-  assert.ok(looseCard !== undefined);
-  assert.ok(
-    !looseCard.excerpt.includes('waiting on the founder to decide'),
-    'a block reason belongs to the blocked job, not to the page',
-  );
-
-  // t310: the page a person actually opens reads in English — the heading it is
-  // titled by and the group label it groups under.
-  assert.ok(
-    page.html.includes('<h2>board · 3 job(s)</h2>'),
-    `the board heading is not the English one:\n${page.html}`,
-  );
-  assert.ok(page.html.includes('<a href="/board">board</a>'), 'the nav link text is still Portuguese');
-  assert.ok(page.html.includes('<html lang="en">'), 'the shell still declares another language');
-
-  assert.ok(page.html.includes('href="/executions"'), 'the board leads to the executions list');
-  assert.ok(
-    page.html.includes(`href="/jobs/${refining.id}"`),
-    'each job leads to its own timeline',
+    band.excerpt.includes('waiting on the founder to decide'),
+    'the block reason did not survive the split',
   );
 });
 
-test('t107 AT4 — the board escapes HTML coming from the control plane', async (t) => {
+test('t416 AT12 — the board still escapes HTML coming from the control plane', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  // The title is outside data, and the credential the API demands since t124
-  // says nothing about what it carries: interpolating it raw would be HTML
-  // injection on the project's very first screen.
   await createJob(cp, {
     title: '<script>alert("xss")</script> & co',
     entry_node_id: 'refinar',
@@ -169,69 +391,4 @@ test('t230 — the Portuguese paths D20 renamed are gone, with no redirect behin
     const page = await openPage(screen, gone);
     assert.equal(page.status, 404, `${gone} still answers; D20 §5.1 renamed it`);
   }
-});
-
-test('t310 — a board with nothing on it says so in English', async (t) => {
-  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
-  const cp = await startControlPlane(t);
-  const screen = await startScreen(t, cp);
-
-  const page = await openPage(screen, '/board');
-
-  assert.equal(page.status, 200);
-  assert.ok(
-    page.html.includes('<p class="vazio">No jobs here yet.</p>'),
-    `the empty state is missing or still Portuguese:\n${page.html}`,
-  );
-  // The CSS class name is NOT copy: `vazio` is the DOM contract the founder
-  // reserved for himself (t310, AC2), and it stays exactly as it is.
-  assert.ok(page.html.includes('class="vazio"'), 'the class name is structure, and structure did not move');
-});
-
-test('t310 — the blocked card with no reason declared says it in English', async () => {
-  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages);
-
-  // Against a fake client, and not a real control plane, for the reason
-  // `runners.test.ts` states: `job.blocked` is required to carry a `reason` by
-  // the event schema (`packages/core/src/db/event-validation.ts`), so a job that
-  // is blocked with none cannot be seeded through the API at all. The fallback
-  // exists because the projection is a column and the log is the contract, and
-  // this is the only way to see what it says.
-  const { boardPage } = (await import(
-    new URL('../src/pages.ts', import.meta.url).href
-  )) as typeof PagesModule;
-  const { ApiClient } = (await import(
-    new URL('../src/client.ts', import.meta.url).href
-  )) as typeof ClientModule;
-
-  const page = await boardPage(
-    new ApiClient({
-      baseUrl: 'http://127.0.0.1:4317',
-      doFetch: async () =>
-        new Response(
-          JSON.stringify({
-            jobs: [
-              {
-                id: 1,
-                title: 'Blocked with nothing said',
-                current_node_id: 'refinar',
-                execution_id: null,
-                blocked: true,
-                block_reason: null,
-                completed: false,
-              },
-            ],
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-    }),
-  );
-
-  assert.equal(page.status, 200);
-  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
-  assert.ok(card !== undefined);
-  assert.ok(
-    card.excerpt.includes('blocked, with no reason declared'),
-    `the fallback block line is not English:\n${card.excerpt}`,
-  );
 });

@@ -31,7 +31,7 @@ of its own, with two jobs:
 | Path | What happens |
 |---|---|
 | `/v1/*` | A **verbatim** proxy to `CARTOGRAFO_URL` — method, path, query, body and headers cross unchanged, and the status comes back as it came. |
-| Anything else | A static file from `packages/screen/src/public/` (`/` serves `index.html`). |
+| Anything else | A static file from `packages/screen/src/public/` (`/inbox` serves `index.html`; the root is the check page, t402). |
 
 The browser talks only to the origin the page came from; the screen is still one
 more HTTP client of the public API. Nothing on the core's boundary changes.

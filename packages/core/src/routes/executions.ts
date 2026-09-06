@@ -19,6 +19,17 @@
  * two repositories hand back — nothing here translates on the way out. The
  * EVENTS inside `events` keep their own envelope, which is the taxonomy's and
  * therefore D20's second child.
+ *
+ * ## The scope (t410, D25)
+ *
+ * A round is a grouper PER PROJECT: `execution_id` is a number an operator
+ * chooses, so two projects numbering their rounds independently land on the
+ * same one as a matter of course, and every count published here — `jobs`,
+ * `blocked_jobs`, `pending_input_requests`, `finished_at`, the per-version and
+ * per-node breakdowns — is computed over the jobs of ONE project. All four
+ * routes resolve the scope with `requireProject`, so an undeclared project is a
+ * `404 unknown_project` on the whole family rather than on three quarters of
+ * it; what the fourth one does with the scope is said at its own call site.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -32,7 +43,7 @@ import {
   metricsByVersion,
   nodeMetricsByVersion,
 } from '../repositories/job.ts';
-import { withValidation, routeId } from './common.ts';
+import { requireProject, withValidation, routeId } from './common.ts';
 
 /**
  * Registers the execution routes in the `/v1` scope.
@@ -44,9 +55,12 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   // The LIST is an aggregation over `trabalho`, not a table read (t107, FR1):
   // without it nobody discovers which executions exist without already knowing
   // the id.
-  app.get('/executions', async (_request, reply) =>
+  app.get('/executions', async (request, reply) =>
     withValidation(reply, () => {
-      const found = listExecutions(db);
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const found = listExecutions(db, scope.project.id);
       return { executions: found };
     }),
   );
@@ -64,7 +78,12 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    * a round with zero jobs, and zero jobs is never finished.
    */
   app.get('/executions/:id', async (request, reply) =>
-    withValidation(reply, () => getExecution(db, routeId(request.params))),
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      return getExecution(db, routeId(request.params), scope.project.id);
+    }),
   );
 
   /**
@@ -89,9 +108,16 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    */
   app.get('/executions/:id/metrics-by-version', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const executionId = routeId(request.params);
-      const metrics = metricsByVersion(db, executionId);
-      const nodes = nodeMetricsByVersion(db, executionId);
+      const metrics = metricsByVersion(db, executionId, scope.project.id);
+      const nodes = nodeMetricsByVersion(db, executionId, scope.project.id);
+      // The one number on this route that is still counted over every project
+      // (t410, Out of Scope): `questionsByNode` lives in
+      // `repositories/input-request.ts`, which is a different slice of the t355
+      // split, and `input_request` carries no `project_id` to filter on here.
       const byNode = questionsByNode(db, executionId);
       return {
         execution_id: executionId,
@@ -118,6 +144,15 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    */
   app.get('/executions/:id/events', async (request, reply) =>
     withValidation(reply, () => {
+      // The scope is RESOLVED and not applied, deliberately (t410): a project
+      // nobody declared is a refusal on this route like on the three above it —
+      // one family answers one way — but filtering the log itself belongs to
+      // the event slice of the t355 split, which owns `db/events.ts` and the
+      // `project_id` filter it already has. Widening that here would be a
+      // second owner for the same decision.
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const executionId = routeId(request.params);
       return { execution_id: executionId, events: listEvents(db, { execution_id: executionId }) };
     }),

@@ -221,7 +221,10 @@ test('AT3 — a path outside /v1/* is served from the static page, not proxied',
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
-  const page = await fetch(`${screen.url}/`);
+  // `/inbox` since t402, and not `/`: the root became a rendered view (the
+  // check page), which reads the API — so probing it here would prove the
+  // opposite of what this test is about.
+  const page = await fetch(`${screen.url}/inbox`);
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
 
@@ -262,7 +265,9 @@ test('AT4 — the screen listens on CARTOGRAFO_SCREEN_PORT, and on 4318 when it 
 
   assert.equal(screen.port, port);
   assert.equal(new URL(screen.url).port, String(port));
-  assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 200);
+  // A path the screen answers with no control plane behind it: since t402 the
+  // root is a rendered view, and this probe is about the port, not the page.
+  assert.equal((await fetch(`http://127.0.0.1:${port}/inbox`)).status, 200);
 });
 
 test('t124 AT — the screen presents its service credential on every call it makes upstream', async (t) => {

@@ -27,6 +27,14 @@ export const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 /** The executable under test. */
 export const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'cartografo.mjs');
 
+/**
+ * What asks `up` for the control plane and nothing else (t405).
+ *
+ * `npx cartografo` brings up three processes and opens a browser; every suite
+ * here wants the first of the three and none of the rest.
+ */
+export const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+
 /** Factory bundle 1 (D14), the input of the README's three-command path. */
 export const FACTORY_BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'software-development');
 
@@ -183,6 +191,14 @@ export async function runCli(
  * `test/auth.test.ts` does not already say. The subcommands themselves get the
  * token through `runCli`'s `token` option, as a person would.
  *
+ * Every start here is a CONTROL PLANE, and since t405 the command is more than
+ * that: with no flag `cartografo` also spawns the screen and a local runner and
+ * opens a browser. So {@link CONTROL_PLANE_ONLY} is appended to whatever the
+ * caller asked for — these suites test subcommands against a server, none of
+ * them wants three processes and a browser window per case, and one of them
+ * would otherwise create a git repository in the home directory of whoever runs
+ * the suite.
+ *
  * @param t Test context, used to shut the process down at the end.
  * @param options Database and arguments (`[]` = implicit start, `['up']` = explicit).
  * @returns The control plane running.
@@ -192,7 +208,7 @@ export async function startControlPlane(
   options: { databasePath: string; args?: string[]; cwd?: string },
 ): Promise<RunningControlPlane> {
   const port = await freePort();
-  const child = spawn(process.execPath, [BIN_PATH, ...(options.args ?? [])], {
+  const child = spawn(process.execPath, [BIN_PATH, ...(options.args ?? []), ...CONTROL_PLANE_ONLY], {
     cwd: options.cwd ?? REPO_ROOT,
     env: {
       ...process.env,

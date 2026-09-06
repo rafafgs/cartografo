@@ -38,21 +38,26 @@ second machine, a checkout you will come back to. [`README.md`](../README.md)
 explains the difference under step 1 of "How to run it", and it is worth reading
 once before you debug a red suite you did not break.
 
-## 2. Start the control plane and the screen
+## 2. Start it
 
-Two processes, in two terminals. Neither is a build step: there is nothing to
-compile and nothing to configure first.
+One process, one command. It is not a build step: there is nothing to compile
+and nothing to configure first.
 
 ```bash
-npx cartografo                                  # terminal 1 — leave it running
+npx cartografo                                  # leave it running
 ```
 
 It creates `.cartografo/cartografo.db`, applies the pending migrations, brings
 up the HTTP server and prints one line:
 
 ```json
-{"event":"cartografo.ready","database":"/your/checkout/.cartografo/cartografo.db","migrationsApplied":24,"url":"http://127.0.0.1:4317","bootstrapToken":"<64 hex characters>"}
+{"event":"cartografo.ready","database":"/your/checkout/.cartografo/cartografo.db","migrationsApplied":28,"url":"http://127.0.0.1:4317","bootstrapToken":"<64 hex characters>"}
 ```
+
+Then, without asking you anything, it starts **the screen** on
+`http://127.0.0.1:4318` and **one local runner**, both as child processes of its
+own, and opens your browser on the screen. `Ctrl-C` in that terminal takes all
+three down together — the children first, then the server.
 
 **Copy the `bootstrapToken` now.** It appears only on the first start against a
 new database — the database keeps only its hash — and every `/v1/*` route
@@ -63,18 +68,40 @@ export CARTOGRAFO_TOKEN=<the token from the line above>
 export CARTOGRAFO_URL=http://127.0.0.1:4317
 ```
 
-Lost it? Delete `.cartografo/` and start again; a new one is issued.
+Lost it? Delete `.cartografo/` and start again; a new one is issued. The screen
+and the runner started above need none of this: they were handed a credential of
+that startup's own, in their environment, which dies with them.
 
-Then the screen, in a second terminal:
+The screen is an ordinary client of the same public API, on another port and in
+another process, with no access to the database and no privilege over the
+control plane (D11). Being started by `cartografo` changes nothing about that:
+what makes it a separate process is that it *is* one.
+
+The runner works in `~/.cartografo/workspace`, which this command creates as an
+empty git repository the first time it runs, and cuts each session's worktree
+into `~/.cartografo/worktrees`. Both are settings (`GET /v1/settings`), not
+constants — repoint `workspace_root` at a repository of your own with `PATCH
+/v1/settings` and the command will never write to it again.
+
+**Want fewer than three processes?** `--no-browser`, `--no-runner` and
+`--no-screen` each subtract exactly their own part, in any combination, with or
+without the word `up`:
 
 ```bash
-npx cartografo-screen                           # terminal 2 — http://127.0.0.1:4318
+npx cartografo --no-browser --no-runner --no-screen   # the control plane alone
 ```
 
-It is an ordinary client of the same public API, on another port and in another
-process, with no access to the database and no privilege over the control plane
-(D11). It reads `CARTOGRAFO_TOKEN` and `CARTOGRAFO_URL` from the environment,
-which the two exports above have already set.
+That is also how you run a runner configured differently — a different
+repository, engine or project. Start `cartografo` with `--no-runner`, and run
+`npx cartografo-runner --working-dir ~/proj --worktrees-root ~/proj-worktrees`
+in a second terminal.
+
+Open it and the first page is the **check**: with no runner paired yet it shows
+one line and the command that pairs one, built from whatever this project has
+recorded. Come back to it after step 6, when a runner has reported about its own
+machine, and it says per runner whether the engine CLI, the model credential, the
+`cartografo` MCP server and the workspace are all in place — or exactly which of
+them is not, with one way to fix each.
 
 ## 3. Import a factory graph
 
@@ -143,10 +170,11 @@ Two views, and they answer different questions.
 
 **Where is everything?** The board, at `http://127.0.0.1:4318/board`, groups
 every job by the node it is standing on and shows the blocking reason where
-there is one. Its sibling views are the proposal inbox at `/`, the escalation
-queue at `/input-requests` and one job's timeline at `/jobs/<id>`
-([`docs/spec/screen.md`](spec/screen.md) documents all seven routes). Each view
-renders on the request: reloading the page is the refresh.
+there is one. Its sibling views are the readiness check at `/`, the proposal
+inbox at `/inbox`, the escalation queue at `/input-requests` and one job's
+timeline at `/jobs/<id>` ([`docs/spec/screen.md`](spec/screen.md) documents the
+whole route table). Each view renders on the request: reloading the page is the
+refresh.
 
 **What happened to this one job?** Its event timeline, which is the log rather
 than a summary of it:
@@ -160,13 +188,16 @@ with. Everything that happens to it afterwards — a transition, a block, a
 session opening, a question escalated — arrives as another append-only entry
 here, which is what makes a round replayable rather than merely logged.
 
-**Nothing is moving yet, and that is correct.** A job sits on its entry node
-until a **runner** picks it up, and a runner is a separate process that
-dispatches a real CLI agent session per node. Starting one needs an engine CLI
-already installed and authenticated on your machine, so it is step 4 of
-[`README.md`](../README.md)'s "How to run it" rather than a step here: that
-section carries the `--working-dir` / `--worktrees-root` rules a session's
-sandbox depends on, and they are not rules to meet halfway.
+**If nothing is moving, the runner is where to look first.** A job sits on its
+entry node until a **runner** picks it up, and a runner is a separate process
+that dispatches a real CLI agent session per node. Step 2 started one for you —
+`GET /v1/runners` lists it — but dispatching needs an engine CLI already
+installed and authenticated on your machine, and a runner that has none reports
+exactly that on its probe. If you started `cartografo` with `--no-runner`, this
+is the point at which there is nothing to pick the job up: run
+`npx cartografo-runner` yourself, with the `--working-dir` / `--worktrees-root`
+rules [`README.md`](../README.md) states under "The commands" — a session's
+sandbox depends on them, and they are not rules to meet halfway.
 
 ## 6. When it is stuck: where to look
 

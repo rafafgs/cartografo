@@ -26,7 +26,7 @@
  */
 
 import type { SessionPermissions, SessionSpec } from '../engine/types.ts';
-import type { ControlPlaneCall } from './control-plane-client.ts';
+import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
 import type { Job } from './options.ts';
 import { buildPrompt, type Event, type Question } from './prompt.ts';
 import { resolveModel } from './resolve-engine.ts';
@@ -56,6 +56,15 @@ export interface SessionSpecConfig {
    * declared.
    */
   command?: { readonly argv: readonly string[]; readonly envAllowlist?: readonly string[] };
+  /**
+   * The project the work's timeline is read in (t410).
+   *
+   * `GET /v1/jobs/:id/events` reads one project since that ticket, and a
+   * timeline read in the wrong one comes back `404`. Absent means the server's
+   * default project, which is what every wiring written before the partition
+   * meant.
+   */
+  projectId?: number;
 }
 
 /**
@@ -84,7 +93,10 @@ export async function buildSessionSpec(
   resolved: ResolvedNode | null,
   config: SessionSpecConfig,
 ): Promise<SessionSpec> {
-  const { events } = await call<{ events: Event[] }>(`/v1/jobs/${job.id}/events`, 'GET');
+  const { events } = await call<{ events: Event[] }>(
+    withProject(`/v1/jobs/${job.id}/events`, config.projectId),
+    'GET',
+  );
   // `?status=` is a QUERY PARAMETER of the read side, which t226 translated: the
   // route maps `answered` back to the column's `respondida` at its own boundary.
   const { input_requests: questions } = await call<{ input_requests: Question[] }>(

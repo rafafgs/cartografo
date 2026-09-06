@@ -38,7 +38,18 @@ const API_GAPS_HEADING = '## 4.';
 /** Method and path in the first cell of a route-table row, as in `GET /board`. */
 const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
 
-/** The numerals this spec spells out, and what each one is worth. */
+/**
+ * The numerals this spec spells out, and what each one is worth.
+ *
+ * The vocabulary runs past the current count on purpose: it is a dictionary,
+ * not an expectation. When t402 took the screen from ten routes to thirteen,
+ * a map that stopped at `ten` made the spec's own sentence unreadable to this
+ * pin — `SPELLED_COUNT` is built from these keys, so an unlisted numeral is not
+ * a disagreement it reports, it is a mention it never sees, and AT2 would have
+ * failed on "no counts found" instead of on the count. Growing the dictionary
+ * is what keeps the pin reading the document; the numbers themselves are still
+ * read off §1 and never written here.
+ */
 const NUMERALS = new Map([
   ['one', 1],
   ['two', 2],
@@ -50,6 +61,16 @@ const NUMERALS = new Map([
   ['eight', 8],
   ['nine', 9],
   ['ten', 10],
+  ['eleven', 11],
+  ['twelve', 12],
+  ['thirteen', 13],
+  ['fourteen', 14],
+  ['fifteen', 15],
+  ['sixteen', 16],
+  ['seventeen', 17],
+  ['eighteen', 18],
+  ['nineteen', 19],
+  ['twenty', 20],
 ]);
 
 /** A spelled-out count of routes, anywhere in the prose. */

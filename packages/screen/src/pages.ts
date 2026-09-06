@@ -44,7 +44,9 @@ import type {
   Project,
   Question,
   RunnerHealth,
+  RunnerProbe,
   Session,
+  Settings,
 } from './client.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
 
@@ -99,6 +101,17 @@ const STYLE = `
   .segmento { display: grid; grid-template-columns: 11rem 1fr; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid currentColor; }
   .segmento .balde { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
   .vazio { opacity: .6; font-style: italic; }
+  .verificacao { border: 1px solid currentColor; border-radius: 6px; padding: .7rem .9rem; margin-bottom: .6rem; max-width: 52rem; }
+  .verificacao[data-estado="met"] { opacity: .7; }
+  .verificacao[data-estado="unmet"] { border-width: 2px; }
+  .verificacao .titulo { margin: 0; font-weight: 600; }
+  .verificacao p { margin: .4rem 0 0; font-size: .9rem; }
+  .verificacao pre { overflow-x: auto; margin: .5rem 0 0; padding: .5rem .6rem; border: 1px dashed currentColor; border-radius: 4px; }
+  .verificacao code { font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+  .verificacao form { margin-top: .5rem; }
+  .verificacao form input { font: inherit; padding: .3rem .4rem; min-width: 20rem; max-width: 100%; }
+  .pronto { border: 2px solid currentColor; border-radius: 6px; padding: 1rem 1.2rem; max-width: 52rem; }
+  .suporte { margin-top: 2.5rem; font-size: .85rem; opacity: .7; }
 `;
 
 /** Everything that goes into HTML passes through here. With no exception. */
@@ -189,12 +202,13 @@ function layout(title: string, body: string, scope: ProjectScope = DEFAULT_SCOPE
 <header class="topo">
   <h1>cartografo</h1>
   <nav>
+    <a href="/">check</a>
     <a href="/board">board</a>
     <a href="/examples">examples</a>
     <a href="/executions">executions</a>
     <a href="/input-requests">questions</a>
     <a href="/runners">runners</a>
-    <a href="/">proposals</a>
+    <a href="/inbox">proposals</a>
     <a href="/graph-editor.html">graph</a>
   </nav>
   ${projectSwitcher(scope)}
@@ -413,6 +427,448 @@ function totalsHtml(timeline: Timeline): string {
     <tr><td>esperando humano</td><td>${escapeHtml(formatDuration(timeline.totals.esperando_humano))}</td></tr>
   </tbody>
 </table>`;
+}
+
+/* ------------------------------------------------------ the check page (t402) */
+
+/**
+ * Where support goes when the page cannot say what is wrong (FR7).
+ *
+ * Drawn once, in every state including the ready one: the person who opens this
+ * screen for the first time is the person least able to tell "not configured"
+ * from "broken", and a check page with no way out for the second case is a dead
+ * end at exactly the moment one is most expensive.
+ */
+const SUPPORT_ADDRESS = 'hello@agentsmaestro.dev';
+
+/** The MCP server the check looks for, by the name `.mcp.json` already uses. */
+const MCP_SERVER_NAME = 'cartografo';
+
+/**
+ * The command an MCP client is registered with, in the shape
+ * `packages/mcp/README.md` gives for driving cartografo from another project.
+ *
+ * Absolute and a placeholder, exactly as that README writes it: an MCP client
+ * starts the server from a configuration file that is not this repository, so
+ * there is no relative path that would work from where it is read.
+ */
+const MCP_ENTRYPOINT = 'node /absolute/path/to/cartografo/packages/mcp/bin/mcp.mjs';
+
+/** Control plane the fix actions quote, matching every other default in the docs. */
+const CONTROL_PLANE_HINT = 'http://127.0.0.1:4317';
+
+/** What to put where the credential goes, since this screen never learns it. */
+const TOKEN_HINT = '<the token printed when the control plane started>';
+
+/** Stand-ins for the two roots when no setting records them yet (FR2). */
+const WORKING_DIR_PLACEHOLDER = '<the repository the sessions work in>';
+const WORKTREES_ROOT_PLACEHOLDER = '<a sibling directory, never inside it>';
+
+/** The engine the runner takes when nothing recorded one (`settings.engine`). */
+const DEFAULT_ENGINE = 'claude-code';
+
+/**
+ * Everything the fix actions need to know about one engine.
+ *
+ * Every field below is READ OFF this repository and nothing else — the binary
+ * name each adapter spawns, the credential variables each adapter's preflight
+ * checks, the credential file each preflight reads, the `mcp add` shape each
+ * engine's own measured `--help` gives. That restriction is the point: this is
+ * the page whose entire premise is "nothing is asked that the system can
+ * discover", and a command asserted here from general knowledge would carry the
+ * same authority as the ones that were measured, while being worth much less.
+ *
+ * Which is why `claude-code` has no install command and says so instead: no npm
+ * package name for that CLI is evidenced anywhere in this repository, and
+ * inventing one on this page would be the exact failure above.
+ */
+interface EngineProfile {
+  /** The binary the adapter really spawns. */
+  binary: string;
+  /** How to get it, in this engine's own terms; `null` when nothing is evidenced. */
+  installCommand: string | null;
+  /** The variables THIS engine's adapter reads as a credential. */
+  credentialVariables: readonly string[];
+  /** The file this CLI's own interactive login writes, as the preflight reads it. */
+  credentialsFile: string | null;
+  /** The command that registers {@link MCP_SERVER_NAME} with this engine. */
+  mcpAddCommand: string | null;
+}
+
+/**
+ * The two adapters this product ships, and the honest answer for anything else.
+ *
+ * An unrecognized `engine` setting is not a failure to render: the setting is
+ * free text the operator wrote, and a page that broke on it would be less
+ * useful than one that says which two names it knows how to help with.
+ *
+ * @param engine The `engine` setting, or the default when none is recorded.
+ * @returns What the fix actions for that engine may say.
+ */
+function engineProfile(engine: string): EngineProfile {
+  if (engine === 'claude-code') {
+    return {
+      // `CLAUDE_BINARY`, packages/runner/src/engine/command.ts.
+      binary: 'claude',
+      installCommand: null,
+      // `CREDENTIAL_VARIABLES`, packages/runner/src/engine/claude-code-adapter.ts.
+      credentialVariables: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'],
+      credentialsFile: '~/.claude.json',
+      // packages/mcp/README.md, verbatim but for the placeholders.
+      mcpAddCommand: `claude mcp add ${MCP_SERVER_NAME} \\
+  -e CARTOGRAFO_URL=${CONTROL_PLANE_HINT} \\
+  -e CARTOGRAFO_MCP_TOKEN=${TOKEN_HINT} \\
+  -- ${MCP_ENTRYPOINT}`,
+    };
+  }
+
+  if (engine === 'codex') {
+    return {
+      // `CODEX_BINARY`, packages/runner/src/engine/codex-command.ts.
+      binary: 'codex',
+      // docs/formats/engine-adapter.md: the whole codex evidence was gathered
+      // through this command, on a machine where the CLI was not installed.
+      installCommand: 'npx --yes @openai/codex@latest',
+      // `CODEX_CREDENTIAL_VARIABLES`, packages/runner/src/engine/codex-adapter.ts.
+      credentialVariables: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'],
+      credentialsFile: '$CODEX_HOME/auth.json (~/.codex/auth.json by default)',
+      // `codex mcp add <name> -- <command>` is the measured shape, and it
+      // documents no `-e`: the credential is exported in the shell the client
+      // starts the server from, which is what packages/mcp/README.md already
+      // says is the whole of the setup.
+      mcpAddCommand: `export CARTOGRAFO_URL=${CONTROL_PLANE_HINT}
+export CARTOGRAFO_MCP_TOKEN=${TOKEN_HINT}
+codex mcp add ${MCP_SERVER_NAME} -- ${MCP_ENTRYPOINT}`,
+    };
+  }
+
+  return {
+    binary: engine,
+    installCommand: null,
+    credentialVariables: [],
+    credentialsFile: null,
+    mcpAddCommand: null,
+  };
+}
+
+/** One check of one runner, already decided. */
+interface CheckLine {
+  /** The `data-campo` marker, and the contract the acceptance tests read. */
+  field: 'engine' | 'credential' | 'mcp' | 'workspace';
+  met: boolean;
+  /** The one line a person reads: what is true, or what is missing. */
+  headline: string;
+  /** What to do about it, already escaped; empty when there is nothing to do. */
+  fix: string;
+}
+
+/** A copyable command block — the only shape a fix action ever takes. */
+function commandBlock(command: string): string {
+  return `<pre><code>${escapeHtml(command)}</code></pre>`;
+}
+
+/** One sentence of a fix action. */
+function fixText(text: string): string {
+  return `<p>${escapeHtml(text)}</p>`;
+}
+
+/**
+ * "Check again": the only control an unmet line always carries (FR5).
+ *
+ * It writes for real (`POST /v1/runners/:id/rechecks`) and comes back to this
+ * page. What it does NOT do is wait: the runner serves the request on its next
+ * loop tick, and reloading is how the new probe becomes visible — the same
+ * posture every other view of this screen takes, since none of them polls.
+ */
+function recheckForm(runnerId: string): string {
+  return `<form method="post" action="/runners/${encodeURIComponent(runnerId)}/rechecks">
+    <button type="submit">check again</button>
+  </form>`;
+}
+
+/**
+ * The two roots, as a form that writes them (FR6).
+ *
+ * Prefilled from the PROBE first and the settings second, because they answer
+ * different questions: the probe says what this runner was actually pointed at,
+ * the settings say what it would be pointed at next time. When the two disagree,
+ * the one worth correcting is the one that is broken right now.
+ */
+function workspaceForm(runnerId: string, workingDir: string, worktreesRoot: string): string {
+  const key = escapeHtml(runnerId);
+  return `<form method="post" action="/settings">
+    <p><label for="workspace_root-${key}">workspace root</label>
+    <input id="workspace_root-${key}" name="workspace_root" value="${escapeHtml(workingDir)}"></p>
+    <p><label for="worktrees_root-${key}">worktrees root</label>
+    <input id="worktrees_root-${key}" name="worktrees_root" value="${escapeHtml(worktreesRoot)}"></p>
+    <button type="submit">save</button>
+  </form>`;
+}
+
+/** The engine line: is the CLI this runner dispatches through even there? */
+function engineLine(probe: RunnerProbe, profile: EngineProfile): CheckLine {
+  if (probe.cli.available) {
+    return {
+      field: 'engine',
+      met: true,
+      headline: `engine found — ${profile.binary} ${probe.cli.version ?? '(version unknown)'}`,
+      fix: '',
+    };
+  }
+
+  const install =
+    profile.installCommand === null
+      ? fixText(
+          `Install the \`${profile.binary}\` CLI on this machine — its own installation documentation is the source of truth, and this repository records no package name for it.`,
+        )
+      : `${fixText(`Install the \`${profile.binary}\` CLI on this machine, or run it with no install at all:`)}${commandBlock(profile.installCommand)}`;
+
+  return {
+    field: 'engine',
+    met: false,
+    headline: `engine not found — the runner could not run \`${profile.binary}\``,
+    fix: install,
+  };
+}
+
+/** The credential line: would a session this runner opens be able to authenticate? */
+function credentialLine(probe: RunnerProbe, profile: EngineProfile): CheckLine {
+  if (probe.cli.authenticated) {
+    return { field: 'credential', met: true, headline: 'model credential found', fix: '' };
+  }
+
+  if (profile.credentialVariables.length === 0) {
+    return {
+      field: 'credential',
+      met: false,
+      headline: 'no model credential — the CLI reported none',
+      fix: fixText(
+        `This runner is configured with the engine \`${profile.binary}\`, which is neither of the two adapters this product ships, so nothing here knows which variables it reads. Authenticate its CLI the way its own documentation says.`,
+      ),
+    };
+  }
+
+  const exports = profile.credentialVariables
+    .map((variable) => `export ${variable}=…`)
+    .join('\n');
+
+  return {
+    field: 'credential',
+    met: false,
+    headline: 'no model credential — the CLI reported none',
+    fix: `${fixText(
+      "Export any one of these in the shell the runner starts from — they are the variables this engine's own adapter checks:",
+    )}${commandBlock(`# any one of the three\n${exports}`)}${fixText(
+      profile.credentialsFile === null
+        ? `Or log in with the \`${profile.binary}\` CLI itself.`
+        : `Or log in with the \`${profile.binary}\` CLI itself, which writes the credential file the runner also reads: ${profile.credentialsFile}.`,
+    )}`,
+  };
+}
+
+/**
+ * The MCP line: is the model driving this browser on the same map as its reader?
+ *
+ * Specifically "is the `cartografo` server registered", and not "does this
+ * engine support MCP at all". The second is not something a command fixes; the
+ * first is the whole reason RF-10 lists this check.
+ *
+ * `{supported: false}` is its own answer and never a failure: t400 made
+ * `discoverMcpServers?()` optional precisely because an adapter that never
+ * implemented discovery is not an engine with zero MCP servers, and a page that
+ * collapsed the two would report a machine as broken for a gap in our code.
+ */
+function mcpLine(probe: RunnerProbe, profile: EngineProfile): CheckLine {
+  if (!probe.mcp.supported) {
+    return {
+      field: 'mcp',
+      met: false,
+      headline: `MCP servers — this engine's adapter can't be checked automatically`,
+      fix: fixText(
+        `The \`${profile.binary}\` adapter implements no MCP discovery, so nothing here can say whether the ${MCP_SERVER_NAME} server is registered. Ask the engine itself; there is nothing to react to here.`,
+      ),
+    };
+  }
+
+  if (probe.mcp.servers.some((server) => server.name === MCP_SERVER_NAME)) {
+    return {
+      field: 'mcp',
+      met: true,
+      headline: `MCP servers — ${MCP_SERVER_NAME} is registered`,
+      fix: '',
+    };
+  }
+
+  return {
+    field: 'mcp',
+    met: false,
+    headline: `MCP servers — ${MCP_SERVER_NAME} is not registered with this engine`,
+    fix:
+      profile.mcpAddCommand === null
+        ? fixText(
+            `Register the ${MCP_SERVER_NAME} server with \`${profile.binary}\` the way its own documentation says: it runs ${MCP_ENTRYPOINT}, with CARTOGRAFO_URL and CARTOGRAFO_MCP_TOKEN in its environment.`,
+          )
+        : `${fixText("Register it with the engine's own command:")}${commandBlock(profile.mcpAddCommand)}`,
+  };
+}
+
+/** The workspace line: can a session actually be cut on this machine? */
+function workspaceLine(probe: RunnerProbe, settings: Settings): CheckLine {
+  const { workspace } = probe;
+  if (workspace.is_git_repo && workspace.worktrees_root_writable) {
+    return {
+      field: 'workspace',
+      met: true,
+      headline: `workspace usable — ${workspace.working_dir_resolved}`,
+      fix: '',
+    };
+  }
+
+  const problems = [
+    workspace.is_git_repo ? null : `${workspace.working_dir_resolved} is not a git repository`,
+    workspace.worktrees_root_writable
+      ? null
+      : `${workspace.worktrees_root_resolved} cannot be created by this runner`,
+  ].filter((problem): problem is string => problem !== null);
+
+  return {
+    field: 'workspace',
+    met: false,
+    headline: `workspace unusable — ${problems.join('; ')}`,
+    fix: `${fixText('Point this project at directories that work; the runner picks these up when it is started without --working-dir/--worktrees-root.')}${workspaceForm(
+      probe.runner_id,
+      workspace.working_dir || settings.workspace_root || '',
+      workspace.worktrees_root || settings.worktrees_root || '',
+    )}`,
+  };
+}
+
+/**
+ * The four lines of one runner that has never said anything about itself.
+ *
+ * Deliberately NOT four diagnoses: with no probe there is nothing known to
+ * react to, and drawing an install command against a machine that may well have
+ * everything would be the page inventing a failure. The only action offered is
+ * the one that changes the situation — ask for a report.
+ */
+function waitingLines(): CheckLine[] {
+  const fields: CheckLine['field'][] = ['engine', 'credential', 'mcp', 'workspace'];
+  return fields.map((field) => ({
+    field,
+    met: false,
+    headline: "waiting for this runner's first report",
+    fix: '',
+  }));
+}
+
+/** One line, drawn: the verdict, the fix and the way to ask again. */
+function checkLineHtml(line: CheckLine, runnerId: string): string {
+  const action = line.met ? '' : `${line.fix}${recheckForm(runnerId)}`;
+  return `<div class="verificacao" data-campo="${line.field}" data-estado="${line.met ? 'met' : 'unmet'}">
+    <p class="titulo">${line.met ? '✓' : '✗'} ${escapeHtml(line.headline)}</p>
+    ${action}
+  </div>`;
+}
+
+/**
+ * The four checks of one runner, decided against what it reported.
+ *
+ * @param runner The runner and its latest probe.
+ * @param settings The project's recorded defaults, for the engine and the roots.
+ * @returns The four lines, in the order RF-10 lists them.
+ */
+function runnerLines(runner: RunnerHealth, settings: Settings): CheckLine[] {
+  const probe = runner.probe ?? null;
+  if (probe === null) return waitingLines();
+
+  const profile = engineProfile(settings.engine ?? DEFAULT_ENGINE);
+  return [
+    engineLine(probe, profile),
+    credentialLine(probe, profile),
+    mcpLine(probe, profile),
+    workspaceLine(probe, settings),
+  ];
+}
+
+/** The command that pairs the first runner, built from whatever is recorded. */
+function pairingCommand(projectId: number, settings: Settings): string {
+  return [
+    'npx cartografo-runner',
+    `--project ${projectId}`,
+    `--working-dir ${settings.workspace_root ?? WORKING_DIR_PLACEHOLDER}`,
+    `--worktrees-root ${settings.worktrees_root ?? WORKTREES_ROOT_PLACEHOLDER}`,
+    `--engine ${settings.engine ?? DEFAULT_ENGINE}`,
+  ].join(' ');
+}
+
+/**
+ * `GET /` — the check that runs itself (t402, RF-10 to RF-12).
+ *
+ * The first page a person opens is not a form: it is two reads the API already
+ * publishes — the fleet with t401's embedded probe, and t403's per-project
+ * settings — turned into either "everything this machine needs is ready" or the
+ * exact list of what is missing, one fix each. No new privilege and no new core
+ * route (D11): every fact on it was reported by a runner about its own machine,
+ * and everything this page can change it changes through `PATCH /v1/settings`
+ * and `POST /v1/runners/:id/rechecks`.
+ *
+ * **Per runner, not per fleet.** A single global verdict would let one working
+ * machine hide a broken one, which is precisely the failure a readiness page
+ * exists to prevent. The common case — one runner — degrades to one group, at
+ * no visible cost.
+ *
+ * **The fleet read is unscoped and the settings read is not**, and the asymmetry
+ * is the data's: pairing is identity alone (`listRunners`), while where a runner
+ * works is a per-project decision.
+ *
+ * @param client Client of the public API.
+ * @param scope Which project is in force; the settings read is scoped to it.
+ * @returns The check page.
+ */
+export async function checkPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const [runners, settings] = await Promise.all([
+    client.listRunners(),
+    client.getSettings({ project_id: scope.projectId }),
+  ]);
+
+  const support = `<p class="suporte">Something here wrong, or missing? <a href="mailto:${SUPPORT_ADDRESS}">${SUPPORT_ADDRESS}</a></p>`;
+
+  if (runners.length === 0) {
+    const body = `<h2>check</h2>
+<div class="verificacao" data-campo="runner" data-estado="unmet">
+  <p class="titulo">✗ no runner paired — nothing on this machine is going to pick work up</p>
+  ${fixText("Start one in another terminal, with the control plane's token in the environment:")}
+  ${commandBlock(pairingCommand(scope.projectId, settings))}
+</div>
+${support}`;
+    return { status: 200, html: layout('check', body, scope) };
+  }
+
+  const groups = runners.map((runner) => ({ runner, lines: runnerLines(runner, settings) }));
+
+  if (groups.every((group) => group.lines.every((line) => line.met))) {
+    const body = `<h2>check</h2>
+<section class="pronto" data-pronto="${groups.length}">
+  <p>Everything this machine needs is ready.</p>
+  <p><a href="/board">open the board</a></p>
+</section>
+${support}`;
+    return { status: 200, html: layout('check', body, scope) };
+  }
+
+  const drawn = groups
+    .map(
+      (group) => `<section data-runner="${escapeHtml(group.runner.id)}">
+  <h2>${escapeHtml(group.runner.id)}</h2>
+  ${group.lines.map((line) => checkLineHtml(line, group.runner.id)).join('\n  ')}
+</section>`,
+    )
+    .join('\n');
+
+  return { status: 200, html: layout('check', `<h2>check</h2>\n${drawn}\n${support}`, scope) };
 }
 
 /**

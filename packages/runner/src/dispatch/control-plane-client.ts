@@ -32,6 +32,43 @@ import {
 } from '../controller/http-client.ts';
 
 /**
+ * The same route, scoped to one project — or untouched, when none was named
+ * (t410).
+ *
+ * FIVE of this dispatch's reads go to routes that read ONE project's partition:
+ * the work itself, its timeline and its node's input (partitioned by t410), and
+ * the graph version and the pinned skill the node names (partitioned by t354).
+ * A read that declares no project reads the DEFAULT one, so a dispatch working
+ * any other project is told its own work does not exist — a lease taken, a
+ * `404`, the lease given back, on every tick, with nothing in the log that says
+ * which project was actually read.
+ *
+ * The last two are t354's partition rather than this ticket's, and they are
+ * fixed here because t410 is what makes them certain: `POST /v1/jobs` refuses a
+ * `graph_version_id` from another project since this ticket, so a job outside
+ * the default project now necessarily cites a version registered in ITS
+ * project — which an unscoped read can never find.
+ *
+ * The separator is chosen rather than assumed: `skillRoute` already carries a
+ * `?version=`, and a second `?` would make the scope a parameter the router
+ * never sees.
+ *
+ * `undefined` is kept as "say nothing" rather than folded into project 1: every
+ * caller written before the partition means the server's default, and the two
+ * spikes and the sixty-odd test wirings that build a dispatch without a project
+ * are all of them working in it. Saying it explicitly would be inventing a
+ * declaration none of them made.
+ *
+ * @param route The route to scope, with or without a query string of its own.
+ * @param projectId The project to scope to, when the caller named one.
+ * @returns The route, with `project_id` appended when there is one to append.
+ */
+export function withProject(route: string, projectId: number | undefined): string {
+  if (projectId === undefined) return route;
+  return `${route}${route.includes('?') ? '&' : '?'}project_id=${String(projectId)}`;
+}
+
+/**
  * One call to the control plane: a route, a verb, and a body when there is one.
  *
  * Generic in the answer and not in the request on purpose — every route this

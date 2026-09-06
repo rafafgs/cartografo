@@ -428,7 +428,7 @@ test('AT3: describe_graph via version_id threads project_id straight into the gr
 
 test('AT4: create_job with class and project_id resolves the class/version lookups in that project, and posts it on the job', async () => {
   const posted: Record<string, unknown>[] = [];
-  const { client, requests } = recordingClient((path, method, body) => {
+  const { client, requests } = recordingClient((path, _method, body) => {
     if (path.startsWith('/v1/classes')) return json({ classes: [CLASS_ROW] });
     if (path.startsWith('/v1/graph-versions/')) return json(graphVersionBody('sha256:v1'));
     posted.push(body as Record<string, unknown>);
@@ -451,7 +451,7 @@ test('AT4: create_job with class and project_id resolves the class/version looku
 
 test('AT5: create_job with no project_id makes no project_id query param, and posts none either (no regression)', async () => {
   const posted: Record<string, unknown>[] = [];
-  const { client, requests } = recordingClient((path, method, body) => {
+  const { client, requests } = recordingClient((path, _method, body) => {
     if (path.startsWith('/v1/classes')) return json({ classes: [CLASS_ROW] });
     if (path.startsWith('/v1/graph-versions/')) return json(graphVersionBody('sha256:v1'));
     posted.push(body as Record<string, unknown>);
@@ -585,7 +585,7 @@ test('AT16: list_input_requests threads project_id', async () => {
 });
 
 test('AT17: register_graph puts project_id on the URL, never inside the content-addressed document', async () => {
-  const { client, requests } = recordingClient((path, method, body) => {
+  const { client, requests } = recordingClient((_path, _method, body) => {
     assert.deepEqual(
       body,
       { problem_class: 'demo' },

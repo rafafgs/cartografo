@@ -18,6 +18,7 @@ import type { Database } from './db/connection.ts';
 import type { ErrorResponse } from './routes/common.ts';
 import { registerEngines } from './routes/engines.ts';
 import { registerEvents } from './routes/events.ts';
+import { registerExamples } from './routes/examples.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
@@ -285,6 +286,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       );
       scope.register(async (inner) => registerIntake(inner, options.db));
       scope.register(async (inner) => registerSkills(inner, options.db));
+      scope.register(async (inner) => registerExamples(inner, options.db));
       scope.register(async (inner) => registerEvents(inner, options.db));
       scope.register(async (inner) => registerWebhooks(inner, options.db));
       scope.register(async (inner) => registerHookSecrets(inner, options.db));

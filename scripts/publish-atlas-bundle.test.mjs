@@ -84,9 +84,30 @@ function snapshot(directory) {
   return files;
 }
 
-/** The bundle's own files, minus the README that only makes sense in this repo. */
+/**
+ * The PUBLISHABLE files of a bundle directory: `graph.json` and `skills/*`.
+ *
+ * Rule 2 of the atlas layout (`docs/formats/atlas-bundle.md`) is that a
+ * published class is "one `graph.json` and one `skills/`", and rule 3 is
+ * "nothing beyond them". A bundle directory in THIS repository may carry more —
+ * the README that only makes sense here, `b3-flow-radar`'s `fixtures/` and
+ * `scripts/`, `asymmetric-bets`'s `demo/job.json` (t408) — and none of it
+ * crosses into the atlas.
+ *
+ * This used to read "everything except `README.md`", which said the same thing
+ * for as long as a README was the only extra file any bundle had. It stopped
+ * being true the first time a bundle shipped anything else, and it would have
+ * failed for a reason that has nothing to do with publishing.
+ *
+ * What is asserted with it does not move: the atlas carries the graph document
+ * and every manifest, byte for byte, and nothing else.
+ */
 function bundleFiles(directory) {
-  return new Map([...snapshot(directory)].filter(([name]) => name !== 'README.md'));
+  return new Map(
+    [...snapshot(directory)].filter(
+      ([name]) => name === 'graph.json' || name.startsWith('skills/'),
+    ),
+  );
 }
 
 test('AT1 — a tampered pin is refused and nothing is written to the atlas', () => {

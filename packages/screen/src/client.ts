@@ -136,6 +136,32 @@ export interface Event {
   data: Record<string, unknown>;
 }
 
+/**
+ * One demo-ready bundle, as `GET /v1/examples` returns it (t408).
+ *
+ * The screen knows nothing about where these come from: `class` and `bundle`
+ * are names the control plane read off disk, and `registered` is its own answer
+ * about its own database. Everything this interface declares is a field the
+ * Examples page draws — the screen has no way to invent one, which is the whole
+ * of D11 restated for one more route.
+ */
+export interface Example {
+  class: string;
+  bundle: string;
+  demo_title: string;
+  registered: boolean;
+}
+
+/** What `POST /v1/examples/:class/run` answers (t408). */
+export interface ExampleRun {
+  /** The job that was created, as `POST /v1/jobs` would have returned it. */
+  job: Job;
+  /** The round the control plane allocated for it — where the board opens. */
+  execution_id: number;
+  /** Whether THIS call is what registered the bundle. */
+  registered: boolean;
+}
+
 /** A project, as `GET /v1/projects` returns it (t354). */
 export interface Project {
   id: number;
@@ -355,6 +381,39 @@ export class ApiClient {
       `/v1/input-requests${queryString(filter)}`,
     );
     return questions;
+  }
+
+  /**
+   * The bundles the control plane can demonstrate, and which it already knows.
+   *
+   * @param filter Scope of the read.
+   * @returns One entry per demo-ready bundle, sorted by the control plane.
+   */
+  async listExamples(filter: Filter = {}): Promise<Example[]> {
+    const { examples } = await this.#get<{ examples: Example[] }>(
+      `/v1/examples${queryString(filter)}`,
+    );
+    return examples;
+  }
+
+  /**
+   * Runs one example: register it if it is new, then open its demo job.
+   *
+   * The screen's second write, and the first one that is not an answer to a
+   * question. It carries no body at all — everything the run needs is the class
+   * in the path and the scope on the query string, and a body invented here
+   * would be the screen deciding something the bundle already declares.
+   *
+   * @param className The example's problem class.
+   * @param filter Scope of the write.
+   * @returns The job, the round it landed in, and whether this call registered.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async runExample(className: string, filter: Filter = {}): Promise<ExampleRun> {
+    return await this.#request<ExampleRun>(
+      `/v1/examples/${encodeURIComponent(className)}/run${queryString(filter)}`,
+      { method: 'POST' },
+    );
   }
 
   /**

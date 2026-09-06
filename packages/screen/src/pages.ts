@@ -38,6 +38,7 @@
 
 import type {
   ApiClient,
+  Example,
   ExecutionSummary,
   Job,
   Project,
@@ -189,6 +190,7 @@ function layout(title: string, body: string, scope: ProjectScope = DEFAULT_SCOPE
   <h1>cartografo</h1>
   <nav>
     <a href="/board">board</a>
+    <a href="/examples">examples</a>
     <a href="/executions">executions</a>
     <a href="/input-requests">questions</a>
     <a href="/runners">runners</a>
@@ -417,6 +419,57 @@ export async function boardPage(
   return {
     status: 200,
     html: layout('board', `<h2>board · ${jobs.length} job(s)</h2>\n${jobBoard(jobs)}`, scope),
+  };
+}
+
+/**
+ * `GET /examples` — the bundles the control plane can demonstrate (t408, FR6).
+ *
+ * One card per entry of `GET /v1/examples`, each with a plain form and a submit
+ * button: no JavaScript, no progress indicator, no confirmation step. The run
+ * is one synchronous request in the same latency class as `cartografo import`,
+ * and a spinner over it would be the screen pretending to know something about
+ * a call it is only waiting on.
+ *
+ * `registered` is drawn because it changes what the click MEANS — the first one
+ * registers a bundle this project has never seen, the second only opens another
+ * job — and the button says the same thing in both cases because the route is
+ * the same route.
+ *
+ * `data-exemplo` follows the `data-trabalho`/`data-pergunta` convention of this
+ * file, Portuguese spelling included: those markers are a structural contract
+ * the tests and the stylesheet select on (t133, exception 10), and a new marker
+ * in a second vocabulary would leave the contract half in each.
+ *
+ * @param client Client of the public API.
+ * @param scope Which project is in force.
+ * @returns The examples page.
+ */
+export async function examplesPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const examples = await client.listExamples({ project_id: scope.projectId });
+
+  const card = (example: Example): string => `<article class="cartao" data-exemplo="${escapeHtml(example.class)}">
+  <div class="id">${escapeHtml(example.bundle)}</div>
+  <strong>${escapeHtml(example.demo_title)}</strong>
+  <p class="motivo">class <strong>${escapeHtml(example.class)}</strong> · ${
+    example.registered ? 'already registered' : 'not registered yet'
+  }</p>
+  <form method="post" action="/examples/${encodeURIComponent(example.class)}/run">
+    <button type="submit">run this example</button>
+  </form>
+</article>`;
+
+  const body =
+    examples.length === 0
+      ? '<p class="vazio">No example bundle here. The control plane looks for them under its examples root (CARTOGRAFO_EXAMPLES_ROOT, factory-graphs/ by default).</p>'
+      : `<div class="quadro">\n  <section class="grupo">\n  ${examples.map(card).join('\n  ')}\n  </section>\n</div>`;
+
+  return {
+    status: 200,
+    html: layout('examples', `<h2>examples · ${examples.length}</h2>\n${body}`, scope),
   };
 }
 

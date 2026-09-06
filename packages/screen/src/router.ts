@@ -112,6 +112,7 @@ import {
   DEFAULT_ANSWERED_BY,
   boardPage,
   errorPage,
+  examplesPage,
   executionPage,
   executionsPage,
   jobPage,
@@ -383,7 +384,7 @@ async function readScope(client: ApiClient, request: IncomingMessage): Promise<P
  */
 function rendersAView(pathname: string): boolean {
   return (
-    ['/board', '/executions', '/input-requests', '/runners'].includes(pathname) ||
+    ['/board', '/examples', '/executions', '/input-requests', '/runners'].includes(pathname) ||
     /^\/(executions|jobs)\/[^/]+$/.test(pathname)
   );
 }
@@ -496,6 +497,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     // arrived. The two halves link to each other through the navigation;
     // neither disappears.
     if (pathname === '/board') return await boardPage(client, scope);
+    if (pathname === '/examples') return await examplesPage(client, scope);
     if (pathname === '/executions') return await executionsPage(client, scope);
     if (pathname === '/input-requests') return await questionsPage(client, scope);
     if (pathname === '/runners') return await runnersPage(client, scope);
@@ -531,6 +533,21 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
         );
       }
       return await switchProject(request);
+    }
+
+    const exampleMatch = /^\/examples\/([^/]+)\/run$/.exec(pathname);
+    if (exampleMatch !== null) {
+      // The same gate every other write of this screen gets (t192): this one
+      // starts an agent session and spends money, so a form on somebody else's
+      // page reaching it would be worse than most.
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
+        );
+      }
+      return await runExample(client, decodeURIComponent(exampleMatch[1]), request);
     }
 
     const answerMatch = /^\/input-requests\/([^/]+)\/answer$/.exec(pathname);
@@ -605,6 +622,33 @@ function backTo(referer: string | undefined): string {
   } catch {
     return '/board';
   }
+}
+
+/**
+ * `POST /examples/:class/run` — one click, and a demo is running (t408, FR7).
+ *
+ * The screen decides nothing here: the class comes off its own path, the scope
+ * off the cookie, and everything else — which bundle that class lives in,
+ * whether it has to be registered first, which round the job lands in — is the
+ * control plane's answer to one request. What comes back is an execution id,
+ * and the redirect opens the board on it, because the round is the only thing
+ * the person who clicked is now waiting on.
+ *
+ * The form body is not even read: there is nothing in it. A failure raises out
+ * of the client and lands on `failurePage`, like every other route of this file.
+ */
+async function runExample(
+  client: ApiClient,
+  className: string,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const { execution_id: executionId } = await client.runExample(className, {
+    project_id: projectFromCookie(request.headers.cookie),
+  });
+
+  // 303 and not 302, for the same reason the answer form gives: after a POST
+  // the way back is a GET, and a reload must not start a second demo.
+  return { redirect: `/executions/${executionId}` };
 }
 
 /**

@@ -16,7 +16,7 @@ It does not open the database, imports nothing from `packages/core`, declares no
 SQLite driver and does not know the file's path. It comes up on another port, in
 another process, and it can die without the control plane noticing. If it needs
 something the API does not give, the bug is the API's — that is how this layer
-was born with three new routes on the core's side, and not with three shortcuts
+was born with five new routes on the core's side, and not with five shortcuts
 on its own (§4).
 
 The rule is checked statically by
@@ -26,15 +26,17 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The eight routes
+## 1. The ten routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
 | `GET /board` | The board: every job, grouped by `no_atual`, with the blocking reason where there is one. | `GET /v1/jobs` |
+| `GET /examples` | The bundles the control plane can demonstrate: one card each, with the demo's title, whether the class is already registered, and a form that runs it. | `GET /v1/examples` |
 | `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
 | `GET /executions/:id` | One round's slice: the board, the sessions and the pending questions on the same page. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
 | `GET /input-requests` | The escalation queue, every question whole and with an inline form. | `GET /v1/input-requests?status=pendente` |
 | `GET /runners` | The fleet: one runner per line, with active leases, the last heartbeat and the last lease it lost to the TTL. | `GET /v1/runners` |
+| `POST /examples/:id/run` | Nothing: it runs the example and redirects (303) to `/executions/<the round it allocated>`. The `:id` here is the example's problem class, not an integer. | `POST /v1/examples/:class/run` |
 | `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
 | `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
@@ -75,7 +77,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The eight routes of this specification, rendered on the server. |
+| Anything else | The ten routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
@@ -242,7 +244,7 @@ which was exactly the bet.
 
 ---
 
-## 4. The three API gaps this layer closed
+## 4. The five API gaps this layer closed
 
 D11 orders "the screen needs something the API does not give" to be treated as a
 bug in the API. All three are additive and symmetric to filters that already
@@ -253,6 +255,8 @@ existed:
 | `GET /v1/executions` | There was no way to **discover** which executions exist: only `GET /v1/executions/:id/metrics-by-version` existed, which demands already knowing the id. It returns `{execucoes: [...]}` with `execucao_id`, `trabalhos`, `trabalhos_bloqueados` and `perguntas_pendentes`, in ascending order and with the `null` group last (the same convention as `metricsByVersion`). |
 | `GET /v1/sessions?trabalho_id=` | There was only a filter by execution; without this one, "this job's sessions" cannot be asked for — and without them there is no session end on the timeline. |
 | `GET /v1/input-requests?trabalho_id=` | Symmetric to the previous one, for the same reason: the end of the waits. |
+| `GET /v1/examples` | There was no way to **discover** which bundles are ready to be demonstrated. The screen opens no directory and knows no path (D11), so listing `factory-graphs/` on this side would have been the very shortcut this layer exists without. It scans an examples root — `CARTOGRAFO_EXAMPLES_ROOT`, `factory-graphs/` by default — for every subdirectory carrying a `demo/job.json`, and answers `{examples: [{class, bundle, demo_title, registered}]}` (t408). |
+| `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). |
 
 The filters add up as an **AND** with the ones that already existed, and an
 invalid filter is a **400**, never a filter ignored in silence.

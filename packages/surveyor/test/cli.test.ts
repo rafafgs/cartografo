@@ -70,6 +70,17 @@ test('t247 FR1 — the usage text names the subcommand, both required flags and 
   }
 });
 
+test('t419 FR4 — the usage text names --project, its default, and the current restriction', async () => {
+  const { USAGE } = await loadCli();
+
+  assert.ok(USAGE.includes('--project'), `the usage does not mention --project:\n${USAGE}`);
+  assert.ok(USAGE.includes('1'), `the usage does not name the default of 1:\n${USAGE}`);
+  assert.ok(
+    /no other|not.*accepted|only.*project 1/i.test(USAGE),
+    `the usage does not say that no other value is accepted yet:\n${USAGE}`,
+  );
+});
+
 test('t247 FR1 — a wrong command line is a 2, and prints nothing to stdout', async () => {
   const wrong: Array<[string, string[]]> = [
     ['no subcommand at all', []],
@@ -85,6 +96,18 @@ test('t247 FR1 — a wrong command line is a 2, and prints nothing to stdout', a
       'a flag this command does not understand',
       ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--every', '5'],
     ],
+    [
+      '--project not an integer',
+      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', 'abc'],
+    ],
+    [
+      '--project 0',
+      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', '0'],
+    ],
+    [
+      '--project -1',
+      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', '-1'],
+    ],
   ];
 
   for (const [what, args] of wrong) {
@@ -94,12 +117,62 @@ test('t247 FR1 — a wrong command line is a 2, and prints nothing to stdout', a
   }
 });
 
+test('t419 FR2 — a non-integer or non-positive --project names the raw value it rejected', async () => {
+  const { runCli } = await loadCli();
+
+  const cases: Array<[string, string]> = [
+    ['abc', 'abc'],
+    ['0', '0'],
+    ['-1', '-1'],
+  ];
+
+  for (const [flagArg, raw] of cases) {
+    const printed: string[] = [];
+    const logged: string[] = [];
+    const code = await runCli(
+      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', flagArg],
+      { write: (text) => printed.push(text), log: (text) => logged.push(text) },
+    );
+
+    assert.equal(code, 2, `--project ${flagArg} has to be a usage error`);
+    assert.equal(printed.join(''), '', `--project ${flagArg} wrote to stdout`);
+    assert.ok(
+      logged.join('\n').includes(`--project has to be a positive integer (got: "${raw}")`),
+      `wrong message for --project ${flagArg}: ${logged.join('\n')}`,
+    );
+  }
+});
+
+test('t419 FR3 — --project 2 is refused before any network attempt, naming the lens gap', async () => {
+  const { runCli } = await loadCli();
+  let fetchCalls = 0;
+  const doFetch: typeof fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('watch must not reach the network before the project check');
+  };
+
+  const printed: string[] = [];
+  const logged: string[] = [];
+  const code = await runCli(
+    ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', '2'],
+    { write: (text) => printed.push(text), log: (text) => logged.push(text), doFetch },
+  );
+
+  assert.equal(code, 2, '--project 2 has to be a usage error, not a run');
+  assert.equal(printed.join(''), '');
+  assert.equal(fetchCalls, 0, 'the refusal happens before --url/--token are used for anything network-related');
+  assert.ok(
+    /proposal\.ts|flow lens|cost-surveyor|cost lens/i.test(logged.join('\n')),
+    `the message should name the flow/cost lens gap: ${logged.join('\n')}`,
+  );
+});
+
 test('t247 FR1 — --lens defaults to all, and both spellings of an option parse', async () => {
   const { parseArguments } = await loadCli();
 
   assert.deepEqual(
     parseArguments(['--url', 'http://127.0.0.1:4317', '--token', 'operator-token']),
-    { url: 'http://127.0.0.1:4317', token: 'operator-token', lens: 'all', dryRun: false },
+    { url: 'http://127.0.0.1:4317', token: 'operator-token', lens: 'all', dryRun: false, projectId: 1 },
   );
 
   assert.deepEqual(
@@ -109,7 +182,7 @@ test('t247 FR1 — --lens defaults to all, and both spellings of an option parse
       '--lens=flow',
       '--dry-run',
     ]),
-    { url: 'http://127.0.0.1:4317', token: 'operator-token', lens: 'flow', dryRun: true },
+    { url: 'http://127.0.0.1:4317', token: 'operator-token', lens: 'flow', dryRun: true, projectId: 1 },
   );
 
   for (const lens of ['flow', 'cost', 'all']) {
@@ -119,6 +192,39 @@ test('t247 FR1 — --lens defaults to all, and both spellings of an option parse
       `--lens ${lens} is one of the three this command has`,
     );
   }
+});
+
+test('t419 FR1 — --project defaults to 1, and both spellings of the option parse', async () => {
+  const { parseArguments } = await loadCli();
+
+  assert.equal(
+    parseArguments(['--url', 'http://127.0.0.1:4317', '--token', 'operator-token']).projectId,
+    1,
+    'omitted, --project defaults to 1',
+  );
+
+  assert.equal(
+    parseArguments([
+      '--url',
+      'http://127.0.0.1:4317',
+      '--token',
+      'operator-token',
+      '--project',
+      '1',
+    ]).projectId,
+    1,
+  );
+
+  assert.equal(
+    parseArguments([
+      '--url',
+      'http://127.0.0.1:4317',
+      '--token',
+      'operator-token',
+      '--project=1',
+    ]).projectId,
+    1,
+  );
 });
 
 test('t247 FR2 — a stream that refuses the credential is a 1, not a retry loop', async () => {

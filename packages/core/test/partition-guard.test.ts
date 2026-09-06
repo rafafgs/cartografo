@@ -259,12 +259,13 @@ const ALLOWLIST: readonly Exception[] = Object.freeze([
     where: 'repositories/webhooks.ts::dueDeliveries',
     class: 'GLOBAL_BY_DESIGN',
     reason:
-      'each delivery row copied its own url/secret at enqueue time (`0008_webhook.sql`), so the sweep needs no project to dispatch correctly.',
+      'the partition was decided at fan-out time — every row FKs to the one subscription this joins back to — so the "what is due?" sweep needs no project.',
   },
   {
     where: 'repositories/hooks.ts::dueHookDeliveries',
     class: 'GLOBAL_BY_DESIGN',
-    reason: 'same shape as the webhook sweep, over `0016_gancho.sql`: the row is self-contained.',
+    reason:
+      'the same sweep for hooks, and self-contained on top of it: `hook_delivery` copies its own url/secret at queue time (`0016_gancho.sql`).',
   },
   {
     where: 'routes/events.ts::readCursor',

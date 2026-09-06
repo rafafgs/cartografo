@@ -10,6 +10,17 @@
  * session with `{{input.triaged_thesis.title}}` in the prompt and nobody the
  * wiser.
  *
+ * **Two sources meet here and a THIRD joins downstream.** What this module
+ * merges is the control plane's projection and the executor environment, and
+ * that is still exactly two. Since t370 a node may also declare
+ * `external.inputs`, and what those fetch lands at `input.external.<name>` —
+ * but it is added AFTER this merge, by `resolveExternalInputs`
+ * (`src/mcp/resolve-external-inputs.ts`), because it is interpolated against
+ * the very object this function returns: an argument reading
+ * `{{input.thesis.slug}}` needs the merged input to exist before the call is
+ * made. Naming it here is accuracy and nothing else; nothing about the merge
+ * below changed.
+ *
  * t253 built the assembly and published it at `GET /v1/jobs/:id/context`: the
  * job's own identity at `input.job`, the class's static config at
  * `input.project`, every completed session's report merged into the bucket its

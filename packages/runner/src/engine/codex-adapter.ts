@@ -48,7 +48,12 @@ import {
   type EngineCommand,
 } from './codex-command.ts';
 import { PERMISSION_REFUSAL_PREFIX, resolveCodexPermissions } from './codex-permission-policy.ts';
-import { parseCodexMcpListJson, readMcpConfigToml } from './mcp-discovery.ts';
+import {
+  expandEnvPlaceholders,
+  parseCodexMcpListJson,
+  readMcpConfigToml,
+  readMcpServerConfigToml,
+} from './mcp-discovery.ts';
 import {
   SessionStartError,
   UnknownSessionError,
@@ -57,6 +62,7 @@ import {
   type EngineCapabilities,
   type EngineModel,
   type McpDiscovery,
+  type McpServerConnection,
   type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
@@ -554,6 +560,43 @@ export class CodexAdapter implements EngineAdapter {
     }
 
     return { servers: readMcpConfigToml(this.#mcpConfigPath), origin: 'file', resolvedAt };
+  }
+
+  /**
+   * How to reach one of those servers, by name (t370, FR1).
+   *
+   * The same file the discovery above falls back to, read for the VALUES of one
+   * table instead of the names of all of them — `[mcp_servers.<name>]` plus its
+   * `[mcp_servers.<name>.env]` sub-table, which is exactly what
+   * `codex mcp add` writes.
+   *
+   * No CLI half, for the reason the first adapter's own note gives: `codex mcp
+   * list --json` DOES carry a `transport` object, and reading it would be the
+   * better source the day something needs it — but the two adapters answering
+   * this question from two different kinds of source is a difference nobody
+   * asked for, and the discovery gate above already applies the CLI's approval
+   * rules before this is ever reached. `$CODEX_HOME`'s config is the one file
+   * both halves of this adapter agree on.
+   *
+   * Only stdio comes out: a `config.toml` server is a spawned command, and the
+   * `url`-shaped remote server codex grew has no representation in the tables
+   * this scanner reads. A name it does not declare is `null`.
+   */
+  async resolveMcpServerConnection(name: string): Promise<McpServerConnection | null> {
+    const entry = readMcpServerConfigToml(this.#mcpConfigPath, name);
+    if (entry === null) return null;
+
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(entry.env)) {
+      env[key] = expandEnvPlaceholders(value, this.#probeEnvironment);
+    }
+
+    return {
+      transport: 'stdio',
+      command: expandEnvPlaceholders(entry.command, this.#probeEnvironment),
+      args: entry.args.map((value) => expandEnvPlaceholders(value, this.#probeEnvironment)),
+      env,
+    };
   }
 
   /**

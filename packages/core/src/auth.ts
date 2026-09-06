@@ -89,6 +89,13 @@ const RUNNER_SURFACE: ReadonlySet<string> = new Set([
   // its OWN pending re-check and nothing else, scoped in the handler the same
   // way.
   'GET /v1/runners/:id/rechecks',
+  // t370. The record of every call the runner makes to an MCP server on a
+  // node's behalf (RF-37): which server, when, with what arguments, with what
+  // summarised result. ONE line for both phases, because one route serves both
+  // — a body with no `call_id` opens the intent and one carrying it closes that
+  // row. `GET /v1/jobs/:id/external-calls` is deliberately NOT here: reading
+  // the history back is the operator's, and this dispatch never reads its own.
+  'POST /v1/jobs/:id/external-calls',
   // `POST /v1/runners/:id/rechecks` is deliberately NOT here, on the reasoning
   // `GET /v1/engines` above already states: ordering a machine to re-probe is
   // fleet management, and a runner credential that could do it would turn one

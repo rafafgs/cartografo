@@ -216,11 +216,14 @@ test(
       // and renumbered at the merge with t354, which is this count's whole point
       // restated one more time. t401 moved it last with
       // `0028_runner_probe.sql`: what a paired machine reports about itself, and
-      // the operator's request that it report again.
+      // the operator's request that it report again. t370 moved it once more
+      // with `0032_external_calls.sql` — every call the runner makes to an MCP
+      // server on a node's behalf, numbered past the three that 0029, 0030 and
+      // 0031 are already spoken for by.
       assert.equal(
         first.readiness.migrationsApplied,
-        28,
-        'a brand-new database applies the twenty-eight migrations the package ships',
+        29,
+        'a brand-new database applies the twenty-nine migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

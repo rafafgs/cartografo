@@ -257,9 +257,12 @@ test('t180 — the 403 of a runner outside its surface names the surface in Engl
   // joined it in t166, and `POST /v1/runners/:id/probes` +
   // `GET /v1/runners/:id/rechecks` in t401 — the two through which a machine
   // reports what it is and picks up a request to report again. The third route
-  // of that pair, `POST /v1/runners/:id/rechecks`, is deliberately absent.
+  // of that pair, `POST /v1/runners/:id/rechecks`, is deliberately absent. And
+  // `POST /v1/jobs/:id/external-calls` joined it in t370 — the record of a call
+  // to an MCP server, one route for both of its phases; the matching `GET` is
+  // deliberately absent for the same reason `GET /v1/engines` is.
   assert.equal(
     denied.body.message,
-    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models, POST /v1/runners/:id/probes, GET /v1/runners/:id/rechecks — "POST /v1/jobs" requires a user credential',
+    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models, POST /v1/runners/:id/probes, GET /v1/runners/:id/rechecks, POST /v1/jobs/:id/external-calls — "POST /v1/jobs" requires a user credential',
   );
 });

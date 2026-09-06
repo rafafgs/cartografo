@@ -273,6 +273,11 @@ function readRow(db: Database, id: number): SessionRow | undefined {
 /**
  * The project this session was opened under (t157, FR3/FR4).
  *
+ * Exported since t422, and by one word: `repositories/artifacts.ts` scopes an
+ * artifact through the session that owns it, and re-deriving the same answer
+ * there would be the second implementation of one rule — the kind that agrees
+ * with the first until the day it does not.
+ *
  * The `session` table has no `project_id` column: `openSession` resolves the
  * project — the served job's, or the one declared in the body — and records it
  * in the envelope of `session.opened`, and that event is where it lives. Every
@@ -293,7 +298,7 @@ function readRow(db: Database, id: number): SessionRow | undefined {
  *   session with no opening event, which `openSession`'s transaction makes
  *   unreachable in practice.
  */
-function sessionProject(db: Database, id: number): number {
+export function sessionProject(db: Database, id: number): number {
   const opening = getEventsByEntity(db, 'session', id).find(
     (event) => event.type === 'session.opened',
   );

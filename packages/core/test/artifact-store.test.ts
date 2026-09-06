@@ -31,7 +31,6 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../src/db/connection.ts';
 import type * as ConnectionModule from '../src/db/connection.ts';
-import type * as CredentialsModule from '../src/repositories/credentials.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
 import {
   MIGRATIONS_DIR,
@@ -73,6 +72,14 @@ interface ArtifactStore {
 /** The one implementation this ticket ships (FR2). */
 interface LocalStoreModule {
   LocalArtifactStore: new (root: string) => ArtifactStore;
+}
+
+/** Minting the harness's own operator credential; `createApp` mints none. */
+interface CredentialsModule {
+  issueCredential: (
+    db: Database,
+    data: { type: string; runnerId?: string | null },
+  ) => { id: number; token: string };
 }
 
 /** The app factory, in the slice this suite builds (FR3, FR7). */
@@ -156,9 +163,7 @@ async function startArtifactPlane(
   );
   const { migrate } = await load<typeof MigrateModule>('src/db/migrate.ts');
   const { createApp } = await load<ServerModule>('src/server.ts');
-  const { issueCredential } = await load<typeof CredentialsModule>(
-    'src/repositories/credentials.ts',
-  );
+  const { issueCredential } = await load<CredentialsModule>('src/repositories/credentials.ts');
   const { LocalArtifactStore } = await load<LocalStoreModule>(T422_ARTIFACTS.localStore);
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t422-'));
@@ -649,13 +654,17 @@ test('t422 AT17 — the upload route is not on the runner allowlist', async (t) 
     'no artifact route belongs on RUNNER_SURFACE until the ticket that wires the caller says so (FR11)',
   );
 
-  // ...and the gate really does refuse one.
+  // ...and the gate really does refuse one. The credential comes from pairing,
+  // the way a real runner gets one: `credential.runner_id` is a foreign key, so
+  // there is no such thing as a token for a machine nobody paired.
   const plane = await startArtifactPlane(t);
-  const { issueCredential } = await load<typeof CredentialsModule>(
-    'src/repositories/credentials.ts',
-  );
   const session = await openSession(plane);
-  const { token } = issueCredential(plane.db, { type: 'runner', runnerId: 'runner-1' });
+  const paired = await request<{ token: string | null }>(plane, 'POST', '/v1/runners', {
+    id: 'runner-1',
+  });
+  assert.equal(paired.status, 201, JSON.stringify(paired.body));
+  const token = paired.body.token ?? '';
+  assert.notEqual(token, '', 'pairing is where a runner credential comes from');
 
   const refused = await upload(
     plane,

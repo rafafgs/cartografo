@@ -216,11 +216,14 @@ test(
       // and renumbered at the merge with t354, which is this count's whole point
       // restated one more time. t401 moved it last with
       // `0028_runner_probe.sql`: what a paired machine reports about itself, and
-      // the operator's request that it report again.
+      // the operator's request that it report again. t422 added
+      // `0030_artifacts.sql` — the reference to a file a session produced —
+      // taking the number the raw ticket asked for rather than the next free
+      // one, because `ticket-359` already claims `0029`.
       assert.equal(
         first.readiness.migrationsApplied,
-        28,
-        'a brand-new database applies the twenty-eight migrations the package ships',
+        29,
+        'a brand-new database applies the twenty-nine migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

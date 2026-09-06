@@ -40,8 +40,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { KNOWN_TYPES, ValidationError } from '../db/event-validation.ts';
 import { listEvents, type EventFilter } from '../db/events.ts';
-import { integerFromQuery } from '../repositories/common.ts';
-import { withValidation } from './common.ts';
+import { requireProject, withValidation } from './common.ts';
 
 /** How often an open connection looks for events past its cursor. */
 export const DEFAULT_POLL_INTERVAL_MS = 300;
@@ -88,13 +87,16 @@ interface Connection {
  * An invalid value is a 400 and never a filter silently ignored: "nothing came"
  * and "something wrong came" are different questions
  * (`src/repositories/common.ts:97-105`).
+ *
+ * `project_id` is NOT read here any more (t414): the scope is not a filter this
+ * function may or may not find in the query string, it is the partition the
+ * whole connection lives in, and it is resolved by `requireProject` at the
+ * route — one place, the same one every other `/v1` route uses, and the only
+ * one that can turn an undeclared project into a `404` before the stream opens.
  */
 function readFilter(query: unknown): EventFilter {
-  const asked = (query ?? {}) as { project_id?: string; type?: string };
-  return {
-    projetoId: integerFromQuery('project_id', asked.project_id),
-    tipos: readTypes(asked.type),
-  };
+  const asked = (query ?? {}) as { type?: string };
+  return { tipos: readTypes(asked.type) };
 }
 
 /**
@@ -291,12 +293,27 @@ export function registerEvents(
 
   app.get('/events/stream', async (request, reply) =>
     withValidation(reply, () => {
-      const filter = readFilter(request.query);
+      // FIRST, and before anything reads the log or hijacks the reply (t414,
+      // FR1). A stream opened with no `?project_id=` used to deliver every
+      // project's events; now it resolves the scope like `routes/jobs.ts`,
+      // `routes/executions.ts` and `routes/graphs.ts` do — absent, the default
+      // project; malformed, the 400 `declaredProject` already threw; naming no
+      // `project` row, a 404.
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const filter: EventFilter = {
+        ...readFilter(request.query),
+        // Never `undefined`, on the first `drain()` and on every poll tick
+        // after it: the connection carries ONE filter object and reuses it
+        // (FR2), so the scope is written once and cannot be forgotten later.
+        projetoId: scope.project.id,
+      };
       const cursor = readCursor(request.headers['last-event-id'], db);
 
-      // Nothing above this line wrote a byte: a bad filter answers 400 with the
-      // ordinary JSON body, and never a stream that opens and then apologizes
-      // (FR3).
+      // Nothing above this line wrote a byte: a bad filter answers 400 and an
+      // undeclared project answers 404, both with the ordinary JSON body, and
+      // never a stream that opens and then apologizes (FR3).
       begin(
         { request, reply, db, filter, cursor, pollIntervalMs, heartbeatIntervalMs },
         open,

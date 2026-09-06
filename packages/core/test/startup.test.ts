@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import type { Readable } from 'node:stream';
@@ -90,14 +90,29 @@ async function freePort(): Promise<number> {
   });
 }
 
+/**
+ * What every test of this file that is not about the one-command startup asks
+ * for (t405, FR8).
+ *
+ * `npx cartografo` stopped being the control plane alone: with no flag it also
+ * spawns the screen and a local runner and opens a browser. Every test written
+ * before t405 is about the control plane and nothing else, so the helper passes
+ * all three refusals by default and each of them keeps asserting exactly what
+ * it asserted before — a control-plane-only startup, with no child process, no
+ * browser and no workspace provisioned under whoever runs the suite's home.
+ */
+const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+
 /** Starts the command and resolves when the readiness line appears on stdout. */
 async function start(options: {
   cwd: string;
   databasePath: string;
   port: number;
   env?: NodeJS.ProcessEnv;
+  /** Command line of `up`; the default is {@link CONTROL_PLANE_ONLY}. */
+  args?: readonly string[];
 }): Promise<Startup> {
-  const child = spawn(process.execPath, [BIN_PATH], {
+  const child = spawn(process.execPath, [BIN_PATH, ...(options.args ?? CONTROL_PLANE_ONLY)], {
     cwd: options.cwd,
     env: {
       ...process.env,
@@ -680,6 +695,388 @@ test(
       );
     } finally {
       await second.shutdown();
+    }
+  },
+);
+
+/**
+ * A clean-room home for the one-command tests (t405).
+ *
+ * `seedDefaultSettings` computes `workspace_root` from `os.homedir()`, which on
+ * POSIX is `$HOME`, and FR5's provisioning creates that directory for real. A
+ * test that let the child inherit the suite's own home would put a git
+ * repository in whoever ran it — so every test below hands the command a home
+ * of its own, and reads the workspace back out of the same one.
+ *
+ * @param base Temporary area of the test.
+ * @returns The home directory to give the command.
+ */
+function cleanHome(base: string): string {
+  const home = path.join(base, 'home');
+  mkdirSync(home, { recursive: true });
+  return home;
+}
+
+/** Where FR5 provisions, for a given home. */
+function workspaceOf(home: string): string {
+  return path.join(home, '.cartografo', 'workspace');
+}
+
+/** How many commits that repository has. */
+function commitCount(repository: string): string {
+  const counted = spawnSync('git', ['rev-list', '--count', 'HEAD'], {
+    cwd: repository,
+    encoding: 'utf8',
+  });
+  assert.equal(counted.status, 0, `git could not count the commits of ${repository}: ${counted.stderr}`);
+  return counted.stdout.trim();
+}
+
+/**
+ * Waits for something that is true only once another process got there.
+ *
+ * @param what Name of the condition, for the failure message.
+ * @param check Answers `undefined` until it can answer.
+ * @returns The first non-`undefined` answer.
+ */
+async function eventually<T>(what: string, check: () => Promise<T | undefined>): Promise<T> {
+  const deadline = Date.now() + 60_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const answer = await check();
+      if (answer !== undefined) return answer;
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(250);
+  }
+  throw new Error(`${what} did not happen in 60s${lastError === undefined ? '' : ` (last error: ${String(lastError)})`}`);
+}
+
+/**
+ * Waits until the runner the command spawned has paired with it.
+ *
+ * The one honest happens-after this file has for everything `up` does AFTER it
+ * printed `cartografo.ready`. The readiness line is the CONTROL PLANE's, by
+ * design (FR1): the credential, the workspace and the two children all come
+ * after it, so a test that asserted on any of them the instant the line
+ * appeared would be racing the command it is testing — which is exactly how
+ * the first version of this file read a workspace whose empty commit had not
+ * been made yet. The pairing is the last of those steps to finish, so a runner
+ * on the list means every one of them is done.
+ *
+ * @param url Base URL of the control plane.
+ * @param token Operator credential — the printed `bootstrapToken`.
+ * @returns The paired runners.
+ */
+async function awaitPairedRunner(url: string, token: string): Promise<Array<{ id: string }>> {
+  return await eventually('the spawned runner pairs', async () => {
+    const response = await fetch(`${url}/v1/runners`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (response.status !== 200) return undefined;
+    const body = (await response.json()) as { runners: Array<{ id: string }> };
+    return body.runners.length > 0 ? body.runners : undefined;
+  });
+}
+
+test(
+  't405 AT7 — `cartografo --no-browser` brings the screen and a local runner up with it, and provisions the default workspace',
+  { timeout: 300_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t405-up-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+    const screenPort = await freePort();
+
+    assert.equal(existsSync(workspaceOf(home)), false, 'fixture broken: the home already had a workspace');
+
+    const startup = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser'],
+      env: { HOME: home, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+    });
+    try {
+      // The control plane still announces itself exactly as it always did: the
+      // three processes are what changed, not the line a supervisor reads.
+      assert.equal(startup.readiness.event, 'cartografo.ready');
+      assert.equal(startup.readiness.url, `http://127.0.0.1:${port}`);
+      const token = startup.readiness.bootstrapToken ?? '';
+      assert.ok(token.length > 0, 'a brand-new database still prints its operator credential');
+
+      // FR6: the runner came up on the settings fallback, with no path flag of
+      // its own, and paired.
+      const runners = await awaitPairedRunner(startup.readiness.url, token);
+      assert.equal(runners.length, 1, 'exactly one local runner, not two and not none');
+
+      // FR5: the runner has nowhere to cut a worktree from until this exists.
+      const workspace = workspaceOf(home);
+      assert.ok(existsSync(path.join(workspace, '.git')), 'the default workspace is a git repository');
+      assert.equal(commitCount(workspace), '1', 'with exactly one commit, so a branch can be cut from it');
+
+      // FR6/FR7: and the screen is answering on its own port, in its own process.
+      const screenStatus = await eventually('the spawned screen answers', async () => {
+        const response = await fetch(`http://127.0.0.1:${screenPort}/board`);
+        return response.status;
+      });
+      assert.equal(screenStatus, 200, 'the screen answers on CARTOGRAFO_SCREEN_PORT');
+    } finally {
+      await startup.shutdown();
+    }
+  },
+);
+
+test(
+  't405 AT8 — a second `up` over the same database and workspace re-provisions nothing',
+  { timeout: 300_000 },
+  async (t) => {
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t405-again-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+    const workspace = workspaceOf(home);
+
+    const first = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser', '--no-screen'],
+      env: { HOME: home },
+    });
+    let token: string;
+    try {
+      token = first.readiness.bootstrapToken ?? '';
+      await awaitPairedRunner(first.readiness.url, token);
+      assert.equal(commitCount(workspace), '1');
+    } finally {
+      await first.shutdown();
+    }
+
+    // The same everything, a second time. FR5's check runs on every startup, so
+    // this is the run that would add a second empty commit if it looked at the
+    // wrong thing.
+    const second = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser', '--no-screen'],
+      env: { HOME: home },
+    });
+    try {
+      assert.equal(second.readiness.event, 'cartografo.ready');
+      assert.equal(second.readiness.migrationsApplied, 0);
+      await awaitPairedRunner(second.readiness.url, token);
+      assert.equal(commitCount(workspace), '1', 'the second startup left the workspace exactly as it was');
+    } finally {
+      await second.shutdown();
+    }
+  },
+);
+
+test(
+  't405 AT9 — no orphan on SIGINT: every child the command started is dead when it is',
+  { timeout: 300_000 },
+  async (t) => {
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t405-orphan-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+    const screenPort = await freePort();
+
+    const startup = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser'],
+      env: { HOME: home, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+    });
+
+    const parent = startup.child.pid;
+    assert.ok(typeof parent === 'number', 'the command has no pid');
+
+    // The direct children of the command, read off the process table rather
+    // than off anything the command says about itself: what has to be proven is
+    // that nothing it spawned survives it, and its own bookkeeping is exactly
+    // what a leak would be hiding in.
+    const children = await eventually('the command spawns its two children', async () => {
+      const found = spawnSync('pgrep', ['-P', String(parent)], { encoding: 'utf8' });
+      const pids = found.stdout
+        .split('\n')
+        .map((line) => Number(line.trim()))
+        .filter((pid) => Number.isInteger(pid) && pid > 0);
+      return pids.length >= 2 ? pids : undefined;
+    });
+
+    startup.child.kill('SIGINT');
+    const code = await new Promise<number | null>((resolve) => {
+      const giveUp = setTimeout(() => startup.child.kill('SIGKILL'), 120_000);
+      startup.child.on('close', (exitCode) => {
+        clearTimeout(giveUp);
+        resolve(exitCode);
+      });
+    });
+    assert.equal(code, 0, 'a stop asked for is a clean exit, not a failure');
+
+    for (const pid of children) {
+      assert.throws(
+        () => process.kill(pid, 0),
+        /ESRCH/,
+        `child ${String(pid)} outlived the command that started it`,
+      );
+    }
+
+    assert.equal(
+      existsSync(`${databasePath}.lock`),
+      false,
+      'the control plane still gave the lock back, after the children were gone',
+    );
+  },
+);
+
+test(
+  't405 AT10 — a workspace_root an operator repointed is never provisioned',
+  { timeout: 300_000 },
+  async (t) => {
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t405-repointed-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+    const mine = path.join(base, 'my-own-checkout');
+
+    const first = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser', '--no-screen'],
+      env: { HOME: home },
+    });
+    let token: string;
+    try {
+      token = first.readiness.bootstrapToken ?? '';
+      const patched = await fetch(`${first.readiness.url}/v1/settings`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ workspace_root: mine }),
+      });
+      assert.equal(patched.status, 200);
+      assert.equal(((await patched.json()) as { workspace_root: string }).workspace_root, mine);
+    } finally {
+      await first.shutdown();
+    }
+
+    assert.equal(existsSync(mine), false, 'fixture broken: the repointed directory already exists');
+
+    // The runner is enabled on purpose: this is the startup that WOULD have
+    // provisioned, and the only thing stopping it is that the setting no longer
+    // names the default.
+    const second = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser', '--no-screen'],
+      env: { HOME: home },
+    });
+    try {
+      assert.equal(second.readiness.event, 'cartografo.ready');
+      // Waited for on purpose: the assertion below is an ABSENCE, and one
+      // checked before the command reached its provisioning step would pass
+      // without proving anything.
+      await awaitPairedRunner(second.readiness.url, token);
+      assert.equal(
+        existsSync(mine),
+        false,
+        'a workspace_root the operator chose is theirs: the command creates nothing under it',
+      );
+    } finally {
+      await second.shutdown();
+    }
+  },
+);
+
+test(
+  't405 AT11 — a second `npx cartografo`, with the new default behaviour, still dies on the lock',
+  { timeout: 300_000 },
+  async (t) => {
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t405-lock-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+
+    const first = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser', '--no-screen', '--no-runner'],
+      env: { HOME: home },
+    });
+    try {
+      // A different port, for t209's own reason: on the same one the refusal
+      // would be about the address instead of about the file. The screen gets
+      // a port of its own too, so the assertion after the exit can tell "it
+      // never started one" from "somebody else is on 4318".
+      const screenPort = await freePort();
+      const refused = spawn(process.execPath, [BIN_PATH], {
+        cwd: base,
+        env: {
+          ...process.env,
+          HOME: home,
+          CARTOGRAFO_DB_PATH: databasePath,
+          CARTOGRAFO_PORT: String(await freePort()),
+          CARTOGRAFO_SCREEN_PORT: String(screenPort),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+      refused.stdout.setEncoding('utf8');
+      refused.stderr.setEncoding('utf8');
+      refused.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      refused.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+
+      const code = await new Promise<number | null>((resolve) => {
+        const giveUp = setTimeout(() => refused.kill('SIGKILL'), 60_000);
+        refused.on('close', (exitCode) => {
+          clearTimeout(giveUp);
+          resolve(exitCode);
+        });
+      });
+
+      assert.equal(code, 1, `the second command has to die\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+      assert.ok(stderr.includes(String(first.child.pid)), `the refusal has to name the pid running:\n${stderr}`);
+      assert.ok(stderr.includes(`${databasePath}.lock`), `the refusal has to name the lock file:\n${stderr}`);
+      assert.equal(stdout.trim(), '', 'a startup that was refused announces nothing');
+
+      // And it started nothing on the way down. A refusal that had already
+      // forked a screen would have left it listening with nobody to stop it —
+      // an orphan `pgrep -P` could not find, because its parent is the process
+      // that just died. What the port answers is the honest question.
+      await assert.rejects(
+        fetch(`http://127.0.0.1:${screenPort}/board`),
+        'the refused command left a screen of its own listening',
+      );
+    } finally {
+      await first.shutdown();
     }
   },
 );

@@ -155,6 +155,40 @@ export function revokeRunnerCredentials(db: Database, runnerId: string): number 
 }
 
 /**
+ * Revokes exactly one credential, by id (t405, FR4).
+ *
+ * The sibling of {@link revokeRunnerCredentials}, and the difference between
+ * them is the scope rather than the mechanism: that one answers "this machine
+ * stops having access" and sweeps by runner id, this one answers "the
+ * credential I minted a minute ago dies now" and touches the single row whose
+ * id the caller already holds. `up` is that caller — it hands a fresh operator
+ * credential to the screen and the runner it spawned, and takes it back when
+ * both are gone — and expressing that as a sweep would mean revoking every
+ * operator credential in the database, the printed bootstrap one included.
+ *
+ * A date and not a `DELETE`, for the same reason as its sibling: nothing here
+ * is ever deleted (D15/D2), and `verifyToken` already treats a revoked
+ * credential exactly like one that never existed.
+ *
+ * Boolean and not a count, because the row is unique: `false` is "there was
+ * nothing live under that id", which covers both an id already revoked and one
+ * that never existed, and neither is an error. It never throws — a second
+ * SIGINT landing inside a teardown must not turn a clean shutdown into a stack
+ * trace.
+ *
+ * @param db Open database.
+ * @param id Credential to revoke.
+ * @returns `true` when THIS call revoked it; `false` when there was nothing to.
+ */
+export function revokeCredential(db: Database, id: number): boolean {
+  const result = db
+    .prepare('UPDATE credential SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
+    .run(now(), id);
+
+  return result.changes > 0;
+}
+
+/**
  * Is there a live credential of this type?
  *
  * It is what the startup asks before minting the bootstrap credential (FR4):

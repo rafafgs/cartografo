@@ -26,6 +26,21 @@ export const PUBLIC_DIR = path.resolve(import.meta.dirname, 'public');
 /** File served for the inbox's own entry path. */
 export const INDEX_FILE = 'index.html';
 
+/**
+ * The inbox's own entry path, since t402.
+ *
+ * It used to be the root. The root is now the check page — a rendered view — and
+ * the router tries a file BEFORE a view, so a resolver that kept answering for
+ * `/` would keep serving `index.html` over a page that exists. Moving the
+ * mapping here is the whole of that swap: nothing about the document changes,
+ * and its `./style.css` / `./inbox.js` survive it, because `/` and `/inbox`
+ * resolve to the same base directory for a relative URL.
+ *
+ * Nothing redirects the old address (D20's precedent): nothing here is public
+ * yet, so a path does not move, it simply is somewhere else.
+ */
+export const INDEX_PATH = '/inbox';
+
 /** Content types of what the page is made of; anything else is not served. */
 const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -54,7 +69,9 @@ export function resolveStaticFile(pathname: string): string | null {
     return null;
   }
 
-  const relative = decoded === '/' || decoded === '' ? INDEX_FILE : decoded.replace(/^\/+/, '');
+  // Only the exact path, never a prefix of it: `/inbox.js` is the page's own
+  // module and has to keep resolving to itself.
+  const relative = decoded === INDEX_PATH ? INDEX_FILE : decoded.replace(/^\/+/, '');
   const absolute = path.resolve(PUBLIC_DIR, relative);
   if (absolute !== PUBLIC_DIR && !absolute.startsWith(`${PUBLIC_DIR}${path.sep}`)) return null;
   if (!Object.hasOwn(CONTENT_TYPES, path.extname(absolute))) return null;

@@ -94,6 +94,8 @@ export interface StreamOptions {
   url: string;
   /** Operator credential, presented on every connection attempt (§2). */
   token: string;
+  /** Project to filter on, via the route's `?project_id=`. Default: `1`. */
+  projectId?: number;
   /** `fetch` implementation to use. Default: the global `fetch`. */
   doFetch?: typeof fetch;
   /** Wait between a drop and the next attempt. Default: 1s. */
@@ -205,7 +207,8 @@ export async function* watchFinishedExecutions(
   const doFetch = options.doFetch ?? fetch;
   const backoffMs = options.backoffMs ?? DEFAULT_BACKOFF_MS;
   const log = options.log ?? ((): void => undefined);
-  const target = `${normalize(options.url)}/v1/events/stream?type=${FINISHED_EXECUTION}`;
+  const projectId = options.projectId ?? 1;
+  const target = `${normalize(options.url)}/v1/events/stream?type=${FINISHED_EXECUTION}&project_id=${projectId}`;
 
   // Read through a function, never through the narrowed expression: the checks
   // below are spread across an `await` each, and a compiler that remembers what

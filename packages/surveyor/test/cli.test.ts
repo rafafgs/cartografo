@@ -31,6 +31,31 @@ async function loadCli(): Promise<typeof CliModule> {
   return cache;
 }
 
+/**
+ * Runs a function while `process.stderr.write` is captured instead of printed.
+ *
+ * `runCli` writes a `UsageError`'s message straight to `process.stderr`
+ * rather than through the injectable `log` (the same as its stream-denied
+ * branch): the credential and stream failures are meant to be seen even by a
+ * caller that dropped `log` on the floor, so a test that needs the message
+ * has to intercept the real stream rather than the injection point.
+ */
+async function captureStderr<T>(fn: () => Promise<T>): Promise<{ result: T; stderr: string }> {
+  const original = process.stderr.write.bind(process.stderr);
+  const chunks: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    chunks.push(chunk.toString());
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    const result = await fn();
+    return { result, stderr: chunks.join('') };
+  } finally {
+    process.stderr.write = original;
+  }
+}
+
 /** Runs the command line, collecting what it wrote to stdout. */
 async function run(args: string[], context: CliModule.CliContext = {}): Promise<{
   code: number;
@@ -128,17 +153,18 @@ test('t419 FR2 — a non-integer or non-positive --project names the raw value i
 
   for (const [flagArg, raw] of cases) {
     const printed: string[] = [];
-    const logged: string[] = [];
-    const code = await runCli(
-      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', flagArg],
-      { write: (text) => printed.push(text), log: (text) => logged.push(text) },
+    const { result: code, stderr } = await captureStderr(() =>
+      runCli(
+        ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', flagArg],
+        { write: (text) => printed.push(text) },
+      ),
     );
 
     assert.equal(code, 2, `--project ${flagArg} has to be a usage error`);
     assert.equal(printed.join(''), '', `--project ${flagArg} wrote to stdout`);
     assert.ok(
-      logged.join('\n').includes(`--project has to be a positive integer (got: "${raw}")`),
-      `wrong message for --project ${flagArg}: ${logged.join('\n')}`,
+      stderr.includes(`--project has to be a positive integer (got: "${raw}")`),
+      `wrong message for --project ${flagArg}: ${stderr}`,
     );
   }
 });
@@ -152,18 +178,19 @@ test('t419 FR3 — --project 2 is refused before any network attempt, naming the
   };
 
   const printed: string[] = [];
-  const logged: string[] = [];
-  const code = await runCli(
-    ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', '2'],
-    { write: (text) => printed.push(text), log: (text) => logged.push(text), doFetch },
+  const { result: code, stderr } = await captureStderr(() =>
+    runCli(
+      ['watch', '--url', 'http://127.0.0.1:4317', '--token', 'operator-token', '--project', '2'],
+      { write: (text) => printed.push(text), doFetch },
+    ),
   );
 
   assert.equal(code, 2, '--project 2 has to be a usage error, not a run');
   assert.equal(printed.join(''), '');
   assert.equal(fetchCalls, 0, 'the refusal happens before --url/--token are used for anything network-related');
   assert.ok(
-    /proposal\.ts|flow lens|cost-surveyor|cost lens/i.test(logged.join('\n')),
-    `the message should name the flow/cost lens gap: ${logged.join('\n')}`,
+    /proposal\.ts|flow lens|cost-surveyor|cost lens/i.test(stderr),
+    `the message should name the flow/cost lens gap: ${stderr}`,
   );
 });
 

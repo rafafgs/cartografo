@@ -292,18 +292,44 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
     rmSync(root, { recursive: true, force: true });
   });
 
-  // --- the bundle, verbatim -------------------------------------------------
-  for (const file of MANIFESTS) {
-    await api(baseUrl, token, 'POST', '/v1/skills', bundleFile('skills', file), 201);
-  }
-  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+  // --- the bundle, verbatim, and NOT registered by this test ----------------
+  //
+  // `bootCore` runs the real `cartografo` binary, and since t360 that binary
+  // imports this bundle on a database that does not have it (FR1). So the
+  // class is already there before the first line of this crossing, and
+  // registering it again would answer `409 class_already_registered` — which is
+  // the sharp form of the claim rather than an inconvenience: the interview has
+  // to be in the box, not in the test.
+  const { classes } = await api<{ classes: { class: string; current_version_id: string | null }[] }>(
     baseUrl,
     token,
-    'POST',
-    '/v1/graphs',
-    bundleFile('graph.json'),
-    201,
+    'GET',
+    '/v1/classes',
   );
+  const registered = classes.find((entry) => entry.class === 'map-design');
+  assert.ok(registered !== undefined, `the startup did not import the interview: ${JSON.stringify(classes)}`);
+  assert.ok(registered.current_version_id !== null, 'an imported class has a version to run');
+
+  const { graph_version: version } = await api<{
+    graph_version: { id: string; snapshot: Record<string, unknown> };
+  }>(baseUrl, token, 'GET', `/v1/graph-versions/${encodeURIComponent(registered.current_version_id)}`);
+  assert.deepEqual(
+    version.snapshot.nodes,
+    bundleFile('graph.json').nodes,
+    'what the startup registered is the committed document, node for node',
+  );
+
+  // ...and the two manifests it pins are in the registry, at the pinned hash.
+  for (const file of MANIFESTS) {
+    const manifest = bundleFile('skills', file);
+    const skill = await api<{ hash: string }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/skills/${String(manifest.id)}?version=${String(manifest.version)}`,
+    );
+    assert.equal(skill.hash, manifest.hash, `${file}: the registered pin is the committed one`);
+  }
 
   const job = await api<Work>(
     baseUrl,
@@ -426,14 +452,14 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
   assert.notDeepEqual(reported[1], reported[2]);
 
   // --- AT6. abandoned here, the interview has registered NOTHING ------------
-  const { classes } = await api<{ classes: { class: string }[] }>(
+  const { classes: known } = await api<{ classes: { class: string }[] }>(
     baseUrl,
     token,
     'GET',
     '/v1/classes',
   );
   assert.deepEqual(
-    classes.map((entry) => entry.class).filter((name) => name === 'support-escalation'),
+    known.map((entry) => entry.class).filter((name) => name === 'support-escalation'),
     [],
     'a draft is not a registration: an interview stopped here leaves no graph row (RF-25 is t361`s)',
   );
@@ -488,16 +514,45 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
   }
 
   // --- AT7. and the drafted graph is a graph this repository would accept ---
+  //
+  // Written out first, exactly as `deliver` writes it: the validator is a CLI
+  // over a file, and reading it back is what makes this a check of the DOCUMENT
+  // and not of the object that happened to be in memory.
   const { validarGrafo } = (await import(GRAPH_VALIDATOR)) as {
     validarGrafo: (doc: unknown) => {
       valid: boolean;
       structure: { errors: { code: string; message: string }[] };
-      soundness: { violations: { rule: string }[] };
+      soundness: { violations: { rule: string; target: unknown }[] };
     };
   };
   const written = path.join(root, 'draft-graph.json');
   writeFileSync(written, JSON.stringify(draft.graph, null, 2));
   const report = validarGrafo(JSON.parse(readFileSync(written, 'utf8')));
+
   assert.deepEqual(report.structure.errors, [], 'the drafted document is structurally a graph');
-  assert.deepEqual(report.soundness.violations, [], 'and its topology is a sound workflow net');
+
+  // The one exception, and it is the one FR1 declares: `node_with_contract`
+  // asks each node for a PINNED skill_ref, and a draft cannot have one — the
+  // manifests carry no `hash`, because computing the pin is the register step's
+  // job (t361, D4). Every other soundness rule holds as it stands.
+  assert.deepEqual(
+    report.soundness.violations.map((violation) => violation.rule),
+    ['node_with_contract', 'node_with_contract'],
+    'the only thing missing from the drafted map is the pin nobody has computed yet',
+  );
+
+  // ...and that IS the only thing missing: with a stand-in pin on each node —
+  // the one thing the register step adds — the same document is sound.
+  const pinned = {
+    ...draft.graph,
+    nodes: nodes.map((node) => ({
+      ...node,
+      skill_ref: { ...(node.skill_ref as Record<string, unknown>), hash: `sha256:${'0'.repeat(64)}` },
+    })),
+  };
+  assert.deepEqual(
+    validarGrafo(pinned).soundness.violations,
+    [],
+    'reachable, terminating, every edge labelled, every node under a contract',
+  );
 });

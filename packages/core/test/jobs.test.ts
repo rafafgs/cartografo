@@ -2371,6 +2371,7 @@ async function interviewTurn(
     options: ['yes', 'no'],
     recommendation: 'yes',
     default_answer: 'yes',
+    auto_approvable: false,
   });
   assert.equal(asked.status, 201, `POST /v1/input-requests returned ${asked.status}`);
   return asked.body.id;

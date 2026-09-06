@@ -35,6 +35,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
+import { buildConversation, type Conversation } from '../domain/conversation.ts';
 import { buildNodeInput } from '../domain/context.ts';
 import { integerFromQuery } from '../repositories/common.ts';
 import { getVersion } from '../repositories/graphs.ts';
@@ -171,6 +172,49 @@ function nodeInputOf(
 }
 
 /**
+ * The four reads behind `GET /jobs/:id/conversation` (t360, FR5).
+ *
+ * Same division of labour as {@link nodeInputOf}: the MERGE is
+ * `domain/conversation.ts`, pure and testable without a server, and what lives
+ * here is only which rows feed it.
+ *
+ * - the job itself, for the scope check and for the terminal flag. It is the
+ *   one read that can answer "this job is not yours", so it goes first and
+ *   nothing below runs without it;
+ * - the timeline, for the ORDER of the questions. `input_request.answered`
+ *   carries no `job_id`, so the answers cannot come from here;
+ * - both slices of the input-request queue, for the answers and for the one
+ *   question still open;
+ * - the job's sessions, for the draft and for whether one is running.
+ *
+ * ## Which of them take the scope
+ *
+ * Two: the job and the timeline. `listInputRequests` and `listSessions` do not,
+ * for the reason `nodeInputOf` already writes down — both are called with a
+ * `job_id` the job read has already confirmed belongs to the resolved project,
+ * and a scope parameter there would be a second copy of a judgement already
+ * made.
+ *
+ * @param db Open database.
+ * @param id Job id.
+ * @param projectId Project the request resolved to.
+ * @returns The conversation, or `null` when the job does not exist in that
+ *   project.
+ */
+function conversationOf(db: Database, id: number, projectId: number): Conversation | null {
+  const job = getJob(db, id, projectId);
+  if (job === null) return null;
+
+  return buildConversation({
+    events: jobTimeline(db, id, projectId) ?? [],
+    answered: listInputRequests(db, { status: 'answered', job_id: id }),
+    pending: listInputRequests(db, { status: 'pending', job_id: id }),
+    sessions: listSessions(db, { job_id: id }),
+    done: job.completed,
+  });
+}
+
+/**
  * Registers the job routes in the `/v1` scope.
  *
  * @param app Already prefixed scope.
@@ -259,6 +303,31 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
 
       const input = nodeInputOf(db, routeId(request.params), scope.project.id);
       return input === null ? notFound(reply, 'job') : { input };
+    }),
+  );
+
+  /**
+   * The same job's escalations, read as the conversation they are (t360, FR5).
+   *
+   * A GET beside `/context` and for the same reason: it is assembled out of
+   * four reads and it answers one page's whole question. What it is NOT is a
+   * second door onto the input-request queue — `GET /v1/input-requests` still
+   * owns that, spelling and all. This one is the interview's own shape: the
+   * closed turns in log order, the one question still open, the draft the last
+   * session reported, and whether anything is running.
+   *
+   * A job that never asked anything projects empty turns, a `null` pending and
+   * a `null` draft — the honest answer for a job of any class at all, which is
+   * why nothing here checks that the job is an interview. Only an id that names
+   * nothing, or names a job of another project, is a 404.
+   */
+  app.get('/jobs/:id/conversation', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const conversation = conversationOf(db, routeId(request.params), scope.project.id);
+      return conversation === null ? notFound(reply, 'job') : conversation;
     }),
   );
 

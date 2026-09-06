@@ -355,13 +355,22 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
     '--no-screen spawns no screen',
   );
 
-  // Nobody to hand a credential to is nobody to mint one for (FR3).
+  // A control-plane-only startup spawns nothing — and, since t360, still mints
+  // a credential, because the auto-import of the interview bundle is a client
+  // of this control plane like any other and is not gated by either flag (FR1).
+  // t405's own rule ("nobody to hand it to is nobody to mint it for") was about
+  // a table that stayed empty; what it was really protecting is that nothing
+  // outlives the process, and that is what is asserted here now.
   const neither = await runSeamed(t, { browser: false, runner: false, screen: false });
   assert.deepEqual(neither.spawned, [], 'control-plane-only startup spawns nothing');
   assert.equal(
-    (neither.db.prepare('SELECT COUNT(*) AS total FROM credential').get() as { total: number }).total,
+    (
+      neither.db
+        .prepare('SELECT COUNT(*) AS total FROM credential WHERE revoked_at IS NULL')
+        .get() as { total: number }
+    ).total,
     0,
-    '--no-runner --no-screen mints no internal credential: there is nobody to hand it to',
+    'and it leaves no live credential behind: whatever the import used died with the startup',
   );
 });
 

@@ -24,6 +24,8 @@ import {
   looksLikeStackTrace,
   freePort,
   firstHash,
+  importedClasses,
+  importedSkillIds,
   runCli,
   startControlPlane,
 } from './cli-support.ts';
@@ -111,18 +113,18 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     const body = (await response.json()) as {
       classes: { class: string; current_version_id: string }[];
     };
-    assert.deepEqual(
-      body.classes.map((entry) => entry.class),
-      [FACTORY_CLASS],
-    );
-    assert.equal(body.classes[0]?.current_version_id, importedVersion);
+    // Minus the interview, which every startup registers on its own (t360):
+    // what this case is about is what the IMPORT put there.
+    assert.deepEqual(await importedClasses(first.url), [FACTORY_CLASS]);
+    const imported = body.classes.find((entry) => entry.class === FACTORY_CLASS);
+    assert.equal(imported?.current_version_id, importedVersion);
 
     // t135, FR4: the graph is only half the bundle — the capabilities its nodes
     // pin have to be in the registry, or the class is imported with nothing to
     // dispatch.
     const skills = await registeredSkills(first.url);
     assert.deepEqual(
-      skills.map((skill) => skill.id),
+      importedSkillIds(skills.map((skill) => skill.id)),
       FACTORY_SKILL_IDS,
       'importing the bundle registers every manifest in skills/',
     );
@@ -157,7 +159,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
 
     const skills = await registeredSkills(first.url);
     assert.deepEqual(
-      skills.map((skill) => skill.id),
+      importedSkillIds(skills.map((skill) => skill.id)),
       FACTORY_SKILL_IDS,
       'a second import neither duplicates nor drops a registration',
     );
@@ -225,8 +227,11 @@ test('AT6 — importing an invalid graph prints the violations of the 422', { ti
   assert.match(result.stderr, /revisar_lote/, 'the violation comes out with the target that broke it');
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 
-  const response = await fetch(`${controlPlane.url}/v1/classes`);
-  assert.deepEqual(await response.json(), { classes: [] }, 'a refused graph cannot have been registered');
+  assert.deepEqual(
+    await importedClasses(controlPlane.url),
+    [],
+    'a refused graph cannot have been registered',
+  );
 });
 
 test('AT8 — a manifest the registry refuses stops the import before the graph (t135)', { timeout: 180_000 }, async (t) => {
@@ -271,10 +276,9 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   assert.match(result.stderr, /required_evidence/, "the registry's own reason comes out");
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 
-  const classes = await fetch(`${controlPlane.url}/v1/classes`);
   assert.deepEqual(
-    await classes.json(),
-    { classes: [] },
+    await importedClasses(controlPlane.url),
+    [],
     'the graph is never sent once a manifest is refused',
   );
 

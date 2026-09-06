@@ -85,7 +85,11 @@ async function loadController(): Promise<typeof ControllerModule> {
  */
 function fetchWithSeededQueue(): typeof fetch {
   return async (input, init) => {
-    if (String(input).endsWith('/v1/jobs')) {
+    // Matched on the PATH: since t410 the poll names its project on the query
+    // string, and a tail comparison would let the seeded queue fall through to
+    // the real control plane — which answers this project nothing, because the
+    // simulation never wrote a job there.
+    if (new URL(String(input)).pathname === '/v1/jobs') {
       return new Response(
         JSON.stringify({
           jobs: [

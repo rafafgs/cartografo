@@ -338,7 +338,11 @@ export function registerLeases(
     // COLUMN's nullability — a row that was never released — and not a state
     // `releaseLease` can return, since it writes `released_at` in the same
     // `UPDATE` that flips the status.
-    const job = getJob(db, released.job_id);
+    // The lease's own project (t410): `getJob` reads inside one partition since
+    // that ticket, and a lease already knows which one it holds — without it
+    // every release outside project 1 would silently stop announcing the end of
+    // its round.
+    const job = getJob(db, released.job_id, lease.project_id);
     if (job !== null) {
       db.transaction(() => {
         announceFinishedExecution(

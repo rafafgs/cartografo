@@ -173,6 +173,25 @@ export interface ClaudeCodeDispatchOptions {
    */
   token?: string;
   /**
+   * The project this dispatch's work belongs to (t410).
+   *
+   * Three of the routes below read one project's partition since that ticket —
+   * `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events` and `GET /v1/jobs/:id/context`
+   * — and a read that names none reads the default project. Without this a
+   * runner working any other project takes a lease, is told its own work does
+   * not exist, gives the lease back and tries again forever: the loop turns, no
+   * session opens and nothing says why.
+   *
+   * The runner's own project and not the work's, because it is the same number:
+   * the controller polls one board and leases inside it, so every `jobId` that
+   * reaches a dispatch was already resolved in this project.
+   *
+   * Optional, and absent means the server's default project — which is what
+   * every wiring written before the partition meant, and what the spikes and
+   * the traversal suites still mean.
+   */
+  projectId?: number;
+  /**
    * The engines this dispatch can route to, by the name a node declares (t141,
    * FR4).
    *

@@ -76,6 +76,13 @@ process, with no access to the database and no privilege over the control plane
 (D11). It reads `CARTOGRAFO_TOKEN` and `CARTOGRAFO_URL` from the environment,
 which the two exports above have already set.
 
+Open it and the first page is the **check**: with no runner paired yet it shows
+one line and the command that pairs one, built from whatever this project has
+recorded. Come back to it after step 6, when a runner has reported about its own
+machine, and it says per runner whether the engine CLI, the model credential, the
+`cartografo` MCP server and the workspace are all in place — or exactly which of
+them is not, with one way to fix each.
+
 ## 3. Import a factory graph
 
 An empty control plane knows no problem classes. Two come in the box; start with
@@ -143,10 +150,11 @@ Two views, and they answer different questions.
 
 **Where is everything?** The board, at `http://127.0.0.1:4318/board`, groups
 every job by the node it is standing on and shows the blocking reason where
-there is one. Its sibling views are the proposal inbox at `/`, the escalation
-queue at `/input-requests` and one job's timeline at `/jobs/<id>`
-([`docs/spec/screen.md`](spec/screen.md) documents all seven routes). Each view
-renders on the request: reloading the page is the refresh.
+there is one. Its sibling views are the readiness check at `/`, the proposal
+inbox at `/inbox`, the escalation queue at `/input-requests` and one job's
+timeline at `/jobs/<id>` ([`docs/spec/screen.md`](spec/screen.md) documents the
+whole route table). Each view renders on the request: reloading the page is the
+refresh.
 
 **What happened to this one job?** Its event timeline, which is the log rather
 than a summary of it:

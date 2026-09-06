@@ -250,7 +250,7 @@ test('t402 AT2 — a runner that has never reported gets four waiting lines and 
 
   for (const line of lines) {
     assert.ok(
-      line.excerpt.includes("waiting for this runner's first report"),
+      line.excerpt.includes('waiting for this runner&#39;s first report'),
       `${line.value} diagnoses something the probe never said:\n${line.excerpt}`,
     );
     assert.ok(
@@ -299,8 +299,18 @@ test('t402 AT3 — a CLI that is not there is an unmet engine line, with the fix
 test('t402 AT3 — a CLI that is there with no version is still met, and says so', async () => {
   const { checkPage } = await loadPages();
 
+  // One line has to be unmet for any line to be drawn at all (FR4): a page
+  // where everything passes is the ready panel and nothing else. The workspace
+  // is the one broken here, so the engine line is observable.
+  const healthy = healthyProbe();
   const page = await checkPage(
-    clientAnswering([paired('runner-a', healthyProbe({ cli: { available: true, version: null, authenticated: true } }))]),
+    clientAnswering([
+      paired('runner-a', {
+        ...healthy,
+        cli: { available: true, version: null, authenticated: true },
+        workspace: { ...healthy.workspace, is_git_repo: false },
+      }),
+    ]),
     { projectId: 1, projects: [] },
   );
 
@@ -396,14 +406,16 @@ test('t402 AT5 — the MCP line is about the cartografo server, and an adapter t
     `the codex fix action is not the shape the engine's own docs give:\n${codex.excerpt}`,
   );
 
+  // Again with one unmet line, so the met MCP line is drawn rather than
+  // collapsed into the ready panel.
+  const healthy = healthyProbe();
   const withServer = await checkPage(
     clientAnswering([
-      paired(
-        'runner-a',
-        healthyProbe({
-          mcp: { supported: true, servers: [{ name: 'flowpilot' }, { name: 'cartografo' }], origin: 'cli', resolved_at: null },
-        }),
-      ),
+      paired('runner-a', {
+        ...healthy,
+        mcp: { supported: true, servers: [{ name: 'flowpilot' }, { name: 'cartografo' }], origin: 'cli', resolved_at: null },
+        workspace: { ...healthy.workspace, is_git_repo: false },
+      }),
     ]),
     scope,
   );
@@ -419,7 +431,7 @@ test('t402 AT5 — the MCP line is about the cartografo server, and an adapter t
   assert.ok(cannot !== undefined, 'no mcp line was drawn');
   assert.match(cannot.excerpt, /data-estado="unmet"/);
   assert.ok(
-    cannot.excerpt.includes("can't be checked automatically"),
+    cannot.excerpt.includes('can&#39;t be checked automatically'),
     `an adapter with no discovery is reported as a false failure:\n${cannot.excerpt}`,
   );
   assert.ok(

@@ -104,6 +104,90 @@ export interface Question {
   answered_at: string | null;
 }
 
+/** The engine preflight a runner ran on its own machine, as t401 stores it. */
+export interface ProbeCli {
+  available: boolean;
+  version: string | null;
+  /** Best effort, and the adapter's own word for it — never a guarantee. */
+  authenticated: boolean;
+}
+
+/** One MCP server, by name and nothing else — the runner's own `McpServerRef`. */
+export interface McpServerRef {
+  name: string;
+}
+
+/**
+ * What the machine's MCP discovery found, or the fact that it cannot answer.
+ *
+ * Two shapes and not one with nullable fields, mirroring the control plane's:
+ * `{supported: false}` says the adapter implements no discovery at all (t400),
+ * and the check page must not read it as an engine that found nothing.
+ */
+export type ProbeMcp =
+  | { supported: false }
+  | {
+      supported: true;
+      servers: McpServerRef[];
+      origin: 'cli' | 'file';
+      resolved_at: string | null;
+    };
+
+/** The two directories a runner was pointed at, as they really are on disk. */
+export interface ProbeWorkspace {
+  working_dir: string;
+  working_dir_resolved: string;
+  is_git_repo: boolean;
+  worktrees_root: string;
+  worktrees_root_resolved: string;
+  worktrees_root_exists: boolean;
+  worktrees_root_writable: boolean;
+}
+
+/** What a runner reported about its own machine. */
+export interface ProbeReport {
+  cli: ProbeCli;
+  mcp: ProbeMcp;
+  workspace: ProbeWorkspace;
+}
+
+/**
+ * The stored probe, as `GET /v1/runners` embeds it.
+ *
+ * Mirrors `packages/core/src/repositories/runner-probes.ts`'s public shape and
+ * does not own it: nothing here validates, resolves or re-derives any of it —
+ * the screen draws what the machine said about itself, and the only thing that
+ * ever refuses a bad machine is a session that fails to open on it.
+ */
+export interface RunnerProbe extends ProbeReport {
+  runner_id: string;
+  reported_at: string;
+}
+
+/** A re-check an operator asked for, as `POST /v1/runners/:id/rechecks` answers. */
+export interface RunnerRecheck {
+  id: number;
+  runner_id: string;
+  requested_at: string;
+  /** When a probe answered it; `null` while it is still pending. */
+  served_at: string | null;
+}
+
+/**
+ * The three keys `GET`/`PATCH /v1/settings` hold per project (t403).
+ *
+ * Every one optional, and that is the wire: a project whose settings were never
+ * seeded answers with `project_id` and nothing else. The check page reads the
+ * absence as "no value recorded" and never as an empty string — the API refuses
+ * an empty string with `invalid_setting_value`, so the two are not the same
+ * fact.
+ */
+export interface Settings {
+  workspace_root?: string;
+  worktrees_root?: string;
+  engine?: string;
+}
+
 /** The last lease a runner lost to the deadline, inside {@link RunnerHealth}. */
 export interface RunnerExpiration {
   job_id: number;
@@ -126,6 +210,14 @@ export interface RunnerHealth {
   active_leases: number;
   last_heartbeat: string | null;
   last_expiration: RunnerExpiration | null;
+  /**
+   * The last thing this runner said about its own machine (t401), or `null`.
+   *
+   * `null` is a real answer and not a missing field: a machine that has said
+   * nothing about itself is a different state from one that reported a CLI it
+   * could not find, and the check page draws the two differently.
+   */
+  probe: RunnerProbe | null;
 }
 
 /** Event envelope, in the slice the timeline reads. */
@@ -355,6 +447,67 @@ export class ApiClient {
   async listRunners(): Promise<RunnerHealth[]> {
     const { runners } = await this.#get<{ runners: RunnerHealth[] }>('/v1/runners');
     return runners;
+  }
+
+  /**
+   * The local runner's recorded defaults for one project (t403).
+   *
+   * Scoped, unlike {@link listRunners} right above it, and the asymmetry is the
+   * data's: a runner is identity alone, while where it works is a per-project
+   * decision the operator took at the screen.
+   *
+   * @param filter Scope of the read; `project_id` is the only key that matters.
+   * @returns Whatever keys are recorded — possibly none at all.
+   */
+  async getSettings(filter: Filter = {}): Promise<Settings> {
+    return await this.#get<Settings>(`/v1/settings${queryString(filter)}`);
+  }
+
+  /**
+   * Writes settings — the screen's fourth write, and its first configuration one.
+   *
+   * The patch is sent whole and the project rides in the BODY, not the query:
+   * that is `PATCH /v1/settings`'s own convention, since a query string has no
+   * natural home for a write. Only the keys the caller passes are touched; a
+   * key not in the patch keeps whatever value it had.
+   *
+   * An empty string is deliberately not this method's problem to catch: the API
+   * refuses it with `invalid_setting_value`, and the one place that decision
+   * belongs is the form handler that knows a blank field is a field left alone.
+   *
+   * @param patch Keys to write; every one of them a non-empty string.
+   * @param filter Scope of the write.
+   * @returns The settings as they ended up.
+   * @throws {ApiError} When the control plane refuses.
+   */
+  async updateSettings(patch: Settings, filter: Filter = {}): Promise<Settings> {
+    return await this.#request<Settings>('/v1/settings', {
+      method: 'PATCH',
+      body: { ...patch, ...(filter.project_id === undefined ? {} : { project_id: filter.project_id }) },
+    });
+  }
+
+  /**
+   * Asks one runner to report about its machine again (t401).
+   *
+   * Nothing comes back that the check page draws: the request is recorded, the
+   * runner serves it on its next loop tick by reporting a fresh probe, and the
+   * page shows it when somebody reloads. There is no third route acknowledging
+   * it, and this screen does not poll for one.
+   *
+   * Idempotent upstream while a request is still pending, so an impatient
+   * second click queues no second re-check.
+   *
+   * @param runnerId The runner to re-probe.
+   * @returns The pending re-check, whether this call created it or found it.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async requestRunnerRecheck(runnerId: string): Promise<RunnerRecheck> {
+    const { recheck } = await this.#request<{ recheck: RunnerRecheck }>(
+      `/v1/runners/${encodeURIComponent(runnerId)}/rechecks`,
+      { method: 'POST' },
+    );
+    return recheck;
   }
 
   /**

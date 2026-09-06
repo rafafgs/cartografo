@@ -827,13 +827,28 @@ export interface SessionTranscript {
  * ticket existed never will. Both read back as "no transcript recorded", which
  * is the honest answer. Only a session id that names nothing is a 404.
  *
+ * A session of ANOTHER project is one more such id (t411). The refusal is the
+ * one a missing session already gets, and deliberately not a second one:
+ * a reference may not cross a project boundary, so from outside there is no
+ * session here — and a distinct code would leak which ids are taken elsewhere.
+ * Which project the session belongs to is {@link sessionProject}'s answer, read
+ * off its own `session.opened`, never derived from a job the session may not
+ * have (t157).
+ *
  * @param db Open handle.
  * @param id Session id.
- * @returns The transcript payload, or `null` if the session does not exist.
+ * @param projectId Scope of the caller; omitted, any project answers.
+ * @returns The transcript payload, or `null` if the session does not exist in
+ *   the scope asked for.
  */
-export function getSessionTranscript(db: Database, id: number): SessionTranscript | null {
+export function getSessionTranscript(
+  db: Database,
+  id: number,
+  projectId?: number,
+): SessionTranscript | null {
   const row = readRow(db, id);
   if (row === undefined) return null;
+  if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
   return {
     transcript: row.transcript,
     transcript_truncated: asBoolean(row.transcricao_truncada),
@@ -904,15 +919,25 @@ export function recordPermissionDenial(
  * "whoever wants the end of the session asks the session". Only the way to ask
  * was missing.
  *
- * The two filters add up as AND: they are slices, not modes.
+ * The three filters add up as AND: they are slices, not modes.
+ *
+ * The slice by project is the one that is NOT a column (t411, D25): `session`
+ * carries no `project_id` on purpose, and the scope is read off the session's
+ * own `session.opened` — the same place {@link sessionProject} reads it.
+ *
+ * A join to `job` would be shorter and would be wrong. `session.job_id` is
+ * nullable, so an inner join silently drops every job-less session — the
+ * discovery session, the conversation turn — from the listing of the project
+ * that owns it, trading a cross-project leak for a same-project data loss on
+ * exactly the case t157 exists to protect.
  *
  * @param db Open handle.
- * @param filter Optional slices by execution and by job.
+ * @param filter Optional slices by execution, by job and by project.
  * @returns Sessions in id order.
  */
 export function listSessions(
   db: Database,
-  filter: { execution_id?: number; job_id?: number } = {},
+  filter: { execution_id?: number; job_id?: number; project_id?: number } = {},
 ): Session[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -924,6 +949,18 @@ export function listSessions(
   if (filter.job_id !== undefined) {
     conditions.push('job_id = ?');
     values.push(filter.job_id);
+  }
+  if (filter.project_id !== undefined) {
+    // `event.entity_id` is TEXT for every entity of the log, so the id is
+    // compared as text — the same way `getEventsByEntity` binds it.
+    conditions.push(
+      `EXISTS (SELECT 1 FROM event
+                WHERE event.entity_type = 'session'
+                  AND event.entity_id = CAST(session.id AS TEXT)
+                  AND event.type = 'session.opened'
+                  AND event.project_id = ?)`,
+    );
+    values.push(filter.project_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;

@@ -440,6 +440,11 @@ async function blockEveryJob(plane: RunningControlPlane, projectId?: number): Pr
  * silence. Every case that wants a project OTHER than the default has to ask
  * for one here first.
  *
+ * `GET /v1/sessions` reads the same way since t411 — it resolves a session's
+ * scope through the `session.opened` event and refuses an undeclared project —
+ * so the wait below, which polls that route with this id, needs the project to
+ * exist for exactly the same reason the poll does.
+ *
  * @param plane The control plane to declare in.
  * @param name Name of the project; unique per plane, so each case brings its
  *   own.
@@ -1855,7 +1860,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74071',
+        `/v1/sessions?execution_id=74071&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
@@ -1953,7 +1958,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74081',
+        `/v1/sessions?execution_id=74081&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
@@ -2113,7 +2118,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74101',
+        `/v1/sessions?execution_id=74101&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
@@ -2184,7 +2189,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74111',
+        `/v1/sessions?execution_id=74111&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);

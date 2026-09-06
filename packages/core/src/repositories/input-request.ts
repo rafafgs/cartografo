@@ -92,6 +92,18 @@ const COLUMNS = `
   created_at, answered_at
 `;
 
+/**
+ * {@link COLUMNS}, qualified for the listing (t411).
+ *
+ * Derived and not written out a second time: `job` has an `id`, a `status`, a
+ * `node_id` and a `created_at` of its own, so the listing has to qualify every
+ * name the moment it may join — and two hand-kept copies of one list is how the
+ * projection silently loses a column somebody added to only one of them.
+ */
+const LIST_COLUMNS = COLUMNS.split(',')
+  .map((column) => `p.${column.trim()}`)
+  .join(', ');
+
 function toInputRequest(row: InputRequestRow): InputRequest {
   return {
     ...row,
@@ -447,33 +459,50 @@ export function autoResolveInputRequest(
  * payload of `input_request.answered` does not carry `job_id` — so that fact
  * never shows up in `GET /v1/jobs/:id/events`. The filters add up as AND.
  *
+ * The slice by project is the one that is NOT a column (t411, D25):
+ * `input_request` inherits the partition through its owner, and `job_id` is
+ * `NOT NULL`, so the scope is the join {@link getPrecedents} already runs —
+ * `JOIN job` and a `project_id` on the job. (The sibling filter on `session`
+ * cannot do this: a session's job is optional, and the join would drop the
+ * job-less ones. Here there is no such case.)
+ *
  * @param db Open handle.
- * @param filter Optional slices by status, execution and job.
+ * @param filter Optional slices by status, execution, job and project.
  * @returns Input requests in id order.
  */
 export function listInputRequests(
   db: Database,
-  filter: { status?: string; execution_id?: number; job_id?: number } = {},
+  filter: { status?: string; execution_id?: number; job_id?: number; project_id?: number } = {},
 ): InputRequest[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
   if (filter.status !== undefined) {
-    conditions.push('status = ?');
+    conditions.push('p.status = ?');
     values.push(filter.status);
   }
   if (filter.execution_id !== undefined) {
-    conditions.push('execution_id = ?');
+    conditions.push('p.execution_id = ?');
     values.push(filter.execution_id);
   }
   if (filter.job_id !== undefined) {
-    conditions.push('job_id = ?');
+    conditions.push('p.job_id = ?');
     values.push(filter.job_id);
+  }
+
+  // The join only exists when the scope does: with no project asked for, this
+  // is the query it always was, and `routes/jobs.ts`'s internal reads see no
+  // change at all.
+  let join = '';
+  if (filter.project_id !== undefined) {
+    join = 'JOIN job t ON t.id = p.job_id';
+    conditions.push('t.project_id = ?');
+    values.push(filter.project_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM input_request ${where} ORDER BY id`)
+    .prepare(`SELECT ${LIST_COLUMNS} FROM input_request p ${join} ${where} ORDER BY p.id`)
     .all(...values) as InputRequestRow[];
   return rows.map(toInputRequest);
 }
@@ -585,15 +614,23 @@ function roundScore(score: number): number {
  * cache before a large base exists would be optimizing against an imagined
  * problem — the ticket's gotcha note records when to revisit.
  *
+ * Since t411 the CALLER's scope is checked too: an input request whose owning
+ * job belongs to another project answers the same `null` an unknown id answers,
+ * and for the same reason the graph routes give one refusal for both — from
+ * outside the project that input request does not exist, and a second answer
+ * would say which ids are taken elsewhere.
+ *
  * @param db Open handle.
  * @param id Id of the queried input request (pending or not).
- * @param options `limit` of items; clamped to `[1, 20]`, default 5.
- * @returns Precedents in score order, or `null` if the input request does not exist.
+ * @param options `limit` of items, clamped to `[1, 20]`, default 5; `projectId`,
+ *   the scope of the caller, which omitted lets any project answer.
+ * @returns Precedents in score order, or `null` if the input request does not
+ *   exist in the scope asked for.
  */
 export function getPrecedents(
   db: Database,
   id: number,
-  options: { limit?: number } = {},
+  options: { limit?: number; projectId?: number } = {},
 ): Precedent[] | null {
   const target = readRow(db, id);
   if (target === undefined) return null;
@@ -604,6 +641,7 @@ export function getPrecedents(
   const owner = db
     .prepare('SELECT project_id FROM job WHERE id = ?')
     .get(target.job_id) as { project_id: number } | undefined;
+  if (options.projectId !== undefined && owner?.project_id !== options.projectId) return null;
   if (owner === undefined) return [];
 
   const limit = Math.min(

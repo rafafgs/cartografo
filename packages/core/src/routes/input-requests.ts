@@ -31,6 +31,7 @@ import {
   routeId,
   notFound,
   conflict,
+  requireProject,
   ERROR_RESPONSE_SCHEMA,
   OPEN_OBJECT_SCHEMA,
   type ErrorResponse,
@@ -140,6 +141,9 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
 
   app.get('/input-requests', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const query = request.query as {
         status?: string;
         execution_id?: string;
@@ -158,6 +162,10 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         status,
         execution_id: executionId,
         job_id: jobId,
+        // The scope is the owning job's project (t411, D25): `input_request`
+        // has no `project_id` of its own, and inherits the partition through
+        // the FK it already has.
+        project_id: scope.project.id,
       });
       return { input_requests: found };
     }),
@@ -167,11 +175,21 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
   // `GET /input-requests`: embedded in the listing it would cost a similarity
   // scan of every row against every answered row on every call, to serve
   // information that only matters when somebody opens ONE of them to answer it.
+  //
+  // Scoped since t411, and with the SAME 404 an unknown id gets: an input
+  // request of another project is not one this project can look up, and a
+  // second refusal here would leak which ids are taken elsewhere.
   app.get('/input-requests/:id/precedents', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const query = request.query as { limit?: string };
       const limit = integerFromQuery('limit', query.limit);
-      const found = getPrecedents(db, routeId(request.params), { limit });
+      const found = getPrecedents(db, routeId(request.params), {
+        limit,
+        projectId: scope.project.id,
+      });
       // An empty list is a legitimate response: "nobody asked this before" is a
       // fact about the project, not a failure of the query.
       return found === null ? notFound(reply, 'input request') : { precedents: found };

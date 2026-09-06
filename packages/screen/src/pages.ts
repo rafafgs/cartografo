@@ -292,8 +292,18 @@ function jobBoard(jobs: Job[]): string {
  * Every row gets the link, including the sessions still open: the route answers
  * for them too, and a link that only appears after the fact is a link nobody
  * looks for.
+ *
+ * The link carries the page's OWN project (t411). `GET /v1/sessions/:id/
+ * transcript` resolves the session's project through its `session.opened` and
+ * refuses one opened elsewhere, so a bare link would 404 for every project but
+ * the default one — the fix to the leak breaking the link the same day. The
+ * proxy forwards the query string verbatim, so nothing else has to change.
+ *
+ * @param sessions The sessions of the page, in the order they are shown.
+ * @param projectId The project the page is being read under.
+ * @returns The table, or the empty-state paragraph.
  */
-function sessionsTable(sessions: Session[]): string {
+function sessionsTable(sessions: Session[], projectId: number): string {
   if (sessions.length === 0) return '<p class="vazio">No sessions in this execution.</p>';
 
   const rows = sessions.map((session) => {
@@ -309,7 +319,7 @@ function sessionsTable(sessions: Session[]): string {
       <td>${escapeHtml(session.opened_at)}</td>
       <td>${session.finished_at === null ? '<span class="vazio">in progress</span>' : escapeHtml(session.finished_at)}</td>
       <td>${escapeHtml(usage)}</td>
-      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript">see output</a></td>
+      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript?project_id=${projectId}">see output</a></td>
     </tr>`;
   });
 
@@ -1065,7 +1075,7 @@ export async function executionPage(
       `<h2>execution #${executionId} · ${jobs.length} job(s)</h2>
 ${jobBoard(jobs)}
 <h2>sessions</h2>
-${sessionsTable(sessions)}
+${sessionsTable(sessions, project_id)}
 <h2>pending questions</h2>
 ${questionQueue}`,
       scope,

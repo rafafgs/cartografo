@@ -2146,3 +2146,190 @@ test('t269 AT3 — a `resultado` that is not a label is refused exactly as befor
     assert.equal(finished.body.output, null, 'and what was refused is not stored');
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* Reads that resolve the project through the owner (t411)                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The project every t411 case reads from, next to the default one.
+ *
+ * Declared through `POST /v1/projects` and not written by hand, because the
+ * routes under test refuse a scope no project answers to (`unknown_project`) —
+ * the same 404 `GET /v1/classes?project_id=99` already gives. `OTHER_PROJECT`
+ * above stays what it is: t157's cases are about the EVENT the session records,
+ * and never ask a scoped route for it.
+ */
+async function declareSecondProject(ctx: TestContext): Promise<number> {
+  const created = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  return created.body.id;
+}
+
+/** Opens a session with whatever body the case needs, on top of the usual one. */
+async function openSessionWith(
+  ctx: TestContext,
+  body: Record<string, unknown>,
+): Promise<Session> {
+  const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'do something and report what happened',
+    ...body,
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body;
+}
+
+test('t411 — GET /v1/sessions?project_id= lists only that project\'s sessions', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  // The two shapes the partition has to cover, and they do NOT resolve the same
+  // way: the first inherits the project from its job, the second has no job at
+  // all and only its own `session.opened` knows where it belongs (t157).
+  const theirJob = await createJob(ctx, {
+    title: 'of the second project',
+    entry_node_id: 'entrada',
+    project_id: second,
+    execution_id: 7,
+  });
+  const theirServing = await openSessionWith(ctx, { job_id: theirJob.id, execution_id: 7 });
+  const theirBare = await openSessionWith(ctx, { project_id: second, execution_id: 7 });
+  assert.equal(theirBare.job_id, null, 'the job-less case is the one t157 exists for');
+
+  const myJob = await createJob(ctx, {
+    title: 'of the default project',
+    entry_node_id: 'entrada',
+    execution_id: 7,
+  });
+  const myServing = await openSessionWith(ctx, { job_id: myJob.id, execution_id: 7 });
+  const myBare = await openSessionWith(ctx, { execution_id: 7 });
+
+  const theirs = await request<{ sessions: Session[] }>(
+    ctx,
+    'GET',
+    `/v1/sessions?project_id=${second}`,
+  );
+  assert.equal(theirs.status, 200, JSON.stringify(theirs.body));
+  assert.deepEqual(
+    theirs.body.sessions.map((session) => session.id),
+    [theirServing.id, theirBare.id],
+    'both sessions of the second project, and only those, in id order',
+  );
+
+  // The other side of the same boundary, and the proof the job-less session did
+  // not simply fall out of every listing.
+  const mine = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?project_id=1');
+  assert.equal(mine.status, 200);
+  assert.deepEqual(
+    mine.body.sessions.map((session) => session.id),
+    [myServing.id, myBare.id],
+    "the default project keeps its own job-less session: the scope is a filter, not a job join",
+  );
+
+  // The slices still add up as AND on top of the scope.
+  const byJob = await request<{ sessions: Session[] }>(
+    ctx,
+    'GET',
+    `/v1/sessions?project_id=${second}&job_id=${theirJob.id}`,
+  );
+  assert.deepEqual(
+    byJob.body.sessions.map((session) => session.id),
+    [theirServing.id],
+  );
+});
+
+test('t411 — GET /v1/sessions with no project_id still answers the default project', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const job = await createJob(ctx, { title: 'mine', entry_node_id: 'entrada', execution_id: 7 });
+  const serving = await openSessionWith(ctx, { job_id: job.id, execution_id: 7 });
+  const bare = await openSessionWith(ctx, { execution_id: 7 });
+  await openSessionWith(ctx, { project_id: second, execution_id: 7 });
+
+  const listed = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(
+    listed.body.sessions.map((session) => session.id),
+    [serving.id, bare.id],
+    'an absent scope is the default project, exactly as every other route reads it',
+  );
+});
+
+test('t411 — GET /v1/sessions?project_id=<unknown> is a 404 unknown_project', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  await openSessionWith(ctx, { execution_id: 7 });
+
+  const refused = await request<{ error: string; project_id: number }>(
+    ctx,
+    'GET',
+    '/v1/sessions?project_id=99',
+  );
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project');
+  assert.equal(refused.body.project_id, 99, 'the refusal names the scope nobody answers to');
+});
+
+test('t411 — the transcript refuses a session of another project, and answers its own', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const theirJob = await createJob(ctx, {
+    title: 'of the second project',
+    entry_node_id: 'entrada',
+    project_id: second,
+    execution_id: 7,
+  });
+  const theirs = await openSessionWith(ctx, { job_id: theirJob.id, execution_id: 7 });
+  const output = 'error: I died here, and without this nobody knows why';
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${theirs.id}/finish`, {
+    status: 'failed',
+    exit_code: 1,
+    transcript: output,
+  });
+  assert.equal(finished.status, 200);
+
+  // The SAME refusal an unknown id gets, and deliberately not a second one: a
+  // reference may not cross a project boundary, so from here that session does
+  // not exist (`routes/graphs.ts`'s cross-project check makes the same reading).
+  const fromDefault = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/transcript?project_id=1`,
+  );
+  assert.equal(fromDefault.status, 404, JSON.stringify(fromDefault.body));
+  assert.equal(fromDefault.body.error, 'not_found');
+
+  const undeclared = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/transcript`,
+  );
+  assert.equal(undeclared.status, 404, 'an absent scope is the default project, not "any"');
+
+  const fromTheirs = await request<Transcript>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/transcript?project_id=${second}`,
+  );
+  assert.equal(fromTheirs.status, 200, JSON.stringify(fromTheirs.body));
+  assert.equal(fromTheirs.body.transcript, output);
+
+  // ...and the default project's own session is untouched by the scoping.
+  const mine = await openSessionWith(ctx, { execution_id: 7 });
+  await request<Session>(ctx, 'PATCH', `/v1/sessions/${mine.id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    transcript: 'all good',
+  });
+  const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${mine.id}/transcript`);
+  assert.equal(read.status, 200);
+  assert.equal(read.body.transcript, 'all good');
+});

@@ -180,14 +180,40 @@ export function proposalStatusColumn(value: string): ProposalStatus | undefined 
 }
 
 /**
+ * The proposal with this id, optionally only if it lives in a given project.
+ *
+ * `projectId` is OPTIONAL and that asymmetry is the design (t412, FR1). Two
+ * kinds of caller read a proposal by id, and they are asking different
+ * questions:
+ *
+ * - a ROUTE holds an id a stranger typed, so it has to say which project it is
+ *   working in; a row of another project then reads as `undefined`, which is
+ *   what turns a boundary into the same `404` an unknown id already gets;
+ * - the writers in this very file (`applyProposal`, `revertProposal`,
+ *   `approveProposal`, `rejectProposal`, `rejectProposalByHuman`,
+ *   `recordVerdict`, `appendProposalEvidence`) re-read a row they just wrote
+ *   inside their own transaction. They already hold the proposal, and its
+ *   partition with it; making them pass it back would be asking them to prove
+ *   something they are the source of.
+ *
+ * A required parameter would have collapsed the two into one, and the collapse
+ * would have gone the wrong way: every internal re-read would need a project it
+ * has no reason to carry, and the first caller that filled it in with
+ * `DEFAULT_PROJECT` would have made the filter a lie.
+ *
  * @param db Open database.
  * @param id Proposal id.
+ * @param projectId Partition to read inside; every project when unstated.
  * @returns The hydrated proposal, or `undefined`.
  */
-export function getProposal(db: Database, id: number): Proposal | undefined {
-  const row = db.prepare(`SELECT ${COLUMNS} FROM proposal WHERE id = ?`).get(id) as
-    | RawRow
-    | undefined;
+export function getProposal(db: Database, id: number, projectId?: number): Proposal | undefined {
+  const row = (
+    projectId === undefined
+      ? db.prepare(`SELECT ${COLUMNS} FROM proposal WHERE id = ?`).get(id)
+      : db
+          .prepare(`SELECT ${COLUMNS} FROM proposal WHERE project_id = ? AND id = ?`)
+          .get(projectId, id)
+  ) as RawRow | undefined;
   return row === undefined ? undefined : hydrate(row);
 }
 
@@ -257,17 +283,32 @@ export function createProposal(
  * key to look up, and the `null` bucket is a real key over a `null` lens, not an
  * absent column. Matching NULL here would be matching every unkeyed row at once.
  *
+ * `project_id` is in the `WHERE` and is REQUIRED, unlike {@link getProposal}'s
+ * (t412, FR2). It is not a filter a caller may leave off: the index this lookup
+ * backs has been `(project_id, dedupe_key)` since
+ * `migrations/0026_project_partition.sql`, so a search that leaves the project
+ * out is asking a different question from the one uniqueness answers. What it
+ * cost while the two disagreed was concrete — the same signal replayed in
+ * project 2 found project 1's still-pending proposal and appended its evidence
+ * to it, merging two hypotheses about two different graphs that only happen to
+ * share a class name.
+ *
  * @param db Open database.
  * @param dedupeKey The key `proposalDedupeKey` computed for the incoming signal.
+ * @param projectId Partition the incoming signal belongs to.
  * @returns The hydrated proposal, or `undefined` when nothing pending matches.
  */
 export function findPendingProposalByDedupeKey(
   db: Database,
   dedupeKey: string,
+  projectId: number,
 ): Proposal | undefined {
   const row = db
-    .prepare(`SELECT ${COLUMNS} FROM proposal WHERE dedupe_key = ? AND status = 'pending'`)
-    .get(dedupeKey) as RawRow | undefined;
+    .prepare(
+      `SELECT ${COLUMNS} FROM proposal
+        WHERE project_id = ? AND dedupe_key = ? AND status = 'pending'`,
+    )
+    .get(projectId, dedupeKey) as RawRow | undefined;
   return row === undefined ? undefined : hydrate(row);
 }
 
@@ -620,6 +661,8 @@ export function recordVerdict(db: Database, data: VerdictRecord): Proposal {
 
 /** Optional cuts of the proposal listing (t112, FR8). */
 export interface ProposalFilter {
+  /** Partition to list; every project when unstated (t412, FR3). */
+  project_id?: number;
   status?: string;
   /** Read out of `result.veredito`; a proposal with no outcome never matches. */
   veredito?: string;
@@ -640,6 +683,10 @@ export function listProposals(db: Database, filter: ProposalFilter = {}): Propos
   const conditions: string[] = [];
   const values: unknown[] = [];
 
+  if (filter.project_id !== undefined) {
+    conditions.push('project_id = ?');
+    values.push(filter.project_id);
+  }
   if (filter.status !== undefined) {
     conditions.push('status = ?');
     values.push(filter.status);

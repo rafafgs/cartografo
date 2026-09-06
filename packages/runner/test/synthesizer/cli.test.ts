@@ -265,6 +265,66 @@ test('t230 — --classe and --saida are not aliases of --class and --out', async
   assert.ok(!HELP.includes('--saida'), `the help text still documents --saida:\n${HELP}`);
 });
 
+/* -------------------------------------------------------------------------- */
+/* t420 — `--project` scopes the synthesizer's reads to a project (D25).      */
+/* -------------------------------------------------------------------------- */
+
+test('t420 — --project absent resolves to the default project, 1', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  const parsed = parseArguments(['a declaration', '--class', 'artigo-revisado'], EMPTY_ENV);
+
+  assert.ok(parsed.kind === 'run');
+  assert.equal(parsed.options.projectId, 1);
+});
+
+test('t420 — --project 7 resolves to 7', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  const parsed = parseArguments(
+    ['a declaration', '--class', 'artigo-revisado', '--project', '7'],
+    EMPTY_ENV,
+  );
+
+  assert.ok(parsed.kind === 'run');
+  assert.equal(parsed.options.projectId, 7);
+});
+
+test('t420 — a --project that is not a positive integer is a usage refusal', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  for (const raw of ['abc', '0', '-1', '1.5']) {
+    const parsed = parseArguments(
+      ['a declaration', '--class', 'artigo-revisado', '--project', raw],
+      EMPTY_ENV,
+    );
+
+    assert.ok(parsed.kind === 'usage', `--project ${raw} did not refuse`);
+    assert.equal(
+      parsed.message,
+      `--project has to be a positive integer (got: "${raw}")`,
+      'byte-identical to cli/index.ts\'s own positiveInteger, save for the flag name',
+    );
+  }
+});
+
+test('t420 — --help documents --project and its default', () => {
+  const result = runCli(['--help']);
+
+  assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /--project <id>/);
+  assert.match(result.stdout, /default 1/);
+});
+
+test('t420 — a bad --project exits 2 before the `claude` CLI is even probed', () => {
+  // No PATH manipulation needed: the refusal is argument parsing, which
+  // happens before `verifyCli` is ever called.
+  const result = runCli(['a declaration', '--class', 'x', '--project', 'abc']);
+
+  assert.equal(result.status, 2, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stderr, /--project/, 'the message names the flag that is wrong');
+});
+
 test('t180 — a missing `claude` CLI says so in English', () => {
   assert.ok(existsSync(CLI_PATH), 'artifact does not exist yet: packages/runner/src/synthesizer/cli.mjs');
 

@@ -286,13 +286,22 @@ export interface NewJob {
   actor?: Actor;
 }
 
-/** The slice asked of a listing route. */
+/**
+ * The slice asked of a listing route.
+ *
+ * `project_id` is the partition and not a filter like the others (D25): every
+ * route this package reaches defaults it to project 1 when it is left out, so
+ * omitting it here means exactly what it meant before D25 partitioned the
+ * control plane. Same shape `packages/screen/src/client.ts`'s own `Filter`
+ * carries, for the same reason.
+ */
 export interface Filter {
   execution_id?: number;
   job_id?: number;
   status?: string;
   graph_id?: string;
   id?: string;
+  project_id?: number;
 }
 
 /**
@@ -361,8 +370,14 @@ function queryString(filter: Filter): string {
   if (filter.status !== undefined) params.set('status', filter.status);
   if (filter.graph_id !== undefined) params.set('graph_id', filter.graph_id);
   if (filter.id !== undefined) params.set('id', filter.id);
+  if (filter.project_id !== undefined) params.set('project_id', String(filter.project_id));
   const text = params.toString();
   return text === '' ? '' : `?${text}`;
+}
+
+/** `?project_id=...`, or `''` when none was given — for the single-purpose read methods that take no {@link Filter}. */
+function projectQuery(projectId: number | undefined): string {
+  return projectId === undefined ? '' : `?project_id=${projectId}`;
 }
 
 /**
@@ -406,26 +421,33 @@ export class ApiClient {
   }
 
   /** The problem classes that exist, with the version in force for each. */
-  async listClasses(): Promise<ClassRow[]> {
-    const { classes } = await this.#get<{ classes: ClassRow[] }>('/v1/classes');
+  async listClasses(projectId?: number): Promise<ClassRow[]> {
+    const { classes } = await this.#get<{ classes: ClassRow[] }>(
+      `/v1/classes${projectQuery(projectId)}`,
+    );
     return classes;
   }
 
   /** Every lineage: the bases and the variants forked off them (D13). */
-  async listGraphs(): Promise<GraphRow[]> {
-    const { graphs } = await this.#get<{ graphs: GraphRow[] }>('/v1/graphs');
+  async listGraphs(projectId?: number): Promise<GraphRow[]> {
+    const { graphs } = await this.#get<{ graphs: GraphRow[] }>(
+      `/v1/graphs${projectQuery(projectId)}`,
+    );
     return graphs;
   }
 
   /**
    * One version, with the frozen document it holds.
    *
-   * @param id Version id (the canonical hash of the document).
-   * @returns The version, or `null` when there is none by that id.
+   * @param id Version id (the canonical hash of the document — unique per
+   *   project since D25, not globally).
+   * @param projectId Project to resolve the id in. Default: project 1.
+   * @returns The version, or `null` when there is none by that id in that
+   *   project.
    */
-  async getGraphVersion(id: string): Promise<GraphVersion | null> {
+  async getGraphVersion(id: string, projectId?: number): Promise<GraphVersion | null> {
     const body = await this.#getOrNull<{ graph_version: GraphVersion }>(
-      `/v1/graph-versions/${encodeURIComponent(id)}`,
+      `/v1/graph-versions/${encodeURIComponent(id)}${projectQuery(projectId)}`,
     );
     return body === null ? null : body.graph_version;
   }
@@ -435,12 +457,17 @@ export class ApiClient {
    *
    * @param document The graph document, whole — the same shape
    *   `factory-graphs/<class>/graph.json` carries.
+   * @param projectId Project to register it in. Default: project 1. Sent as a
+   *   query parameter, never inside `document`: the body is the
+   *   content-addressed graph document, and a `project_id` field inside it
+   *   would change the hash (mirrors `packages/core/src/cli/import.ts`'s
+   *   convention for the same route).
    * @returns Whatever the control plane recorded, untouched.
    * @throws {ApiError} On a refused document (`422`) or a class that already
    *   exists (`409`).
    */
-  async registerGraph(document: unknown): Promise<Record<string, unknown>> {
-    return await this.#request<Record<string, unknown>>('/v1/graphs', {
+  async registerGraph(document: unknown, projectId?: number): Promise<Record<string, unknown>> {
+    return await this.#request<Record<string, unknown>>(`/v1/graphs${projectQuery(projectId)}`, {
       method: 'POST',
       body: document,
     });
@@ -472,20 +499,25 @@ export class ApiClient {
    * One job.
    *
    * @param id Job id.
-   * @returns The job, or `null` when the control plane says it does not exist.
+   * @param projectId Project to resolve it in. Default: project 1.
+   * @returns The job, or `null` when the control plane says it does not exist
+   *   (including a job that exists but belongs to a different project).
    */
-  async getJob(id: number): Promise<Job | null> {
-    return await this.#getOrNull<Job>(`/v1/jobs/${id}`);
+  async getJob(id: number, projectId?: number): Promise<Job | null> {
+    return await this.#getOrNull<Job>(`/v1/jobs/${id}${projectQuery(projectId)}`);
   }
 
   /**
    * The raw timeline of a job, from the event log.
    *
    * @param id Job id.
+   * @param projectId Project to resolve the job in. Default: project 1.
    * @returns Events in order, or `null` if the job does not exist.
    */
-  async jobEvents(id: number): Promise<Event[] | null> {
-    const body = await this.#getOrNull<{ events: Event[] }>(`/v1/jobs/${id}/events`);
+  async jobEvents(id: number, projectId?: number): Promise<Event[] | null> {
+    const body = await this.#getOrNull<{ events: Event[] }>(
+      `/v1/jobs/${id}/events${projectQuery(projectId)}`,
+    );
     return body === null ? null : body.events;
   }
 
@@ -522,15 +554,21 @@ export class ApiClient {
    * What one session printed, as the engine printed it.
    *
    * @param id Session id.
-   * @returns The transcript envelope, or `null` if the session does not exist.
+   * @param projectId Project to resolve the session in. Default: project 1.
+   * @returns The transcript envelope, or `null` if the session does not
+   *   exist (including a session that belongs to a different project).
    */
-  async sessionTranscript(id: number): Promise<Transcript | null> {
-    return await this.#getOrNull<Transcript>(`/v1/sessions/${id}/transcript`);
+  async sessionTranscript(id: number, projectId?: number): Promise<Transcript | null> {
+    return await this.#getOrNull<Transcript>(
+      `/v1/sessions/${id}/transcript${projectQuery(projectId)}`,
+    );
   }
 
   /** The executions that exist, with the counts of each. */
-  async listExecutions(): Promise<ExecutionSummary[]> {
-    const { executions } = await this.#get<{ executions: ExecutionSummary[] }>('/v1/executions');
+  async listExecutions(projectId?: number): Promise<ExecutionSummary[]> {
+    const { executions } = await this.#get<{ executions: ExecutionSummary[] }>(
+      `/v1/executions${projectQuery(projectId)}`,
+    );
     return executions;
   }
 

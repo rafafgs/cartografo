@@ -17,12 +17,12 @@ strength of its own history.
 ## What you can do with it
 
 **Install it and bring it up in one command.** `npx cartografo` creates the
-local database, brings up the server, starts the interface and one local worker
+local database, brings up the server, starts the interface and one local runner
 beside it, and opens your browser on the interface — no second terminal, no
 token to paste, nothing to answer. One `Ctrl-C` takes all three down again, and
 `--no-browser`, `--no-runner` and `--no-screen` leave out whichever part you did
 not want. Everything on your machine; everything the screen shows comes from a
-public API any tool can consume, and the interface and the worker are separate
+public API any tool can consume, and the interface and the runner are separate
 processes with no privilege of their own — being started for you changes
 nothing about that.
 

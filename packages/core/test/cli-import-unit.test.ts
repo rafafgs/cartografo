@@ -386,7 +386,7 @@ test('a bundle offers every manifest to the registry before the graph', async (t
  */
 
 /** A registry that already holds every manifest of the bundle, unchanged. */
-function knownRegistry(): (request: { path: string; body?: unknown }) => FakeAnswer {
+function knownRegistry(): (request: { route: string; body?: unknown }) => FakeAnswer {
   return (request) =>
     request.route === '/v1/skills' ? { status: 200, body: request.body } : accepting()(request);
 }

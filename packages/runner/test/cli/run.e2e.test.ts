@@ -25,12 +25,22 @@
  * fixture nobody reads.
  *
  * **One control plane for the whole file, and every subtest cleans up after
- * itself.** `GET /v1/jobs` is not scoped by project, so a job left released by
- * one subtest is a candidate for the next subtest's runner — which is how a
- * dispatch nobody asked for shows up in the middle of a shutdown measurement.
- * The cleanup is `blockEveryJob`, in each subtest's `after`: blocked work is
- * nobody's candidate, and blocking is the only API verb that takes a job out of
- * the queue without pretending it was finished.
+ * itself.** A job left released by one subtest is a candidate for the next
+ * subtest's runner — which is how a dispatch nobody asked for shows up in the
+ * middle of a shutdown measurement. The cleanup is `blockEveryJob`, in each
+ * subtest's `after`: blocked work is nobody's candidate, and blocking is the
+ * only API verb that takes a job out of the queue without pretending it was
+ * finished.
+ *
+ * Since t410 that candidacy is bounded by the PROJECT: `GET /v1/jobs` reads one
+ * project's board, so the t162 block below (which works in the default project
+ * throughout) still needs the cleanup between its cases, while the t404 block
+ * gives each case a project of its own and could not contaminate a sibling even
+ * without it. `blockEveryJob` and `planeState` therefore take the project whose
+ * board to read — the same number the case's own runner polls — because a
+ * cleanup or a diagnostic that reads a different board than the runner is worse
+ * than none: it reports "the control plane holds nothing" while the job sits
+ * released one partition over.
  *
  * English per D18.
  */
@@ -326,11 +336,18 @@ async function api<T>(
  * held by a lease that never came back, or may have opened a session that never
  * finished, and those are three different bugs. This is what tells them apart
  * on a machine nobody can attach a debugger to.
+ *
+ * @param plane The control plane to read.
+ * @param projectId Board to read, which has to be the one the case's runner
+ *   polls (t410): omitted, the server's default project answers, and a case
+ *   working in a project of its own would be told the plane holds nothing while
+ *   its job sits released one partition over.
  */
-async function planeState(plane: RunningControlPlane): Promise<string> {
+async function planeState(plane: RunningControlPlane, projectId?: number): Promise<string> {
   const lines: string[] = [];
+  const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
   try {
-    const { jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
+    const { jobs } = await api<{ jobs: Job[] }>(plane, 'GET', `/v1/jobs${scope}`);
     for (const job of jobs) {
       lines.push(
         `job ${String(job.id)} node=${job.current_node_id ?? '-'} blocked=${String(job.blocked)}` +
@@ -359,18 +376,25 @@ async function planeState(plane: RunningControlPlane): Promise<string> {
  * The deadline reports the state that outlasted it. Without that a timeout is
  * only the sentence "it did not happen", which is where a CI-only failure goes
  * to sit undiagnosed.
+ *
+ * @param label What was being waited for, as the message says it.
+ * @param check The condition; polled until it answers true or the deadline
+ *   passes.
+ * @param plane Read for the state report on the failure path only.
+ * @param projectId Board that report reads (t410) — see {@link planeState}.
  */
 async function waitFor(
   label: string,
   check: () => Promise<boolean>,
   plane?: RunningControlPlane,
+  projectId?: number,
 ): Promise<void> {
   const deadline = Date.now() + DEADLINE_MS;
   while (Date.now() < deadline) {
     if (await check()) return;
     await delay(50);
   }
-  const state = plane === undefined ? '' : `\n${await planeState(plane)}`;
+  const state = plane === undefined ? '' : `\n${await planeState(plane, projectId)}`;
   throw new Error(`${label} did not happen within ${DEADLINE_MS}ms${state}`);
 }
 
@@ -390,13 +414,40 @@ async function leasesOfJob(plane: RunningControlPlane, jobId: number): Promise<L
  * The cleanup this file's header explains: a job that finished a dispatch is
  * still released (advancing a node is t109's, not this ticket's), so without
  * this the next subtest's runner would find it and dispatch it again.
+ *
+ * @param plane The control plane to clean.
+ * @param projectId Board to clean (t410): omitted, the default project's, which
+ *   is the one every case of the t162 block works in. A case working in a
+ *   project of its own has to name it, or the cleanup would block a stranger's
+ *   jobs and leave its own released.
  */
-async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
-  const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
+async function blockEveryJob(plane: RunningControlPlane, projectId?: number): Promise<void> {
+  const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
+  const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', `/v1/jobs${scope}`);
   for (const job of jobs) {
     if (job.blocked) continue;
     await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'end of the test case' });
   }
+}
+
+/**
+ * Declares a project and answers the id the control plane allocated for it.
+ *
+ * Read back rather than assumed (t410): a project is a REGISTERED entity since
+ * t354, its id comes from the database, and `GET /v1/jobs` reads one project's
+ * board — a number nobody declared answers `404 unknown_project`, so a runner
+ * polling one would poll a board that does not exist and dispatch nothing, in
+ * silence. Every case that wants a project OTHER than the default has to ask
+ * for one here first.
+ *
+ * @param plane The control plane to declare in.
+ * @param name Name of the project; unique per plane, so each case brings its
+ *   own.
+ * @returns The allocated project id.
+ */
+async function declareProject(plane: RunningControlPlane, name: string): Promise<number> {
+  const { id } = await api<{ id: number }>(plane, 'POST', '/v1/projects', { name }, 201);
+  return id;
 }
 
 /**
@@ -508,12 +559,28 @@ interface Crossing {
  *
  * Extracted from the t162 block when t404 needed the same graph on a plane of
  * its own: the codex case of that ticket only means anything on a node that
- * DECLARES codex, and a class has one base lineage per plane.
+ * DECLARES codex, and a class has one base lineage per project.
+ *
+ * The PROJECT is a parameter since t410, when `POST /v1/jobs` began refusing a
+ * `graph_version_id` that resolves only in another project
+ * (`409 cross_project_reference`). A job citing this version therefore has to be
+ * created in the project the version was registered in, and t404's cases each
+ * work in one of their own — so each of them registers the crossing into its
+ * own partition. The version id is the same string every time and that is not a
+ * collision: it is the hash of the document, which `POST /v1/graphs` strips the
+ * scope out of before hashing, so one content hash legitimately exists once per
+ * project (D25).
  *
  * @param plane The control plane to register into.
+ * @param projectId Project to register into; omitted, the default one.
  * @returns The registered manifest and the graph version to cite.
  */
-async function registerCrossing(plane: RunningControlPlane): Promise<Crossing> {
+async function registerCrossing(
+  plane: RunningControlPlane,
+  projectId?: number,
+): Promise<Crossing> {
+  /** The scope, as a body field both routes read and then strip. */
+  const scope = projectId === undefined ? {} : { project_id: projectId };
   // Registered once and shared: the two subtests that need a node declaring an
   // engine need the SAME class, and a class only has one base lineage.
   //
@@ -528,7 +595,7 @@ async function registerCrossing(plane: RunningControlPlane): Promise<Crossing> {
     plane,
     'POST',
     '/v1/skills',
-    skillFixture(),
+    { ...skillFixture(), ...scope },
     201,
   );
   const fixture = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8')) as Record<string, unknown>;
@@ -573,7 +640,7 @@ async function registerCrossing(plane: RunningControlPlane): Promise<Crossing> {
     plane,
     'POST',
     '/v1/graphs',
-    document,
+    { ...document, ...scope },
     201,
   );
 
@@ -1618,10 +1685,19 @@ test('t332 — the shell route is built here, never asked of the --engine factor
 /* control plane for its project's settings (t403's `GET /v1/settings`) and    */
 /* uses `workspace_root`/`worktrees_root`/`engine` from there.                 */
 /*                                                                            */
-/* A control plane of its own, and every case works under a project id of its  */
+/* A control plane of its own, and every case works under a project of its     */
 /* own: the settings are per project, and the default project is the ONE the   */
 /* control plane seeds at startup — with paths under the operator's home       */
 /* directory, which is the last place a test may cut a worktree into.          */
+/*                                                                            */
+/* That project is DECLARED, through `POST /v1/projects`, and the id comes     */
+/* back from the database (t410). These cases used to invent one — 74_047 and  */
+/* its neighbours — which worked only for as long as nothing read the          */
+/* partition: `GET /v1/settings` still answers for an id nobody declared, so    */
+/* the settings half of each case never noticed, but the dispatch half polls    */
+/* `GET /v1/jobs`, and that route answers `404 unknown_project` now. The        */
+/* invented number was a premise, not a value, and it is the premise that is    */
+/* replaced here — every assertion below is untouched.                          */
 /* -------------------------------------------------------------------------- */
 
 /** A control plane reached through a proxy that counts what went through it. */
@@ -1718,7 +1794,6 @@ async function proxyControlPlane(
 
 test('t404 — a runner with no paths of its own falls back to the control plane\'s settings', async (parent) => {
   const plane = await bootControlPlane(parent);
-  const { versionId } = await registerCrossing(plane);
 
   /** Writes a project's settings, with the operator credential t405 will hand out. */
   const seedSettings = async (
@@ -1731,11 +1806,11 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT7 — with nothing given, the paths and the engine come from the settings', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_047;
+    const projectId = await declareProject(plane, 't404-at7');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at7');
     const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
-      await blockEveryJob(plane);
+      await blockEveryJob(plane, projectId);
     });
 
     await seedSettings(projectId, {
@@ -1783,7 +1858,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
         '/v1/sessions?execution_id=74071',
       );
       return sessions.some((session) => session.status === 'completed');
-    }, plane);
+    }, plane, projectId);
 
     await runner.stop();
 
@@ -1825,12 +1900,12 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT8 — with both paths given, GET /v1/settings is never called at all', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_048;
+    const projectId = await declareProject(plane, 't404-at8');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at8');
     const unused = initRepo(t, 't404-at8-unused');
     const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
-      await blockEveryJob(plane);
+      await blockEveryJob(plane, projectId);
     });
 
     // Seeded, and seeded with a DIFFERENT workspace: if the fetch happened and
@@ -1881,7 +1956,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
         '/v1/sessions?execution_id=74081',
       );
       return sessions.some((session) => session.status === 'completed');
-    }, plane);
+    }, plane, projectId);
 
     await runner.stop();
 
@@ -1909,9 +1984,14 @@ test('t404 — a runner with no paths of its own falls back to the control plane
     const { runRunner, SettingsFallbackError } = await loadModule<typeof RunModule>(RUN_MODULE);
     const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
 
-    // A project nobody ever seeded: `GET /v1/settings` answers `{project_id}`
-    // alone, which is a 200 carrying nothing this runner can start on.
-    const unseeded = 74_099;
+    // A project declared and never SEEDED: `POST /v1/projects` writes no
+    // settings row, so `GET /v1/settings` answers `{project_id}` alone, which is
+    // a 200 carrying nothing this runner can start on. Declared like every
+    // other case's (t410) even though this one never reaches the job board —
+    // it fails resolving the settings, before the first poll — because "a
+    // project that exists and holds no settings" is the case's real subject,
+    // and an id nobody declared would confuse it with a different refusal.
+    const unseeded = await declareProject(plane, 't404-at9-unseeded');
 
     await assert.rejects(
       async () =>
@@ -1977,11 +2057,15 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT10 — an explicit engine beats the one the settings hold', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_100;
+    const projectId = await declareProject(plane, 't404-at10');
+    // Into THIS project, not the default one: since t410 `POST /v1/jobs`
+    // refuses a `graph_version_id` that resolves only somewhere else
+    // (`409 cross_project_reference`), and the job below cites this version.
+    const { versionId } = await registerCrossing(plane, projectId);
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at10');
     const record = path.join(scratch, 'dispatch-codex.json');
     t.after(async () => {
-      await blockEveryJob(plane);
+      await blockEveryJob(plane, projectId);
     });
 
     await seedSettings(projectId, {
@@ -2032,7 +2116,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
         '/v1/sessions?execution_id=74101',
       );
       return sessions.some((session) => session.status === 'completed');
-    }, plane);
+    }, plane, projectId);
 
     await runner.stop();
 
@@ -2050,11 +2134,11 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT11 — settings with no engine key fall back on the default engine', async (t) => {
     const { runRunner, DEFAULT_ENGINE_NAME } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_110;
+    const projectId = await declareProject(plane, 't404-at11');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at11');
     const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
-      await blockEveryJob(plane);
+      await blockEveryJob(plane, projectId);
     });
 
     // Two keys and not three: the safety net of FR5 is what has to answer here,
@@ -2103,7 +2187,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
         '/v1/sessions?execution_id=74111',
       );
       return sessions.some((session) => session.status === 'completed');
-    }, plane);
+    }, plane, projectId);
 
     await runner.stop();
 
@@ -2126,7 +2210,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT12 — onReady carries the resolved values, never the undefined ones', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_120;
+    const projectId = await declareProject(plane, 't404-at12');
     // Plain directories: this case announces readiness and never dispatches.
     const { repoRoot, worktreesRoot } = workspace(t, 't404-at12');
 

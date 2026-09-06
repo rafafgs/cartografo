@@ -864,6 +864,11 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       urlBase: options.url,
       token: options.token,
       engines,
+      // The same project the controller polls and leases in (t410): three of
+      // the dispatch's reads are scoped to one partition, and a dispatch left
+      // reading the default project would be told the work it just leased does
+      // not exist — a lease taken and given back on every tick, in silence.
+      projectId: options.projectId,
       requestTimeoutMs: options.requestTimeoutMs,
       // Passed straight through: what this function knows about a live session
       // is nothing, and what the process owner needs is the handle to it (t193).

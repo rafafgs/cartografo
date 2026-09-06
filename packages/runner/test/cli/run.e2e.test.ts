@@ -48,6 +48,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -56,6 +58,7 @@ import { fileURLToPath } from 'node:url';
 
 import { bootCore } from '@cartografo/test-support';
 
+import type * as CliModule from '../../src/cli/index.ts';
 import type * as RunModule from '../../src/cli/run.ts';
 import type { EngineRoute } from '../../src/dispatch/dispatch.ts';
 import {
@@ -131,6 +134,9 @@ function manifestContentHash(manifest: Record<string, unknown>): string {
 
 const RUN_MODULE = 'src/cli/run.ts';
 
+/** The router, for the one case that measures an exit code rather than a loop. */
+const CLI_MODULE = 'src/cli/index.ts';
+
 /** Deadline of every wait in this file. Wide slack, on purpose. */
 const DEADLINE_MS = 30_000;
 
@@ -180,6 +186,30 @@ async function loadModule<T>(relative: string): Promise<T> {
     `artifact does not exist yet: packages/runner/${relative}`,
   );
   return (await import(new URL(`../../${relative}`, import.meta.url).href)) as T;
+}
+
+/**
+ * Swallows and records what a command writes on stderr, while it is armed.
+ *
+ * The same helper `test/cli/index.test.ts` has, for the same reason: the line
+ * under test is a failure message, and letting it through would mix a
+ * deliberate failure into the suite's own report.
+ */
+function captureStderr(): { written: () => string; restore: () => void } {
+  const original = process.stderr.write.bind(process.stderr);
+  let written = '';
+
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stderr.write;
+
+  return {
+    written: () => written,
+    restore: () => {
+      process.stderr.write = original;
+    },
+  };
 }
 
 /** Runs git in a directory and gives back its stdout, trimmed. */
@@ -464,9 +494,25 @@ async function startRunner(
   return { stop };
 }
 
-test('t162 — the packaged runner, against a real control plane', async (parent) => {
-  const plane = await bootControlPlane(parent);
+/** The skill and the graph version a dispatching case of this file runs on. */
+interface Crossing {
+  /** The manifest every node of the graph is pinned to. */
+  skill: { id: string; version: string; hash: string };
+  /** The frozen version the jobs cite. */
+  versionId: string;
+}
 
+/**
+ * Registers the crossing skill and the two-engine graph, on one control plane.
+ *
+ * Extracted from the t162 block when t404 needed the same graph on a plane of
+ * its own: the codex case of that ticket only means anything on a node that
+ * DECLARES codex, and a class has one base lineage per plane.
+ *
+ * @param plane The control plane to register into.
+ * @returns The registered manifest and the graph version to cite.
+ */
+async function registerCrossing(plane: RunningControlPlane): Promise<Crossing> {
   // Registered once and shared: the two subtests that need a node declaring an
   // engine need the SAME class, and a class only has one base lineage.
   //
@@ -529,6 +575,13 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     document,
     201,
   );
+
+  return { skill, versionId: version.id };
+}
+
+test('t162 — the packaged runner, against a real control plane', async (parent) => {
+  const plane = await bootControlPlane(parent);
+  const { skill, versionId } = await registerCrossing(plane);
 
   await parent.test('AT8 — the runner pairs before it asks for anything', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
@@ -676,7 +729,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         title: 'work on a node that declares codex',
         entry_node_id: CODEX_NODE,
         execution_id: 16210,
-        graph_version_id: version.id,
+        graph_version_id: versionId,
       },
       201,
     );
@@ -768,7 +821,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         title: 'work that asks for an engine this runner does not have',
         entry_node_id: CODEX_NODE,
         execution_id: 16211,
-        graph_version_id: version.id,
+        graph_version_id: versionId,
       },
       201,
     );
@@ -1147,7 +1200,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
           title: `crossing that proves the skill pin (${label})`,
           entry_node_id: DEFAULT_NODE,
           execution_id: executionId,
-          graph_version_id: version.id,
+          graph_version_id: versionId,
         },
         201,
       );
@@ -1548,4 +1601,567 @@ test('t332 — the shell route is built here, never asked of the --engine factor
 
   assert.deepEqual(asked, ['claude-code']);
   assert.equal(routes.shell?.adapter.engineName, 'shell');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t404 — the runner started with no path flags at all.                        */
+/*                                                                            */
+/* `runRunner` used to receive `repoRoot`, `worktreesRoot` and `engine` as     */
+/* three always-defined values, resolved before the first packet. A runner     */
+/* spawned by the one-command startup has none of them: it pairs, asks the     */
+/* control plane for its project's settings (t403's `GET /v1/settings`) and    */
+/* uses `workspace_root`/`worktrees_root`/`engine` from there.                 */
+/*                                                                            */
+/* A control plane of its own, and every case works under a project id of its  */
+/* own: the settings are per project, and the default project is the ONE the   */
+/* control plane seeds at startup — with paths under the operator's home       */
+/* directory, which is the last place a test may cut a worktree into.          */
+/* -------------------------------------------------------------------------- */
+
+/** A control plane reached through a proxy that counts what went through it. */
+interface ProxiedControlPlane extends RunningControlPlane {
+  /** How many requests reached a route whose path starts with `prefix`. */
+  countOf: (prefix: string) => number;
+}
+
+/**
+ * Puts a counting proxy in front of the control plane (t404, AT8/AT9).
+ *
+ * `runRunner` builds its own `ControlPlaneClient` out of the URL it was given
+ * and has no `fetchImpl` seam of its own — deliberately: what a runner talks to
+ * is an address, and adding a seam for one test would be a production field
+ * nobody else uses. An address is a seam already, so this is one: the runner
+ * dials the proxy, the proxy forwards everything to the real binary, and the
+ * ledger of routes is what answers "was `GET /v1/settings` ever called".
+ *
+ * @param t Subtest hook, for the teardown.
+ * @param plane The real control plane to forward to.
+ * @param failOn Route prefix to answer with a dead socket instead of forwarding
+ *   — what a network failure looks like from inside `fetch`: a rejection, never
+ *   an HTTP status.
+ * @returns The proxy's own address, the same credential, and the ledger.
+ */
+async function proxyControlPlane(
+  t: TestHook,
+  plane: RunningControlPlane,
+  failOn?: string,
+): Promise<ProxiedControlPlane> {
+  const seen: string[] = [];
+
+  const server = createServer((request, response) => {
+    const route = request.url ?? '/';
+    seen.push(route);
+
+    if (failOn !== undefined && route.startsWith(failOn)) {
+      request.socket.destroy();
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      void (async () => {
+        const headers: Record<string, string> = {};
+        for (const [name, value] of Object.entries(request.headers)) {
+          // `host` and the framing headers belong to THIS hop; forwarding them
+          // would describe the proxy's own connection to the upstream one.
+          if (name === 'host' || name === 'connection' || name === 'content-length') continue;
+          if (typeof value === 'string') headers[name] = value;
+        }
+
+        const upstream = await fetch(`${plane.baseUrl}${route}`, {
+          method: request.method,
+          headers,
+          body: chunks.length === 0 ? undefined : Buffer.concat(chunks),
+        });
+        const text = await upstream.text();
+        response.writeHead(upstream.status, {
+          'content-type': upstream.headers.get('content-type') ?? 'application/json',
+        });
+        response.end(text);
+      })().catch(() => {
+        response.destroy();
+      });
+    });
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(
+    async () =>
+      await new Promise<void>((resolve) => {
+        // The client keeps its sockets alive, so `close` alone would wait for a
+        // connection nobody is going to end.
+        server.closeAllConnections();
+        server.close(() => {
+          resolve();
+        });
+      }),
+  );
+
+  const { port } = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${String(port)}`,
+    token: plane.token,
+    countOf: (prefix) => seen.filter((route) => route.startsWith(prefix)).length,
+  };
+}
+
+test('t404 — a runner with no paths of its own falls back to the control plane\'s settings', async (parent) => {
+  const plane = await bootControlPlane(parent);
+  const { versionId } = await registerCrossing(plane);
+
+  /** Writes a project's settings, with the operator credential t405 will hand out. */
+  const seedSettings = async (
+    projectId: number,
+    patch: Record<string, string>,
+  ): Promise<void> => {
+    await api(plane, 'PATCH', '/v1/settings', { project_id: projectId, ...patch });
+  };
+
+  await parent.test('AT7 — with nothing given, the paths and the engine come from the settings', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const projectId = 74_047;
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at7');
+    const record = path.join(scratch, 'dispatch.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    await seedSettings(projectId, {
+      workspace_root: repoRoot,
+      worktrees_root: worktreesRoot,
+      engine: 'claude-code',
+    });
+
+    const job = await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      {
+        title: 'work a runner with no flags of its own dispatches',
+        project_id: projectId,
+        entry_node_id: DEFAULT_NODE,
+        execution_id: 74_071,
+      },
+      201,
+    );
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId,
+      runnerId: 'runner-t404-at7',
+      // The whole of the case: not one of the three is known at startup.
+      engine: undefined,
+      repoRoot: undefined,
+      worktreesRoot: undefined,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 500,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({
+        FAKE_ENGINE_LINES: QUIET_LINES,
+        FAKE_ENGINE_RECORD: record,
+      }),
+    });
+
+    await waitFor('the job being dispatched to completion', async () => {
+      const { sessions } = await api<{ sessions: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execution_id=74071',
+      );
+      return sessions.some((session) => session.status === 'completed');
+    }, plane);
+
+    await runner.stop();
+
+    // The session's own account of where it ran: a worktree cut from the
+    // repository the SETTINGS named, under the root the settings named.
+    assert.ok(existsSync(record), 'the session never ran through the fake engine');
+    const received = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+    assert.ok(
+      received.cwd.startsWith(worktreesRoot + path.sep),
+      `the session ran outside the root the settings gave: ${received.cwd}`,
+    );
+    // ...and the repository it was cut FROM is the one `workspace_root` names:
+    // the session's branch is `ticket-<job>`, and it outlives the worktree that
+    // was removed on release. The cwd assertion above cannot say this on its
+    // own — a worktree lands under `worktrees_root` whichever repository it
+    // came from.
+    assert.equal(
+      git(repoRoot, 'branch', '--list', `ticket-${String(job.id)}`).includes(
+        `ticket-${String(job.id)}`,
+      ),
+      true,
+      'the worktree was cut from the repository `workspace_root` names',
+    );
+
+    const { events } = await api<{ events: Event[] }>(
+      plane,
+      'GET',
+      '/v1/executions/74071/events',
+    );
+    const opened = events.filter((event) => event.type === 'session.opened');
+    assert.ok(opened.length > 0, 'a session was opened for this execution');
+    assert.deepEqual(
+      [...new Set(opened.map((event) => event.data.engine))],
+      ['claude-code'],
+      'the engine the settings named is the engine the log records',
+    );
+  });
+
+  await parent.test('AT8 — with both paths given, GET /v1/settings is never called at all', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const projectId = 74_048;
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at8');
+    const unused = initRepo(t, 't404-at8-unused');
+    const record = path.join(scratch, 'dispatch.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    // Seeded, and seeded with a DIFFERENT workspace: if the fetch happened and
+    // its answer won, the session would run somewhere else entirely.
+    await seedSettings(projectId, {
+      workspace_root: unused.repoRoot,
+      worktrees_root: unused.worktreesRoot,
+      engine: 'codex',
+    });
+
+    const proxied = await proxyControlPlane(t, plane);
+
+    await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      {
+        title: 'work a runner with explicit paths dispatches',
+        project_id: projectId,
+        entry_node_id: DEFAULT_NODE,
+        execution_id: 74_081,
+      },
+      201,
+    );
+
+    const runner = await startRunner(t, runRunner, {
+      url: proxied.baseUrl,
+      token: proxied.token,
+      projectId,
+      runnerId: 'runner-t404-at8',
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 500,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({
+        FAKE_ENGINE_LINES: QUIET_LINES,
+        FAKE_ENGINE_RECORD: record,
+      }),
+    });
+
+    await waitFor('the job being dispatched to completion', async () => {
+      const { sessions } = await api<{ sessions: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execution_id=74081',
+      );
+      return sessions.some((session) => session.status === 'completed');
+    }, plane);
+
+    await runner.stop();
+
+    assert.equal(
+      proxied.countOf('/v1/settings'),
+      0,
+      'an operator who said where the worktrees go is not asked to confirm it over HTTP',
+    );
+    assert.ok(proxied.countOf('/v1/runners') > 0, 'the proxy really is the door this runner used');
+
+    assert.ok(existsSync(record), 'the session never ran through the fake engine');
+    const received = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+    assert.ok(
+      received.cwd.startsWith(worktreesRoot + path.sep),
+      `the session ran outside the explicit root: ${received.cwd}`,
+    );
+    assert.equal(
+      received.cwd.startsWith(unused.worktreesRoot + path.sep),
+      false,
+      'the settings won over a path the operator gave on the command line',
+    );
+  });
+
+  await parent.test('AT9 — settings that answer nothing are a SettingsFallbackError; a fetch that fails travels up', async (t) => {
+    const { runRunner, SettingsFallbackError } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+    // A project nobody ever seeded: `GET /v1/settings` answers `{project_id}`
+    // alone, which is a 200 carrying nothing this runner can start on.
+    const unseeded = 74_099;
+
+    await assert.rejects(
+      async () =>
+        await runRunner({
+          url: plane.baseUrl,
+          token: plane.token,
+          projectId: unseeded,
+          runnerId: 'runner-t404-at9-unseeded',
+          engine: undefined,
+          repoRoot: undefined,
+          worktreesRoot: undefined,
+          runnerCap: 1,
+          projectCap: 4,
+          intervalMs: 500,
+          leaseTtlSeconds: 10,
+          engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+        }),
+      (error: unknown) => {
+        assert.ok(
+          error instanceof SettingsFallbackError,
+          `a settings answer with nothing in it is its own failure: ${String(error)}`,
+        );
+        assert.match(error.message, /worktrees_root/, 'the message names the setting that was missing');
+        assert.match(
+          error.message,
+          /no safe default/,
+          'and says the same thing the missing-flag usage error says',
+        );
+        return true;
+      },
+    );
+
+    // ...and a settings fetch that never answers is NOT that failure: it is the
+    // network error it is, travelling up untouched — which `runRunnerCli` turns
+    // into the exit 1 of its own table.
+    const broken = await proxyControlPlane(t, plane, '/v1/settings');
+    const stderr = captureStderr();
+    let code: number;
+    try {
+      code = await runRunnerCli(
+        [
+          '--url',
+          broken.baseUrl,
+          '--token',
+          broken.token,
+          '--project',
+          String(unseeded),
+          '--runner-id',
+          'runner-t404-at9-broken',
+        ],
+        {},
+      );
+    } finally {
+      stderr.restore();
+    }
+
+    assert.equal(code, 1, 'a runner that could not run is a 1, never a 2');
+    assert.ok(broken.countOf('/v1/runners') > 0, 'the pairing went through before the settings did not');
+    assert.ok(broken.countOf('/v1/settings') > 0, 'and the settings really were asked for');
+    assert.match(stderr.written(), new RegExp(broken.baseUrl.replace(/[.]/g, '\\.')));
+  });
+
+  await parent.test('AT10 — an explicit engine beats the one the settings hold', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const projectId = 74_100;
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at10');
+    const record = path.join(scratch, 'dispatch-codex.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    await seedSettings(projectId, {
+      workspace_root: repoRoot,
+      worktrees_root: worktreesRoot,
+      engine: 'claude-code',
+    });
+
+    // On the node that declares `codex`: had the settings' `claude-code` won,
+    // this runner would have no route for it and would BLOCK the work with an
+    // `UnknownEngineError` instead of completing a session.
+    await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      {
+        title: 'work on a node that declares codex, run by a settings-mode runner',
+        project_id: projectId,
+        entry_node_id: CODEX_NODE,
+        execution_id: 74_101,
+        graph_version_id: versionId,
+      },
+      201,
+    );
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId,
+      runnerId: 'runner-t404-at10',
+      engine: 'codex',
+      repoRoot: undefined,
+      worktreesRoot: undefined,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 500,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({
+        FAKE_ENGINE_LINES: QUIET_LINES,
+        FAKE_ENGINE_RECORD: record,
+      }),
+    });
+
+    await waitFor('the codex route dispatching the job', async () => {
+      const { sessions } = await api<{ sessions: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execution_id=74101',
+      );
+      return sessions.some((session) => session.status === 'completed');
+    }, plane);
+
+    await runner.stop();
+
+    const { events } = await api<{ events: Event[] }>(plane, 'GET', '/v1/executions/74101/events');
+    const opened = events.filter((event) => event.type === 'session.opened');
+    assert.ok(opened.length > 0, 'a session was opened for this execution');
+    assert.deepEqual(
+      [...new Set(opened.map((event) => event.data.engine))],
+      ['codex'],
+      'the engine the flag named is the engine the log records',
+    );
+    assert.ok(existsSync(record), 'the codex route never started a session');
+  });
+
+  await parent.test('AT11 — settings with no engine key fall back on the default engine', async (t) => {
+    const { runRunner, DEFAULT_ENGINE_NAME } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const projectId = 74_110;
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at11');
+    const record = path.join(scratch, 'dispatch.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    // Two keys and not three: the safety net of FR5 is what has to answer here,
+    // and an `engine` nobody set must not be a runner that refuses to start.
+    await seedSettings(projectId, { workspace_root: repoRoot, worktrees_root: worktreesRoot });
+
+    await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      {
+        title: 'work dispatched by a runner whose settings named no engine',
+        project_id: projectId,
+        entry_node_id: DEFAULT_NODE,
+        execution_id: 74_111,
+      },
+      201,
+    );
+
+    let resolved: RunModule.ResolvedRunnerPaths | null = null;
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId,
+      runnerId: 'runner-t404-at11',
+      engine: undefined,
+      repoRoot: undefined,
+      worktreesRoot: undefined,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 500,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({
+        FAKE_ENGINE_LINES: QUIET_LINES,
+        FAKE_ENGINE_RECORD: record,
+      }),
+      onReady: (values) => {
+        resolved = values;
+      },
+    });
+
+    await waitFor('the job being dispatched to completion', async () => {
+      const { sessions } = await api<{ sessions: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execution_id=74111',
+      );
+      return sessions.some((session) => session.status === 'completed');
+    }, plane);
+
+    await runner.stop();
+
+    assert.ok(resolved !== null, 'the runner never announced itself ready');
+    assert.equal(
+      (resolved as RunModule.ResolvedRunnerPaths).engine,
+      DEFAULT_ENGINE_NAME,
+      'no flag and no setting is the documented default, never an undefined engine',
+    );
+
+    assert.ok(existsSync(record), 'the session never ran through the fake engine');
+    const received = JSON.parse(readFileSync(record, 'utf8')) as { argv: string[] };
+    assert.equal(
+      received.argv.includes('exec'),
+      false,
+      'the argv is claude-code\'s, not the one codex\'s builder produces',
+    );
+  });
+
+  await parent.test('AT12 — onReady carries the resolved values, never the undefined ones', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const projectId = 74_120;
+    // Plain directories: this case announces readiness and never dispatches.
+    const { repoRoot, worktreesRoot } = workspace(t, 't404-at12');
+
+    await seedSettings(projectId, {
+      workspace_root: repoRoot,
+      worktrees_root: worktreesRoot,
+      engine: 'codex',
+    });
+
+    let resolved: RunModule.ResolvedRunnerPaths | null = null;
+    let announce: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId,
+      runnerId: 'runner-t404-at12',
+      engine: undefined,
+      repoRoot: undefined,
+      worktreesRoot: undefined,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+      onReady: (values) => {
+        resolved = values;
+        announce();
+      },
+    });
+
+    await ready;
+    await runner.stop();
+
+    assert.deepEqual(
+      resolved,
+      { repoRoot, worktreesRoot, engine: 'codex' },
+      'the ready announcement is what an operator reads to find out where this runner writes',
+    );
+  });
 });

@@ -696,3 +696,74 @@ test('t247 AT1 — createProposal reports `created` from the HTTP status', async
     'a deduplicated proposal reads `pending` too: `status` cannot tell the two apart',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t404 — the settings a runner with no path flags falls back to.              */
+/*                                                                            */
+/* `GET /v1/settings` is t403's contract, consumed here through the same door  */
+/* every other read of this client uses. The route is faked for the same       */
+/* reason `GET /v1/jobs` is: what these cases charge for is the client's       */
+/* outgoing request and what it does with the answer, not t403's server.       */
+/* -------------------------------------------------------------------------- */
+
+test('t404 AT1 — getSettings asks for the project and gives the body back verbatim', async () => {
+  const { ControlPlaneClient } = await loadClient();
+
+  const seeded = {
+    project_id: 1,
+    workspace_root: '/home/operator/.cartografo/workspace',
+    worktrees_root: '/home/operator/.cartografo/worktrees',
+    engine: 'claude-code',
+  };
+  const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: seeded }));
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
+
+  const settings = await client.getSettings(1);
+
+  assert.deepEqual(
+    calls,
+    [{ url: `${BASE_URL}/v1/settings?project_id=1`, method: 'GET', body: undefined }],
+    'the project travels as the query filter t403 published, never as a path segment',
+  );
+  assert.deepEqual(settings, seeded, 'the answer reaches the caller exactly as it came');
+});
+
+test('t404 AT1 — a project nobody ever seeded answers with its id alone, and that is not an error', async () => {
+  const { ControlPlaneClient } = await loadClient();
+
+  // The shape `run.ts` has to fail on cleanly: every key of the answer is
+  // optional, and a project the control plane never seeded carries none of them.
+  const { fetchImpl } = fakeFetch(() => ({ status: 200, body: { project_id: 7404 } }));
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
+
+  const settings = await client.getSettings(7404);
+
+  assert.deepEqual(settings, { project_id: 7404 });
+  assert.equal(settings.workspace_root, undefined);
+  assert.equal(settings.worktrees_root, undefined);
+  assert.equal(settings.engine, undefined);
+});
+
+test('t404 AT1 — a credential the settings routes refuse is a ControlPlaneClientError with the status', async () => {
+  const { ControlPlaneClient, ControlPlaneClientError } = await loadClient();
+
+  // Not a bug in this client: `GET /v1/settings` is operator-only by omission
+  // from `auth.ts`'s `RUNNER_SURFACE` (t403 AT5), so a runner holding a plain
+  // runner-scoped credential earns exactly this — one more shape of "the
+  // settings fetch failed", handled by `runRunner` like any other rejection.
+  const { fetchImpl } = fakeFetch(() => ({
+    status: 403,
+    body: { error: 'out_of_scope_credential' },
+  }));
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
+
+  await assert.rejects(
+    async () => client.getSettings(1),
+    (error: unknown) => {
+      assert.ok(error instanceof ControlPlaneClientError);
+      assert.equal(error.status, 403);
+      assert.deepEqual(error.body, { error: 'out_of_scope_credential' });
+      return true;
+    },
+  );
+});

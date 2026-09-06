@@ -34,6 +34,27 @@ import { setTimeout as delay } from 'node:timers/promises';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
+/**
+ * What asks `up` for the control plane and nothing else (t405).
+ *
+ * Since t405 the installed `cartografo` with no argument is the whole product:
+ * it also spawns the screen and a local runner and opens a browser. That is
+ * right for a stranger and wrong for this suite, which runs on the machine of
+ * whoever typed `npm test` — with the real `HOME`, since `strangerEnv` rewrites
+ * `PATH` and nothing else. Without these three flags one case would open a
+ * browser window, bind the screen's default port next to whatever is already on
+ * it, and create `~/.cartografo/workspace` as a git repository under that home.
+ *
+ * Spelled out rather than imported from `cli-support.ts`, for this file's own
+ * reason: nothing here comes from inside the monorepo (see the header).
+ *
+ * The case below still asserts exactly what it asserted before — readiness, the
+ * database beside the working directory, a clean stop on `SIGTERM`. That the
+ * other five binaries are on the installed `PATH` is the case above's job, and
+ * it checks all six by name.
+ */
+const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+
 /** The six commands D23 says one package ships. */
 const COMMANDS = Object.freeze([
   'cartografo',
@@ -208,7 +229,7 @@ test('t248 — one tarball installs all six commands, with no checkout on disk',
     // control plane a person happens to have running on the default port.
     env.CARTOGRAFO_PORT = '0';
 
-    const child = spawn(path.join(binDir, 'cartografo'), [], {
+    const child = spawn(path.join(binDir, 'cartografo'), [...CONTROL_PLANE_ONLY], {
       cwd: workdir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

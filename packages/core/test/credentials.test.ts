@@ -225,3 +225,47 @@ test('t143 AT — revokeRunnerCredentials revokes every live credential of one r
     'an unknown runner has no live credential either; the repository does not judge that',
   );
 });
+
+test('t405 AT1 — revokeCredential kills exactly one credential by id, and says whether it did', async (t) => {
+  const db = await openMigrated(t);
+  const { issueCredential, revokeCredential, verifyToken } = await loadRepository();
+
+  // Two of them, both `user`: this is the shape `up` mints — an internal
+  // operator credential beside the bootstrap one the startup printed — and the
+  // property that matters is that revoking the first leaves the second alone.
+  // `revokeRunnerCredentials` cannot express that: its scope is a runner id,
+  // and neither of these has one.
+  const internal = issueCredential(db, { type: 'user' });
+  const bootstrap = issueCredential(db, { type: 'user' });
+
+  assert.equal(revokeCredential(db, internal.id), true, 'it says it revoked a live credential');
+  assert.equal(
+    verifyToken(db, internal.token),
+    null,
+    'a revoked credential stops resolving, exactly like one that never existed',
+  );
+  assert.ok(
+    verifyToken(db, bootstrap.token) !== null,
+    'scoped to one row: the other operator credential is untouched',
+  );
+
+  const row = db.prepare('SELECT revoked_at FROM credential WHERE id = ?').get(internal.id) as {
+    revoked_at: string | null;
+  };
+  assert.equal(typeof row.revoked_at, 'string');
+  assert.ok(!Number.isNaN(Date.parse(row.revoked_at ?? '')), 'revoked_at is an ISO instant');
+
+  // Idempotent, and it never throws: `up`'s shutdown runs this after the
+  // children are gone, and a second SIGINT landing in that window must not turn
+  // a clean teardown into a stack trace.
+  assert.equal(
+    revokeCredential(db, internal.id),
+    false,
+    'revoking the same id again is not an error: there was nothing live left',
+  );
+  assert.equal(
+    revokeCredential(db, 987_654),
+    false,
+    'an id that never existed answers the same way, and does not throw',
+  );
+});

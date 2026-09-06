@@ -2,11 +2,18 @@
  * Router of the `cartografo` command (t108, FR1/FR7).
  *
  * The command was born doing one thing only — starting the control plane — and
- * keeps doing exactly that when called with no argument. That is not
- * backward-compatibility out of politeness: `npx cartografo` is the project's
- * front door, and time-to-first-graph is a quality non-negotiable
+ * still needs no subcommand to do it. That is not backward-compatibility out of
+ * politeness: `npx cartografo` is the project's front door, and
+ * time-to-first-graph is a quality non-negotiable
  * (`notes/2026-08-14-extension-and-quality.md`). A mandatory subcommand would add
  * a word to the most travelled path of the product for nobody's benefit.
+ *
+ * Since t405 that front door brings up three processes rather than one — the
+ * control plane, the screen and a local runner — and `cli/up.ts` is what
+ * decides all of it. Two consequences reach this file: the leading argument of
+ * an implicit `up` may now be one of that subcommand's own `--no-*` flags
+ * rather than a subcommand name, and a `UsageError` can come out of `up` like
+ * it comes out of any other subcommand.
  *
  * Every other subcommand — `import`, `export`, `status` and the three steps of
  * the D4 skill-import gate — is a pure HTTP client of the public API: they open
@@ -28,11 +35,12 @@
  */
 
 import { LockHeldError } from '../db/lock.ts';
-import { DEFAULT_PORT, main } from '../index.ts';
+import { DEFAULT_PORT } from '../index.ts';
 import { runExport } from './export.ts';
 import { runImport } from './import.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
+import { parseUpFlags, runUp } from './up.ts';
 import { isObject } from '../util/is-object.ts';
 import {
   DEFAULT_PROJECT_ID,
@@ -53,8 +61,12 @@ import {
 export const USAGE = `usage: cartografo [subcommand] [options]
 
 subcommands:
-  up                     starts the control plane: database, migrations and HTTP.
-                         It is the default — \`cartografo\` with no argument does this.
+  up                     brings the whole product up: the control plane
+                         (database, migrations and HTTP), the screen and one
+                         local runner, and opens the browser on the screen. It
+                         is the default — \`cartografo\` with no argument does
+                         this, and the three \`--no-*\` options below belong to
+                         it whether the word is typed or not.
   import <path>          registers a graph as a new base lineage. <path> is a
                          graph file or a bundle directory (with graph.json and,
                          optionally, skills/ to check).
@@ -73,6 +85,9 @@ subcommands:
                          verifies it again before anything is stored.
 
 options:
+  --no-browser           (up) do not open the browser
+  --no-runner            (up) do not start a local runner
+  --no-screen            (up) do not start the screen
   --url <url>            control plane to query (env ${ENV_URL};
                          default http://127.0.0.1:${DEFAULT_PORT})
   --token <token>        credential of the control plane (env ${ENV_TOKEN});
@@ -89,7 +104,8 @@ options:
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text
 
-Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST.`;
+Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST,
+CARTOGRAFO_SCREEN_PORT.`;
 
 /** Subcommands that talk to the control plane over HTTP; `up` is the other one. */
 const API_SUBCOMMANDS = [
@@ -146,6 +162,22 @@ function extractFlag(args: string[], name: string): { present: boolean; rest: st
   return { present: rest.length !== args.length, rest };
 }
 
+/**
+ * The one shape a wrong command line has, wherever it was read.
+ *
+ * `up` reads its own flags and every other subcommand reads its own options, so
+ * a `UsageError` reaches this router from two different places; what a person
+ * sees has to be the same line either way.
+ *
+ * @param error What the parsing threw.
+ * @returns The exit code of a wrong command line.
+ */
+function wrongCommandLine(error: UsageError): number {
+  process.stderr.write(`cartografo: ${error.message}\n`);
+  process.stderr.write('cartografo: run `cartografo --help` for usage\n');
+  return 2;
+}
+
 /** Refuses what is left on the command line instead of ignoring it silently. */
 function requireNothingElse(left: string[], positionalCount: number, subcommand: string): void {
   const extras = left.slice(positionalCount);
@@ -154,10 +186,21 @@ function requireNothingElse(left: string[], positionalCount: number, subcommand:
   }
 }
 
-/** Starts the control plane, preserving the failure message the startup already had. */
-async function startControlPlane(): Promise<number> {
+/**
+ * Starts the whole product, preserving the failure message the startup had.
+ *
+ * @param args Command line of `up` — the part after the subcommand, or all of
+ *   it when the subcommand was left implicit.
+ * @returns Exit code; it only returns once the command has been asked to stop.
+ * @throws {UsageError} On a command line `up` cannot read — thrown BEFORE the
+ *   try below, deliberately: that catch turns everything it sees into a `1`,
+ *   and a wrong command line is a `2` in this CLI whatever the subcommand.
+ */
+async function startControlPlane(args: string[]): Promise<number> {
+  const flags = parseUpFlags(args);
+
   try {
-    await main();
+    await runUp(flags);
     return 0;
   } catch (error) {
     // A held lock is not a defect: it is the answer to "is one already
@@ -336,10 +379,26 @@ export async function runCli(
     return 0;
   }
 
-  const subcommand = args[0] ?? 'up';
-  const rest = args.slice(1);
+  // A leading `--…` belongs to the implicit `up`, and is not a subcommand
+  // nobody declared (t405, FR2). Without this line `npx cartografo
+  // --no-browser` dies with `unknown subcommand: "--no-browser"`, which would
+  // make the three flags of the product's own front door reachable only by
+  // typing the word the front door exists not to require. It is backwards
+  // compatible by construction: no subcommand of this command starts with a
+  // dash, so nothing that used to route somewhere still does.
+  const leading = args[0];
+  const implicitUp = leading === undefined || leading.startsWith('--');
+  const subcommand = implicitUp ? 'up' : leading;
+  const rest = implicitUp ? args : args.slice(1);
 
-  if (subcommand === 'up') return await startControlPlane();
+  if (subcommand === 'up') {
+    try {
+      return await startControlPlane(rest);
+    } catch (error) {
+      if (!(error instanceof UsageError)) throw error;
+      return wrongCommandLine(error);
+    }
+  }
 
   if (!API_SUBCOMMANDS.includes(subcommand)) {
     process.stderr.write(`cartografo: unknown subcommand: "${subcommand}"\n${USAGE}\n`);
@@ -359,11 +418,7 @@ export async function runCli(
       process.stderr.write(`${deniedMessage(error.url)}\n`);
       return 1;
     }
-    if (error instanceof UsageError) {
-      process.stderr.write(`cartografo: ${error.message}\n`);
-      process.stderr.write('cartografo: run `cartografo --help` for usage\n');
-      return 2;
-    }
+    if (error instanceof UsageError) return wrongCommandLine(error);
     throw error;
   }
 }

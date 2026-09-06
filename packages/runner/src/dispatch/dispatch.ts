@@ -134,7 +134,7 @@
 
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import { SessionStartError } from '../engine/types.ts';
-import { createDispatchControlPlaneClient } from './control-plane-client.ts';
+import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
   DEFAULT_SILENCE_SECONDS,
@@ -225,7 +225,9 @@ export function createClaudeCodeDispatch(
       return { blocked: true, reason: QUOTA_COOLDOWN_REASON };
     }
 
-    const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
+    // Every scoped read of this dispatch names the SAME project (t410): a work
+    // read in one partition and a graph read in another are two different works.
+    const job = await call<Job>(withProject(`/v1/jobs/${jobId}`, options.projectId), 'GET');
 
     let plan: SessionPlan;
 
@@ -235,7 +237,7 @@ export function createClaudeCodeDispatch(
     // of throwing — and why exactly seven — is the paragraph at the top of this
     // file, and where the line is drawn is `pre-session-failure.ts`.
     try {
-      plan = await resolveSessionPlan(call, job, options.engines, resolveInput);
+      plan = await resolveSessionPlan(call, job, options.engines, resolveInput, options.projectId);
     } catch (error) {
       // The first of the three sites that route through ONE decision (t272,
       // FR5), so the three cannot drift into three policies. `null` is "this one
@@ -288,6 +290,7 @@ export function createClaudeCodeDispatch(
       const spec = await buildSessionSpec(call, job, resolved, {
         workingDir: worktree.path,
         instructions,
+        projectId: options.projectId,
         timeoutSeconds,
         silenceSeconds,
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),

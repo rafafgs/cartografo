@@ -56,8 +56,8 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const RUNNER_A = 'runner-a';
 const RUNNER_B = 'runner-b';
 
-/** Project of every seeded job and of every lease requested here. */
-const PROJECT_ID = 3;
+/** Name the project of every seeded job and every lease is declared under. */
+const PROJECT_NAME = 'contested-fleet';
 
 /** Jobs seeded for the free-for-all race. */
 const JOB_COUNT = 8;
@@ -161,6 +161,16 @@ interface RunningControlPlane {
   urlBase: string;
   /** Operator credential announced at boot — used ONLY to pair and to read. */
   bootstrapToken: string;
+  /**
+   * The project this scenario works in, as the control plane allocated it.
+   *
+   * Declared at boot and read back rather than assumed: a project is a
+   * REGISTERED entity since t354 and its id comes from the database, and since
+   * t410 `GET /v1/jobs` reads one project's board — a number nobody declared
+   * answers `404 unknown_project`, so a fleet racing over an undeclared project
+   * would be racing over a board that does not exist.
+   */
+  projectId: number;
 }
 
 /**
@@ -188,12 +198,25 @@ async function bootControlPlane(
 
   const port = Number(new URL(url).port);
   assert.ok(Number.isInteger(port) && port > 0, `unreadable port in "${url}"`);
-  return { urlBase: `http://${address}:${port}`, bootstrapToken: token };
+  const urlBase = `http://${address}:${port}`;
+
+  const created = await call<{ id: number }>({ urlBase }, 'POST', '/v1/projects', token, {
+    name: PROJECT_NAME,
+  });
+  assert.equal(created.status, 201, `declaring the project answered ${created.status}`);
+
+  return { urlBase, bootstrapToken: token, projectId: created.body.id };
 }
 
-/** One JSON call, with the credential handed in explicitly. */
+/**
+ * One JSON call, with the credential handed in explicitly.
+ *
+ * It takes the ADDRESS and not the whole {@link RunningControlPlane}: the boot
+ * uses it to declare the project, at a moment when there is no project id to
+ * carry yet.
+ */
 async function call<T>(
-  cp: RunningControlPlane,
+  cp: { urlBase: string },
   method: string,
   routePath: string,
   token: string,
@@ -228,7 +251,7 @@ async function seedJobs(cp: RunningControlPlane, howMany: number): Promise<numbe
   const ids: number[] = [];
   for (let index = 0; index < howMany; index += 1) {
     const job = await call<{ id: number }>(cp, 'POST', '/v1/jobs', cp.bootstrapToken, {
-      project_id: PROJECT_ID,
+      project_id: cp.projectId,
       title: `contested work #${index + 1}`,
       entry_node_id: 'implementar',
     });
@@ -243,7 +266,7 @@ async function leasesOf(cp: RunningControlPlane, query = ''): Promise<LeaseRow[]
   const response = await call<{ leases: LeaseRow[] }>(
     cp,
     'GET',
-    `/v1/leases?project_id=${PROJECT_ID}${query}`,
+    `/v1/leases?project_id=${cp.projectId}${query}`,
     cp.bootstrapToken,
   );
   assert.equal(response.status, 200);
@@ -321,7 +344,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
     new Controller({
       client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenA }),
       runnerId: RUNNER_A,
-      projectId: PROJECT_ID,
+      projectId: cp.projectId,
       // Both ceilings at the size of the whole queue: the harness bounds
       // nothing, and what the runners bump into is the server's decision.
       runnerCap: JOB_COUNT,
@@ -332,7 +355,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
     new Controller({
       client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenB }),
       runnerId: RUNNER_B,
-      projectId: PROJECT_ID,
+      projectId: cp.projectId,
       runnerCap: JOB_COUNT,
       projectCap: JOB_COUNT,
       ttlSeconds: 30,
@@ -440,7 +463,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
     new Controller({
       client: new ControlPlaneClient({ urlBase: cp.urlBase, token }),
       runnerId,
-      projectId: PROJECT_ID,
+      projectId: cp.projectId,
       runnerCap: DECLARED,
       projectCap: DECLARED,
       // Long enough that nothing expires during the race: an overdue lease that
@@ -488,7 +511,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
   const most = Math.max(...observed);
   assert.ok(
     most <= CEILING,
-    `${most} leases were active at once in project ${PROJECT_ID}, over a ceiling of ${CEILING}: the cap does not sum across runners`,
+    `${most} leases were active at once in project ${cp.projectId}, over a ceiling of ${CEILING}: the cap does not sum across runners`,
   );
   assert.ok(
     most >= 1,
@@ -538,7 +561,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   const controllerA = new Controller({
     client: clientA,
     runnerId: RUNNER_A,
-    projectId: PROJECT_ID,
+    projectId: cp.projectId,
     runnerCap: 1,
     projectCap: 2,
     ttlSeconds: TTL_SECONDS,
@@ -565,7 +588,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   const controllerB = new Controller({
     client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenB }),
     runnerId: RUNNER_B,
-    projectId: PROJECT_ID,
+    projectId: cp.projectId,
     runnerCap: 1,
     projectCap: 2,
     ttlSeconds: TTL_SECONDS,

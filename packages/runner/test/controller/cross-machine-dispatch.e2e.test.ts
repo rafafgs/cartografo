@@ -45,8 +45,8 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 /** Identity this runner declares at pairing. */
 const RUNNER_ID = 'runner-lan';
-/** Project of the seeded work. */
-const PROJECT_ID = 3;
+/** Name of the project the seeded work is declared in (t354, D25). */
+const PROJECT_NAME = 'lan-dispatch';
 /** Term of the lease. Three heartbeats fit in it before it falls due. */
 const TTL_SECONDS = 2;
 /** Deadline of every wait in this file. Wide slack, on purpose. */
@@ -159,6 +159,23 @@ async function leasesOf(urlBase: string, token: string): Promise<LeaseRow[]> {
   return response.body.leases;
 }
 
+/**
+ * Declares the project this run works in, and hands back the id it got.
+ *
+ * The id is asked for rather than assumed: a project is a REGISTERED entity
+ * since t354, its id is allocated by the database, and since t410 every job
+ * read is scoped by one — a bare number nobody declared is a `404
+ * unknown_project`, and the board of a project that does not exist is not a
+ * board this runner could ever be handed.
+ */
+async function declareProject(urlBase: string, token: string): Promise<number> {
+  const created = await call<{ id: number }>(urlBase, 'POST', '/v1/projects', token, {
+    name: PROJECT_NAME,
+  });
+  assert.equal(created.status, 201, `declaring the project answered ${created.status}`);
+  return created.body.id;
+}
+
 test('t143 AT — a runner reaches the control plane off loopback and runs a whole lease cycle with its own credential', async (t) => {
   const address = externalAddress();
   if (address === null) {
@@ -182,8 +199,10 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   const token = paired.body.token ?? '';
   assert.match(token, /^[0-9a-f]{64}$/, 'pairing hands back the runner credential (FR1)');
 
+  const projectId = await declareProject(urlBase, bootstrapToken);
+
   const job = await call<{ id: number }>(urlBase, 'POST', '/v1/jobs', bootstrapToken, {
-    project_id: PROJECT_ID,
+    project_id: projectId,
     title: 'work dispatched from another machine',
     entry_node_id: 'implementar',
   });
@@ -207,7 +226,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   const controller = new Controller({
     client,
     runnerId: RUNNER_ID,
-    projectId: PROJECT_ID,
+    projectId,
     runnerCap: 1,
     projectCap: 1,
     ttlSeconds: TTL_SECONDS,

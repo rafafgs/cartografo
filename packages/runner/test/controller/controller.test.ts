@@ -116,7 +116,12 @@ async function environment(options: EnvironmentOptions = {}): Promise<{
       body: typeof rawBody === 'string' ? JSON.parse(rawBody) : undefined,
     });
 
-    if (url.endsWith('/v1/jobs')) {
+    // The PATH and not the whole url: the poll carries the scope on the query
+    // string since t410 (`GET /v1/jobs?project_id=3`), and a matcher that
+    // compares the tail would stop recognising the one call this stub exists to
+    // answer — the queue would fall through to a real `fetch` and the tick
+    // would hang instead of failing.
+    if (new URL(url).pathname === '/v1/jobs') {
       return respond(200, {
         jobs: [
           {
@@ -302,7 +307,11 @@ test('AT16 — with no released work, the tick asks for no lease at all', async 
   });
 
   assert.equal(await controller.tick(), null);
-  assert.deepEqual(calls, [`${BASE_URL}/v1/jobs`]);
+  // One call, and it is the poll: no lease was ever asked for. The url carries
+  // `project_id` since t410 — `GET /v1/jobs` reads one project's board, and a
+  // poll that named none would read project 1's while every lease this
+  // controller requests declares project 3.
+  assert.deepEqual(calls, [`${BASE_URL}/v1/jobs?project_id=${String(BASE_OPTIONS.projectId)}`]);
 });
 
 test('t158 — a release that also fails does not take the place of the dispatch error', async (t) => {

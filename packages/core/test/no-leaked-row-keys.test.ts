@@ -43,6 +43,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { LocalArtifactStore, artifactRootFor } from '../src/artifacts/local-store.ts';
+import type { ArtifactStore } from '../src/artifacts/store.ts';
 import { getJob } from '../src/repositories/job.ts';
 import { getSession, getSessionTranscript } from '../src/repositories/session.ts';
 import {
@@ -105,6 +107,23 @@ const JOB_KEYS = Object.freeze([
   'updated_at',
 ]);
 
+/**
+ * The store `getSessionTranscript` needs since t424, rooted where the app roots
+ * its own.
+ *
+ * This file calls the repository directly, with no route in front of it, so it
+ * has to hand over what `createApp` would have handed over — the same directory
+ * beside the same database, which is what `artifactRootFor` answers. The
+ * transcript in this case is a few bytes long and never reaches the store; the
+ * argument exists because the signature does.
+ *
+ * @param ctx Control plane running.
+ * @returns A store over this context's own artifact root.
+ */
+function artifactStore(ctx: TestContext): ArtifactStore {
+  return new LocalArtifactStore(artifactRootFor(ctx.db.name));
+}
+
 /** Every key a session carries, same rule as {@link JOB_KEYS}. */
 const SESSION_KEYS = Object.freeze([
   'id',
@@ -125,6 +144,9 @@ const SESSION_KEYS = Object.freeze([
   'transcript',
   'transcript_truncated',
   'transcript_original_size',
+  // Born in English, unlike the two above it (t424): the column and the
+  // projection are the same word, so `toSession` spreads it and builds nothing.
+  'transcript_artifact_id',
   'output',
   'opened_at',
   'finished_at',
@@ -251,7 +273,7 @@ test('t286 FR4 — a finished session never carries a residual column name eithe
     'GET /v1/sessions/:id/transcript changed shape',
   );
   assert.deepEqual(
-    keysOf(getSessionTranscript(ctx.db, opened.body.id)),
+    keysOf(await getSessionTranscript(ctx.db, opened.body.id, artifactStore(ctx))),
     shape(TRANSCRIPT_KEYS),
     'the transcript payload is supposed to be the published object now (t286 FR4)',
   );

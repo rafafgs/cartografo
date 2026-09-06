@@ -53,6 +53,35 @@ export type JobState =
  */
 export type JobFields = Record<string, string | number | boolean>;
 
+/**
+ * Who the control plane records as the author of a write (t339).
+ *
+ * The minimal shape of the envelope's `actor`, declared HERE and never imported
+ * from `packages/core` — the screen mirrors the wire format, it does not share
+ * the core's types (D11). `type` is narrowed to `'user'` because that is the
+ * only actor this screen has any business claiming to be: everything it writes
+ * was somebody clicking a form.
+ */
+export interface ScreenActor {
+  type: 'user';
+  ref: string;
+}
+
+/**
+ * Body of `POST /v1/jobs/:id/blocks` and `/unblocks`, as the screen sends it.
+ *
+ * The `actor` is never left out. `resolveActor` on the control plane defaults an
+ * absent one to the API's own identity, i.e. "the control plane" and not a
+ * person — and the one thing this audit trail has to keep straight is which of
+ * the two lowered a flag (`packages/core/src/repositories/input-request.ts`
+ * makes the same point about the unblock that follows an answer). A required
+ * field here is what makes forgetting it a type error instead of a quiet lie.
+ */
+export interface FlagInput {
+  reason: string;
+  actor: ScreenActor;
+}
+
 /** Projection of a job, as `GET /v1/jobs` returns it. */
 export interface Job {
   id: number;
@@ -629,6 +658,30 @@ export class ApiClient {
       method: 'PATCH',
       body: { answer, answered_by: answeredBy },
     });
+  }
+
+  /**
+   * Raises a job's blocked flag, saying why and who (t339).
+   *
+   * @param id Job id.
+   * @param input The stated reason and the person doing it.
+   * @returns The job as the control plane left it.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async blockJob(id: number, input: FlagInput): Promise<Job> {
+    return await this.#request<Job>(`/v1/jobs/${id}/blocks`, { method: 'POST', body: input });
+  }
+
+  /**
+   * Lowers a job's blocked flag, saying why and who (t339).
+   *
+   * @param id Job id.
+   * @param input The stated reason and the person doing it.
+   * @returns The job as the control plane left it.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async unblockJob(id: number, input: FlagInput): Promise<Job> {
+    return await this.#request<Job>(`/v1/jobs/${id}/unblocks`, { method: 'POST', body: input });
   }
 
   async #get<T>(path: string): Promise<T> {

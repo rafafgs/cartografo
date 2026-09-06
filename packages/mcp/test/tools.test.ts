@@ -21,9 +21,10 @@ import {
   TOOLS,
   TRANSCRIPT_MAX_CHARS,
   clipStrings,
+  jobDigest,
   proposalDigest,
 } from '../src/tools.ts';
-import type { Proposal } from '../src/client.ts';
+import type { Job, Proposal } from '../src/client.ts';
 
 /** The credential this file checks never comes back out. */
 const TOKEN = 'a-secret-that-must-not-travel';
@@ -294,4 +295,35 @@ test('create_job takes the entry node from the class when it is not given one', 
     { type: 'agent', ref: 'mcp' },
     'a write made by a model is recorded as an agent, never as a person',
   );
+});
+
+test('a job digest passes the control plane\'s own state through, unchanged', () => {
+  // The six states are derived over there, off the log and the lease table
+  // (t415, RF-30) — facts this package cannot reach. So the digest carries the
+  // word it was given and never rebuilds it: a client of the MCP server and a
+  // client of `/v1/jobs` have to be looking at the same board.
+  const job: Job = {
+    id: 12,
+    project_id: 1,
+    execution_id: 7,
+    title: 'the note still under review',
+    body: null,
+    acceptance_criteria: null,
+    fields: null,
+    tier: null,
+    entry_node_id: 'redigir',
+    current_node_id: 'revisar',
+    blocked: false,
+    block_reason: null,
+    graph_version_id: 'sha256:abc',
+    completed: false,
+    state: 'running',
+    created_at: '2026-09-06T09:00:00.000Z',
+    updated_at: '2026-09-06T11:45:00.000Z',
+  };
+
+  const digest = jobDigest(job);
+  assert.equal(digest.state, 'running');
+  assert.equal(digest.completed, false, 'and the terminal flag still rides beside it');
+  assert.equal(digest.node, 'revisar');
 });

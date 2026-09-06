@@ -19,6 +19,7 @@ import test from 'node:test';
 import type { GraphDocument } from '../src/domain/graph.ts';
 import { manifestHash } from '../src/domain/manifest.ts';
 import { insertVersion } from '../src/repositories/graphs.ts';
+import { grantLease } from '../src/repositories/leases.ts';
 import {
   PACKAGE_ROOT,
   T102_ARTIFACTS,
@@ -2280,4 +2281,455 @@ test('t410 AT6 — POST /v1/jobs refuses a graph version of another project', as
     project_id: 2,
   });
   assert.equal(accepted.graph_version_id, versionId);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t415 — the six states of a job, derived from the log (RF-30, AT9–AT17).     */
+/*                                                                             */
+/* No column stores any of them: `state` and `state_since` are computed at read */
+/* time off facts the control plane already has — the pending question, the     */
+/* blocked flag, the active lease and its deadline, the open session, the       */
+/* version's `final_nodes` and the log's own `job.blocked`/`job.transitioned`.  */
+/* The priority order is RF-30's, and the two ambiguities it names have a case  */
+/* each here: AT9 (a question outranks the flag) and AT14 (an open session on a */
+/* final node is `running`, never `completed`).                                 */
+/*                                                                             */
+/* What AT17 guards is the SHAPE of the read: the board resolves every job in a */
+/* bounded number of statements, so a state per row never becomes a query per   */
+/* row — the same discipline `listRunnersWithHealth` already writes for the     */
+/* fleet page.                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** The projection with the two fields this ticket adds. */
+type JobWithState = JobProjection & { state: string; state_since: string };
+
+/** Reads one job's projection, asserting on the state fields. */
+async function readState(ctx: TestContext, id: number): Promise<JobWithState> {
+  const response = await request<JobWithState>(ctx, 'GET', `/v1/jobs/${id}`);
+  assert.equal(response.status, 200);
+  return response.body;
+}
+
+/** The whole board, keyed by job id. */
+async function readBoard(ctx: TestContext): Promise<Map<number, JobWithState>> {
+  const response = await request<{ jobs: JobWithState[] }>(ctx, 'GET', '/v1/jobs');
+  assert.equal(response.status, 200);
+  return new Map(response.body.jobs.map((job) => [job.id, job]));
+}
+
+/** Opens a session and leaves it open — the runner mid-dispatch. */
+async function openSessionOn(ctx: TestContext, jobId: number, nodeId: string): Promise<number> {
+  const opened = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: nodeId,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'Write the note.',
+  });
+  assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
+  return opened.body.id;
+}
+
+/** Pairs a runner, so the lease below has an identity to belong to. */
+async function pairRunner(ctx: TestContext, id: string): Promise<void> {
+  const response = await request(ctx, 'POST', '/v1/runners', { id, name: id });
+  assert.ok(
+    response.status === 201 || response.status === 200,
+    `POST /v1/runners returned ${response.status}`,
+  );
+}
+
+/** Grants a live lease over a job, through the real route. */
+async function leaseJob(
+  ctx: TestContext,
+  runnerId: string,
+  jobId: number,
+): Promise<{ granted_at: string; expires_at: string }> {
+  const response = await request<{ lease: { granted_at: string; expires_at: string } }>(
+    ctx,
+    'POST',
+    '/v1/leases',
+    {
+      runner_id: runnerId,
+      project_id: 1,
+      job_id: jobId,
+      runner_cap: 10,
+      project_cap: 10,
+      ttl_seconds: 600,
+    },
+  );
+  assert.equal(response.status, 201, `POST /v1/leases returned ${response.status}`);
+  return response.body.lease;
+}
+
+/**
+ * Grants a lease whose deadline is already behind us, and leaves it `active`.
+ *
+ * Through the repository with an injected clock, and never through the route:
+ * the three read-or-act lease verbs open with `claimExpired` (t256), so asking
+ * the API for an overdue lease is asking it to reconcile the very row this case
+ * needs untouched. `unowned` exists because NOTHING sweeps — the column still
+ * says `active` while the deadline is an hour gone — and a fixture that let the
+ * sweep run would be testing the state that does not exist.
+ */
+function leaseInThePast(ctx: TestContext, runnerId: string, jobId: number): { expires_at: string } {
+  const granted = grantLease(
+    ctx.db,
+    {
+      runner_id: runnerId,
+      project_id: 1,
+      job_id: jobId,
+      runner_cap: 10,
+      project_cap: 10,
+      ttl_seconds: 60,
+    },
+    { now: () => new Date(Date.now() - 3600_000).toISOString() },
+  );
+  assert.ok(granted.lease !== null, 'the lease of the past was refused');
+  return { expires_at: granted.lease.expires_at };
+}
+
+/**
+ * Registers a version whose final node pins nothing, so arriving IS finishing.
+ *
+ * Hand-inserted for the reason t262's AT-5 already gives: `graph.schema.json`
+ * makes `skill_ref` mandatory, so no document that passes the registration gate
+ * can reach this branch.
+ */
+function insertUnpinnedVersion(ctx: TestContext, graphId: string, versionId: string): string {
+  const snapshot = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as GraphDocument;
+  delete (snapshot.nodes[1] as Record<string, unknown>).skill_ref;
+  insertVersion(ctx.db, {
+    id: versionId,
+    graph_id: graphId,
+    parent_version: null,
+    snapshot,
+    source: 'manual',
+    proposal_id: null,
+    created_at: new Date().toISOString(),
+    contracts: { state: 'checked', problems: [] },
+  });
+  return versionId;
+}
+
+/** The lineage a registered version belongs to — what an inserted one hangs off. */
+function graphIdOf(ctx: TestContext, versionId: string): string {
+  return (
+    ctx.db.prepare('SELECT graph_id FROM graph_version WHERE id = ?').get(versionId) as {
+      graph_id: string;
+    }
+  ).graph_id;
+}
+
+/** The `occurred_at` of the last event of a type, off the job's own timeline. */
+async function lastEventAt(ctx: TestContext, jobId: number, type: string): Promise<string> {
+  const events = await timeline(ctx, jobId);
+  const matching = events.filter((event) => event.type === type);
+  assert.ok(matching.length > 0, `the job has no ${type} in its timeline`);
+  return matching[matching.length - 1].occurred_at;
+}
+
+test('t415 AT9 — a pending question is awaiting_you, since the question was asked', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { title: 'the one that asks', entry_node_id: 'entrada' });
+  const asked = await request<{ created_at: string }>(ctx, 'POST', '/v1/input-requests', {
+    job_id: job.id,
+    kind: 'question',
+    question: 'Which of the two numberings stays?',
+  });
+  assert.equal(asked.status, 201, JSON.stringify(asked.body));
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(
+    seen.blocked,
+    true,
+    'the escalation blocked the job too (t106) — which is exactly why this case is ambiguity 1',
+  );
+  assert.equal(seen.state, 'awaiting_you', 'a person is what is missing, and that outranks the flag');
+  assert.equal(seen.state_since, asked.body.created_at, 'the wait started at the question');
+});
+
+test('t415 AT10 — blocked with nothing pending is blocked_unasked, since the block', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { title: 'the stopped one', entry_node_id: 'entrada' });
+  const blocked = await request(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
+    reason: 'the premise stopped holding',
+  });
+  assert.equal(blocked.status, 200);
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(seen.state, 'blocked_unasked', 'stopped, and nobody was even asked anything');
+  assert.equal(seen.state_since, await lastEventAt(ctx, job.id, 'job.blocked'));
+});
+
+test('t415 AT11 — an open session under a live lease is running, since the grant', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await pairRunner(ctx, 'runner-a');
+
+  const job = await createJob(ctx, { title: 'the one being worked', entry_node_id: 'entrada' });
+  const lease = await leaseJob(ctx, 'runner-a', job.id);
+  await openSessionOn(ctx, job.id, 'entrada');
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(seen.state, 'running');
+  assert.equal(seen.state_since, lease.granted_at);
+});
+
+test('t415 AT12 — an open session past its lease deadline is unowned, and the row stays active', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await pairRunner(ctx, 'runner-a');
+
+  const job = await createJob(ctx, { title: 'the one nobody holds', entry_node_id: 'entrada' });
+  const lease = leaseInThePast(ctx, 'runner-a', job.id);
+  await openSessionOn(ctx, job.id, 'entrada');
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(seen.state, 'unowned', 'the deadline passed and no sweep exists to notice');
+  assert.equal(seen.state_since, lease.expires_at, 'ownerless since the deadline, not since the grant');
+
+  const row = ctx.db.prepare('SELECT status FROM lease WHERE job_id = ?').get(job.id) as {
+    status: string;
+  };
+  assert.equal(
+    row.status,
+    'active',
+    'nothing reconciled the lease: the state is derived from the DEADLINE, never from the column',
+  );
+});
+
+test('t415 AT13 — arriving at a final node that pins nothing is completed, at the arrival', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+
+  const registered = await registerMinimalGraph(ctx);
+  const versionId = insertUnpinnedVersion(
+    ctx,
+    graphIdOf(ctx, registered),
+    'sha256:' + 'a'.repeat(64),
+  );
+
+  const job = await createJob(ctx, {
+    title: 'the note of a graph with nothing pinned at the end',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(seen.completed, true);
+  assert.equal(seen.state, 'completed');
+  assert.equal(seen.state_since, await lastEventAt(ctx, job.id, 'job.transitioned'));
+});
+
+test('t415 AT14 — a conforming finish is completed; the job still being worked is running', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
+  await pairRunner(ctx, 'runner-a');
+
+  const finished = await createJob(ctx, {
+    title: 'the note that really was reviewed',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${finished.id}/transitions`, { to_node_id: 'revisar' });
+  const sessionId = await runSessionOn(ctx, finished.id, 'revisar', CONFORMING_REPORT);
+  const finishedAt = (
+    ctx.db.prepare('SELECT finished_at FROM session WHERE id = ?').get(sessionId) as {
+      finished_at: string;
+    }
+  ).finished_at;
+
+  const done = await readState(ctx, finished.id);
+  assert.equal(done.state, 'completed');
+  assert.equal(done.state_since, finishedAt, 'it ended when the pinned skill reported');
+
+  // The second traveller, on the SAME final node of the SAME version: it is
+  // being reviewed right now. `running` is a lease plus an open session — the
+  // pair RF-30 defines both moving states in terms of — and it is checked
+  // BEFORE the final-node rule, which is ambiguity 2.
+  const working = await createJob(ctx, {
+    title: 'the note still under review',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${working.id}/transitions`, { to_node_id: 'revisar' });
+  await leaseJob(ctx, 'runner-a', working.id);
+  await openSessionOn(ctx, working.id, 'revisar');
+
+  const inFlight = await readState(ctx, working.id);
+  assert.equal(inFlight.completed, false, 'the pinned skill has not reported yet');
+  assert.equal(
+    inFlight.state,
+    'running',
+    'an open session on the last node is work in progress, never an arrival',
+  );
+});
+
+test('t415 AT15 — a fresh job on a non-final node is queued, since it was created', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'the note nobody picked up',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const seen = await readState(ctx, job.id);
+  assert.equal(seen.state, 'queued');
+  assert.equal(seen.state_since, job.created_at, 'it never transitioned: the wait is its whole life');
+});
+
+test('t415 AT16 — GET /v1/jobs reports the six states in one request, across two versions', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  await pairRunner(ctx, 'runner-a');
+  await pairRunner(ctx, 'runner-b');
+
+  const pinned = await registerGraphPinningReviewSkill(ctx);
+  const unpinned = insertUnpinnedVersion(
+    ctx,
+    graphIdOf(ctx, pinned),
+    'sha256:' + 'b'.repeat(64),
+  );
+
+  const born = async (title: string, versionId: string): Promise<number> =>
+    (
+      await createJob(ctx, { title, entry_node_id: 'redigir', graph_version_id: versionId })
+    ).id;
+
+  const asking = await born('asking', pinned);
+  await request(ctx, 'POST', '/v1/input-requests', {
+    job_id: asking,
+    kind: 'question',
+    question: 'Does the second paragraph answer the theme?',
+  });
+
+  const stopped = await born('stopped', pinned);
+  await request(ctx, 'POST', `/v1/jobs/${stopped}/blocks`, { reason: 'the theme moved' });
+
+  const working = await born('working', pinned);
+  await leaseJob(ctx, 'runner-a', working);
+  await openSessionOn(ctx, working, 'redigir');
+
+  const abandoned = await born('abandoned', pinned);
+  leaseInThePast(ctx, 'runner-b', abandoned);
+  await openSessionOn(ctx, abandoned, 'redigir');
+
+  const done = await born('done', unpinned);
+  await request(ctx, 'POST', `/v1/jobs/${done}/transitions`, { to_node_id: 'revisar' });
+
+  const waiting = await born('waiting', unpinned);
+
+  const board = await readBoard(ctx);
+  assert.equal(board.size, 6, 'the whole board came back in one request');
+  assert.equal(board.get(asking)?.state, 'awaiting_you');
+  assert.equal(board.get(stopped)?.state, 'blocked_unasked');
+  assert.equal(board.get(working)?.state, 'running');
+  assert.equal(board.get(abandoned)?.state, 'unowned');
+  assert.equal(board.get(done)?.state, 'completed');
+  assert.equal(board.get(waiting)?.state, 'queued');
+
+  for (const [id, job] of board) {
+    assert.ok(
+      typeof job.state_since === 'string' && job.state_since.length > 0,
+      `job ${id} came back with no state_since`,
+    );
+    assert.equal(
+      job.state,
+      (await readState(ctx, id)).state,
+      `the board and the job page disagree about job ${id}`,
+    );
+  }
+});
+
+test('t415 AT17 — the board costs the same number of statements whatever the job count', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+
+  /** Counts every statement the handle prepares while the board is read. */
+  const preparesForTheBoard = async (ctx: TestContext): Promise<number> => {
+    const handle = ctx.db as unknown as { prepare: (sql: string) => unknown };
+    const original = handle.prepare.bind(ctx.db);
+    let prepared = 0;
+    handle.prepare = (sql: string): unknown => {
+      prepared += 1;
+      return original(sql);
+    };
+    try {
+      const response = await request<{ jobs: JobWithState[] }>(ctx, 'GET', '/v1/jobs');
+      assert.equal(response.status, 200);
+    } finally {
+      handle.prepare = original;
+    }
+    return prepared;
+  };
+
+  // One job, one version, one state.
+  const small = await startControlPlane(t);
+  const smallVersion = await registerMinimalGraph(small);
+  await createJob(small, {
+    title: 'the only one',
+    entry_node_id: 'redigir',
+    graph_version_id: smallVersion,
+  });
+
+  // Five jobs, two versions, five states.
+  const large = await startControlPlane(t);
+  await pairRunner(large, 'runner-a');
+  await pairRunner(large, 'runner-b');
+  const pinned = await registerGraphPinningReviewSkill(large);
+  const unpinned = insertUnpinnedVersion(
+    large,
+    graphIdOf(large, pinned),
+    'sha256:' + 'c'.repeat(64),
+  );
+
+  const jobs: number[] = [];
+  for (const [title, versionId] of [
+    ['asking', pinned],
+    ['stopped', pinned],
+    ['working', pinned],
+    ['abandoned', pinned],
+    ['done', unpinned],
+  ] as const) {
+    jobs.push(
+      (await createJob(large, { title, entry_node_id: 'redigir', graph_version_id: versionId })).id,
+    );
+  }
+  await request(large, 'POST', '/v1/input-requests', {
+    job_id: jobs[0],
+    kind: 'question',
+    question: 'Is the theme still the theme?',
+  });
+  await request(large, 'POST', `/v1/jobs/${jobs[1]}/blocks`, { reason: 'the theme moved' });
+  await leaseJob(large, 'runner-a', jobs[2]);
+  await openSessionOn(large, jobs[2], 'redigir');
+  leaseInThePast(large, 'runner-b', jobs[3]);
+  await openSessionOn(large, jobs[3], 'redigir');
+  await request(large, 'POST', `/v1/jobs/${jobs[4]}/transitions`, { to_node_id: 'revisar' });
+
+  const board = await readBoard(large);
+  assert.equal(
+    new Set([...board.values()].map((job) => job.state)).size,
+    5,
+    'the large board has to span several states, or the guard proves nothing',
+  );
+
+  const forOne = await preparesForTheBoard(small);
+  const forFive = await preparesForTheBoard(large);
+
+  assert.equal(
+    forFive,
+    forOne,
+    `the board prepared ${forFive} statements for five jobs and ${forOne} for one: ` +
+      'the read has to be bounded, or a state per row is a query per row',
+  );
 });

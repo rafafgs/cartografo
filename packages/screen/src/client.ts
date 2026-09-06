@@ -33,6 +33,26 @@
  * `fetch`.
  */
 
+/**
+ * The six words RF-30 defines for "what is this job doing right now" (t415).
+ *
+ * In the control plane's own attention-priority order — the same order
+ * `boardPage` groups by (t416).
+ */
+export type JobState =
+  | 'awaiting_you'
+  | 'blocked_unasked'
+  | 'running'
+  | 'unowned'
+  | 'completed'
+  | 'queued';
+
+/**
+ * A screen-local mirror of core's `ScalarMap` (D11 — no import from
+ * `packages/core`): a flat object of string, number or boolean values.
+ */
+export type JobFields = Record<string, string | number | boolean>;
+
 /** Projection of a job, as `GET /v1/jobs` returns it. */
 export interface Job {
   id: number;
@@ -51,6 +71,21 @@ export interface Job {
    * is read and not recomputed here.
    */
   completed: boolean;
+  /**
+   * What this job is doing right now, in the six words RF-30 defines (t415).
+   *
+   * Derived over there, read and never recomputed here — same posture as
+   * {@link Job.completed} above.
+   */
+  state: JobState;
+  /** When the job entered {@link Job.state}, as an ISO instant (t415). */
+  state_since: string;
+  /**
+   * Values of the fields the job's class declares (t168); `null` when it
+   * carries none. The board's only use of this today is the `demo` badge
+   * (t416) — nothing here interprets any other key.
+   */
+  fields: JobFields | null;
   created_at: string;
   updated_at: string;
 }

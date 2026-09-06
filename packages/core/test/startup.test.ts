@@ -216,11 +216,16 @@ test(
       // and renumbered at the merge with t354, which is this count's whole point
       // restated one more time. t401 moved it last with
       // `0028_runner_probe.sql`: what a paired machine reports about itself, and
-      // the operator's request that it report again.
+      // the operator's request that it report again. And t417 moved it once
+      // more with `0031_reassign_orphan_projects.sql`, which sends the rows the
+      // unvalidated write side already produced back to a project that exists —
+      // numbered 0031 because 0029 and 0030 were claimed by unmerged branches,
+      // so the count and the highest number no longer agree, and only the count
+      // is what this line is about.
       assert.equal(
         first.readiness.migrationsApplied,
-        28,
-        'a brand-new database applies the twenty-eight migrations the package ships',
+        29,
+        'a brand-new database applies the twenty-nine migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

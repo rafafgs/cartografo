@@ -19,10 +19,14 @@
  * 1. **A scoped query called with the WRONG project.** This is a SQL-level
  *    sweep: `getVersion(db, id)` reads `WHERE project_id = ?` and is green here
  *    even when the caller let the parameter default to project 1. The two known
- *    instances are `repositories/session.ts`'s `resolveOutputSchema` and
- *    `repositories/intake.ts`'s `listDrafts` (whose `DraftFilter.project_id`
- *    nothing in `routes/intake.ts` ever sets) — both named in t414's Context as
- *    real, currently unowned gaps, neither of them this ticket's to fix.
+ *    instances are `repositories/session.ts`'s `resolveOutputSchema` (which
+ *    resolves a version and a skill with no project at all, so project 1's
+ *    schema can judge project 2's report when a content hash collides) and
+ *    `repositories/intake.ts`'s `listDrafts`, whose `DraftFilter.project_id`
+ *    `routes/intake.ts` does now thread off the wire (t417) but never defaults,
+ *    so `GET /v1/intake` with no `?project_id=` still lists every project's
+ *    drafts together. Both were named in t414's Context as real, currently
+ *    unowned gaps, and neither is this ticket's to fix.
  * 2. **A route that never passes the scope its repository accepts.** Same
  *    reason, one level up. `test/partition-isolation.test.ts` is the gate for
  *    that half: it is behavioural, it goes through the API, and it is where a
@@ -128,11 +132,12 @@ interface Exception {
  *
  * Two rules keep this list from rotting: an entry that matches nothing is a
  * FAILURE (below), so a query that gets scoped forces its cover to be deleted;
- * and an entry marked `t412` is a sibling ticket's known, not-yet-merged gap,
- * never permanent cover. `ticket-411` merged before this ticket was built and
- * left nothing behind here; `ticket-412` had not, which is what the six `t412`
- * entries are — each one dies on that merge, and the dead-entry rule is what
- * makes the merge notice.
+ * and a temporary entry naming a sibling ticket's not-yet-merged gap is never
+ * permanent cover. Both rules have now been paid: `ticket-411` merged before
+ * this ticket was built and left nothing behind here, and `ticket-412` merged
+ * into it, at which point the dead-entry rule went red on all six of the `t412`
+ * entries at once and they were deleted — the mechanism working exactly as the
+ * ticket designed it, and the reason there is no temporary entry left below.
  */
 const ALLOWLIST: readonly Exception[] = Object.freeze([
   /* ---------------------------------------------------------------------- */
@@ -272,6 +277,12 @@ const ALLOWLIST: readonly Exception[] = Object.freeze([
     class: 'GLOBAL_BY_DESIGN',
     reason: '`MAX(id)` is where this connection starts reading, not something it reads.',
   },
+  {
+    where: 'repositories/job.ts::jobProjectId',
+    class: 'GLOBAL_BY_DESIGN',
+    reason:
+      'the one read of that file that crosses the partition on purpose — it answers WHICH project an id lives in, so `POST /v1/leases` can tell a foreign job from one that never existed (t412); a project predicate would be the bug.',
+  },
 
   /* ---------------------------------------------------------------------- */
   /* WRITE_PATH_DEFERRED — a named, deferred write-side risk.                */
@@ -342,42 +353,6 @@ const ALLOWLIST: readonly Exception[] = Object.freeze([
     reason: 'status transition by id, guarded by the previous status; write-side scope deferred.',
   },
 
-  /* ---------------------------------------------------------------------- */
-  /* TEMPORARY — ticket-412's declared surface, unmerged when t414 was built. */
-  /* Each of these dies on that merge; the dead-entry rule below is what      */
-  /* makes the merge notice instead of leaving permanent cover behind.        */
-  /* ---------------------------------------------------------------------- */
-  {
-    where: 'repositories/proposals.ts::getProposal',
-    class: 'WRITE_PATH_DEFERRED',
-    reason: 'NOT THIS TICKET — ticket-412 scopes it (`WHERE project_id = ? AND id = ?`); delete on merge.',
-  },
-  {
-    where: 'repositories/proposals.ts::findPendingProposalByDedupeKey',
-    class: 'WRITE_PATH_DEFERRED',
-    reason: 'NOT THIS TICKET — ticket-412 puts the project in the key lookup; delete on merge.',
-  },
-  {
-    where: 'repositories/proposals.ts::listProposals',
-    class: 'WRITE_PATH_DEFERRED',
-    reason: 'NOT THIS TICKET — ticket-412 gives `ProposalFilter` a `project_id`; delete on merge.',
-  },
-  {
-    where: 'repositories/webhooks.ts::getSubscription',
-    class: 'WRITE_PATH_DEFERRED',
-    reason: 'NOT THIS TICKET — ticket-412 scopes it; delete on merge.',
-  },
-  {
-    where: 'repositories/webhooks.ts::deactivateSubscription',
-    class: 'WRITE_PATH_DEFERRED',
-    reason:
-      'NOT THIS TICKET — ticket-412 closes the sharpest gap of the set (any credential deactivating any project’s subscription by id); delete on merge.',
-  },
-  {
-    where: 'repositories/leases.ts::getLease',
-    class: 'WRITE_PATH_DEFERRED',
-    reason: 'NOT THIS TICKET — ticket-412 scopes it; delete on merge.',
-  },
 ]);
 
 /* -------------------------------------------------------------------------- */

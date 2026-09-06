@@ -30,22 +30,22 @@
  *   interval and the real `fetch`, and two dispatchers over one database would
  *   race for the same rows and reach for the network.
  *
- * ## One case is a `todo`, and it names its ticket
+ * ## One case was a `todo`, until its ticket landed
  *
- * `GET /v1/proposals` has no project filter on this branch: `ProposalFilter`
- * carries `status` and `veredito` and nothing else. That is ticket-412's to fix
- * ("proposal, lease and webhook reads filter by project"), it was written and
- * unmerged when this file was, and t414's Definition of Done says the case is
- * left failing rather than skipped or weakened. So the assertion below is the
- * real one — the one that passes only when the leak is closed — carried as a
- * `todo`, which RUNS it and REPORTS the failure without turning the whole suite
- * red for a gap this ticket is explicitly out of scope for.
+ * `GET /v1/proposals` had no project filter when this file was written:
+ * `ProposalFilter` carried `status` and `veredito` and nothing else. That was
+ * ticket-412's to fix ("proposal, lease and webhook reads filter by project"),
+ * it was written and unmerged at the time, and t414's Definition of Done said
+ * the case is left failing rather than skipped or weakened — so the assertion
+ * was the real one all along, carried as a `todo` that RAN it and REPORTED the
+ * failure without turning the suite red for a gap this ticket is out of scope
+ * for. ticket-412 has since merged into this branch and the marker is gone: the
+ * case below is an ordinary green assertion, and it is green because the leak
+ * is closed and not because anything about it was relaxed.
  *
- * What stops the marker from rotting once ticket-412 lands is not this comment:
- * `partition-guard.test.ts`'s allowlist carries three `listProposals`-shaped
- * entries marked "delete on merge", and its dead-entry rule goes RED the moment
- * that merge makes them unnecessary. Whoever fixes that is standing one file
- * away from this one.
+ * What made that merge notice was not this comment: `partition-guard.test.ts`'s
+ * allowlist carried six entries marked "delete on merge", and its dead-entry
+ * rule went red the moment the merge made them unnecessary.
  */
 
 import assert from 'node:assert/strict';
@@ -391,10 +391,10 @@ test('t414 — an input-request listing never carries another project’s questi
 });
 
 /* -------------------------------------------------------------------------- */
-/* 5. Proposals — RED until ticket-412 merges (see the header)                */
+/* 5. Proposals — green since ticket-412 merged (see the header)              */
 /* -------------------------------------------------------------------------- */
 
-test('t414 — a proposal listing never carries another project’s proposal', { todo: 'blocked on ticket-412: ProposalFilter has no project_id on this branch' }, async (t) => {
+test('t414 — a proposal listing never carries another project’s proposal', async (t) => {
   const { ctx, projects } = await twoProjects(t);
 
   // The subject of each proposal is a REAL lineage registered in its own
@@ -403,10 +403,12 @@ test('t414 — a proposal listing never carries another project’s proposal', {
   const mineSubject = await registerMinimalGraphIn(ctx, projects.alpha);
   const theirSubject = await registerMinimalGraphIn(ctx, projects.beta);
 
-  // Straight through the repository the route writes through: `POST /v1/proposals`
-  // resolves everything in the default project on this branch, so a proposal
-  // belonging to project beta has no API door to come in by until ticket-412
-  // opens one.
+  // Straight through the repository the route writes through, and still so
+  // after ticket-412 opened the API door (`POST /v1/proposals` now resolves its
+  // graph, its version and its own row inside the declared scope): what this
+  // case asserts is the LISTING, and going in through the route would make the
+  // fixture carry a full valid `operations` payload that the assertion below
+  // never looks at. D1 is intact either way — the server is still the writer.
   const mine = createProposal(ctx.db, {
     project_id: projects.alpha,
     graph_id: mineSubject.graphId,

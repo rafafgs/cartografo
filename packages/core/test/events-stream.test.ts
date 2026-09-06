@@ -295,12 +295,16 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  // DECLARED, and no longer two numbers picked out of the air (t414). This case
-  // used to create jobs under projects `7` and `42` without either of them being
-  // a row anywhere — `job.project_id` has no `REFERENCES project(id)`
-  // (migration `0003`), so nothing stopped it. Now that the route resolves its
-  // scope the way every other `/v1` route does, an undeclared project is a
-  // `404`, and the ids are whatever `POST /v1/projects` minted.
+  // DECLARED, and no longer two numbers picked out of the air. This case used
+  // to create jobs under projects `7` and `42` without either of them being a
+  // row anywhere — `job.project_id` has no `REFERENCES project(id)` (migration
+  // `0003`), so nothing stopped it. Two tickets closed that from both ends:
+  // since t417 `POST /v1/jobs` refuses a scope that answers to no project, and
+  // since t414 the stream route resolves its scope the way every other `/v1`
+  // route does, so an undeclared project is a `404`. Which numbers the two
+  // partitions get is incidental — they are whatever `POST /v1/projects`
+  // minted — and what the case is about is that a stream scoped to one never
+  // carries the other.
   const other = await declareProject(ctx, 'the neighbouring project');
   const mine = await declareProject(ctx, 'the project being watched');
 

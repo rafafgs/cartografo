@@ -268,7 +268,7 @@ function runCloseOutcome(
     'artifact does not exist yet: packages/runner/scripts/close-surveyor-outcome.mjs',
   );
 
-  const result = spawnSync(process.execPath, ['--import', 'tsx', SCRIPT_PATH, ...args], {
+  const result = spawnSync(process.execPath, [SCRIPT_PATH, ...args], {
     cwd: PACKAGE_ROOT,
     encoding: 'utf8',
     // A credential exported by whoever runs the suite must not decide the

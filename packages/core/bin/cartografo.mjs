@@ -3,7 +3,11 @@
  * Single command of the control plane: `cartografo`.
  *
  * The executable is `.mjs` (and not `.ts`) so it depends on no Node flag: it
- * registers the tsx loader in-process and only then imports `src/cli/index.ts`.
+ * imports `src/cli/index.ts` directly and Node strips the types itself. Out of
+ * a checkout that is free; out of an installed tarball Node refuses to strip
+ * anything under `node_modules`, which is why `register-typescript.mjs` is
+ * imported first (t248).
+ *
  * In-process, and not through `spawn`, so that the process the supervisor sees
  * is the same one listening on the port — a signal sent to the command reaches
  * whoever needs to shut down.
@@ -17,9 +21,7 @@
  * Configuration: `CARTOGRAFO_DB_PATH`, `CARTOGRAFO_PORT`, `CARTOGRAFO_URL`.
  */
 
-import { register } from 'tsx/esm/api';
-
-register();
+import './register-typescript.mjs';
 
 const { runCli } = await import(new URL('../src/cli/index.ts', import.meta.url).href);
 

@@ -120,6 +120,15 @@ Step 3 registers the bundled graph, checking each pinned skill hash first, and
 prints the recorded `graph_version.id`. `GET /v1/classes` then lists
 `software-development`.
 
+**The checkout in step 1 is not optional yet.** `cartografo` is a single
+publishable package carrying all six commands (D23), so
+`npm install -g cartografo` really does put every one of them on `PATH`, and
+step 2 works from any empty directory. Step 3 does not: `factory-graphs/` is a
+directory of this repository and is not shipped inside the package, so `import`
+has nothing to point at without a clone. Making the whole sequence work from a
+bare install — deciding whether the example graphs ship, are fetched, or are
+generated — is its own ticket.
+
 And a fourth command puts a runner behind it:
 
 ```bash

@@ -6,10 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=20.11.0"
-  },
-  "bin": {
-    "cartografo-runner": "./bin/cartografo-runner.mjs"
+    "node": ">=22.18.0"
   },
   "exports": {
     "./surveyor/proposal": {
@@ -23,6 +20,9 @@
     "./engine/types": {
       "types": "./src/engine/types.ts",
       "default": "./src/engine/types.ts"
+    },
+    "./bin/cartografo-runner": {
+      "default": "./bin/cartografo-runner.mjs"
     }
   },
   "files": [
@@ -31,25 +31,22 @@
   ],
   "scripts": {
     "start": "node bin/cartografo-runner.mjs",
-    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "spike": "node --import tsx scripts/spike-real-session.mjs",
-    "spike:codex": "node --import tsx scripts/spike-real-session-codex.mjs",
-    "spike:escalation": "node --import tsx scripts/spike-human-escalation.mjs",
-    "spike:permissions": "node --import tsx scripts/spike-permission-enforcement.mjs",
-    "spike:resume": "node --import tsx scripts/spike-session-resume.mjs",
-    "spike:surveyor": "node --import tsx scripts/spike-surveyor-flow.mjs",
-    "spike:two-engine": "node --import tsx scripts/spike-two-engine-traversal.mjs",
-    "traverse": "node --import tsx scripts/run-graph-traversal.mjs",
-    "close-outcome": "node --import tsx scripts/close-surveyor-outcome.mjs",
-    "measure-executions": "node --import tsx scripts/measure-executions.mjs",
-    "intake": "node --import tsx src/intake/cli.mjs",
-    "surveyor": "node --import tsx src/surveyor/cli.mjs",
-    "synthesize": "node --import tsx src/synthesizer/cli.mjs",
-    "spike:traversal": "node --import tsx scripts/spike-graph-traversal.mjs"
-  },
-  "dependencies": {
-    "tsx": "^4.23.12"
+    "spike": "node scripts/spike-real-session.mjs",
+    "spike:codex": "node scripts/spike-real-session-codex.mjs",
+    "spike:escalation": "node scripts/spike-human-escalation.mjs",
+    "spike:permissions": "node scripts/spike-permission-enforcement.mjs",
+    "spike:resume": "node scripts/spike-session-resume.mjs",
+    "spike:surveyor": "node scripts/spike-surveyor-flow.mjs",
+    "spike:two-engine": "node scripts/spike-two-engine-traversal.mjs",
+    "traverse": "node scripts/run-graph-traversal.mjs",
+    "close-outcome": "node scripts/close-surveyor-outcome.mjs",
+    "measure-executions": "node scripts/measure-executions.mjs",
+    "intake": "node src/intake/cli.mjs",
+    "surveyor": "node src/surveyor/cli.mjs",
+    "synthesize": "node src/synthesizer/cli.mjs",
+    "spike:traversal": "node scripts/spike-graph-traversal.mjs"
   },
   "devDependencies": {
     "@cartografo/test-support": "^0.1.0",

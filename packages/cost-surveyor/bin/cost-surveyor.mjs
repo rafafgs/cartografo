@@ -4,10 +4,12 @@
  *
  * A thin shell, in the same mould as `packages/runner/bin/cartografo-runner.mjs`
  * and `packages/screen/bin/screen.mjs`: the executable is `.mjs` (and not `.ts`) so
- * it depends on no Node flag at all — it registers the tsx loader in process and
- * only then imports `src/cli.ts`. Whoever runs `npx cost-surveyor` does not
- * have to know that tsx exists, which is exactly what was missing while the only
- * path was `node --import tsx src/cli.ts avaliar …`.
+ * it depends on no Node flag at all — it imports `src/cli.ts` and Node strips
+ * the types itself, or, when this is reached through the published package, the
+ * hook installed by `packages/core/bin/register-typescript.mjs` already has
+ * (t248). Whoever runs `npx cost-surveyor` has to know about neither, which is
+ * exactly what was missing while the only path was a `node` invocation with a
+ * loader flag on it.
  *
  * The command's name is the one the package's own usage text has documented
  * since t180 (`src/cli.ts`): `cost-surveyor avaliar …`. Naming it anything
@@ -22,10 +24,6 @@
  * Usage: `npx cost-surveyor avaliar --url <url> --execution <id> [options]`.
  * Configuration: `CARTOGRAFO_TOKEN` (control plane credential).
  */
-
-import { register } from 'tsx/esm/api';
-
-register();
 
 const { runCli } = await import(new URL('../src/cli.ts', import.meta.url).href);
 

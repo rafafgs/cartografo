@@ -3,11 +3,18 @@
  *
  * The claim under test is the one the first dogfood wrote down as gap #5
  * (`notes/2026-08-15-first-execution.md:54-56`): the runner used to be a
- * library whose consumer had to know to pass `--import tsx`, because parameter
- * properties in its TypeScript break Node's strip-only mode. So the environment
+ * library whose consumer had to know to pass a loader flag, because parameter
+ * properties in its TypeScript broke Node's strip-only mode. So the environment
  * this file spawns the bin with is deliberately plain — `NODE_OPTIONS` is
- * deleted, not merely left alone — and a `.mjs` shell that forgot to register
- * the loader dies on the very first import instead of passing quietly.
+ * deleted, not merely left alone.
+ *
+ * Since t248 the claim is stronger and the mechanism is Node's own: there is no
+ * loader to register at all. `engines` floors this repository at 22.18, where
+ * type stripping is native and unflagged, and the last parameter property (on
+ * `UnknownSessionError`, `src/engine/types.ts`) became an explicit field so that
+ * strip-only mode accepts the module. A plain `node bin/cartografo-runner.mjs`
+ * is therefore the whole contract — and if that ever regresses, it fails here on
+ * the very first import instead of passing quietly.
  *
  * Nothing is released on this control plane, and nothing needs to be: what is
  * being proven is that the process comes up, pairs, and goes away when asked.

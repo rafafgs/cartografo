@@ -5,10 +5,15 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=20.11.0"
+    "node": ">=22.18.0"
   },
   "bin": {
-    "cartografo": "./bin/cartografo.mjs"
+    "cartografo": "./bin/cartografo.mjs",
+    "cartografo-runner": "./bin/cartografo-runner.mjs",
+    "cartografo-screen": "./bin/cartografo-screen.mjs",
+    "cartografo-surveyor": "./bin/cartografo-surveyor.mjs",
+    "cost-surveyor": "./bin/cost-surveyor.mjs",
+    "cartografo-mcp": "./bin/cartografo-mcp.mjs"
   },
   "files": [
     "bin",
@@ -16,18 +21,31 @@
     "src"
   ],
   "scripts": {
+    "prepack": "node ../../scripts/link-bundled-siblings.mjs",
     "start": "node bin/cartografo.mjs",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cartografo/cost-surveyor": "^0.1.0",
+    "@cartografo/mcp": "^0.1.0",
+    "@cartografo/runner": "^0.1.0",
+    "@cartografo/screen": "^0.1.0",
+    "@cartografo/surveyor": "^0.1.0",
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",
     "ajv": "^8.17.1",
+    "amaro": "^1.1.11",
     "better-sqlite3": "^13.0.3",
-    "fastify": "^5.12.0",
-    "tsx": "^4.23.12"
+    "fastify": "^5.12.0"
   },
+  "bundledDependencies": [
+    "@cartografo/runner",
+    "@cartografo/screen",
+    "@cartografo/surveyor",
+    "@cartografo/cost-surveyor",
+    "@cartografo/mcp"
+  ],
   "devDependencies": {
     "@cartografo/test-support": "^0.1.0",
     "@types/better-sqlite3": "^9.6.0",

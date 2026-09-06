@@ -4,7 +4,10 @@
  *
  * A thin shell, in the same mould as `packages/screen/bin/screen.mjs`: the
  * executable is `.mjs` (and not `.ts`) so it depends on no Node flag at all —
- * it registers the tsx loader in process and only then imports `src/index.ts`.
+ * it imports `src/index.ts` and Node strips the types itself, or, when this is
+ * reached through the published package, the hook installed by
+ * `packages/core/bin/register-typescript.mjs` already has (t248).
+ *
  * In process, and not through `spawn`, so the process the MCP client started IS
  * the process holding the pipe it writes to.
  *
@@ -22,10 +25,6 @@
  * Configuration: `CARTOGRAFO_URL`, `CARTOGRAFO_PORT`, `CARTOGRAFO_MCP_TOKEN`,
  * `CARTOGRAFO_TOKEN`.
  */
-
-import { register } from 'tsx/esm/api';
-
-register();
 
 const { runMcpCli } = await import(new URL('../src/index.ts', import.meta.url).href);
 

@@ -4,9 +4,11 @@
  *
  * A thin shell, in the same mould as `packages/cost-surveyor/bin/cost-surveyor.mjs`
  * and `packages/runner/bin/cartografo-runner.mjs`: the executable is `.mjs` (and
- * not `.ts`) so it depends on no Node flag at all — it registers the tsx loader
- * in process and only then imports `src/cli.ts`. Whoever runs
- * `npx cartografo-surveyor` does not have to know that tsx exists.
+ * not `.ts`) so it depends on no Node flag at all — it imports `src/cli.ts` and
+ * Node strips the types itself, or, when this is reached through the published
+ * package, the hook installed by `packages/core/bin/register-typescript.mjs`
+ * already has (t248). Whoever runs `npx cartografo-surveyor` knows about
+ * neither.
  *
  * Two things live here and nowhere else, because both genuinely need a process:
  *
@@ -21,10 +23,6 @@
  *
  * Usage: `npx cartografo-surveyor watch --url <url> --token <token>`.
  */
-
-import { register } from 'tsx/esm/api';
-
-register();
 
 const { runCli } = await import(new URL('../src/cli.ts', import.meta.url).href);
 

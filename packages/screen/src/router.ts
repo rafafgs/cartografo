@@ -97,6 +97,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ApiClient, ApiError, NetworkError } from './client.ts';
 import {
   API_PREFIX,
+  CONTROL_PLANE_URL_ENV,
   bodyTooLargeResponse,
   forwardRequest,
   isTrustedScreenOrigin,
@@ -145,6 +146,36 @@ export const DEFAULT_HOST = '127.0.0.1';
  * rule 2).
  */
 export const READY_EVENT = 'cartografo.tela.ready';
+
+/**
+ * What `cartografo-screen -h` answers (t248, FR7).
+ *
+ * The other five commands of the product all short-circuit `-h`/`--help` before
+ * doing any work. This one had no `--help` handling at all: the flag fell
+ * through as "no `--url`", the screen started for real, printed its readiness
+ * line and then waited on a signal — so asking the command what it does meant
+ * having to kill it. That is also why the whole of D23's "each bin answers
+ * `--help`" could not be true before this constant existed.
+ *
+ * Same shape as `packages/surveyor/src/cli.ts`'s: the command, one line of
+ * synopsis, the single flag it takes, and the environment it reads.
+ */
+export const USAGE = `usage: cartografo-screen [options]
+
+Starts the screen: the proposal inbox and the observability pages, served on a
+port of its own as one more unprivileged client of the public API (D11).
+
+options:
+  --url <url>            control plane to watch (env ${CONTROL_PLANE_URL_ENV};
+                         default http://${DEFAULT_HOST}:4317)
+  -h, --help             this text
+
+environment:
+  ${PORT_ENV}  the screen's own port (default ${DEFAULT_PORT})
+  ${CONTROL_PLANE_URL_ENV}          control plane address, unless --url says otherwise
+
+The screen holds no database and no credential of its own: it starts, and stops,
+without the control plane ever noticing.`;
 
 /** A form body larger than this is refused without being read whole. */
 const BODY_LIMIT = 64 * 1024;
@@ -733,13 +764,26 @@ export function urlFromArgs(args: string[]): string | undefined {
  * `main` in `server.ts`): a process that is going to stay up serving strangers
  * is exactly where Node's "die on an unhandled rejection" is the wrong default.
  *
+ * `-h`/`--help` is answered BEFORE any of that (t248, FR7) — before the crash
+ * guard, before the port, before the control plane is contacted. A question is
+ * not a start, and everything below this line is a start.
+ *
  * @param args Arguments after the command name.
  * @param env Environment to read the configuration from.
+ * @param context Test injection for the output writer, as in the surveyor's CLI.
  */
 export async function runScreenCli(
   args: string[] = [],
   env: NodeJS.ProcessEnv = process.env,
+  context: { write?: (text: string) => void } = {},
 ): Promise<void> {
+  const write = context.write ?? ((text: string) => void process.stdout.write(text));
+
+  if (args.some((argument) => argument === '--help' || argument === '-h')) {
+    write(`${USAGE}\n`);
+    return;
+  }
+
   installCrashGuard();
 
   const screen = await startScreenRouter({

@@ -3,8 +3,9 @@
 # It exists because two tickets merged green in isolation and left `main` red
 # with nobody knowing: outside the machine of whoever was developing, nothing
 # ran the suite. The matrix covers the two ends the repository declares — 24 is
-# the pin in `.nvmrc`, 22 is the nearest LTS above the `>=20.11.0` floor of
-# `engines`.
+# the pin in `.nvmrc`, 22 is the nearest LTS above the `>=22.18.0` floor of
+# `engines` (raised in t248: 22.18 is where Node strips TypeScript types with no
+# flag, which is what lets every command run out of a checkout with no loader).
 #
 # Two things the first real run (t217, execution
 # https://github.com/rafafgs/cartografo/actions/runs/31971354766) taught, and

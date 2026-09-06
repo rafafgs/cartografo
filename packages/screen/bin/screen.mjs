@@ -4,7 +4,10 @@
  *
  * A thin shell, in the same mould as `packages/core/bin/cartografo.mjs`: the
  * executable is `.mjs` (and not `.ts`) so it depends on no Node flag at all —
- * it registers the tsx loader in process and only then imports `src/router.ts`.
+ * it imports `src/router.ts` and Node strips the types itself, or, when this is
+ * reached through the published package, the hook installed by
+ * `packages/core/bin/register-typescript.mjs` already has (t248).
+ *
  * In process, and not through `spawn`, so that the process the supervisor sees
  * is the same one listening on the port.
  *
@@ -16,10 +19,6 @@
  * Configuration: `CARTOGRAFO_SCREEN_PORT` (the screen's port, default 4318),
  * `CARTOGRAFO_URL` (control plane, default `http://127.0.0.1:4317`).
  */
-
-import { register } from 'tsx/esm/api';
-
-register();
 
 const { runScreenCli } = await import(new URL('../src/router.ts', import.meta.url).href);
 

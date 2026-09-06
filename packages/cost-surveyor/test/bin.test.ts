@@ -7,11 +7,19 @@
  * called directly (which is what `cli.test.ts` already does, and it covers
  * something else).
  *
- * What this proves is the gap the ticket closes: until now this package only
- * ran as `node --import tsx src/cli.ts`, even though its own usage text has
- * documented `cost-surveyor avaliar …` since t180 — `evaluate` since t255. The
- * bin registers the tsx loader in process and imports `src/cli.ts` — whoever runs
- * the command does not have to know that tsx exists.
+ * What this proves is the gap t199 closed: until then this package only ran
+ * through a `node` invocation carrying a loader flag, even though its own usage
+ * text has documented `cost-surveyor avaliar …` since t180 — `evaluate` since
+ * t255. The bin imports `src/cli.ts` directly and Node strips the types itself,
+ * so whoever runs the command has no loader to know about.
+ *
+ * The last case changed shape in t248 (D23). It used to assert that THIS package
+ * declares the `cost-surveyor` command and carries the loader as a runtime
+ * dependency. Neither is true any more, and both were made false on purpose: the
+ * product ships as ONE publishable package, so `cartografo` is the only manifest
+ * that claims a command name — two workspace members claiming one name is a race
+ * over whichever gets linked — and this package is reached through it. What is
+ * asserted instead is the half that has to hold for that to work.
  */
 
 import assert from 'node:assert/strict';
@@ -53,14 +61,34 @@ test('AT — `cost-surveyor` with no argument at all exits 2', () => {
   assert.doesNotMatch(result.stderr, /\n\s+at\s+\S+/);
 });
 
-test('AT — the package declares the bin under the same name its usage text documents', () => {
+test('t248 — the command is claimed by `cartografo`, and this package exposes its bin to it', () => {
   const manifest = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
     bin?: Record<string, string>;
-    dependencies?: Record<string, string>;
+    exports?: Record<string, unknown>;
   };
 
-  assert.deepEqual(manifest.bin, { 'cost-surveyor': './bin/cost-surveyor.mjs' });
-  // The bin imports `tsx/esm/api` on its first line: outside the monorepo a
-  // devDependency is not installed and the command dies right there (t199, FR2).
-  assert.ok(manifest.dependencies?.tsx, 'tsx is a runtime dependency for whoever publishes a bin');
+  assert.equal(
+    manifest.bin,
+    undefined,
+    'only `cartografo` declares a command name (D23): two members claiming one is a race',
+  );
+  assert.deepEqual(
+    manifest.exports?.['./bin/cost-surveyor'],
+    { default: './bin/cost-surveyor.mjs' },
+    'the delegator in packages/core reaches this file BY PACKAGE NAME, in the checkout and in the tarball alike',
+  );
+
+  const host = JSON.parse(
+    readFileSync(path.join(PACKAGE_ROOT, '..', 'core', 'package.json'), 'utf8'),
+  ) as { bin?: Record<string, string>; bundledDependencies?: string[] };
+
+  assert.equal(
+    host.bin?.['cost-surveyor'],
+    './bin/cost-surveyor.mjs',
+    'the published package carries this command',
+  );
+  assert.ok(
+    host.bundledDependencies?.includes('@cartografo/cost-surveyor'),
+    'and bundles this package, or the command it carries would resolve to nothing',
+  );
 });

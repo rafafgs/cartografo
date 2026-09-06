@@ -46,7 +46,7 @@ async function loadSynthesis(): Promise<typeof SynthesisModule> {
 function runCli(args: string[]): { status: number | null; stdout: string; stderr: string } {
   assert.ok(existsSync(CLI_PATH), 'artifact does not exist yet: packages/runner/src/synthesizer/cli.mjs');
 
-  const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_PATH, ...args], {
+  const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
     cwd: PACKAGE_ROOT,
     encoding: 'utf8',
   });
@@ -273,7 +273,7 @@ test('t180 — a missing `claude` CLI says so in English', () => {
   // that goes missing is the engine the probe looks for.
   const result = spawnSync(
     process.execPath,
-    ['--import', 'tsx', CLI_PATH, 'a declaration', '--class', 'new-class'],
+    [CLI_PATH, 'a declaration', '--class', 'new-class'],
     { cwd: PACKAGE_ROOT, encoding: 'utf8', env: { ...process.env, PATH: '' } },
   );
 

@@ -246,7 +246,7 @@ function runCli(
 ): { status: number | null; stdout: string; stderr: string } {
   assert.ok(existsSync(CLI_PATH), 'artifact does not exist yet: packages/runner/src/surveyor/cli.mjs');
 
-  const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_PATH, ...args], {
+  const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
     cwd: PACKAGE_ROOT,
     encoding: 'utf8',
     // A credential exported by whoever runs the suite must not decide the

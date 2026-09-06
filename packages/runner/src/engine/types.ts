@@ -580,8 +580,17 @@ export class SessionStartError extends EngineError {
  * went wrong" is exactly what telemetry has to preserve.
  */
 export class UnknownSessionError extends EngineError {
-  constructor(public readonly sessionId: string) {
+  /**
+   * Declared as a field and assigned in the body, rather than as a constructor
+   * parameter property. A parameter property is not erasable syntax, so Node's
+   * own type stripping refuses the whole module — and this module is on the
+   * import path of every one of the six commands.
+   */
+  public readonly sessionId: string;
+
+  constructor(sessionId: string) {
     super(`Unknown session handle: ${sessionId}`);
     this.name = "UnknownSessionError";
+    this.sessionId = sessionId;
   }
 }

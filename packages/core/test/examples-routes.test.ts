@@ -11,17 +11,38 @@
  * Two roots are exercised on purpose. A fixture root built in a temp directory
  * is what pins the behaviour — a bundle registered by the route, the skips, the
  * second job in its own execution. The repository's own `factory-graphs/` is
- * what pins the DISCOVERY: `asymmetric-bets` and `b3-flow-radar` ship a
- * `demo/job.json` and `software-development` does not, and nothing in the route
- * names any of the three.
+ * what pins the DISCOVERY: all three bundles ship a `demo/job.json` since t409,
+ * and nothing in the route names any of them.
  *
  * The examples root is read from `CARTOGRAFO_EXAMPLES_ROOT` on every request, so
  * each test sets it and gives it back; the control plane here runs in-process
  * (`test/support.ts`), which is what makes that possible.
+ *
+ * ## What t409 added, and why it needed a directory on disk
+ *
+ * `software-development` is the one class whose every node is dispatched into a
+ * git worktree cut from the runner's `repoRoot` — which, with no flag, is the
+ * project's `workspace_root` setting. A demo of it against the empty repository
+ * `cartografo up` provisions would demonstrate nothing, so the bundle ships a
+ * `demo/repo/` and the run route COPIES it into `workspace_root` before opening
+ * the job. Everything that copy could destroy is what the four refusal cases
+ * below are about: the route provisions only what it is certain nobody is using
+ * — a path that does not exist, an empty one, or exactly the pristine
+ * one-empty-commit repository `ensureDefaultWorkspace` leaves behind — and
+ * refuses, writing nothing at all, for anything else.
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -249,8 +270,8 @@ test('t408 AT2 — the repository’s own factory-graphs is what the default sca
   assert.ok(classes.includes('asymmetric-bets'), `asymmetric-bets is missing: ${classes.join(', ')}`);
   assert.ok(classes.includes('b3-flow-radar'), `b3-flow-radar is missing: ${classes.join(', ')}`);
   assert.ok(
-    !classes.includes('software-development'),
-    'software-development ships no demo/job.json and must not be listed',
+    classes.includes('software-development'),
+    `software-development ships a demo since t409 and must be listed: ${classes.join(', ')}`,
   );
 
   assert.deepEqual([...classes].sort(), classes, 'the listing is sorted by bundle, ascending');
@@ -352,4 +373,306 @@ test('t408 AT5 — the run registers once, and every click gets its own executio
     classes.body.classes.filter((entry) => entry.class === FIXTURE_CLASS).length,
     1,
   );
+});
+
+// --- t409: the bundle that ships a repository, and the workspace it lands in --
+
+/** The bundle whose demo needs a checkout, and the directory it ships. */
+const SOFTWARE_CLASS = 'software-development';
+const DEMO_REPO = path.join(FACTORY_GRAPHS, SOFTWARE_CLASS, 'demo', 'repo');
+
+/** The demo job of that bundle, read off the committed file. */
+function softwareDemo(): { title: string; entry_node_id: string } {
+  return JSON.parse(
+    readFileSync(path.join(FACTORY_GRAPHS, SOFTWARE_CLASS, 'demo', 'job.json'), 'utf8'),
+  ) as { title: string; entry_node_id: string };
+}
+
+/** One git command in one checkout, run to completion, with its output trimmed. */
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
+}
+
+/**
+ * Every file under a directory, relative and sorted, with `.git` left out.
+ *
+ * What it exists for is the byte-for-byte comparison of AT2: the provisioned
+ * workspace carries a `.git` the fixture does not, and nothing else may differ.
+ *
+ * @param root Directory to walk.
+ * @returns Slash-separated relative paths, ascending.
+ */
+function filesUnder(root: string): string[] {
+  const found: string[] = [];
+  const walk = (relative: string): void => {
+    for (const entry of readdirSync(path.join(root, relative), { withFileTypes: true })) {
+      if (entry.name === '.git') continue;
+      const next = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) walk(next);
+      else found.push(next);
+    }
+  };
+  walk('');
+  return found.sort();
+}
+
+/** A temporary directory for one test, removed at the end of it. */
+function scratch(t: TestHook): string {
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t409-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+/** Points a project's `workspace_root` at a path, through the public route. */
+async function setWorkspaceRoot(
+  ctx: Awaited<ReturnType<typeof startControlPlane>>,
+  workspaceRoot: string,
+): Promise<void> {
+  const patched = await request<{ workspace_root: string }>(ctx, 'PATCH', '/v1/settings', {
+    workspace_root: workspaceRoot,
+  });
+  assert.equal(patched.status, 200, JSON.stringify(patched.body));
+  assert.equal(patched.body.workspace_root, workspaceRoot);
+}
+
+/** The pristine repository `ensureDefaultWorkspace` leaves behind: one empty commit. */
+function pristineWorkspace(directory: string): void {
+  mkdirSync(directory, { recursive: true });
+  git(directory, 'init', '--quiet', '--initial-branch', 'main');
+  git(
+    directory,
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'user.email=fixture@localhost',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--allow-empty',
+    '--quiet',
+    '--message',
+    'the empty first commit',
+  );
+}
+
+test('t409 AT1 — the repository now offers all three bundles, software-development included', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  useExamplesRoot(t, FACTORY_GRAPHS);
+
+  const ctx = await startControlPlane(t);
+  const listed = await request<{ examples: Example[] }>(ctx, 'GET', '/v1/examples');
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+
+  assert.deepEqual(
+    listed.body.examples.map((example) => example.class),
+    ['asymmetric-bets', 'b3-flow-radar', SOFTWARE_CLASS],
+    'the three bundles of the repository, in bundle order',
+  );
+
+  const software = listed.body.examples.find((example) => example.class === SOFTWARE_CLASS);
+  assert.ok(software !== undefined);
+  assert.equal(
+    software.demo_title,
+    softwareDemo().title,
+    'the card shows the title the bundle’s own demo/job.json carries',
+  );
+});
+
+test('t409 AT2 — the run provisions workspace_root as a git repository holding demo/repo', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  useExamplesRoot(t, FACTORY_GRAPHS);
+
+  const root = scratch(t);
+  const workspace = path.join(root, 'workspace');
+
+  const ctx = await startControlPlane(t);
+  await setWorkspaceRoot(ctx, workspace);
+
+  const ran = await request<RunResult>(ctx, 'POST', `/v1/examples/${SOFTWARE_CLASS}/run`);
+  assert.equal(ran.status, 201, JSON.stringify(ran.body));
+  assert.equal(ran.body.job.entry_node_id, 'refine');
+  assert.equal(ran.body.job.title, softwareDemo().title);
+
+  assert.ok(existsSync(path.join(workspace, '.git')), 'the path was created as a git repository');
+  assert.equal(git(workspace, 'rev-list', '--count', 'HEAD'), '1', 'one commit, and only one');
+  assert.equal(git(workspace, 'status', '--porcelain'), '', 'and nothing left uncommitted');
+
+  const shipped = filesUnder(DEMO_REPO);
+  assert.ok(shipped.length > 0, 'the bundle really ships a repository to copy');
+  assert.deepEqual(
+    git(workspace, 'ls-tree', '-r', '--name-only', 'HEAD').split('\n').sort(),
+    shipped,
+    'the committed tree is exactly the fixture’s file list',
+  );
+  for (const file of shipped) {
+    assert.deepEqual(
+      readFileSync(path.join(workspace, file)),
+      readFileSync(path.join(DEMO_REPO, file)),
+      `${file} was copied byte for byte`,
+    );
+  }
+});
+
+test('t409 AT3 — a second run refuses workspace_not_empty and creates no second job', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  useExamplesRoot(t, FACTORY_GRAPHS);
+
+  const root = scratch(t);
+  const workspace = path.join(root, 'workspace');
+
+  const ctx = await startControlPlane(t);
+  await setWorkspaceRoot(ctx, workspace);
+
+  const first = await request<RunResult>(ctx, 'POST', `/v1/examples/${SOFTWARE_CLASS}/run`);
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+
+  const second = await request<{ error: string; workspace_root?: string }>(
+    ctx,
+    'POST',
+    `/v1/examples/${SOFTWARE_CLASS}/run`,
+  );
+  assert.equal(second.status, 409, JSON.stringify(second.body));
+  assert.equal(second.body.error, 'workspace_not_empty');
+  assert.equal(second.body.workspace_root, workspace);
+
+  const board = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs?project_id=1');
+  assert.equal(board.status, 200);
+  assert.deepEqual(
+    board.body.jobs.map((job) => job.id),
+    [first.body.job.id],
+    'the refusal wrote nothing: the first run’s job is still the only one',
+  );
+});
+
+test('t409 AT4 — a project with no workspace_root refuses and writes nothing', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  useExamplesRoot(t, FACTORY_GRAPHS);
+
+  // No `PATCH /v1/settings`: `startControlPlane` builds the app straight off a
+  // migrated database, and the seeding `cartografo up` does happens in the CLI.
+  // So this control plane has no settings at all, which is precisely the state
+  // this refusal is about.
+  const ctx = await startControlPlane(t);
+  const settings = await request<Record<string, unknown>>(ctx, 'GET', '/v1/settings');
+  assert.equal(settings.body.workspace_root, undefined, 'nothing points anywhere yet');
+
+  const refused = await request<{ error: string; class?: string; project_id?: number }>(
+    ctx,
+    'POST',
+    `/v1/examples/${SOFTWARE_CLASS}/run`,
+  );
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'workspace_root_unset');
+  assert.equal(refused.body.class, SOFTWARE_CLASS);
+  assert.equal(refused.body.project_id, 1);
+
+  const board = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs?project_id=1');
+  assert.deepEqual(board.body.jobs, [], 'no job was opened');
+
+  const classes = await request<{ classes: { class: string }[] }>(ctx, 'GET', '/v1/classes');
+  assert.deepEqual(
+    classes.body.classes.filter((entry) => entry.class === SOFTWARE_CLASS),
+    [],
+    'and the graph was not registered either — the refusal comes before every write',
+  );
+});
+
+test('t409 AT5 — a bundle with no demo/repo never touches workspace_root', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const root = scratch(t);
+  writeFixtureBundle(root, 'demo-note');
+  useExamplesRoot(t, root);
+
+  const workspace = path.join(root, 'never-provisioned');
+
+  const ctx = await startControlPlane(t);
+  await setWorkspaceRoot(ctx, workspace);
+
+  const before = await request<Record<string, unknown>>(ctx, 'GET', '/v1/settings');
+  const ran = await request<RunResult>(ctx, 'POST', `/v1/examples/${FIXTURE_CLASS}/run`);
+  assert.equal(ran.status, 201, JSON.stringify(ran.body));
+  const after = await request<Record<string, unknown>>(ctx, 'GET', '/v1/settings');
+
+  assert.deepEqual(after.body, before.body, 'the settings are the same object before and after');
+  assert.equal(
+    existsSync(workspace),
+    false,
+    'and the path was not so much as created: the provisioning is conditional on demo/repo',
+  );
+});
+
+test('t409 AT6 — a workspace that is not the pristine one is refused, untouched', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  useExamplesRoot(t, FACTORY_GRAPHS);
+
+  const root = scratch(t);
+  const ctx = await startControlPlane(t);
+
+  // Case one: a directory with a file in it and no `.git` anywhere — an
+  // operator's own folder, which is the worst thing this could overwrite.
+  const ownFolder = path.join(root, 'own-folder');
+  mkdirSync(ownFolder, { recursive: true });
+  writeFileSync(path.join(ownFolder, 'NOTES.md'), 'work of somebody who is not this demo\n');
+  await setWorkspaceRoot(ctx, ownFolder);
+
+  const overFolder = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/examples/${SOFTWARE_CLASS}/run`,
+  );
+  assert.equal(overFolder.status, 409, JSON.stringify(overFolder.body));
+  assert.equal(overFolder.body.error, 'workspace_not_empty');
+  assert.deepEqual(filesUnder(ownFolder), ['NOTES.md'], 'not one file was added or removed');
+  assert.equal(
+    readFileSync(path.join(ownFolder, 'NOTES.md'), 'utf8'),
+    'work of somebody who is not this demo\n',
+  );
+
+  // Case two: a git repository that IS clean but carries a history — one commit
+  // more than the pristine state, which is all it takes to be somebody's.
+  const twoCommits = path.join(root, 'two-commits');
+  pristineWorkspace(twoCommits);
+  writeFileSync(path.join(twoCommits, 'README.md'), '# a project of its own\n');
+  git(twoCommits, 'add', '-A');
+  git(
+    twoCommits,
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'user.email=fixture@localhost',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--quiet',
+    '--message',
+    'the second commit',
+  );
+  const head = git(twoCommits, 'rev-parse', 'HEAD');
+  await setWorkspaceRoot(ctx, twoCommits);
+
+  const overHistory = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/examples/${SOFTWARE_CLASS}/run`,
+  );
+  assert.equal(overHistory.status, 409, JSON.stringify(overHistory.body));
+  assert.equal(overHistory.body.error, 'workspace_not_empty');
+  assert.equal(git(twoCommits, 'rev-parse', 'HEAD'), head, 'the history did not move');
+  assert.deepEqual(filesUnder(twoCommits), ['README.md'], 'and the tree is the one it had');
+
+  // Case three: the pristine shape, but dirty — a session left work in it.
+  const dirty = path.join(root, 'dirty');
+  pristineWorkspace(dirty);
+  writeFileSync(path.join(dirty, 'in-progress.txt'), 'not committed anywhere\n');
+  await setWorkspaceRoot(ctx, dirty);
+
+  const overDirty = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/examples/${SOFTWARE_CLASS}/run`,
+  );
+  assert.equal(overDirty.status, 409, JSON.stringify(overDirty.body));
+  assert.equal(overDirty.body.error, 'workspace_not_empty');
+  assert.deepEqual(filesUnder(dirty), ['in-progress.txt'], 'the uncommitted work is still there');
+  assert.equal(git(dirty, 'rev-list', '--count', 'HEAD'), '1', 'and nothing was committed over it');
 });

@@ -468,7 +468,34 @@ test('AT3 — block and unblock move the flag and record both events', async (t)
     reason: 'waiting for the human to answer',
     consecutive_failures: null,
   });
-  assert.deepEqual(flags[1].data, {}, 'the fact is the fall of the flag itself: no payload');
+  // t339: `reason` is optional on `job.unblocked`, and an unblock that states
+  // none records the explicit `null` `validateData` normalizes it to — the same
+  // shape `consecutive_failures` carries on the block above.
+  assert.deepEqual(flags[1].data, { reason: null }, 'the fall of the flag, with nobody stating why');
+});
+
+test('t339 — POST /v1/jobs/:id/unblocks records the reason a person stated', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { title: 'held', entry_node_id: 'entrada' });
+  await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'promotion proposed' });
+
+  const unblocked = await request<Job>(ctx, 'POST', `/v1/jobs/${job.id}/unblocks`, {
+    reason: 'the rule matched three weeks of real trades; releasing it',
+    actor: { type: 'user', ref: 'rafael' },
+  });
+  assert.equal(unblocked.status, 200);
+  assert.equal(unblocked.body.blocked, false);
+  assert.equal(unblocked.body.block_reason, null);
+
+  const unblocks = (await timeline(ctx, job.id)).filter((event) => event.type === 'job.unblocked');
+  assert.equal(unblocks.length, 1);
+  assert.deepEqual(unblocks[0].data, {
+    reason: 'the rule matched three weeks of real trades; releasing it',
+  });
+  assert.equal(unblocks[0].actor.type, 'user', 'a person released it, and the audit says so');
+  assert.equal(unblocks[0].actor.ref, 'rafael');
 });
 
 test('AT4 — PATCH /v1/jobs/:id amends the title and records only the field NAME', async (t) => {

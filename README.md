@@ -247,8 +247,8 @@ database.
 
 ## The factory graphs
 
-Two bundles ship ready to import, as worked examples of the format in two very
-different domains.
+Three bundles ship ready to import, as worked examples of the format in three
+very different domains.
 
 **[`factory-graphs/software-development`](factory-graphs/software-development)** —
 `refine → develop → integrate → test → deploy`, where `test` is a gate with two
@@ -259,6 +259,14 @@ exits: approved carries on to deployment, rework goes back to development.
 decide → record-monitoring`, with a red team whose job is to kill the thesis and
 a mandatory human gate at the decision. It models an analysis workflow as an
 example of graph structure, and is not investment advice.
+
+**[`factory-graphs/b3-flow-radar`](factory-graphs/b3-flow-radar)** —
+`check-intake → triage → contextualize → hypothesize → red-team → compose-brief
+→ scorecard`, over three real B3 trading days that ship inside the bundle as
+fixtures, so it runs with no network and no configuration. Its first node is a
+command rather than a session, and its red team attacks with the day's own
+records because no node here is allowed to research. It models a market-data
+workflow as an example of graph structure, and is not a trading signal.
 
 ## Take the patterns
 

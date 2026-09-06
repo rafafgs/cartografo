@@ -31,6 +31,8 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 const CLI_MODULE = 'src/cli/index.ts';
 const CLIENT_MODULE = 'src/controller/control-plane-client.ts';
+/** Where the engine names and the default engine live (t404). */
+const RUN_MODULE = 'src/cli/run.ts';
 
 /** The address the runner falls back to when nobody says otherwise. */
 const DEFAULT_URL = 'http://127.0.0.1:4317';
@@ -340,7 +342,7 @@ test('AT7 — every optional flag left out resolves to the documented default', 
   assert.equal(given.engine, 'codex');
 });
 
-test('t179 AT1 — a command line with no --worktrees-root exits 2 and dials nothing', async () => {
+test('t179 AT1 — a command line with --working-dir and no --worktrees-root exits 2 and dials nothing', async () => {
   const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
 
   const spy = spyRun();
@@ -350,7 +352,17 @@ test('t179 AT1 — a command line with no --worktrees-root exits 2 and dials not
     // Otherwise impeccable, and that is the point: the only thing wrong here is
     // the flag that has no default, and a runner started without it would
     // otherwise discover it one `acquire` into its first dispatch.
-    code = await runRunnerCli(['--url', DEFAULT_URL, '--project', '1'], {}, { run: spy.run });
+    //
+    // `--working-dir` is in the line since t404, and it is what keeps this case
+    // measuring what it always measured. A command line with NEITHER path flag
+    // stopped being a wrong command line then — it is the settings-fallback
+    // mode, where the two paths come from `GET /v1/settings` after the pairing
+    // — so the half-given line is now the whole of what t179 refuses here.
+    code = await runRunnerCli(
+      ['--url', DEFAULT_URL, '--project', '1', '--working-dir', SOME_REPO],
+      {},
+      { run: spy.run },
+    );
   } finally {
     stderr.restore();
   }
@@ -602,4 +614,189 @@ test('t208 — USAGE names --declared-runner-cap and no longer promises simultan
   // them looking for a field no route has (t254, FR4).
   assert.match(USAGE, /runner_cap/, 'the help names the body field the flag fills');
   assert.doesNotMatch(USAGE, /teto_runner/, 'and never the spelling t226 retired');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t404 — a command line with no path flags at all is not a wrong one.         */
+/*                                                                            */
+/* Until this ticket `--worktrees-root` was required and its absence was a `2` */
+/* before the first packet (t179 AT1, just above). That is still the right     */
+/* answer for a runner an operator points by hand — but it blocks the          */
+/* one-command startup that spawns a local runner with no flags at all, so a   */
+/* line that gives NEITHER path now means "ask the control plane", and the two */
+/* paths are resolved from `GET /v1/settings` after the pairing instead.       */
+/*                                                                            */
+/* What does not move: giving one path flag and not the other is still the     */
+/* same usage error, with the same text, and an unknown `--engine` is still a  */
+/* synchronous refusal in both modes.                                         */
+/* -------------------------------------------------------------------------- */
+
+test('t404 AT2 — no path flag at all leaves both paths undefined instead of throwing', async () => {
+  const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const options = parseRunnerOptions([], {});
+
+  assert.equal(
+    options.repoRoot,
+    undefined,
+    'the repository is not known yet, and `process.cwd()` would be a guess about which one',
+  );
+  assert.equal(options.worktreesRoot, undefined, 'and neither is the root the worktrees go under');
+  assert.equal(
+    options.testBenchPath,
+    undefined,
+    'the bench falls back onto the repository, so it cannot be resolved here either',
+  );
+
+  // Everything that does NOT depend on a path is decided here as it always was:
+  // the mode changes what this function can answer, never when it answers.
+  assert.equal(options.url, DEFAULT_URL);
+  assert.equal(options.projectId, 1);
+  assert.notEqual(options.runnerId, '');
+});
+
+test('t404 AT3 — with no --engine and no path flag, the engine is left for the settings to answer', async () => {
+  const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
+  const { DEFAULT_ENGINE_NAME } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  const options = parseRunnerOptions([], {});
+
+  assert.equal(
+    options.engine,
+    undefined,
+    'defaulting here would silently beat the `engine` the control plane holds',
+  );
+  assert.equal(DEFAULT_ENGINE_NAME, 'claude-code', 'the default still exists; it is applied later');
+});
+
+test('t404 AT4 — --engine with no path flag is taken as given, and the paths stay unknown', async () => {
+  const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const options = parseRunnerOptions(['--engine', 'codex'], {});
+
+  assert.equal(options.engine, 'codex', 'an explicit flag wins outright, in either mode');
+  assert.equal(options.repoRoot, undefined);
+  assert.equal(options.worktreesRoot, undefined);
+});
+
+test('t404 AT5 — an unknown --engine is a UsageError in both modes, before any call', async () => {
+  const { parseRunnerOptions, UsageError } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  for (const args of [
+    ['--engine', 'not-a-real-engine'],
+    ['--engine', 'not-a-real-engine', '--working-dir', SOME_REPO, ...ELSEWHERE],
+  ]) {
+    assert.throws(
+      () => parseRunnerOptions(args, {}),
+      (error: unknown) => {
+        assert.ok(error instanceof UsageError, `"${args.join(' ')}" has to die on the command line`);
+        assert.match(error.message, /claude-code/);
+        assert.match(error.message, /codex/);
+        assert.match(error.message, /not-a-real-engine/);
+        return true;
+      },
+    );
+  }
+});
+
+test('t404 AT6 — one path flag on its own is still today\'s usage error, and both together still resolve', async () => {
+  const { parseRunnerOptions, resolveWorktreePaths, UsageError } =
+    await loadModule<typeof CliModule>(CLI_MODULE);
+  const { DEFAULT_ENGINE_NAME } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  /** The exact line t179 writes, read off the resolver rather than copied. */
+  let expected = '';
+  try {
+    resolveWorktreePaths(SOME_REPO, undefined);
+  } catch (error) {
+    expected = (error as Error).message;
+  }
+  assert.notEqual(expected, '', 'the resolver still refuses a missing --worktrees-root');
+
+  assert.throws(
+    () => parseRunnerOptions(['--working-dir', SOME_REPO], {}),
+    (error: unknown) => {
+      assert.ok(error instanceof UsageError);
+      assert.equal(
+        error.message,
+        expected,
+        'half a layout is a wrong command line, and the text an operator reads did not move',
+      );
+      return true;
+    },
+  );
+
+  // ...and the ordinary hand-started runner is untouched: both paths resolved,
+  // and the engine defaulted exactly as it was before this ticket.
+  const both = parseRunnerOptions(['--working-dir', SOME_REPO, ...ELSEWHERE], {});
+  assert.equal(both.repoRoot, SOME_REPO);
+  assert.equal(both.worktreesRoot, SOME_WORKTREES);
+  assert.equal(both.engine, DEFAULT_ENGINE_NAME, 'a path flag was given, so the default applies here');
+  assert.equal(both.testBenchPath, SOME_REPO, 'and the bench still falls back onto the repository');
+});
+
+test('t404 — the ready line prints the values runRunner resolved, never the ones it was given', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  // The half of FR8 that lives in this file: `onReady` is handed the three
+  // values the settings resolved, and the line has to carry THOSE. Closing over
+  // `options` instead would print `undefined` for both paths on exactly the
+  // startup this ticket exists to enable.
+  const stdout = captureStream('stdout');
+  let code: number;
+  try {
+    code = await runRunnerCli(['--url', DEFAULT_URL, '--runner-id', 'runner-t404-ready'], {}, {
+      run: async (options) => {
+        options.onReady?.({
+          repoRoot: SOME_REPO,
+          worktreesRoot: SOME_WORKTREES,
+          engine: 'codex',
+        });
+      },
+    });
+  } finally {
+    stdout.restore();
+  }
+
+  assert.equal(code, 0);
+  const line = JSON.parse(stdout.written().trim()) as Record<string, unknown>;
+  assert.equal(line.event, 'cartografo.runner.ready');
+  assert.equal(line.repoRoot, SOME_REPO);
+  assert.equal(line.worktreesRoot, SOME_WORKTREES);
+  assert.equal(line.engine, 'codex');
+  assert.equal(line.runnerId, 'runner-t404-ready', 'the identity still comes from the command line');
+});
+
+test('t404 — a SettingsFallbackError reaches stderr verbatim, and exits 1', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+  const { SettingsFallbackError } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  // FR7: the same treatment `ControlPlaneClientError` already gets, for the
+  // same reason — this message was written for a terminal, and wrapping it in
+  // "could not talk to the control plane" would blame the connection for a
+  // control plane that answered perfectly well.
+  const thrown = new SettingsFallbackError(
+    'the control plane holds no worktrees_root for project 9 — there is no safe default for ' +
+      'where a session may write',
+  );
+
+  const stderr = captureStream('stderr');
+  let code: number;
+  try {
+    code = await runRunnerCli(['--url', DEFAULT_URL], {}, {
+      run: async () => {
+        throw thrown;
+      },
+    });
+  } finally {
+    stderr.restore();
+  }
+
+  assert.equal(code, 1, 'a runner that could not run is a 1: nothing on the command line was wrong');
+  assert.equal(stderr.written(), `cartografo-runner: ${thrown.message}\n`);
+  assert.doesNotMatch(
+    stderr.written(),
+    /npx cartografo/,
+    'the control plane is up; telling the operator to start one would send them the wrong way',
+  );
 });

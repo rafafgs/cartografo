@@ -279,6 +279,32 @@ export type ExpirationReason = 'heartbeat_lost' | 'ttl_elapsed';
 export type DenialReason = 'job_already_leased' | 'runner_cap' | 'project_cap';
 
 /** A lease, as the control plane answers it. */
+/**
+ * The local runner's defaults one project holds, as `GET /v1/settings` answers
+ * them (t403, consumed by t404).
+ *
+ * Every key but the id is optional, and that is the contract rather than an
+ * omission: a project the control plane never seeded — any id other than the
+ * default one it seeds on `start()` — answers with `{project_id}` alone. So a
+ * caller that starts on these values has to decide what an absent one means;
+ * `cli/run.ts` does, and refuses to start rather than invent a directory.
+ *
+ * The three keys are the control plane's own spelling
+ * (`packages/core/src/repositories/settings.ts`, `KNOWN_SETTING_KEYS`), with no
+ * `runner_` prefix, and `engine` is a plain string here: the API does not
+ * promise it is one of the two names `--engine` accepts, so validating it is
+ * the caller's job.
+ */
+export interface Settings {
+  project_id: number;
+  /** The git repository a session's worktree is cut from. */
+  workspace_root?: string;
+  /** The directory those worktrees are created under. */
+  worktrees_root?: string;
+  /** The engine a runner of this project opens its sessions on. */
+  engine?: string;
+}
+
 export interface Lease {
   id: number;
   runner_id: string;
@@ -416,6 +442,33 @@ export class ControlPlaneClient {
       `/v1/engines/${encodeURIComponent(engine)}/models`,
       { models },
     );
+  }
+
+  /**
+   * The settings of one project — the paths and the engine a runner started
+   * without them falls back to (t404, FR1).
+   *
+   * The project travels as a query filter and not as a path segment, because
+   * that is the shape t403 published (`packages/core/src/routes/settings.ts`),
+   * following `GET /v1/leases`'s own convention.
+   *
+   * **A 403 here is not a bug in this client.** `GET /v1/settings` is
+   * operator-only by omission from `auth.ts`'s `RUNNER_SURFACE`, which is t403's
+   * design and is pinned by a test of its own: a runner holding a plain
+   * runner-scoped credential earns `403 out_of_scope_credential`. The caller
+   * this method exists for — a runner the one-command startup spawned — is
+   * handed an operator-scoped credential over its environment, so for it the
+   * call succeeds. For anybody else the refusal is just one more shape of "the
+   * settings fetch failed", and `cli/run.ts` lets it travel up untouched.
+   *
+   * @param projectId Project whose settings to read.
+   * @returns The settings, with every key but the id optional — a project
+   *   nobody seeded answers with its id alone, and that is a 200.
+   * @throws {ControlPlaneClientError} On any non-2xx, the 401/403 of a
+   *   credential this surface does not accept included.
+   */
+  async getSettings(projectId: number): Promise<Settings> {
+    return await this.#get<Settings>(`/v1/settings?project_id=${String(projectId)}`);
   }
 
   /**

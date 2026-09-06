@@ -104,6 +104,45 @@ export type EngineName = (typeof ENGINE_NAMES)[number];
 /** The engine a runner opens its sessions on when nobody says otherwise. */
 export const DEFAULT_ENGINE_NAME: EngineName = 'claude-code';
 
+/**
+ * The three values a runner cannot start without, once they are all known
+ * (t404).
+ *
+ * They arrive from two sources and never from three: the command line, or the
+ * project's settings on the control plane. What this type marks is the moment
+ * the two sources have been reconciled — past it, nothing in this file reads
+ * `options.repoRoot`, `options.worktreesRoot` or `options.engine` again.
+ */
+export interface ResolvedRunnerPaths {
+  /** The git repository each session's worktree is cut from. */
+  repoRoot: string;
+  /** The directory those worktrees are created under. */
+  worktreesRoot: string;
+  /** The engine every session of this process opens on. */
+  engine: EngineName;
+}
+
+/**
+ * The settings could not answer what the command line did not (t404, FR6).
+ *
+ * A failure of the CONFIGURATION and not of the call: the fetch itself
+ * succeeded, and what came back had no `workspace_root`/`worktrees_root` for
+ * this project — or an `engine` that is not one this runner can open a session
+ * on. A fetch that FAILS is a different thing entirely and travels up as
+ * itself, `ControlPlaneClientError` and network error alike.
+ *
+ * It is separate from `cli/index.ts`'s `UsageError` because it is not a wrong
+ * command line: nothing the operator typed was wrong, and there was nothing
+ * for them to type. `failureMessage` prints it verbatim for that reason — it is
+ * already phrased for a terminal, and the runner exits 1 rather than 2.
+ */
+export class SettingsFallbackError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SettingsFallbackError';
+  }
+}
+
 /** Everything one runner process needs to know about itself. */
 export interface RunnerOptions {
   /** Control plane to dial, with no trailing slash. */
@@ -120,8 +159,16 @@ export interface RunnerOptions {
   projectId: number;
   /** Identity this runner declares at pairing. */
   runnerId: string;
-  /** The one engine every session of this process opens on. */
-  engine: EngineName;
+  /**
+   * The one engine every session of this process opens on.
+   *
+   * `undefined` means "resolve from `GET /v1/settings` after pairing" (t404):
+   * a runner started with no path flags at all takes the project's `engine`
+   * from the control plane. It never means a default invented in this file —
+   * {@link DEFAULT_ENGINE_NAME} is applied once, in {@link resolveRunnerPaths},
+   * and only after the settings have had their say.
+   */
+  engine?: EngineName;
   /**
    * The git repository each session's worktree is cut from (t179).
    *
@@ -131,8 +178,14 @@ export interface RunnerOptions {
    * were the same string until t160, which is what the first dogfood run paid
    * for; the names are different now so that the code cannot confuse them
    * again.
+   *
+   * Optional since t404, and `undefined` means "resolve from `GET /v1/settings`
+   * after pairing" — the project's `workspace_root`. It never means
+   * `process.cwd()`, and never means a directory this file picked: where a
+   * session may write is somebody's explicit decision, whether that somebody
+   * typed `--working-dir` or wrote the setting down.
    */
-  repoRoot: string;
+  repoRoot?: string;
   /**
    * The directory those worktrees are created under.
    *
@@ -140,8 +193,13 @@ export interface RunnerOptions {
    * repository it came from shows up as untracked content in that repository's
    * own `git status`. Required, with no default — `--worktrees-root` on the
    * command line, and the CLI is where that is enforced.
+   *
+   * Optional since t404, on the same terms as {@link repoRoot}: `undefined` is
+   * "resolve from `GET /v1/settings` after pairing" — the project's
+   * `worktrees_root` — and a settings answer that carries none is a
+   * {@link SettingsFallbackError}, never a guess.
    */
-  worktreesRoot: string;
+  worktreesRoot?: string;
   /**
    * The checkout the sessions OBSERVE — `--test-bench-path` (t270).
    *
@@ -244,8 +302,13 @@ export interface RunnerOptions {
    * readiness, in the shape `packages/core/src/index.ts` set: the fact worth
    * announcing is that this runner EXISTS for the control plane, and this
    * function is the only one that knows when that became true.
+   *
+   * Since t404 it is handed the three values that were RESOLVED, and that is
+   * the whole reason it takes an argument: in settings-fallback mode the three
+   * fields of `options` are `undefined`, so a process owner closing over them
+   * would announce a runner whose paths nobody can read.
    */
-  onReady?: () => void;
+  onReady?: (resolved: ResolvedRunnerPaths) => void;
   /**
    * Called whenever a session goes live, with the one function that takes it
    * down (t193, FR8).
@@ -525,8 +588,11 @@ function couldCreate(directory: string): boolean {
  *
  * @param adapter The adapter to ask.
  * @param engine Name this runner's engine answers to, for the log lines.
- * @param repoRoot `--working-dir`, as the operator wrote it.
- * @param worktreesRoot `--worktrees-root`, as the operator wrote it.
+ * @param repoRoot The git repository this runner works out of, as it was
+ *   settled: `--working-dir` as the operator wrote it, or the project's
+ *   `workspace_root` for a runner started with no path flags (t404).
+ * @param worktreesRoot The directory worktrees are cut under, settled the same
+ *   way from `--worktrees-root` or the project's `worktrees_root`.
  * @returns The report, ready to post.
  */
 export async function buildProbeReport(
@@ -593,20 +659,25 @@ export async function buildProbeReport(
  * strictly worse.
  *
  * @param client Control plane client, already credentialed.
- * @param options The runner's own identity, engine and two paths.
+ * @param options The runner's own identity.
+ * @param resolved The engine and the two paths, as t404's fallback settled
+ *   them. Read from here and never off `options`: a runner spawned with no path
+ *   flags carries `undefined` there, and a probe reporting `undefined` for the
+ *   workspace is exactly the page an operator opened to read the paths on.
  * @param adapter The adapter to ask.
  */
 async function reportProbe(
   client: ControlPlaneClient,
   options: RunnerOptions,
+  resolved: ResolvedRunnerPaths,
   adapter: EngineAdapter,
 ): Promise<void> {
   try {
     const report = await buildProbeReport(
       adapter,
-      options.engine,
-      options.repoRoot,
-      options.worktreesRoot,
+      resolved.engine,
+      resolved.repoRoot,
+      resolved.worktreesRoot,
     );
     await client.reportProbe(options.runnerId, report);
   } catch (error) {
@@ -632,12 +703,15 @@ async function reportProbe(
  * to stderr, and the next iteration asks again.
  *
  * @param client Control plane client, already credentialed.
- * @param options The runner's own identity, engine and two paths.
+ * @param options The runner's own identity.
+ * @param resolved The engine and the two paths t404's fallback settled, for the
+ *   fresh report this may end up sending.
  * @param adapter The adapter to ask, when there is something to answer.
  */
 async function maybeServeRecheck(
   client: ControlPlaneClient,
   options: RunnerOptions,
+  resolved: ResolvedRunnerPaths,
   adapter: EngineAdapter,
 ): Promise<void> {
   let pending;
@@ -658,7 +732,81 @@ async function maybeServeRecheck(
   // control plane does it in the same transaction as the write, so there is no
   // acknowledgement call to make here and no window in which a served request
   // has no probe behind it.
-  await reportProbe(client, options, adapter);
+  await reportProbe(client, options, resolved, adapter);
+}
+
+/**
+ * Decides where this runner writes and what it opens sessions on (t404, FR5).
+ *
+ * Two modes, and which one applies is read off the command line rather than
+ * configured: an operator who named both paths gets exactly what they named and
+ * **no network call at all** — asking a control plane to confirm a decision
+ * somebody already typed is a round trip that can only disagree. Anybody else
+ * — the one-command startup's runner, spawned with no flags of its own — gets
+ * the project's settings, and the flags that WERE given still win, field by
+ * field.
+ *
+ * The fetch happens after the pairing, on purpose: `GET /v1/settings` is
+ * inside `/v1`, so it needs a credential the pairing has already presented, and
+ * a runner that could not pair has nothing to configure anyway.
+ *
+ * `DEFAULT_ENGINE_NAME` is applied here and nowhere else. It is the last of
+ * three sources — the flag, then the setting, then the default — which is what
+ * keeps a default that means "claude-code" from silently beating a project that
+ * said `codex`.
+ *
+ * @param client Control plane client, already paired.
+ * @param options What the command line settled.
+ * @returns The three values, all defined and all valid.
+ * @throws {SettingsFallbackError} When the settings answered with no path, or
+ *   with an engine this runner has no adapter for.
+ */
+async function resolveRunnerPaths(
+  client: ControlPlaneClient,
+  options: RunnerOptions,
+): Promise<ResolvedRunnerPaths> {
+  if (options.repoRoot !== undefined && options.worktreesRoot !== undefined) {
+    return {
+      repoRoot: options.repoRoot,
+      worktreesRoot: options.worktreesRoot,
+      // Defensive only: the CLI defaults the engine whenever a path flag was
+      // given, so this branch never sees an undefined one from that door.
+      engine: options.engine ?? DEFAULT_ENGINE_NAME,
+    };
+  }
+
+  const settings = await client.getSettings(options.projectId);
+  const repoRoot = options.repoRoot ?? settings.workspace_root;
+  const worktreesRoot = options.worktreesRoot ?? settings.worktrees_root;
+  const engine = options.engine ?? (settings.engine as EngineName | undefined) ?? DEFAULT_ENGINE_NAME;
+
+  if (repoRoot === undefined || worktreesRoot === undefined) {
+    const missing = [
+      ...(repoRoot === undefined ? ['workspace_root'] : []),
+      ...(worktreesRoot === undefined ? ['worktrees_root'] : []),
+    ];
+    throw new SettingsFallbackError(
+      `the control plane holds no ${missing.join(' and no ')} for project ${String(options.projectId)}, ` +
+        'and this runner was started without --working-dir/--worktrees-root: those two say which ' +
+        'repository a session\'s worktree is cut from and where it is created, and there is no ' +
+        'safe default for where a session may write — set them with `PATCH /v1/settings`, or ' +
+        'start this runner with --working-dir and --worktrees-root',
+    );
+  }
+
+  // Checked here rather than left to the dispatch: an engine name nothing
+  // answers to would come back as an `UnknownEngineError` on the first node,
+  // one lease and one blocked job later, saying nothing about the setting that
+  // caused it.
+  if (!(ENGINE_NAMES as readonly string[]).includes(engine)) {
+    throw new SettingsFallbackError(
+      `the control plane's engine for project ${String(options.projectId)} is "${engine}", which is ` +
+        `not one of ${ENGINE_NAMES.join(', ')} — fix it with \`PATCH /v1/settings\`, or start this ` +
+        'runner with --engine',
+    );
+  }
+
+  return { repoRoot, worktreesRoot, engine };
 }
 
 /**
@@ -679,25 +827,31 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // answers 404 for a runner the control plane has never heard of.
   await client.registerRunner(options.runnerId);
 
+  // Second call, and only when there is something left to decide: the three
+  // values everything below reads come either from the command line or from
+  // this project's settings, and until this line a settings-mode runner does
+  // not know where it may write (t404, FR5).
+  const resolved = await resolveRunnerPaths(client, options);
+
   // Two routes, and the key of each is the engine's own name: the dispatch
   // resolves the engine from the NODE the work is standing on, so a node that
   // declares a third one lands on `UnknownEngineError` instead of quietly
   // running somewhere nobody chose (t141, FR5). Which two, and why `shell` is
   // not a `--engine` choice, is {@link buildEngineRoutes}.
-  const engines = buildEngineRoutes(options.engine, options.engineFactory);
-  const route = engines[options.engine] as EngineRoute;
+  const engines = buildEngineRoutes(resolved.engine, options.engineFactory);
+  const route = engines[resolved.engine] as EngineRoute;
 
   // Preflight and then discovery, in that order and after the pairing — the
   // whole of FR11's precondition, in one call (t166, t186). Neither half is on
   // the critical path: a CLI that did not answer and a report that was refused
   // are both logged, and the runner goes on to work.
-  await reportModels(client, options.engine, route.adapter);
+  await reportModels(client, resolved.engine, route.adapter);
 
   // ...and then what the operator page reads: the same preflight, the MCP
   // servers this engine names, and the two directories this process was pointed
   // at (t401, FR7). Unconditional, unlike the catalogue above: a CLI that did
   // not answer is exactly the fact worth reporting.
-  await reportProbe(client, options, route.adapter);
+  await reportProbe(client, options, resolved, route.adapter);
 
   const controller = new Controller({
     client,
@@ -718,15 +872,15 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       // One manager for the whole process, and one worktree per dispatch out of
       // it: the isolation is per session, never per runner (t160, FR6).
       worktrees: new GitWorktreeManager({
-        repoRoot: options.repoRoot,
-        worktreesRoot: options.worktreesRoot,
+        repoRoot: resolved.repoRoot,
+        worktreesRoot: resolved.worktreesRoot,
       }),
       // Built ONCE for the whole process, and that is what makes
       // `instalacao_em_uso` mean anything: the single read it memoizes is
       // memoized for the life of THIS runner, which is the process the mode is
       // an assertion about (t270).
       executorEnvironment: createExecutorEnvironmentResolver({
-        testBenchPath: options.testBenchPath ?? options.repoRoot,
+        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
         referenceMode: options.referenceMode ?? 'ponta_do_principal',
         ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
         ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
@@ -736,8 +890,8 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       // reported commit was born in — a worktree of `repoRoot` is where every
       // session works, so its object store is the only one that has it.
       advanceMainLine: createMainLineAdvancer({
-        testBenchPath: options.testBenchPath ?? options.repoRoot,
-        repoRoot: options.repoRoot,
+        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
+        repoRoot: resolved.repoRoot,
         ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
         ...(options.benchInstallCommand === undefined
           ? {}
@@ -746,7 +900,7 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
     }),
   });
 
-  options.onReady?.();
+  options.onReady?.(resolved);
 
   /** Has a stop been asked for? Read fresh: the answer changes under an await. */
   const stopped = (): boolean => options.signal?.aborted === true;
@@ -772,7 +926,7 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
     // AFTER the stop check and not before it: a runner already asked to shut
     // down owes nobody a fresh probe, and one more round trip on the way out is
     // exactly the kind of delay the check above exists to avoid.
-    await maybeServeRecheck(client, options, route.adapter);
+    await maybeServeRecheck(client, options, resolved, route.adapter);
 
     try {
       await delay(options.intervalMs, undefined, { signal: options.signal });

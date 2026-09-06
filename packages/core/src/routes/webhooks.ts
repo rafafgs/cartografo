@@ -35,13 +35,14 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { KNOWN_TYPES, ValidationError } from '../db/event-validation.ts';
 import { DEFAULT_PROJECT, integerFromQuery } from '../repositories/common.ts';
+import { getProject } from '../repositories/projects.ts';
 import {
   createSubscription,
   deactivateSubscription,
   listSubscriptions,
   type NewSubscription,
 } from '../repositories/webhooks.ts';
-import { notFound, routeId, withValidation } from './common.ts';
+import { notFound, refusal, routeId, withValidation } from './common.ts';
 
 /** Schemes a delivery can be sent over. */
 const SCHEMES = ['http:', 'https:'];
@@ -146,7 +147,20 @@ function readSubscription(raw: unknown): NewSubscription {
 export function registerWebhooks(app: FastifyInstance, db: Database): void {
   app.post('/webhooks', async (request, reply) =>
     withValidation(reply, () => {
-      const subscription = createSubscription(db, readSubscription(request.body));
+      const declared = readSubscription(request.body);
+
+      // The shape was right; now the scope has to name something (t417, FR5).
+      // `readProject` above checks integer-ness and stops there, which is how a
+      // subscription came to be written into a partition the scoped listing has
+      // no way to hand back. Same code, same message, same sibling field as
+      // every other scope refusal of this API.
+      if (getProject(db, declared.project_id) === undefined) {
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: declared.project_id,
+        });
+      }
+
+      const subscription = createSubscription(db, declared);
       reply.code(201);
       return subscription;
     }),

@@ -42,6 +42,7 @@ import {
 } from '../domain/custom-fields.ts';
 import { getVersion, getVersionSummary } from './graphs.ts';
 import { enqueueHookDeliveries, type ClockOptions } from './hooks.ts';
+import { getProject } from './projects.ts';
 import {
   API_ACTOR,
   DEFAULT_PROJECT,
@@ -767,6 +768,52 @@ export class CrossProjectVersionReferenceError extends Error {
 }
 
 /**
+ * The project this job would be born in does not exist (t417, FR1).
+ *
+ * D25 partitions the database by project, and three tickets gave the READ side
+ * of that rule to `job` (t410), `session`/`input_request` (t411) and
+ * `proposal`/`lease`/`webhook_subscription` (t412). None of them touched the
+ * WRITE side, so `createJob` took `project_id` as a bare integer while
+ * `GET /v1/jobs*` already answered `404 unknown_project` to an undeclared one.
+ * The pair wrote rows nothing could read back: created here, invisible to every
+ * read of the same scope.
+ *
+ * The check lives in this function and not on the route because this is the
+ * choke point all four callers share — `routes/jobs.ts`, `confirmDraft` in
+ * `repositories/intake.ts`, `routes/examples.ts` and the tests. Hardening the
+ * route alone would have left the identical defect reachable through
+ * `POST /intake` → `POST /intake/:id/confirmations`, which is the same bug one
+ * HTTP call further in.
+ *
+ * Its shape mirrors {@link CrossProjectVersionReferenceError} — a machine-
+ * readable `code` and the offending scope as a field — but the two are
+ * different facts and get different statuses: a version of another project is a
+ * conflict (`409`), a project that was never declared is an absence (`404`),
+ * and `404` is exactly what the paired read already answers.
+ */
+export class UnknownProjectError extends Error {
+  /**
+   * Stable, machine-readable code — `requireProject`'s own, deliberately.
+   *
+   * The routes that answer this error spell the same literal at their own call
+   * site instead of reading it off here, so `test/write-scope-guard.test.ts`
+   * can sweep the route source for it. That is not a duplication to collapse:
+   * this property is what makes the error self-describing to anything holding
+   * it, and the literal over there is what makes the guard able to read the
+   * answer without executing the route.
+   */
+  readonly code = 'unknown_project' as const;
+  /** The scope that answers to nothing. */
+  readonly projectId: number;
+
+  constructor(projectId: number) {
+    super(`no project answers to this scope: ${projectId}`);
+    this.name = 'UnknownProjectError';
+    this.projectId = projectId;
+  }
+}
+
+/**
  * Whether this version hash is registered in ANY project other than the given
  * one (t410, FR7).
  *
@@ -846,6 +893,14 @@ export interface CreateJobInput {
  * and inventing a refusal for it would break the manual and imported flows for
  * a fact the control plane cannot check anyway.
  *
+ * ## The project has to EXIST, since t417 (FR1)
+ *
+ * The first thing checked after the body validates, before the version gate and
+ * before the transaction. `project_id` used to be whatever integer arrived, and
+ * `GET /v1/jobs*` has refused an undeclared one since t410 — so the two halves
+ * disagreed, and the disagreement wrote rows nothing could read back. See
+ * {@link UnknownProjectError} for why the guard is here and not on the route.
+ *
  * ## Where that check LOOKS, since t410 (FR6/FR7)
  *
  * In the job's own project, and there only. "Resolves to nothing" therefore
@@ -862,6 +917,8 @@ export interface CreateJobInput {
  *   project and its contracts are not `checked` (t283).
  * @throws {CrossProjectVersionReferenceError} When it resolves only in another
  *   project (t410).
+ * @throws {UnknownProjectError} When the resolved `project_id` names no
+ *   registered project (t417).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -875,6 +932,11 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     tier: input.tier,
   });
   const projectId = integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
+  // Before the version gate and before the transaction, for the reason the
+  // validation above gives: a job refused for its scope must not consume an id
+  // from the sequence either (t417, FR1). A row written here would answer to a
+  // partition no read of this API can name.
+  if (getProject(db, projectId) === undefined) throw new UnknownProjectError(projectId);
   const executionId = integerOrNull('execution_id', input.execution_id);
   const graphVersionId = textOrNull('graph_version_id', input.graph_version_id);
   const actor = resolveActor(input.actor, API_ACTOR);

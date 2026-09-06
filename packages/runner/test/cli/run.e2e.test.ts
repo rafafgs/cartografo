@@ -1720,6 +1720,20 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   const plane = await bootControlPlane(parent);
   const { versionId } = await registerCrossing(plane);
 
+  /**
+   * Declares a project and answers the id the control plane gave it (t411).
+   *
+   * The cases below need a project that is NOT the default one — settings are
+   * per project — and, since t411, one that exists: `GET /v1/sessions` resolves
+   * its scope through `project`, so a job written under a number nobody ever
+   * declared has sessions no scoped read can reach. The id is whatever the
+   * control plane assigns; nothing here depends on which number it is.
+   */
+  const declareProject = async (name: string): Promise<number> => {
+    const project = await api<{ id: number }>(plane, 'POST', '/v1/projects', { name }, 201);
+    return project.id;
+  };
+
   /** Writes a project's settings, with the operator credential t405 will hand out. */
   const seedSettings = async (
     projectId: number,
@@ -1731,7 +1745,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT7 — with nothing given, the paths and the engine come from the settings', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_047;
+    const projectId = await declareProject('t404-at7');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at7');
     const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
@@ -1780,7 +1794,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74071',
+        `/v1/sessions?execution_id=74071&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane);
@@ -1825,7 +1839,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT8 — with both paths given, GET /v1/settings is never called at all', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_048;
+    const projectId = await declareProject('t404-at8');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at8');
     const unused = initRepo(t, 't404-at8-unused');
     const record = path.join(scratch, 'dispatch.json');
@@ -1878,7 +1892,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74081',
+        `/v1/sessions?execution_id=74081&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane);
@@ -1977,7 +1991,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT10 — an explicit engine beats the one the settings hold', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_100;
+    const projectId = await declareProject('t404-at10');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at10');
     const record = path.join(scratch, 'dispatch-codex.json');
     t.after(async () => {
@@ -2029,7 +2043,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74101',
+        `/v1/sessions?execution_id=74101&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane);
@@ -2050,7 +2064,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
   await parent.test('AT11 — settings with no engine key fall back on the default engine', async (t) => {
     const { runRunner, DEFAULT_ENGINE_NAME } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const projectId = 74_110;
+    const projectId = await declareProject('t404-at11');
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't404-at11');
     const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
@@ -2100,7 +2114,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74111',
+        `/v1/sessions?execution_id=74111&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane);

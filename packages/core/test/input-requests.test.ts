@@ -688,10 +688,16 @@ test('AT6 — an answered one from another project is never a precedent, not eve
 
   const text = 'Renumber the migration to 0003?';
 
+  // A DECLARED project since t411, and the mirror below says which one it is
+  // reading from: the route resolves the scope before the repository runs, so
+  // an undeclared `project_id` is now a `404 unknown_project` and an unscoped
+  // read is the default project's. What this case is about — a precedent never
+  // crossing the boundary, in either direction — is untouched.
+  const second = await declareSecondProject(ctx);
   const otherJob = await createJob(ctx, {
     title: 'from another project',
     entry_node_id: 'entrada',
-    project_id: 42,
+    project_id: second,
   });
   const theirs = await askAndAnswer(ctx, otherJob.id, text, 'Keep 0002');
 
@@ -708,7 +714,7 @@ test('AT6 — an answered one from another project is never a precedent, not eve
 
   // And the mirror: whoever asks from the other side sees their own history.
   const fromThere = await askQuestion(ctx, otherJob.id, text);
-  const theirPrecedents = await precedentsOf(ctx, fromThere.id);
+  const theirPrecedents = await precedentsOf(ctx, fromThere.id, `?project_id=${second}`);
   assert.deepEqual(
     theirPrecedents.body.precedents.map((row) => row.id),
     [theirs.id],

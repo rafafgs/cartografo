@@ -248,6 +248,7 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
     class: 'nota-curta',
     request: REQUEST,
     items: [{ ref: 'a', title: 'One' }],
+    project_id: options.projectId,
   });
   assert.equal(seen.length, 2);
   assert.equal(seen[1].url, 'http://127.0.0.1:9999/v1/intake');

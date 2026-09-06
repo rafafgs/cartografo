@@ -221,6 +221,12 @@ const JOB_EVENTS = `
  * instead of correlating binds `String(id)` — which is what the column holds
  * anyway — and the cast around it is then a no-op.
  *
+ * The project rides on it since t410 (FR11), off `event.project_id` — the
+ * column the announcement already writes. Without it the end of round 7 of one
+ * project would be published as the end of round 7 of every other, because
+ * `execution_id` is a number an operator chooses and two projects numbering
+ * their rounds independently collide as a matter of course.
+ *
  * @param subject SQL expression naming the execution id — a column of the outer
  *   query, or a bound parameter. Never anything a request controls.
  * @returns The subquery, parenthesized and ready to be aliased.
@@ -231,6 +237,7 @@ function finishedAtOf(subject: string): string {
             WHERE e.type = 'execution.finished'
               AND e.entity_type = 'execution'
               AND e.entity_id = CAST(${subject} AS TEXT)
+              AND e.project_id = @project_id
             ORDER BY e.id
             LIMIT 1)`;
 }
@@ -317,7 +324,11 @@ function isAtFinalNode(db: Database, row: JobRow): boolean {
   if (asBoolean(row.blocked)) return false;
   if (row.graph_version_id === null) return false;
 
-  const version = getVersion(db, row.graph_version_id);
+  // The job's OWN project, never the implicit default (t410, FR5): a version id
+  // is a content hash, and the same hash may legitimately exist once per
+  // project (D25) — so a job of project 2 deriving `completed` from project 1's
+  // copy would be reporting an arrival its own graph never declared.
+  const version = getVersion(db, row.graph_version_id, row.project_id);
   if (version === undefined) return false;
 
   if (!version.snapshot.final_nodes.includes(row.current_node_id)) return false;
@@ -355,6 +366,14 @@ function toJob(db: Database, row: JobRow): Job {
   };
 }
 
+/**
+ * The row by id alone, whichever project wrote it.
+ *
+ * What the four WRITES of this file load (`mutate`), and nothing else: scoping
+ * a mutation is a different risk from scoping a read — a wrong scope there
+ * refuses or misdirects a live transition instead of merely hiding a row — and
+ * it belongs to the write-side slice of the t355 split (t410, Out of Scope).
+ */
 function readRow(db: Database, id: number): JobRow | undefined {
   return db.prepare(`SELECT ${COLUMNS} FROM job WHERE id = ?`).get(id) as
     | JobRow
@@ -362,14 +381,32 @@ function readRow(db: Database, id: number): JobRow | undefined {
 }
 
 /**
+ * The row as it is seen from INSIDE one project (t410, FR2).
+ *
+ * A job of another project reads exactly like a job that was never created —
+ * `undefined`, which every caller turns into the same `404 not_found` a
+ * nonexistent id gets. That is the non-leaking convention `routes/graphs.ts`
+ * already writes for a cross-project `origin_proposal_id`: a boundary must
+ * never be distinguishable from an absence, or the refusal itself says which
+ * ids are taken elsewhere.
+ */
+function readScopedRow(db: Database, id: number, projectId: number): JobRow | undefined {
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM job WHERE project_id = ? AND id = ?`)
+    .get(projectId, id) as JobRow | undefined;
+}
+
+/**
  * Gets a job by its projection.
  *
  * @param db Open handle.
  * @param id Job id.
- * @returns The job, or `null` if it does not exist.
+ * @param projectId Partition the job lives in (D25). A job of another project
+ *   answers `null`, like one that does not exist.
+ * @returns The job, or `null` if it does not exist in this project.
  */
-export function getJob(db: Database, id: number): Job | null {
-  const row = readRow(db, id);
+export function getJob(db: Database, id: number, projectId: number = DEFAULT_PROJECT): Job | null {
+  const row = readScopedRow(db, id, projectId);
   return row === undefined ? null : toJob(db, row);
 }
 
@@ -406,10 +443,17 @@ export interface JobContextSeed {
  *
  * @param db Open handle.
  * @param id Job id.
- * @returns The seed, or `null` if the job does not exist.
+ * @param projectId Partition the job lives in (t410, FR9). It is also what
+ *   makes `listSessions`/`listInputRequests` safe unscoped on the route: they
+ *   are only ever called with a `job_id` this read already confirmed.
+ * @returns The seed, or `null` if the job does not exist in this project.
  */
-export function jobContextSeed(db: Database, id: number): JobContextSeed | null {
-  const row = readRow(db, id);
+export function jobContextSeed(
+  db: Database,
+  id: number,
+  projectId: number = DEFAULT_PROJECT,
+): JobContextSeed | null {
+  const row = readScopedRow(db, id, projectId);
   if (row === undefined) return null;
   return {
     job: {
@@ -454,13 +498,15 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
  *
  * @param db Open handle.
  * @param id Job id.
- * @returns The walk, or `null` if the job does not exist.
+ * @param projectId Partition the job lives in (t410, FR9).
+ * @returns The walk, or `null` if the job does not exist in this project.
  */
 export function jobTraversal(
   db: Database,
   id: number,
+  projectId: number = DEFAULT_PROJECT,
 ): { nodes_visited: string[]; entered_at: string } | null {
-  const row = readRow(db, id);
+  const row = readScopedRow(db, id, projectId);
   if (row === undefined) return null;
 
   const walked = db
@@ -565,7 +611,10 @@ export function announceFinishedExecution(
 ): void {
   if (executionId === null) return;
 
-  const jobs = listJobs(db, { execution_id: executionId });
+  // The round of THIS project (t410, FR10): the condition is over the jobs of
+  // the project whose job just moved, and a job of another project sharing the
+  // execution number is not a reason for this round to stay open.
+  const jobs = listJobs(db, { execution_id: executionId }, projectId);
   if (jobs.length === 0) return;
   if (!jobs.every((job) => job.completed)) return;
 
@@ -582,6 +631,11 @@ export function announceFinishedExecution(
       .get(Object.fromEntries(jobs.map((job, index) => [`job_${index}`, job.id]))) !== undefined;
   if (held) return;
 
+  // The guard is scoped too, for the same reason the condition above is: the
+  // fact recorded is "round N of THIS project ended", so project 1's
+  // announcement must not be read as project 2's round having already been
+  // declared over — which would leave that round unable to end at all, while
+  // `finishedAtOf` (scoped since t410) correctly went on reporting `null`.
   const alreadyAnnounced =
     db
       .prepare(
@@ -589,9 +643,10 @@ export function announceFinishedExecution(
           WHERE type = 'execution.finished'
             AND entity_type = 'execution'
             AND entity_id = ?
+            AND project_id = ?
           LIMIT 1`,
       )
-      .get(String(executionId)) !== undefined;
+      .get(String(executionId), projectId) !== undefined;
   if (alreadyAnnounced) return;
 
   recordEvent(db, {
@@ -649,6 +704,73 @@ export class GraphVersionNotReadyError extends Error {
   }
 }
 
+/**
+ * The version this job names belongs to another project (t410, FR7).
+ *
+ * Not a `GraphVersionNotReadyError` and not a silent accept, which are the two
+ * neighbours it had to be told apart from. It is not a STATE refusal: the
+ * version may be perfectly `checked` — over there. And it is not the ordinary
+ * "resolves to nothing, so it is free text" path (t283), because the hash DOES
+ * resolve; it resolves across a partition, and a reference may never cross one
+ * (D25).
+ *
+ * `routes/graphs.ts` refuses a cross-project `origin_proposal_id` with the same
+ * code a nonexistent one gets, deliberately, so that a boundary is never
+ * mistakable for a permission leak. This one is loud instead, and the
+ * difference is what the id carries: a proposal id is a sequence, so answering
+ * "that one exists elsewhere" would leak which numbers are taken in another
+ * project; a version id is the hash of the content the caller is already
+ * holding, and telling it that the same content lives in another project says
+ * nothing it did not put in the request.
+ */
+export class CrossProjectVersionReferenceError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code = 'cross_project_reference' as const;
+  /** The version that was named, which is a hash and therefore content. */
+  readonly graphVersionId: string;
+  /** The project the job would have been born in. */
+  readonly projectId: number;
+
+  constructor(graphVersionId: string, projectId: number) {
+    super(
+      `graph version ${graphVersionId} is not registered in project ${projectId}: it resolves ` +
+        'in another project, and a reference may never cross a project boundary (register the ' +
+        'graph in this project, or create the job in the one that owns the version)',
+    );
+    this.name = 'CrossProjectVersionReferenceError';
+    this.graphVersionId = graphVersionId;
+    this.projectId = projectId;
+  }
+}
+
+/**
+ * Whether this version hash is registered in ANY project other than the given
+ * one (t410, FR7).
+ *
+ * Asked only when the version did not resolve inside the job's own project, and
+ * only to tell two absences apart: a hash this database never saw (still the
+ * ungated free-text case of t283) and a hash that exists on the other side of a
+ * partition (a conflict). Existence alone, at any contract state — a version of
+ * another project is out of reach whatever state it is in, so reading its state
+ * would be reading a row this project may not use anyway.
+ *
+ * @param db Open handle.
+ * @param graphVersionId The hash the body named.
+ * @param projectId The project it failed to resolve in.
+ * @returns Whether some other project has that version.
+ */
+function resolvesInAnotherProject(
+  db: Database,
+  graphVersionId: string,
+  projectId: number,
+): boolean {
+  return (
+    db
+      .prepare('SELECT 1 FROM graph_version WHERE id = ? AND project_id <> ? LIMIT 1')
+      .get(graphVersionId, projectId) !== undefined
+  );
+}
+
 /** Body of `POST /v1/jobs`. */
 export interface CreateJobInput {
   title?: unknown;
@@ -701,12 +823,22 @@ export interface CreateJobInput {
  * and inventing a refusal for it would break the manual and imported flows for
  * a fact the control plane cannot check anyway.
  *
+ * ## Where that check LOOKS, since t410 (FR6/FR7)
+ *
+ * In the job's own project, and there only. "Resolves to nothing" therefore
+ * splits in two: a hash no project registered is the free-text case above,
+ * untouched; a hash some OTHER project registered is a reference crossing a
+ * partition, and it is refused with
+ * {@link CrossProjectVersionReferenceError} before anything is written.
+ *
  * @param db Open handle.
  * @param input Request body.
  * @returns The created job.
  * @throws {ValidationError} When a required field is missing.
- * @throws {GraphVersionNotReadyError} When the named version resolves and its
- *   contracts are not `checked` (t283).
+ * @throws {GraphVersionNotReadyError} When the named version resolves in this
+ *   project and its contracts are not `checked` (t283).
+ * @throws {CrossProjectVersionReferenceError} When it resolves only in another
+ *   project (t410).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -736,9 +868,19 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     // The SUMMARY and not `getVersion`: what the gate reads is a status column,
     // and the whole-version read would parse a graph document — tens of
     // kilobytes for the factory bundles — on every job created.
-    const version = getVersionSummary(db, graphVersionId);
+    //
+    // Inside the job's OWN project since t410 (FR6): the id is a content hash,
+    // so the same one may exist once per project (D25), and reading the default
+    // project's copy would have gated this job on somebody else's row.
+    const version = getVersionSummary(db, graphVersionId, projectId);
     if (version !== undefined && version.contracts.state !== 'checked') {
       throw new GraphVersionNotReadyError(graphVersionId, version.contracts);
+    }
+    // It did not resolve here. If it resolves NOWHERE, this is still the loose
+    // free-text case t283 left alone; if it resolves somewhere else, the job is
+    // reaching across a partition and that is refused (FR7/FR8).
+    if (version === undefined && resolvesInAnotherProject(db, graphVersionId, projectId)) {
+      throw new CrossProjectVersionReferenceError(graphVersionId, projectId);
     }
   }
 
@@ -875,7 +1017,9 @@ export interface TransitionInput {
 function requireFieldsOfNode(db: Database, row: JobRow): void {
   if (row.graph_version_id === null) return;
 
-  const version = getVersion(db, row.graph_version_id);
+  // The job's own project, for `isAtFinalNode`'s reason (t410, FR5): a demand
+  // borrowed from another project's snapshot is a demand nobody could act on.
+  const version = getVersion(db, row.graph_version_id, row.project_id);
   if (version === undefined) return;
 
   const missing = missingRequiredFields(
@@ -1070,7 +1214,8 @@ export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
 function resolveFailureCeiling(db: Database, row: JobRow): number {
   if (row.graph_version_id === null) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
-  const version = getVersion(db, row.graph_version_id);
+  // The job's own project, for `isAtFinalNode`'s reason (t410, FR5).
+  const version = getVersion(db, row.graph_version_id, row.project_id);
   if (version === undefined) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
   const declared = version.snapshot.max_consecutive_failures;
@@ -1302,22 +1447,31 @@ export function amendJob(db: Database, id: number, input: AmendInput): Job | nul
 }
 
 /**
- * The current board: one job per row (FR8).
+ * The current board of ONE project: one job per row (FR8; t410, FR3).
+ *
+ * The execution filter narrows within the scope and never widens it: two
+ * projects numbering their rounds independently land on the same
+ * `execution_id` as a matter of course, and a list that mixed them would be
+ * reporting somebody else's board.
  *
  * @param db Open handle.
  * @param filter Optional slice by execution.
+ * @param projectId Partition to list (D25).
  * @returns Jobs in id order.
  */
 export function listJobs(
   db: Database,
   filter: { execution_id?: number } = {},
+  projectId: number = DEFAULT_PROJECT,
 ): Job[] {
   const rows = (
     filter.execution_id === undefined
-      ? db.prepare(`SELECT ${COLUMNS} FROM job ORDER BY id`).all()
+      ? db.prepare(`SELECT ${COLUMNS} FROM job WHERE project_id = ? ORDER BY id`).all(projectId)
       : db
-          .prepare(`SELECT ${COLUMNS} FROM job WHERE execution_id = ? ORDER BY id`)
-          .all(filter.execution_id)
+          .prepare(
+            `SELECT ${COLUMNS} FROM job WHERE project_id = ? AND execution_id = ? ORDER BY id`,
+          )
+          .all(projectId, filter.execution_id)
   ) as JobRow[];
   return rows.map((row) => toJob(db, row));
 }
@@ -1327,10 +1481,19 @@ export function listJobs(
  *
  * @param db Open handle.
  * @param id Job id.
- * @returns Events in id order, or `null` if the job does not exist.
+ * @param projectId Partition the job lives in (t410, FR1/FR2).
+ * @returns Events in id order, or `null` if the job does not exist in this
+ *   project.
  */
-export function jobTimeline(db: Database, id: number): Event[] | null {
-  if (readRow(db, id) === undefined) return null;
+export function jobTimeline(
+  db: Database,
+  id: number,
+  projectId: number = DEFAULT_PROJECT,
+): Event[] | null {
+  // The scope is the JOB's, and the events follow it: every event of a job
+  // carries that job's own `project_id`, so confirming the job here is what
+  // makes the filter below one project's log and not two.
+  if (readScopedRow(db, id, projectId) === undefined) return null;
   return listEvents(db, { job_id: id });
 }
 
@@ -1345,19 +1508,24 @@ export function jobTimeline(db: Database, id: number): Event[] | null {
  *
  * @param db Open handle.
  * @param executionId Execution to group.
+ * @param projectId Partition the round belongs to (t410, FR4).
  * @returns One row per version, named versions first and `null` last.
  */
-export function metricsByVersion(db: Database, executionId: number): MetricByVersion[] {
+export function metricsByVersion(
+  db: Database,
+  executionId: number,
+  projectId: number = DEFAULT_PROJECT,
+): MetricByVersion[] {
   const rows = db
     .prepare(
       `SELECT t.graph_version_id,
               COUNT(*) AS jobs,
               COALESCE(SUM((${JOB_EVENTS})), 0) AS events
          FROM job t
-        WHERE t.execution_id = ?
+        WHERE t.project_id = ? AND t.execution_id = ?
         GROUP BY t.graph_version_id`,
     )
-    .all(executionId) as MetricByVersion[];
+    .all(projectId, executionId) as MetricByVersion[];
 
   return rows.sort((a, b) => {
     if (a.graph_version_id === null) return 1;
@@ -1483,6 +1651,7 @@ function nodeIdOrder(a: string | null, b: string | null): number {
  *
  * @param db Open handle.
  * @param executionId Execution to group.
+ * @param projectId Partition the round belongs to (t410, FR4).
  * @returns One entry per graph version observed, holding its nodes in node
  *   order with `null` last. A version with no session at all is simply absent —
  *   the caller supplies the empty list for it.
@@ -1490,7 +1659,11 @@ function nodeIdOrder(a: string | null, b: string | null): number {
 export function nodeMetricsByVersion(
   db: Database,
   executionId: number,
+  projectId: number = DEFAULT_PROJECT,
 ): Map<string | null, NodeMetrics[]> {
+  // `session` carries no `project_id` and never will: it inherits the partition
+  // through `job_id` (`docs/spec/entities-versioning.md` §1), which is the join
+  // this query already had — so the scope goes on the job's own column.
   const rows = db
     .prepare(
       `SELECT j.graph_version_id,
@@ -1500,10 +1673,10 @@ export function nodeMetricsByVersion(
               s.finished_at
          FROM session s
          JOIN job j ON j.id = s.job_id
-        WHERE j.execution_id = ?
+        WHERE j.project_id = ? AND j.execution_id = ?
         ORDER BY s.id`,
     )
-    .all(executionId) as SessionOfExecution[];
+    .all(projectId, executionId) as SessionOfExecution[];
 
   const byVersion = new Map<string | null, Map<string | null, NodeMetrics>>();
 
@@ -1571,24 +1744,38 @@ export function nodeMetricsByVersion(
  * that sees `NULL`), so that the group without an execution counts its own
  * input requests instead of silently zeroing.
  *
+ * Every count is over the jobs of ONE project (t410, FR4). `input_request`
+ * carries no `project_id` of its own and never will — it inherits the partition
+ * through `job_id`, which is `NOT NULL REFERENCES job(id)` since migration
+ * `0003` — so the pending count reaches its scope through a join instead of a
+ * column.
+ *
  * @param db Open handle.
+ * @param projectId Partition to aggregate (D25).
  * @returns One row per execution, ascending, with the `null` group last — the
  *   same convention as `metricsByVersion`.
  */
-export function listExecutions(db: Database): ExecutionSummary[] {
+export function listExecutions(
+  db: Database,
+  projectId: number = DEFAULT_PROJECT,
+): ExecutionSummary[] {
   const rows = db
     .prepare(
       `SELECT t.execution_id,
               COUNT(*) AS jobs,
               COALESCE(SUM(t.blocked), 0) AS blocked_jobs,
               (SELECT COUNT(*) FROM input_request p
-                WHERE p.status = 'pending' AND p.execution_id IS t.execution_id)
+                 JOIN job pj ON pj.id = p.job_id
+                WHERE p.status = 'pending'
+                  AND p.execution_id IS t.execution_id
+                  AND pj.project_id = @project_id)
                                        AS pending_input_requests,
               ${finishedAtOf('t.execution_id')} AS finished_at
          FROM job t
+        WHERE t.project_id = @project_id
         GROUP BY t.execution_id`,
     )
-    .all() as ExecutionSummary[];
+    .all({ project_id: projectId }) as ExecutionSummary[];
 
   return rows.sort((a, b) => {
     if (a.execution_id === null) return 1;
@@ -1613,22 +1800,31 @@ export function listExecutions(db: Database): ExecutionSummary[] {
  *
  * @param db Open handle.
  * @param id Execution id.
- * @returns The summary; zero counts and `finished_at: null` when no job cites
- *   this round.
+ * @param projectId Partition the round belongs to (t410, FR4); the counts are
+ *   the same ones {@link listExecutions} computes, scoped the same way.
+ * @returns The summary; zero counts and `finished_at: null` when no job of this
+ *   project cites this round.
  */
-export function getExecution(db: Database, id: number): ExecutionSummary {
+export function getExecution(
+  db: Database,
+  id: number,
+  projectId: number = DEFAULT_PROJECT,
+): ExecutionSummary {
   const row = db
     .prepare(
       `SELECT COUNT(*)                 AS jobs,
               COALESCE(SUM(t.blocked), 0) AS blocked_jobs,
               (SELECT COUNT(*) FROM input_request p
-                WHERE p.status = 'pending' AND p.execution_id = @execution_id)
+                 JOIN job pj ON pj.id = p.job_id
+                WHERE p.status = 'pending'
+                  AND p.execution_id = @execution_id
+                  AND pj.project_id = @project_id)
                                        AS pending_input_requests,
               ${finishedAtOf('@execution_entity_id')} AS finished_at
          FROM job t
-        WHERE t.execution_id = @execution_id`,
+        WHERE t.project_id = @project_id AND t.execution_id = @execution_id`,
     )
-    .get({ execution_id: id, execution_entity_id: String(id) }) as Omit<
+    .get({ execution_id: id, execution_entity_id: String(id), project_id: projectId }) as Omit<
     ExecutionSummary,
     'execution_id'
   >;

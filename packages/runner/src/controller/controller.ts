@@ -178,7 +178,9 @@ export class Controller {
    *   did blocked itself.
    */
   async tick(): Promise<DispatchResult | null> {
-    const candidates = await this.#options.client.listReleasedJobs();
+    // The board of THIS runner's project (t410): the poll carries the same
+    // scope every lease below already declares.
+    const candidates = await this.#options.client.listReleasedJobs(this.#options.projectId);
 
     for (const job of candidates) {
       const { lease, reason: motivo } = await this.#options.client.requestLease({

@@ -28,7 +28,7 @@
  * English per D18.
  */
 
-import type { ControlPlaneCall } from './control-plane-client.ts';
+import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
 import type { Job } from './options.ts';
 import {
   renderSkillInstructions,
@@ -68,6 +68,12 @@ export interface SessionPlan {
  * @param job The work being dispatched.
  * @param engines The engines this dispatch can route to, by declared name.
  * @param resolveInput What this node's `{{input.<caminho>}}` resolve against.
+ * @param projectId Project both reads below are scoped to (t410); absent means
+ *   the server's default project. Graph versions and skills have been
+ *   partitioned since t354, and t410 is what makes an unscoped read certain to
+ *   fail outside the default project: `POST /v1/jobs` refuses a
+ *   `graph_version_id` from another project since that ticket, so a job's
+ *   version is now always registered in the job's OWN project.
  * @returns The node, the route and the rendered skill.
  */
 export async function resolveSessionPlan(
@@ -75,13 +81,14 @@ export async function resolveSessionPlan(
   job: Job,
   engines: Record<string, EngineRoute>,
   resolveInput: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>,
+  projectId?: number,
 ): Promise<SessionPlan> {
   // ONE read of the graph version, and it is the first thing the dispatch does:
   // the engine, the skill, the contract and the edges all come out of this
   // (t141, FR1). A version the work points at and that does not resolve stops
   // right here, which is where stopping is cheapest.
   const resolved = await resolveNode(job, (versionRoute) =>
-    call<GraphVersionBody>(versionRoute, 'GET'),
+    call<GraphVersionBody>(withProject(versionRoute, projectId), 'GET'),
   );
 
   // Resolved before anything is read for the prompt and long before a session
@@ -104,7 +111,7 @@ export async function resolveSessionPlan(
       ? null
       : await renderSkillInstructions(
           resolved,
-          (skillRoute) => call<RegisteredSkill>(skillRoute, 'GET'),
+          (skillRoute) => call<RegisteredSkill>(withProject(skillRoute, projectId), 'GET'),
           await resolveInput(job, resolved),
         );
 

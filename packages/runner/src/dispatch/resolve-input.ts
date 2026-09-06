@@ -34,7 +34,7 @@
  * English per D18; the route and the `input` envelope key are wire vocabulary.
  */
 
-import type { ControlPlaneCall } from './control-plane-client.ts';
+import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
 import type { ClaudeCodeDispatchOptions, Job } from './options.ts';
 import { NO_EXECUTOR_ENVIRONMENT } from './resolve-executor-environment.ts';
 import type { ResolvedNode } from './resolve-node.ts';
@@ -49,13 +49,19 @@ interface ContextEnvelope {
  *
  * @param call The dispatch's control-plane client — the SAME one every other
  *   route of the dispatch goes through, so that the credential has one owner.
+ * @param projectId Project the projection is read in (t410); absent means the
+ *   server's default project.
  * @returns A function of the work that answers its node's input.
  */
 export function createNodeInputResolver(
   call: ControlPlaneCall,
+  projectId?: number,
 ): (job: Job) => Promise<Record<string, unknown>> {
+  // Scoped since t410: the projection reads one project, and a work of any
+  // project but the default one is a `404` to a read that names none.
   return async (job: Job): Promise<Record<string, unknown>> =>
-    (await call<ContextEnvelope>(`/v1/jobs/${job.id}/context`, 'GET')).input;
+    (await call<ContextEnvelope>(withProject(`/v1/jobs/${job.id}/context`, projectId), 'GET'))
+      .input;
 }
 
 /**
@@ -88,7 +94,7 @@ export function createMergedInputResolver(
   options: ClaudeCodeDispatchOptions,
   call: ControlPlaneCall,
 ): (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>> {
-  const projection = options.resolveInput ?? createNodeInputResolver(call);
+  const projection = options.resolveInput ?? createNodeInputResolver(call, options.projectId);
   const executorEnvironment = options.executorEnvironment ?? NO_EXECUTOR_ENVIRONMENT;
 
   return async (job, resolved) => ({

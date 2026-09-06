@@ -27,6 +27,7 @@ import {
   requireArtifacts,
   request,
   resolvePins,
+  resolvePinsOver,
   startControlPlane,
   type Event,
   type Job,
@@ -2022,4 +2023,288 @@ test('t283 — a graph_version_id that resolves to nothing is still ungated', as
 
   const withNone = await createJob(ctx, { title: 'no graph at all', entry_node_id: 'redigir' });
   assert.equal(withNone.graph_version_id, null);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t410 — a job read takes the project as a parameter (D25).                   */
+/*                                                                            */
+/* `job` has carried `project_id` since migration 0003, and nothing ever read  */
+/* it back: every read below used to answer with whatever row the id names,    */
+/* whichever project wrote it. These cases charge for the same scope           */
+/* `routes/graphs.ts` and `routes/skills.ts` already resolve — including the   */
+/* non-leaking convention, where a job of another project is exactly as absent */
+/* as one that was never created.                                             */
+/* -------------------------------------------------------------------------- */
+
+/** The refusal envelope, in the slice the scoped reads assert on. */
+interface ScopeRefusal {
+  error: string;
+  message?: string;
+  project_id?: number;
+  graph_version_id?: string;
+}
+
+/** Declares a project and returns its id (t354, FR1). */
+async function declareProject(ctx: TestContext, name: string): Promise<number> {
+  const response = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.id;
+}
+
+/**
+ * Registers the minimal example graph INSIDE one project, with its pins
+ * resolvable there.
+ *
+ * The registry is per project since t354, so `resolvePins` — which asks and
+ * writes in the default project — cannot make a version born in project 2
+ * `checked`. `resolvePinsOver` exists for exactly this: the two calls come in
+ * as a parameter, and here they carry the scope.
+ *
+ * @param ctx Control plane running.
+ * @param projectId Project the lineage and its manifests are written in.
+ * @returns Id of the version born with the lineage — the one a job would cite.
+ */
+async function registerMinimalGraphIn(ctx: TestContext, projectId: number): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  await resolvePinsOver(document, {
+    // The path already carries a `?version=`, so the scope joins it with `&`.
+    get: (routePath) => request(ctx, 'GET', `${routePath}&project_id=${projectId}`),
+    post: (routePath, body) =>
+      request(ctx, 'POST', routePath, {
+        ...(body as Record<string, unknown>),
+        project_id: projectId,
+      }),
+  });
+
+  const response = await request<{ graph_version: { id: string; contracts: { state: string } } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    { ...document, project_id: projectId },
+  );
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  assert.equal(
+    response.body.graph_version.contracts.state,
+    'checked',
+    'the pins were registered in this same project, so the check ran and passed',
+  );
+  return response.body.graph_version.id;
+}
+
+/** How many `job.created` facts the log carries — the write AT6 charges for. */
+function createdJobs(ctx: TestContext): number {
+  const row = ctx.db
+    .prepare("SELECT COUNT(*) AS total FROM event WHERE type = 'job.created'")
+    .get() as { total: number };
+  return row.total;
+}
+
+test('t410 AT1 — GET /v1/jobs/:id answers 404 for a job of another project', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const mine = await createJob(ctx, { title: 'born in project one', entry_node_id: 'redigir' });
+  const theirs = await createJob(ctx, {
+    title: 'born in project two',
+    entry_node_id: 'redigir',
+    project_id: 2,
+  });
+
+  // The same refusal a nonexistent id gets, and deliberately so: from inside
+  // project 1 the other project's job is not a job that exists.
+  const crossed = await request<ScopeRefusal>(ctx, 'GET', `/v1/jobs/${theirs.id}`);
+  assert.equal(crossed.status, 404, JSON.stringify(crossed.body));
+  assert.equal(crossed.body.error, 'not_found');
+
+  const scoped = await request<JobProjection>(ctx, 'GET', `/v1/jobs/${theirs.id}?project_id=2`);
+  assert.equal(scoped.status, 200, JSON.stringify(scoped.body));
+  assert.equal(scoped.body.id, theirs.id);
+
+  // And the traffic in the other direction is refused too: a scope is a filter,
+  // not a permission level.
+  const backwards = await request<ScopeRefusal>(ctx, 'GET', `/v1/jobs/${mine.id}?project_id=2`);
+  assert.equal(backwards.status, 404, JSON.stringify(backwards.body));
+
+  const own = await request<JobProjection>(ctx, 'GET', `/v1/jobs/${mine.id}`);
+  assert.equal(own.status, 200, 'the default project keeps reading its own job unchanged');
+});
+
+test('t410 AT2 — GET /v1/jobs lists one project, and the default stays project 1', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const mine = await createJob(ctx, {
+    title: 'round 5 of project one',
+    entry_node_id: 'redigir',
+    execution_id: 5,
+  });
+  // The SAME execution number in the other project: a round is a grouper per
+  // project, so two of them may legitimately carry the number 5.
+  const theirs = await createJob(ctx, {
+    title: 'round 5 of project two',
+    entry_node_id: 'redigir',
+    execution_id: 5,
+    project_id: 2,
+  });
+
+  const titlesOf = async (query: string): Promise<string[]> => {
+    const response = await request<{ jobs: Job[] }>(ctx, 'GET', `/v1/jobs${query}`);
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    return response.body.jobs.map((job) => job.title);
+  };
+
+  assert.deepEqual(await titlesOf(''), ['round 5 of project one']);
+  assert.deepEqual(await titlesOf('?project_id=1'), ['round 5 of project one']);
+  assert.deepEqual(await titlesOf('?project_id=2'), ['round 5 of project two']);
+
+  // The execution filter narrows WITHIN the scope; it never widens it.
+  assert.deepEqual(await titlesOf('?execution_id=5'), ['round 5 of project one']);
+  assert.deepEqual(await titlesOf('?execution_id=5&project_id=2'), ['round 5 of project two']);
+  assert.ok(mine.id !== theirs.id);
+});
+
+test('t410 AT3 — /events and /context answer 404 for a job of another project', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const theirs = await createJob(ctx, {
+    title: 'born in project two',
+    entry_node_id: 'redigir',
+    project_id: 2,
+  });
+
+  for (const suffix of ['events', 'context']) {
+    const crossed = await request<ScopeRefusal>(ctx, 'GET', `/v1/jobs/${theirs.id}/${suffix}`);
+    assert.equal(crossed.status, 404, `${suffix}: ${JSON.stringify(crossed.body)}`);
+    assert.equal(crossed.body.error, 'not_found');
+
+    const scoped = await request<Record<string, unknown>>(
+      ctx,
+      'GET',
+      `/v1/jobs/${theirs.id}/${suffix}?project_id=2`,
+    );
+    assert.equal(scoped.status, 200, `${suffix}: ${JSON.stringify(scoped.body)}`);
+  }
+});
+
+test('t410 AT4 — the four reads answer 404 unknown_project for a project nobody declared', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { title: 'the only job there is', entry_node_id: 'redigir' });
+
+  const routes = [
+    '/v1/jobs?project_id=99',
+    `/v1/jobs/${job.id}?project_id=99`,
+    `/v1/jobs/${job.id}/context?project_id=99`,
+    `/v1/jobs/${job.id}/events?project_id=99`,
+  ];
+
+  for (const routePath of routes) {
+    const refused = await request<ScopeRefusal>(ctx, 'GET', routePath);
+    // "There is nothing here" and "there is no here" are different answers, and
+    // an empty list for the second turns a typo into a wrong conclusion.
+    assert.equal(refused.status, 404, `${routePath}: ${JSON.stringify(refused.body)}`);
+    assert.equal(refused.body.error, 'unknown_project', routePath);
+    assert.equal(refused.body.project_id, 99, routePath);
+  }
+});
+
+test('t410 AT5 — a job never derives `completed` from another project\'s version', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  // Registered, checked and carrying `revisar` as its final node — in project 1
+  // and nowhere else.
+  const versionId = await registerMinimalGraph(ctx);
+
+  // The control: in the project that OWNS the version, the same walk really
+  // does end in `completed: true`. Without it this case would pass on a
+  // version nobody could have arrived under.
+  const native = await createJob(ctx, {
+    title: 'arrives inside its own project',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const moved = await request(ctx, 'POST', `/v1/jobs/${native.id}/transitions`, {
+    to_node_id: 'revisar',
+  });
+  assert.equal(moved.status, 200);
+  await runSessionOn(ctx, native.id, 'revisar', CONFORMING_REPORT);
+  assert.equal((await readJob(ctx, native.id)).completed, true, 'the walk itself is sound');
+
+  // The row is written straight to the table: `POST /v1/jobs` refuses this
+  // state since this ticket, and the point of the case is what a job in it
+  // READS — an import, a restored dump, a row from before the partition.
+  const timestamp = new Date().toISOString();
+  const inserted = ctx.db
+    .prepare(
+      `INSERT INTO job (project_id, execution_id, title, corpo, criterios_de_aceite, fields,
+                        tier, entry_node_id, current_node_id, blocked, block_reason,
+                        graph_version_id, created_at, updated_at)
+       VALUES (2, NULL, ?, NULL, NULL, NULL, NULL, 'redigir', 'revisar', 0, NULL, ?, ?, ?)`,
+    )
+    .run('borrows a hash from project one', versionId, timestamp, timestamp);
+  const borrowerId = Number(inserted.lastInsertRowid);
+
+  // Same shape of ending as the control's: a completed session with a report on
+  // the final node. Everything `isAtFinalNode` asks for is true — except that
+  // the version resolves in the OTHER project.
+  await runSessionOn(ctx, borrowerId, 'revisar', CONFORMING_REPORT);
+
+  const borrower = await request<JobProjection>(ctx, 'GET', `/v1/jobs/${borrowerId}?project_id=2`);
+  assert.equal(borrower.status, 200, JSON.stringify(borrower.body));
+  assert.equal(borrower.body.graph_version_id, versionId);
+  assert.equal(
+    borrower.body.completed,
+    false,
+    'the hash is content, and the same content may exist once per project (D25): a job of ' +
+      'project 2 has no graph at all here, and never borrows project 1\'s snapshot',
+  );
+});
+
+test('t410 AT6 — POST /v1/jobs refuses a graph version of another project', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  // Registered and `checked` in project 2, and registered nowhere else.
+  const versionId = await registerMinimalGraphIn(ctx, 2);
+  const before = createdJobs(ctx);
+
+  const refused = await request<ScopeRefusal>(ctx, 'POST', '/v1/jobs', {
+    title: 'a job of project one, against project two\'s version',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.equal(
+    refused.body.error,
+    'cross_project_reference',
+    'a version that resolves SOMEWHERE ELSE is a conflict, never a silent accept: it is a ' +
+      'reference crossing a partition, not a hash this database never saw',
+  );
+  assert.equal(refused.body.graph_version_id, versionId, 'the context rides as a sibling field');
+  assert.equal(refused.body.project_id, 1, 'and so does the project the job would have been in');
+
+  assert.equal(createdJobs(ctx), before, 'a refused job records no `job.created`');
+  const mine = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
+  assert.deepEqual(mine.body.jobs, [], 'and it is not a row either');
+  const theirs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs?project_id=2');
+  assert.deepEqual(theirs.body.jobs, [], 'nor did it land in the project that owns the version');
+
+  // The job the refusal was pointing at: inside project 2, the same version
+  // carries work exactly as it always did.
+  const accepted = await createJob(ctx, {
+    title: 'the same job, in the project that owns the version',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+    project_id: 2,
+  });
+  assert.equal(accepted.graph_version_id, versionId);
 });

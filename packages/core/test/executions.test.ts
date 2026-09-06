@@ -1097,3 +1097,214 @@ test('t264 AT3 — a session with no node, or a job with no version, lands in a 
     'a job with no version keeps its own row, with its node named on it',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t410 — a round is a grouper PER PROJECT (D25).                              */
+/*                                                                            */
+/* `execution_id` is an opaque integer somebody chooses, so two projects       */
+/* numbering their rounds independently land on the same number as a matter of */
+/* course — and until this ticket every count on these routes was computed     */
+/* over both of them at once. The two cases below are the same round number in */
+/* two projects, asserted from either side.                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Declares a project and returns its id (t354, FR1). */
+async function declareProject(ctx: TestContext, name: string): Promise<number> {
+  const response = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.id;
+}
+
+/** The row of one round, off the list, in the scope the query names. */
+async function rowIn(
+  ctx: TestContext,
+  execution: number,
+  query = '',
+): Promise<ExecutionSummary | undefined> {
+  const response = await request<{ executions: ExecutionSummary[] }>(
+    ctx,
+    'GET',
+    `/v1/executions${query}`,
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  return response.body.executions.find((entry) => entry.execution_id === execution);
+}
+
+test('t410 AT7 — two projects sharing a round number get independent summaries', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.jobRoutes,
+    T102_ARTIFACTS.inputRequestRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const version = await registerMinimalGraph(ctx);
+
+  // Project 1: one traveller of round 410, which is going to arrive.
+  const walking = await travellerOf(ctx, 410, version, 'the note of project one');
+
+  // Project 2: the SAME round number, with a job that is blocked and a person
+  // being waited on. No version: project 2 never imported one, which is also
+  // why `POST /v1/jobs` accepts it as free text (t283).
+  const theirs = await createJob(ctx, {
+    title: 'the note of project two',
+    entry_node_id: 'redigir',
+    execution_id: 410,
+    project_id: 2,
+  });
+  const blocked = await request(ctx, 'POST', `/v1/jobs/${theirs.id}/blocks`, {
+    reason: 'waiting for people',
+  });
+  assert.equal(blocked.status, 200, JSON.stringify(blocked.body));
+  const asked = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    job_id: theirs.id,
+    kind: 'question',
+    question: 'which theme?',
+    auto_approvable: false,
+  });
+  assert.equal(asked.status, 201, JSON.stringify(asked.body));
+
+  assert.deepEqual(await rowIn(ctx, 410), {
+    execution_id: 410,
+    jobs: 1,
+    blocked_jobs: 0,
+    pending_input_requests: 0,
+    finished_at: null,
+  });
+  assert.deepEqual(await rowIn(ctx, 410, '?project_id=2'), {
+    execution_id: 410,
+    jobs: 1,
+    blocked_jobs: 1,
+    pending_input_requests: 1,
+    finished_at: null,
+  });
+
+  // Project 1's round ends. Its only traveller arrived and no lease holds it,
+  // so the control plane declares it over — a decision that has to be taken
+  // over the jobs of THIS project alone: project 2's blocked job is not a
+  // reason for project 1's round to stay open, and project 1's ending is not a
+  // fact about project 2's round.
+  await arrive(ctx, walking.id);
+  const announced = await finishedEvents(ctx, 410);
+  assert.equal(announced.length, 1, 'the round of project 1 ended once');
+  const occurredAt = announced[0].occurred_at;
+
+  assert.deepEqual(await rowIn(ctx, 410), {
+    execution_id: 410,
+    jobs: 1,
+    blocked_jobs: 0,
+    pending_input_requests: 0,
+    finished_at: occurredAt,
+  });
+  assert.deepEqual(
+    await rowIn(ctx, 410, '?project_id=2'),
+    {
+      execution_id: 410,
+      jobs: 1,
+      blocked_jobs: 1,
+      pending_input_requests: 1,
+      finished_at: null,
+    },
+    'the other project\'s round of the same number is untouched by that ending',
+  );
+
+  const detail = await request<ExecutionDetail>(ctx, 'GET', '/v1/executions/410');
+  assert.equal(detail.status, 200);
+  assert.deepEqual(detail.body, {
+    execution_id: 410,
+    jobs: 1,
+    blocked_jobs: 0,
+    pending_input_requests: 0,
+    finished_at: occurredAt,
+  });
+
+  const theirDetail = await request<ExecutionDetail>(
+    ctx,
+    'GET',
+    '/v1/executions/410?project_id=2',
+  );
+  assert.equal(theirDetail.status, 200);
+  assert.deepEqual(theirDetail.body, {
+    execution_id: 410,
+    jobs: 1,
+    blocked_jobs: 1,
+    pending_input_requests: 1,
+    finished_at: null,
+  });
+
+  // And a project nobody declared is a refusal, never an empty round.
+  const unknown = await request<{ error: string; project_id: number }>(
+    ctx,
+    'GET',
+    '/v1/executions?project_id=99',
+  );
+  assert.equal(unknown.status, 404, JSON.stringify(unknown.body));
+  assert.equal(unknown.body.error, 'unknown_project');
+});
+
+test('t410 AT8 — metrics-by-version never mixes two projects of the same round', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.sessionRepository,
+    T102_ARTIFACTS.sessionRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const mine = await createJob(ctx, {
+    title: 'measured in project one',
+    entry_node_id: 'redigir',
+    execution_id: 4108,
+    graph_version_id: 'v410-one',
+  });
+  const theirs = await createJob(ctx, {
+    title: 'measured in project two',
+    entry_node_id: 'redigir',
+    execution_id: 4108,
+    project_id: 2,
+    graph_version_id: 'v410-two',
+  });
+
+  await seedSession(ctx, { jobId: mine.id, nodeId: 'redigir', durationMs: 1_000 });
+  await seedSession(ctx, { jobId: theirs.id, nodeId: 'revisar', durationMs: 3_000 });
+  await seedSession(ctx, { jobId: theirs.id, nodeId: 'revisar', durationMs: 3_000 });
+
+  const reportOf = async (query: string): Promise<MetricByVersionWithNodes[]> => {
+    const response = await request<{ metrics: MetricByVersionWithNodes[] }>(
+      ctx,
+      'GET',
+      `/v1/executions/4108/metrics-by-version${query}`,
+    );
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    return response.body.metrics;
+  };
+
+  const ours = await reportOf('');
+  assert.deepEqual(
+    ours.map((row) => row.graph_version_id),
+    ['v410-one'],
+    'the other project\'s version is not a row of this project\'s report',
+  );
+  assert.equal(ours[0].jobs, 1);
+  assert.deepEqual(
+    ours[0].nodes.map((node) => ({ node_id: node.node_id, sessions: node.sessions })),
+    [{ node_id: 'redigir', sessions: 1 }],
+    'and its sessions are not counted under this project\'s nodes either',
+  );
+
+  const other = await reportOf('?project_id=2');
+  assert.deepEqual(
+    other.map((row) => row.graph_version_id),
+    ['v410-two'],
+  );
+  assert.equal(other[0].jobs, 1);
+  assert.deepEqual(
+    other[0].nodes.map((node) => ({ node_id: node.node_id, sessions: node.sessions })),
+    [{ node_id: 'revisar', sessions: 2 }],
+  );
+});

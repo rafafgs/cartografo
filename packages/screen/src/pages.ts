@@ -41,6 +41,7 @@ import type {
   Example,
   ExecutionSummary,
   Job,
+  JobState,
   Project,
   Question,
   RunnerHealth,
@@ -112,6 +113,9 @@ const STYLE = `
   .verificacao form input { font: inherit; padding: .3rem .4rem; min-width: 20rem; max-width: 100%; }
   .pronto { border: 2px solid currentColor; border-radius: 6px; padding: 1rem 1.2rem; max-width: 52rem; }
   .suporte { margin-top: 2.5rem; font-size: .85rem; opacity: .7; }
+  .attention { border-left-width: 4px; padding-left: .55rem; }
+  tr.attention td:first-child { border-left: 4px solid currentColor; padding-left: .45rem; }
+  .demo-badge { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; border: 1px solid currentColor; border-radius: 3px; padding: .05rem .3rem; margin-left: .4rem; }
 `;
 
 /** Everything that goes into HTML passes through here. With no exception. */
@@ -187,15 +191,24 @@ function projectSwitcher(scope: ProjectScope): string {
  * @param title Page title.
  * @param body Already-escaped page body.
  * @param scope Which project is in force; the switcher is drawn from it (t354).
+ * @param autoRefresh Draws `<meta http-equiv="refresh" content="30">` — `/board`
+ *   ALONE sets this (t416, FR9). Every other page leaves it `false`, since a
+ *   form on a page that reloads itself can lose what someone is mid-typing —
+ *   the reason `/input-requests` and the rest keep today's behaviour.
  * @returns The whole document.
  */
-function layout(title: string, body: string, scope: ProjectScope = DEFAULT_SCOPE): string {
+function layout(
+  title: string,
+  body: string,
+  scope: ProjectScope = DEFAULT_SCOPE,
+  autoRefresh = false,
+): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} · cartografo</title>
+${autoRefresh ? '<meta http-equiv="refresh" content="30">\n' : ''}<title>${escapeHtml(title)} · cartografo</title>
 <style>${STYLE}</style>
 </head>
 <body>
@@ -233,18 +246,27 @@ export function formatDuration(ms: number | null): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
+/**
+ * The block-reason line a card carries when `job.blocked` (t107, t310).
+ *
+ * Factored out so the six-state board (t416) reuses the exact same fallback
+ * text instead of duplicating it — `job.blocked` decides this line
+ * independently of which state band the job landed in (a job can be
+ * `awaiting_you` and still carry a block reason, RF-30's ambiguity 1).
+ */
+function blockReasonHtml(job: Job): string {
+  if (!job.blocked) return '';
+  return job.block_reason !== null
+    ? `<p class="motivo">⛔ ${escapeHtml(job.block_reason)}</p>`
+    : '<p class="motivo">⛔ blocked, with no reason declared</p>';
+}
+
 function jobCard(job: Job): string {
   const classes = job.blocked ? 'cartao bloqueado' : 'cartao';
-  const reason =
-    job.blocked && job.block_reason !== null
-      ? `<p class="motivo">⛔ ${escapeHtml(job.block_reason)}</p>`
-      : job.blocked
-        ? '<p class="motivo">⛔ blocked, with no reason declared</p>'
-        : '';
   return `<article class="${classes}" data-trabalho="${job.id}">
       <div class="id">#${job.id}</div>
       <a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>
-      ${reason}
+      ${blockReasonHtml(job)}
     </article>`;
 }
 
@@ -277,6 +299,152 @@ function jobBoard(jobs: Job[]): string {
     );
 
   return `<div class="quadro">\n  ${columns.join('\n  ')}\n</div>`;
+}
+
+/* ------------------------------------------------------- the board (t416) */
+
+/**
+ * The six states, in RF-30's attention priority — and the exact order
+ * `deriveJobState` checks them in on the control plane (t415). A board sorted
+ * any other way would answer a different question than "is anything waiting
+ * on me?".
+ */
+const STATE_ORDER: readonly JobState[] = [
+  'awaiting_you',
+  'blocked_unasked',
+  'running',
+  'unowned',
+  'completed',
+  'queued',
+];
+
+/** Board-wide job count past which a band becomes a table instead of cards (FR4/FR5). */
+const ROW_MODE_THRESHOLD = 12;
+
+/** The two states a person is actually waiting on (FR7) — the left-edge bar. */
+function isAttentionState(state: JobState): boolean {
+  return state === 'awaiting_you' || state === 'blocked_unasked';
+}
+
+/** A job whose `fields.demo` reads truthy, by plain JS truthiness (FR8). */
+function isDemoJob(job: Job): boolean {
+  return Boolean(job.fields?.demo);
+}
+
+function demoBadgeHtml(job: Job): string {
+  return isDemoJob(job) ? '<span class="demo-badge">demo</span>' : '';
+}
+
+/**
+ * The duration/anchor pair every card and row carries (FR6): how long the job
+ * has been in its current state, next to the SAME instant the whole page was
+ * rendered against — never a fresh clock read per job, so the numbers on one
+ * page always add up against one one truth.
+ */
+function jobMetaHtml(job: Job, now: number, renderedAt: string): string {
+  const words = job.state.replaceAll('_', ' ');
+  const duration = formatDuration(now - Date.parse(job.state_since));
+  return `<p class="motivo">${escapeHtml(words)} · <span class="id">@${escapeHtml(job.current_node_id)}</span> · for ${escapeHtml(duration)} · as of ${escapeHtml(renderedAt)}</p>`;
+}
+
+/** One job, as a card — the shape a band takes at {@link ROW_MODE_THRESHOLD} or under. */
+function stateCard(job: Job, now: number, renderedAt: string): string {
+  const classes = ['cartao', job.blocked ? 'bloqueado' : null, isAttentionState(job.state) ? 'attention' : null]
+    .filter((one): one is string => one !== null)
+    .join(' ');
+  return `<article data-trabalho="${job.id}" class="${classes}">
+      <div class="id">#${job.id}</div>
+      <a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}
+      ${jobMetaHtml(job, now, renderedAt)}
+      ${blockReasonHtml(job)}
+    </article>`;
+}
+
+/** One job, as a table row — the shape a band takes past {@link ROW_MODE_THRESHOLD}. */
+function stateRow(job: Job, now: number, renderedAt: string): string {
+  const rowClass = isAttentionState(job.state) ? ' class="attention"' : '';
+  const words = job.state.replaceAll('_', ' ');
+  const duration = formatDuration(now - Date.parse(job.state_since));
+  return `<tr data-trabalho="${job.id}"${rowClass}>
+      <td>#${job.id}</td>
+      <td><a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}</td>
+      <td>${escapeHtml(words)}</td>
+      <td>${escapeHtml(job.current_node_id)}</td>
+      <td>for ${escapeHtml(duration)} · as of ${escapeHtml(renderedAt)}</td>
+      <td>${blockReasonHtml(job)}</td>
+    </tr>`;
+}
+
+/** A band's jobs, still grouped by node — card mode's shape, unchanged from {@link jobBoard} (FR4). */
+function cardBand(jobs: Job[], now: number, renderedAt: string): string {
+  const byNode = new Map<string, Job[]>();
+  for (const job of jobs) {
+    const group = byNode.get(job.current_node_id) ?? [];
+    group.push(job);
+    byNode.set(job.current_node_id, group);
+  }
+
+  const columns = [...byNode.entries()]
+    .sort(([one], [other]) => one.localeCompare(other))
+    .map(
+      ([node, inNode]) => `<section class="grupo" data-no-atual="${escapeHtml(node)}">
+    <h2>${escapeHtml(node)} <span class="id">(${inNode.length})</span></h2>
+    ${inNode.map((job) => stateCard(job, now, renderedAt)).join('\n    ')}
+  </section>`,
+    );
+
+  return `<div class="quadro">\n  ${columns.join('\n  ')}\n</div>`;
+}
+
+/** A band's jobs, flat and sorted — row mode's shape: time-order, not node-order (FR5). */
+function rowBand(jobs: Job[], now: number, renderedAt: string): string {
+  const rows = jobs.map((job) => stateRow(job, now, renderedAt));
+  return `<table>
+  <thead><tr><th>job</th><th>title</th><th>state</th><th>node</th><th>time</th><th>note</th></tr></thead>
+  <tbody>
+    ${rows.join('\n    ')}
+  </tbody>
+</table>`;
+}
+
+/** Jobs of one band, in attention order (FR3): oldest wait first, id as the tie-break. */
+function sortByStateSince(jobs: Job[]): Job[] {
+  return [...jobs].sort((a, b) => {
+    const bySince = Date.parse(a.state_since) - Date.parse(b.state_since);
+    return bySince !== 0 ? bySince : a.id - b.id;
+  });
+}
+
+/**
+ * The board's six state bands (t416, FR2-FR6): every job grouped into the
+ * state it derived to, in RF-30's attention order, each band sorted by how
+ * long it has been waiting — and only drawn at all when it holds a job, the
+ * same way `jobBoard` never drew an empty node column.
+ *
+ * `now`/`renderedAt` are captured ONCE by the caller and threaded through
+ * every card and row on the page — not one clock read per job.
+ */
+function stateBoard(jobs: Job[], now: number, renderedAt: string): string {
+  if (jobs.length === 0) return '<p class="vazio">No jobs here yet.</p>';
+
+  const rowMode = jobs.length > ROW_MODE_THRESHOLD;
+  const byState = new Map<JobState, Job[]>();
+  for (const job of jobs) {
+    const group = byState.get(job.state) ?? [];
+    group.push(job);
+    byState.set(job.state, group);
+  }
+
+  const bands = STATE_ORDER.filter((state) => (byState.get(state)?.length ?? 0) > 0).map((state) => {
+    const inState = sortByStateSince(byState.get(state) as Job[]);
+    const body = rowMode ? rowBand(inState, now, renderedAt) : cardBand(inState, now, renderedAt);
+    return `<section data-state="${state}">
+  <h2>${escapeHtml(state.replaceAll('_', ' '))} <span class="id">(${inState.length})</span></h2>
+  ${body}
+</section>`;
+  });
+
+  return bands.join('\n');
 }
 
 /**
@@ -872,7 +1040,16 @@ ${support}`;
 }
 
 /**
- * `GET /board` — the whole board (FR5).
+ * `GET /board` — the whole board, sorted by attention (t107 FR5; t416).
+ *
+ * Every job lands in one of the six states t415 derives, banded in RF-30's
+ * attention priority — `awaiting_you` and `blocked_unasked` first — and, past
+ * a dozen jobs board-wide, every band collapses from cards into one flat,
+ * time-sorted table (`stateBoard`). This is also the one page on the whole
+ * screen that auto-refreshes (`layout`'s fourth argument): the only page
+ * carrying a live clock is the only one allowed to show relative time, and
+ * the two together are what `docs/spec/screen.md` §1/§7 amend for `/board`
+ * alone.
  *
  * @param client Client of the public API.
  * @returns The board page.
@@ -882,9 +1059,19 @@ export async function boardPage(
   scope: ProjectScope = DEFAULT_SCOPE,
 ): Promise<Page> {
   const jobs = await client.listJobs({ project_id: scope.projectId });
+  // Captured ONCE, and reused for every job on the page (FR6) — the anchor
+  // every relative duration reads against has to be one honest instant, not
+  // one clock read per job.
+  const now = Date.now();
+  const renderedAt = new Date(now).toISOString();
   return {
     status: 200,
-    html: layout('board', `<h2>board · ${jobs.length} job(s)</h2>\n${jobBoard(jobs)}`, scope),
+    html: layout(
+      'board',
+      `<h2>board · ${jobs.length} job(s)</h2>\n${stateBoard(jobs, now, renderedAt)}`,
+      scope,
+      true,
+    ),
   };
 }
 

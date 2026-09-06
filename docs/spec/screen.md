@@ -31,7 +31,7 @@ runs in `npm run lint`, and locked down by
 | Route | What it shows | What it reads from the API |
 |---|---|---|
 | `GET /` | The check: whether this machine is ready to run anything, per paired runner — engine, model credential, the `cartografo` MCP server, workspace — or the single "everything is ready" panel with a way into the board. | `GET /v1/runners` (probe embedded), `GET /v1/settings` |
-| `GET /board` | The board: every job, grouped by `no_atual`, with the blocking reason where there is one. | `GET /v1/jobs` |
+| `GET /board` | The board: every job, banded into the six states t415 derives, in attention order (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`), each band sorted by how long the job has been in it — oldest wait first — and grouped by `no_atual` inside the band while the board holds 12 jobs or fewer; past that it collapses to one flat, time-sorted table per band. Every job still shows the blocking reason where there is one. This is the one page that auto-refreshes every 30 seconds (§7). | `GET /v1/jobs` |
 | `GET /examples` | The bundles the control plane can demonstrate: one card each, with the demo's title, whether the class is already registered, and a form that runs it. | `GET /v1/examples` |
 | `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
 | `GET /executions/:id` | One round's slice: the board, the sessions and the pending questions on the same page. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
@@ -46,7 +46,10 @@ runs in `npm run lint`, and locked down by
 
 Every view renders **on the request**. There is no polling, no websocket and no
 auto-refresh: reloading the page is the update, and the screen's state is always
-the state the API has just reported.
+the state the API has just reported. **`/board` alone is the exception** (t416):
+it carries `<meta http-equiv="refresh" content="30">`, so it is never more than
+30 seconds stale without anyone reloading it — which is also what makes the
+relative durations it shows honest (§7).
 
 **Which project a view shows** comes from the `cartografo_project` cookie, and
 from nowhere else (D25, t354). Every GET above reads it — defaulting to project
@@ -366,6 +369,7 @@ one of them is changing the contract; changing a CSS class is not.
 |---|---|---|
 | `data-no-atual` | a board group | the node's id |
 | `data-trabalho` | a job card | the job's id |
+| `data-state` | a state band on `/board` | one of `awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued` (t416) |
 | `data-execucao` | a line of the execution list | the id, or empty in the `null` group |
 | `data-campo` | a count cell, a derived-field cell, or a line of the check | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao`, and on `/`: `runner`, `engine`, `credential`, `mcp`, `workspace` |
 | `data-estado` | a line of the check, beside its `data-campo` | `met` or `unmet` |
@@ -415,12 +419,20 @@ Every item is another ticket's declared scope, not an oversight:
   escalation cycle (§3); the screen only writes the fact.
 - **A node label with the `papel`/`descricao` of the graph's snapshot** — the
   board shows the raw `no_atual`; fetching the graph to label it is additive.
+- **"step NN/MM" beside a job's node** (RF-30 Part 2 component 4) — no route of
+  the API exposes a node's ordinal position inside its graph version, and
+  inventing that surface is not `/board`'s ticket to do (t416).
 - **Pagination** — no route of the API paginates today, and it is not this ticket
   that invents what the API does not have.
-- **Live updates** (polling/websocket) — every view renders on the request.
+- **Live updates by any mechanism other than `/board`'s own refresh** (polling,
+  websocket, SSE) — every other view renders on the request alone.
 - **Relative time** ("3 minutes ago") on `/runners` or on any other date: the
   screen shows the raw instant the API recorded. A relative label computed at
   render time, on a page with no auto-refresh, starts lying the next second.
+  **`/board` is the one narrow exception** (t416): it pairs the relative
+  duration with the raw instant it was computed against (`for … as of …`), and
+  it may only do so because the 30-second auto-refresh above is what keeps
+  that instant from going stale unnoticed.
 - **Knowing whether an idle runner is alive.** `/runners` shows what the control
   plane actually records, and what it records is leases: `ultimo_heartbeat` and
   `ultima_expiracao` are derived from the `lease` table

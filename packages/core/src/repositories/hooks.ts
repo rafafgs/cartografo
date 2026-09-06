@@ -48,6 +48,7 @@ import type { GraphHook } from '../domain/graph.ts';
 import { isObject } from '../util/is-object.ts';
 import { getVersion } from './graphs.ts';
 import { resolveHookSecret } from './hook-secrets.ts';
+import { addMilliseconds } from './webhooks.ts';
 import { API_ACTOR, now } from './common.ts';
 
 /** Injectable clock; without it, the real one. */
@@ -109,11 +110,6 @@ interface ExhaustedRow {
   hook_id: string;
   node_id: string;
   url: string;
-}
-
-/** An ISO 8601 instant shifted by milliseconds — the backoff's arithmetic. */
-function addMilliseconds(instant: string, ms: number): string {
-  return new Date(Date.parse(instant) + ms).toISOString();
 }
 
 const isFilledText = (value: unknown): value is string =>
@@ -253,6 +249,11 @@ export function dueHookDeliveries(
  * No event is recorded: success is the expected case, and a log line per
  * delivered hook would drown the one line that matters — the failure.
  *
+ * Guarded by `status = 'pending'`, which since t359 also catches the delivery a
+ * LATER routine already re-claimed and delivered after this one's claim expired:
+ * the write finds nothing pending and changes nothing. It does not touch
+ * `attempts` either — `claimDelivery` counted this attempt before it went out.
+ *
  * @param db Open database.
  * @param id Delivery id.
  * @param options Injectable clock.
@@ -264,7 +265,7 @@ export function recordHookDeliverySuccess(
 ): void {
   db.prepare(
     `UPDATE hook_delivery
-        SET status = 'delivered', attempts = attempts + 1, delivered_at = ?, last_error = NULL
+        SET status = 'delivered', delivered_at = ?, last_error = NULL
       WHERE id = ? AND status = 'pending'`,
   ).run((options.now ?? now)(), id);
 }
@@ -281,6 +282,11 @@ export function recordHookDeliverySuccess(
  *
  * The actor is `sistema`: this is the control plane's own report about its own
  * delivery attempt, and there is nobody else to attribute it to.
+ *
+ * Since t359 the count it reads is the count already made: `claimDelivery`
+ * incremented `attempts` before this attempt went out, so the failing attempt is
+ * `attempts` and its step is `backoff[attempts - 1]`. Adding one here as well
+ * would count every attempt twice and burn the schedule in half.
  *
  * @param db Open database.
  * @param attempt Delivery id, what went wrong, and the schedule.
@@ -299,21 +305,21 @@ export function recordHookDeliveryFailure(
       .get(attempt.id) as { attempts: number } | undefined;
     if (current === undefined) return;
 
-    const made = current.attempts + 1;
+    const made = current.attempts;
     const step = attempt.backoff[made - 1];
 
     if (step !== undefined) {
       db.prepare(
-        `UPDATE hook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
+        `UPDATE hook_delivery SET last_error = ?, next_attempt_at = ?
           WHERE id = ? AND status = 'pending'`,
-      ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
+      ).run(attempt.message, addMilliseconds(clock(), step), attempt.id);
       return;
     }
 
     db.prepare(
-      `UPDATE hook_delivery SET status = 'exhausted', attempts = ?, last_error = ?
+      `UPDATE hook_delivery SET status = 'exhausted', last_error = ?
         WHERE id = ? AND status = 'pending'`,
-    ).run(made, attempt.message, attempt.id);
+    ).run(attempt.message, attempt.id);
 
     const row = db
       .prepare(

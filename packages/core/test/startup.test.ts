@@ -201,11 +201,13 @@ test(
       // and renumbered at the merge with t354, which is this count's whole point
       // restated one more time. t401 moved it last with
       // `0028_runner_probe.sql`: what a paired machine reports about itself, and
-      // the operator's request that it report again.
+      // the operator's request that it report again. t359 moved it once more with
+      // `0029_delivery_claim.sql`, the `claimed_at` both delivery tables need so
+      // a routine that died mid-attempt is diagnosable (RF-06).
       assert.equal(
         first.readiness.migrationsApplied,
-        28,
-        'a brand-new database applies the twenty-eight migrations the package ships',
+        29,
+        'a brand-new database applies the twenty-nine migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

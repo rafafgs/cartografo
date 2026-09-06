@@ -845,6 +845,10 @@ test('t359 — a claim whose routine never comes back is claimed again, and only
   const hang = new Promise<{ status: number }>((resolve) => {
     release = () => resolve({ status: 200 });
   });
+  // Registered BEFORE the harness's own shutdown hook, and `after` hooks run in
+  // registration order: whatever this test asserts, the crashed attempt is let
+  // go before `app.close()` waits on the tick that is holding it.
+  t.after(() => release?.());
 
   let seen = 0;
   const ctx = await startDispatcherPair(t, {

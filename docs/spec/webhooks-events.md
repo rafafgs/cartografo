@@ -227,6 +227,18 @@ A broken subscriber is nobody's problem but its own: a batch's deliveries go out
 together, each with its own timeout, and no failure delays another subscriber's,
 holds up the fan-out or touches the control plane's write path.
 
+**A delivery is claimed before it is attempted, so it goes out exactly once.**
+Whatever routine is about to send a delivery first takes it for itself with a
+single guarded `UPDATE`, decided by rowcount; only the routine whose update
+matched a row makes the call. A routine that loses that race records nothing at
+all — no call, no attempt counted, no event — and simply moves on to the next
+delivery. This holds across **any number of routines sharing the same queue**,
+not only within one process: it is a property of the write, not of how the
+control plane happens to be deployed. The attempt is counted when it is claimed,
+so a routine that dies mid-attempt leaves a delivery that becomes due again once
+that attempt's timeout has elapsed, and is then retried by whoever claims it
+next — one more attempt off the schedule above, and never a lost delivery.
+
 ---
 
 ## 7. Registration errors

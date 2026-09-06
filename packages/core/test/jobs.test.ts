@@ -2281,3 +2281,232 @@ test('t410 AT6 — POST /v1/jobs refuses a graph version of another project', as
   });
   assert.equal(accepted.graph_version_id, versionId);
 });
+
+/* -------------------------------------------------------------------------- */
+/* The conversation projection (t360, FR5 / AT2)                              */
+/* -------------------------------------------------------------------------- */
+
+/** One answered turn, as `GET /v1/jobs/:id/conversation` publishes it. */
+interface ConversationTurn {
+  question: string;
+  answer: string;
+  answered_by: string | null;
+  at: string | null;
+}
+
+/**
+ * The question still waiting, in the vocabulary the fenced block uses.
+ *
+ * `default` and not `default_answer`: the projection speaks the grammar the
+ * session itself writes (`ESCALATION_PROTOCOL`), and the rename is local to
+ * this route — `GET /v1/input-requests` keeps its own spelling.
+ */
+interface PendingQuestion {
+  id: number;
+  question: string;
+  context: string | null;
+  recommendation: string | null;
+  options: string[] | null;
+  default: string | null;
+}
+
+/** The whole projection the chat page reads. */
+interface Conversation {
+  turns: ConversationTurn[];
+  pending: PendingQuestion | null;
+  thinking: boolean;
+  draft: Record<string, unknown> | null;
+  done: boolean;
+}
+
+/** The module this family of assertions is about. */
+const CONVERSATION_ARTIFACTS = ['src/domain/conversation.ts', T102_ARTIFACTS.jobRoutes];
+
+/** Opens a session on a node and leaves it open — a job that is thinking. */
+async function openSessionOn(ctx: TestContext, jobId: number, nodeId: string): Promise<number> {
+  const opened = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: nodeId,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'Ask exactly one question.',
+  });
+  assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
+  return opened.body.id;
+}
+
+/**
+ * One turn of an interview, in the order the dispatch really writes it.
+ *
+ * The session closes with its report FIRST and the question is posted after it
+ * (`dispatch.ts`: `finishSession` then `postSessionQuestion`), which is what
+ * makes the draft of a turn readable while its question is still open.
+ *
+ * @param ctx Control plane running.
+ * @param jobId The interview.
+ * @param question What this turn asks.
+ * @param draft The draft as it stood at the end of this turn.
+ * @returns Id of the input request that is now pending.
+ */
+async function interviewTurn(
+  ctx: TestContext,
+  jobId: number,
+  question: string,
+  draft: Record<string, unknown>,
+): Promise<number> {
+  const sessionId = await openSessionOn(ctx, jobId, 'redigir');
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${sessionId}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    output: { done: false, draft },
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+
+  const asked = await request<{ id: number }>(ctx, 'POST', '/v1/input-requests', {
+    job_id: jobId,
+    session_id: sessionId,
+    kind: 'question',
+    question,
+    context: 'The interview needs one decision before it can go on.',
+    options: ['yes', 'no'],
+    recommendation: 'yes',
+    default_answer: 'yes',
+  });
+  assert.equal(asked.status, 201, `POST /v1/input-requests returned ${asked.status}`);
+  return asked.body.id;
+}
+
+/** Reads the conversation projection off the API. */
+async function conversation(ctx: TestContext, jobId: number): Promise<Conversation> {
+  const response = await request<Conversation>(ctx, 'GET', `/v1/jobs/${jobId}/conversation`);
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  return response.body;
+}
+
+test('t360 AT2 — the conversation lists the answered turns and the question still open', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+  const job = await createJob(ctx, {
+    title: 'design a map for handling support escalations',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const firstDraft = { graph: { problem_class: null, nodes: [] }, skills: [] };
+  const first = await interviewTurn(ctx, job.id, 'What is this class called?', firstDraft);
+
+  // While the question is open the job is blocked and nothing is thinking: what
+  // the page shows is the question, not a spinner.
+  const asking = await conversation(ctx, job.id);
+  assert.deepEqual(asking.turns, [], 'a question nobody answered yet is not a turn');
+  assert.equal(asking.thinking, false, 'a job waiting on a person is not working');
+  assert.ok(asking.pending !== null, 'the open question is what the page has to render');
+  assert.equal(asking.pending.question, 'What is this class called?');
+  assert.equal(asking.pending.recommendation, 'yes', 'the one-click value rides with it (RF-16)');
+  assert.deepEqual(asking.pending.options, ['yes', 'no']);
+  assert.equal(
+    asking.pending.default,
+    'yes',
+    'the wire key is `default`, the word the fenced block itself uses',
+  );
+  assert.deepEqual(asking.draft, firstDraft, 'the draft is the last completed session`s own output');
+  assert.equal(asking.done, false);
+
+  await request(ctx, 'PATCH', `/v1/input-requests/${first}/answer`, {
+    answer: 'support-escalation',
+    answered_by: 'rafael',
+  });
+
+  const secondDraft = {
+    graph: { problem_class: 'support-escalation', nodes: [{ id: 'triage' }] },
+    skills: [],
+  };
+  const second = await interviewTurn(ctx, job.id, 'What does `triage` need to start?', secondDraft);
+  await request(ctx, 'PATCH', `/v1/input-requests/${second}/answer`, {
+    answer: 'the ticket and the customer history',
+    answered_by: 'rafael',
+  });
+
+  const thirdDraft = {
+    graph: {
+      problem_class: 'support-escalation',
+      nodes: [{ id: 'triage', contract: { input_schema: { required: ['ticket'] } } }],
+    },
+    skills: [{ id: 'triage-ticket', version: '1.0.0' }],
+  };
+  await interviewTurn(ctx, job.id, 'What usually goes wrong at `triage`?', thirdDraft);
+
+  const after = await conversation(ctx, job.id);
+  assert.equal(after.turns.length, 2, 'two questions were answered, and the third is still open');
+  assert.deepEqual(
+    after.turns.map((turn) => turn.question),
+    ['What is this class called?', 'What does `triage` need to start?'],
+    'the ORDER comes from the log, which is the only total ordering there is',
+  );
+  assert.deepEqual(
+    after.turns.map((turn) => turn.answer),
+    ['support-escalation', 'the ticket and the customer history'],
+  );
+  for (const turn of after.turns) {
+    assert.equal(turn.answered_by, 'rafael');
+    assert.equal(typeof turn.at, 'string', 'a turn says when it was closed');
+  }
+
+  assert.ok(after.pending !== null, 'the third question is waiting');
+  assert.equal(after.pending.question, 'What usually goes wrong at `triage`?');
+  assert.deepEqual(after.draft, thirdDraft, 'the draft is the LAST completed session`s output');
+  assert.equal(after.done, false, 'an interview that has not delivered is not done');
+});
+
+test('t360 AT2 — while a session is running the projection reports thinking, with nothing pending', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+  const job = await createJob(ctx, {
+    title: 'design a map for onboarding a new client',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const quiet = await conversation(ctx, job.id);
+  assert.equal(quiet.thinking, false, 'a job nobody has dispatched yet is not thinking');
+  assert.equal(quiet.pending, null);
+  assert.equal(quiet.draft, null, 'no completed session is no draft, never an empty one');
+
+  await openSessionOn(ctx, job.id, 'redigir');
+
+  const running = await conversation(ctx, job.id);
+  assert.equal(running.thinking, true, 'a session is open, and the page says so');
+  assert.equal(running.pending, null, 'and there is nothing for a person to answer while it runs');
+  assert.deepEqual(running.turns, []);
+  assert.equal(running.done, false);
+});
+
+test('t360 AT2 — the conversation is scoped by project, and an unknown job is the same 404', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const versionId = await registerMinimalGraph(ctx);
+  const job = await createJob(ctx, {
+    title: 'an interview of project one',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const missing = await request<ScopeRefusal>(ctx, 'GET', '/v1/jobs/999360/conversation');
+  assert.equal(missing.status, 404, JSON.stringify(missing.body));
+  assert.equal(missing.body.error, 'not_found');
+
+  const elsewhere = await request<ScopeRefusal>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/conversation?project_id=2`,
+  );
+  assert.equal(
+    elsewhere.status,
+    404,
+    'a job of another project answers the same 404 an unknown id gets (t410)',
+  );
+});

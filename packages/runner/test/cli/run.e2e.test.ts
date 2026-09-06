@@ -2802,3 +2802,167 @@ test('t401 — the runner reports its probe, and answers a re-check request', as
     );
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* One discovery per process, threaded into the session's input (t360, FR4)   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The map the interview draws needs to know which steps reach OUTSIDE, and
+ * through which MCP server (RF-20). That fact is the machine's, not the graph's
+ * — the same class of value as the test bench's path — so it travels through the
+ * executor-environment seam, and this case pins the one thing that could
+ * silently go wrong there: the runner discovering twice.
+ *
+ * t401 already made the startup probe call `discoverMcpServers()` once. Building
+ * a second resolver that called it again per dispatch would spend one CLI spawn
+ * per session for an answer that cannot have changed inside a process, and would
+ * let the operator page and the interview disagree about the same machine. So
+ * the probe's own discovery is THREADED into the resolver, and what this case
+ * measures is exactly that: the `mcp list` command runs once, and its answer is
+ * what the dispatched session was told.
+ */
+test('t360 AT4 — the MCP discovery is made once, and it is what the session reads', async (parent) => {
+  const plane = await bootControlPlane(parent);
+
+  await parent.test('AT4 — one `mcp list` per process, and the session gets its answer', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't360-at4');
+    const record = path.join(scratch, 'interview-dispatch.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    // A manifest that DECLARES `environment`: `render-input-values.ts` renders
+    // the keys the skill's `input` names, so declaring it is what makes the
+    // discovery reach the prompt at all. Not `required`, deliberately — a runner
+    // with no environment configured must still dispatch this node.
+    const manifest: Record<string, unknown> = {
+      ...skillFixture(),
+      id: 'read-the-environment',
+      version: '1.0.0',
+      input: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        required: ['job'],
+        properties: { job: { type: 'object' }, environment: { type: 'object' } },
+      },
+    };
+    manifest.hash = manifestContentHash(manifest);
+    const skill = await api<{ id: string; version: string; hash: string }>(
+      plane,
+      'POST',
+      '/v1/skills',
+      manifest,
+      201,
+    );
+
+    const document = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8')) as Record<string, unknown>;
+    document.problem_class = 'reads-the-environment';
+    document.nodes = (document.nodes as Record<string, unknown>[]).map((node) => ({
+      ...node,
+      // One engine for the whole document: this case is about the environment,
+      // and a codex node would need a second route for nothing.
+      engine: 'claude-code',
+      skill_ref: { id: skill.id, version: skill.version, hash: skill.hash },
+    }));
+    const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+      plane,
+      'POST',
+      '/v1/graphs',
+      document,
+      201,
+    );
+
+    /** Every `claude mcp list` this process issues, counted. */
+    let discoveries = 0;
+    const engineFactory = (): EngineRoute => ({
+      adapter: new ClaudeCodeAdapter({
+        commandBuilder: (spec) => ({
+          command: process.execPath,
+          args: [FAKE_ENGINE, ...buildCommand(spec).args],
+        }),
+        environmentBuilder: (spec) => ({
+          ...buildEnvironment(spec),
+          FAKE_ENGINE_LINES: QUIET_LINES,
+          FAKE_ENGINE_RECORD: record,
+        }),
+        graceMs: 300,
+        probeCommandBuilder: () => ({
+          command: process.execPath,
+          args: [FAKE_ENGINE, '--version'],
+        }),
+        mcpListCommandBuilder: () => {
+          discoveries += 1;
+          return { command: process.execPath, args: [FAKE_ENGINE, 'mcp', 'list'] };
+        },
+        probeEnvironment: {
+          ...process.env,
+          FAKE_ENGINE_MCP_LIST: 'flowpilot: http://127.0.0.1:9/mcp - connected\n',
+        },
+      }),
+      decodeSessionText: decodeClaudeCodeSessionText,
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId: 'runner-t360-at4',
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory,
+    });
+
+    await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      {
+        title: 'a job whose node reads what this machine can reach',
+        entry_node_id: DEFAULT_NODE,
+        execution_id: 3_604,
+        graph_version_id: version.id,
+      },
+      201,
+    );
+
+    await waitFor('the job being dispatched to completion', async () => {
+      const { sessions } = await api<{ sessions: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execution_id=3604',
+      );
+      return sessions.some((session) => session.status === 'completed');
+    }, plane);
+
+    await runner.stop();
+
+    assert.equal(
+      discoveries,
+      1,
+      'the discovery the probe report already made is the one the dispatch reuses: a second ' +
+        'CLI spawn per session would spend quota on an answer that cannot have changed',
+    );
+
+    assert.ok(existsSync(record), 'the session never ran through the fake engine');
+    const received = JSON.parse(readFileSync(record, 'utf8')) as {
+      argv: string[];
+      files: Record<string, string>;
+    };
+    const prompt = [...received.argv, ...Object.values(received.files)].join('\n');
+    assert.ok(
+      prompt.includes('mcp_servers'),
+      'the executor environment reached the session at `input.environment`',
+    );
+    assert.ok(
+      prompt.includes('flowpilot'),
+      `the server the ONE discovery found is what the session was told: ${prompt.slice(0, 400)}`,
+    );
+  });
+});

@@ -188,8 +188,13 @@ test('t159 — every session row links its transcript, on the API route the prox
       rows[index].excerpt.includes(`data-transcricao="${session.id}"`),
       `session ${session.id} has no data-transcricao marker:\n${rows[index].excerpt}`,
     );
+    // The link carries the page's own scope (t411): the route it points at
+    // refuses a session opened under another project, so a link with no
+    // `project_id` would 404 for every project but the default one.
     assert.ok(
-      rows[index].excerpt.includes(`href="/v1/sessions/${session.id}/transcript"`),
+      rows[index].excerpt.includes(
+        `href="/v1/sessions/${session.id}/transcript?project_id=1"`,
+      ),
       `session ${session.id} does not link its transcript:\n${rows[index].excerpt}`,
     );
   }
@@ -262,4 +267,51 @@ test('t310 — a job with no execution, and a session still open, both read in E
     `the empty question queue is not English:\n${page.html}`,
   );
   assert.ok(loose.id > 0);
+});
+
+test('t411 — a page opened under another project links the transcript with that project', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const created = await api<{ id: number }>(cp, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const second = created.body.id;
+
+  const job = await createJob(cp, {
+    title: 'of the second project',
+    entry_node_id: 'refinar',
+    execution_id: 7,
+    project_id: second,
+  });
+  const session = await openSession(cp, { job_id: job.id, node_id: 'refinar' });
+
+  const screen = await startScreen(t, cp);
+
+  // The scope of a page is its cookie and nothing else (t354), so the case is
+  // read exactly the way a browser that used the switcher reads it.
+  const response = await fetch(`${screen.url}/executions/7`, {
+    headers: { cookie: `cartografo_project=${second}` },
+  });
+  assert.equal(response.status, 200);
+  const html = await response.text();
+
+  const rows = blocks(html, 'sessao');
+  assert.deepEqual(
+    rows.map((row) => row.value),
+    [String(session.id)],
+    "the second project's session is the one on the page",
+  );
+  assert.ok(
+    rows[0].excerpt.includes(
+      `href="/v1/sessions/${session.id}/transcript?project_id=${second}"`,
+    ),
+    `the transcript link does not carry the page's project:\n${rows[0].excerpt}`,
+  );
+
+  // ...and it is a link that actually answers: the proxy forwards the query
+  // string verbatim, so the API sees the scope the page rendered.
+  const transcript = await fetch(
+    `${screen.url}/v1/sessions/${session.id}/transcript?project_id=${second}`,
+  );
+  assert.equal(transcript.status, 200, await transcript.text());
 });

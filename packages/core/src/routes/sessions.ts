@@ -29,7 +29,7 @@ import {
   listSessions,
   recordPermissionDenial,
 } from '../repositories/session.ts';
-import { withValidation, routeId, notFound, conflict } from './common.ts';
+import { withValidation, routeId, notFound, conflict, requireProject } from './common.ts';
 
 /**
  * Body ceiling of the finish route, in bytes (t159).
@@ -121,19 +121,35 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // `/finish` was already answering as `{transcript, transcript_truncated,
   // transcript_original_size}`. t286 closed that: `SessionTranscript` now IS
   // those three names, so there is nothing between the read and the response.
+  //
+  // Scoped since t411: the session of another project answers the 404 an
+  // unknown id answers, because the repository hands back the same `null` for
+  // both. There is no second branch here on purpose — one refusal, so a
+  // boundary never reads as a permission problem nor says which ids exist
+  // elsewhere (`routes/graphs.ts` makes the same reading).
   app.get('/sessions/:id/transcript', async (request, reply) =>
     withValidation(reply, () => {
-      const transcript = getSessionTranscript(db, routeId(request.params));
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const transcript = getSessionTranscript(db, routeId(request.params), scope.project.id);
       return transcript === null ? notFound(reply, 'session') : transcript;
     }),
   );
 
   app.get('/sessions', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const query = request.query as { execution_id?: string; job_id?: string };
       const executionId = integerFromQuery('execution_id', query.execution_id);
       const jobId = integerFromQuery('job_id', query.job_id);
-      const found = listSessions(db, { execution_id: executionId, job_id: jobId });
+      const found = listSessions(db, {
+        execution_id: executionId,
+        job_id: jobId,
+        project_id: scope.project.id,
+      });
       return { sessions: found };
     }),
   );

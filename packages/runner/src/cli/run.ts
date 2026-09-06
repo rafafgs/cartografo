@@ -55,9 +55,15 @@
  * English per D18.
  */
 
+import { execFileSync } from 'node:child_process';
+import { accessSync, constants, existsSync } from 'node:fs';
+import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { ControlPlaneClient } from '../controller/control-plane-client.ts';
+import {
+  ControlPlaneClient,
+  type ProbeReport,
+} from '../controller/control-plane-client.ts';
 import { Controller } from '../controller/controller.ts';
 import { createMainLineAdvancer } from '../dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
@@ -423,6 +429,238 @@ async function reportModels(
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* t401 — what this machine is, reported to whoever has to operate it          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Is this directory inside a git working tree?
+ *
+ * Never throws, on the discipline `mcp-discovery.ts`'s file readers already
+ * keep: a missing `git` binary, a directory that is not a repository and a
+ * spawn that failed are all `false`, because the fact being reported is "this
+ * runner cannot cut a worktree here" and an exception travelling out of a
+ * DISCOVERY call would take the whole report with it.
+ *
+ * `--is-inside-work-tree` and not `--git-dir`: what matters is whether a
+ * session's worktree can be cut from this path, and a bare repository answers
+ * the second question and not the first.
+ *
+ * @param directory Absolute path to ask about.
+ * @returns Whether git claims it is inside a working tree.
+ */
+function isGitRepository(directory: string): boolean {
+  try {
+    const answer = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: directory,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return answer.trim() === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Could this process create the worktrees root, whether or not it exists yet?
+ *
+ * The walk up is the whole point. `GitWorktreeManager` creates the root lazily,
+ * on the first `acquire()` (`dispatch/session-worktree.ts`), so "does not exist
+ * yet" is the ORDINARY state of a runner that has not dispatched anything —
+ * and asking `access()` about a path that is not there would answer `false` for
+ * every healthy new machine. What an operator wants to know is whether the
+ * runner will be able to make it, so the question is asked of the nearest
+ * ancestor that does exist.
+ *
+ * The loop terminates at the filesystem root, where `path.dirname` returns its
+ * own argument.
+ *
+ * @param directory Absolute path of the root, existing or not.
+ * @returns Whether the nearest existing ancestor is writable.
+ */
+function couldCreate(directory: string): boolean {
+  let candidate = directory;
+  for (;;) {
+    if (existsSync(candidate)) {
+      try {
+        accessSync(candidate, constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return false;
+    candidate = parent;
+  }
+}
+
+/**
+ * Builds the report of what this machine is (t401, FR7/FR8).
+ *
+ * Three sources, and the posture of each is different on purpose:
+ *
+ * - **`verifyCli()` is called FRESH, never reused.** `verifyEngineCli` above
+ *   throws its `CliProbe` away and keeps one boolean, and a report assembled
+ *   from that boolean would be inventing a `version` and an `authenticated` it
+ *   never saw. The probe spends no quota — that is what the interface promises
+ *   of it — so calling it twice costs one `--version` per process.
+ * - **`discoverMcpServers` is guarded on the METHOD**, and its absence is
+ *   reported as `{supported: false}` rather than as an empty list. The
+ *   interface is explicit about why (`engine/types.ts`): an adapter that never
+ *   implemented discovery is not an engine with zero MCP servers, and a caller
+ *   that collapses the two tells an operator a lie about their own machine. A
+ *   call that THROWS reads the same way — the adapter could not answer — and is
+ *   logged rather than propagated.
+ * - **A probe that fails is still a probe.** `available: false` is the fact
+ *   worth reporting, which is exactly where this diverges from the model
+ *   catalog: `reportModels` skips for a CLI that did not answer, because a menu
+ *   for a kitchen nobody found is worse than no menu. There is no equivalent
+ *   here — "the binary is not there" is what an operator opened the page to
+ *   learn.
+ *
+ * Never throws. Every branch that could is caught here, because the caller is a
+ * startup path and a loop iteration, and neither one may die over discovery.
+ *
+ * @param adapter The adapter to ask.
+ * @param engine Name this runner's engine answers to, for the log lines.
+ * @param repoRoot `--working-dir`, as the operator wrote it.
+ * @param worktreesRoot `--worktrees-root`, as the operator wrote it.
+ * @returns The report, ready to post.
+ */
+export async function buildProbeReport(
+  adapter: EngineAdapter,
+  engine: string,
+  repoRoot: string,
+  worktreesRoot: string,
+): Promise<ProbeReport> {
+  let cli = { available: false, version: null as string | null, authenticated: false };
+  try {
+    const probe = await adapter.verifyCli();
+    cli = { available: probe.available, version: probe.version, authenticated: probe.authenticated };
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: the "${engine}" preflight failed — ${describeError(error)}\n`,
+    );
+  }
+
+  let mcp: ProbeReport['mcp'] = { supported: false };
+  if (adapter.discoverMcpServers !== undefined) {
+    try {
+      const discovered = await adapter.discoverMcpServers();
+      mcp = {
+        supported: true,
+        servers: discovered.servers.map((server) => ({ name: server.name })),
+        origin: discovered.origin,
+        resolved_at: discovered.resolvedAt,
+      };
+    } catch (error) {
+      // Reported as "not supported" rather than as an empty list, and the log
+      // line is what tells the two apart for whoever is debugging: an adapter
+      // that could not answer knows no more about this machine's MCP servers
+      // than one that has no discovery at all.
+      process.stderr.write(
+        `cartografo-runner: MCP discovery of "${engine}" failed — ${describeError(error)}\n`,
+      );
+    }
+  }
+
+  const workingDirResolved = path.resolve(repoRoot);
+  const worktreesRootResolved = path.resolve(worktreesRoot);
+
+  return {
+    cli,
+    mcp,
+    workspace: {
+      working_dir: repoRoot,
+      working_dir_resolved: workingDirResolved,
+      is_git_repo: isGitRepository(workingDirResolved),
+      worktrees_root: worktreesRoot,
+      worktrees_root_resolved: worktreesRootResolved,
+      worktrees_root_exists: existsSync(worktreesRootResolved),
+      worktrees_root_writable: couldCreate(worktreesRootResolved),
+    },
+  };
+}
+
+/**
+ * Builds the report and posts it, swallowing a refusal (t401, FR7).
+ *
+ * Never fatal, on `reportModels`'s own reasoning: a probe the control plane
+ * would not take is a page an operator cannot read, and a runner that refused
+ * to start over it is a machine that does no work at all. The second is
+ * strictly worse.
+ *
+ * @param client Control plane client, already credentialed.
+ * @param options The runner's own identity, engine and two paths.
+ * @param adapter The adapter to ask.
+ */
+async function reportProbe(
+  client: ControlPlaneClient,
+  options: RunnerOptions,
+  adapter: EngineAdapter,
+): Promise<void> {
+  try {
+    const report = await buildProbeReport(
+      adapter,
+      options.engine,
+      options.repoRoot,
+      options.worktreesRoot,
+    );
+    await client.reportProbe(options.runnerId, report);
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: could not report the probe of "${options.runnerId}" — ${describeError(error)}\n`,
+    );
+  }
+}
+
+/**
+ * Asks whether anybody wants a fresh probe, and reports one if so (t401, FR9).
+ *
+ * Called from `runRunner`'s own loop, beside `controller.tick()` and NOT inside
+ * `Controller`: the re-check has nothing to do with lease dispatch, which is
+ * that class's one job and whose only seam is the injected `dispatch` callback.
+ *
+ * The same cadence as the dispatch tick, and deliberately no interval of its
+ * own: no code in this repository has two interval knobs yet, and inventing one
+ * here is scope nobody asked for.
+ *
+ * Never throws, and never stops the loop. A control plane that refused the
+ * question is the same class of failure as one that refused the report — logged
+ * to stderr, and the next iteration asks again.
+ *
+ * @param client Control plane client, already credentialed.
+ * @param options The runner's own identity, engine and two paths.
+ * @param adapter The adapter to ask, when there is something to answer.
+ */
+async function maybeServeRecheck(
+  client: ControlPlaneClient,
+  options: RunnerOptions,
+  adapter: EngineAdapter,
+): Promise<void> {
+  let pending;
+  try {
+    pending = await client.getPendingRecheck(options.runnerId);
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: could not ask about a re-check — ${describeError(error)}\n`,
+    );
+    return;
+  }
+
+  // Nothing pending, nothing else happens: the ordinary answer, on every
+  // iteration of a runner nobody is asking anything of.
+  if (pending === null) return;
+
+  // Reporting the fresh probe is ALSO what marks the request served — the
+  // control plane does it in the same transaction as the write, so there is no
+  // acknowledgement call to make here and no window in which a served request
+  // has no probe behind it.
+  await reportProbe(client, options, adapter);
+}
+
 /**
  * Runs a runner until it is asked to stop.
  *
@@ -454,6 +692,12 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // the critical path: a CLI that did not answer and a report that was refused
   // are both logged, and the runner goes on to work.
   await reportModels(client, options.engine, route.adapter);
+
+  // ...and then what the operator page reads: the same preflight, the MCP
+  // servers this engine names, and the two directories this process was pointed
+  // at (t401, FR7). Unconditional, unlike the catalogue above: a CLI that did
+  // not answer is exactly the fact worth reporting.
+  await reportProbe(client, options, route.adapter);
 
   const controller = new Controller({
     client,
@@ -520,6 +764,15 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
     // dispatch is running, and waiting out a full interval to notice would make
     // a stop look like a hang.
     if (stopped()) break;
+
+    // Beside the tick and not inside it (t401, FR9): a re-check is a question
+    // about this machine, and the controller's one job is turning a tick into a
+    // lease. It swallows its own failures, so there is nothing to catch here.
+    //
+    // AFTER the stop check and not before it: a runner already asked to shut
+    // down owes nobody a fresh probe, and one more round trip on the way out is
+    // exactly the kind of delay the check above exists to avoid.
+    await maybeServeRecheck(client, options, route.adapter);
 
     try {
       await delay(options.intervalMs, undefined, { signal: options.signal });

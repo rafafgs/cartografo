@@ -38,6 +38,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import {
   existsSync,
   mkdirSync,
@@ -69,14 +70,15 @@ import {
   buildEnvironment as buildCodexEnvironment,
 } from '../../src/engine/codex-command.ts';
 import { buildCommand, buildEnvironment, type EngineCommand } from '../../src/engine/command.ts';
-import type {
-  CliProbe,
-  EngineAdapter,
-  EngineCapabilities,
-  ModelCatalog,
-  SessionListener,
-  SessionSpec,
-  SessionStatus,
+import {
+  BASELINE_CAPABILITIES,
+  type CliProbe,
+  type EngineAdapter,
+  type EngineCapabilities,
+  type ModelCatalog,
+  type SessionListener,
+  type SessionSpec,
+  type SessionStatus,
 } from '../../src/engine/types.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -1354,8 +1356,13 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
 
     assert.deepEqual(
       adapter.calls,
-      ['verifyCli', 'listModels'],
-      'the startup path probes the CLI, and only then asks it for a catalog',
+      // Three since t401, and the third one is not a duplicate to be
+      // deduplicated: the probe REPORT is built from a fresh `verifyCli()`
+      // because `verifyEngineCli` above throws the `CliProbe` away and keeps one
+      // boolean, and a report assembled from that boolean would be inventing a
+      // `version` and an `authenticated` it never saw. The call spends no quota.
+      ['verifyCli', 'listModels', 'verifyCli'],
+      'the startup path probes the CLI, asks it for a catalog, and probes again to report',
     );
     assert.equal(
       adapter.pairedAtProbe,
@@ -1548,4 +1555,544 @@ test('t332 — the shell route is built here, never asked of the --engine factor
 
   assert.deepEqual(asked, ['claude-code']);
   assert.equal(routes.shell?.adapter.engineName, 'shell');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t401 — the runner reports its probe, and answers a re-check request         */
+/* -------------------------------------------------------------------------- */
+
+/** One request the recording proxy saw, in the order it saw it. */
+interface ProxiedCall {
+  method: string;
+  path: string;
+  body: unknown;
+}
+
+/** A control plane the runner talks to, with a ledger of what it was told. */
+interface RecordingPlane {
+  baseUrl: string;
+  token: string;
+  calls: ProxiedCall[];
+  /** Every call matching this method and path prefix, in order. */
+  matching: (method: string, prefix: string) => ProxiedCall[];
+}
+
+/**
+ * The real control plane behind a proxy that writes down every call.
+ *
+ * The rest of this file asserts against the STATE the control plane ends in,
+ * and for most claims that is the stronger measurement. Two of t401's are not
+ * about state: "exactly one probe, before the first tick" and "a quiet tick
+ * produces no extra probe" are both statements about the sequence of requests,
+ * and a stored row cannot tell one write from two. Hence a proxy rather than a
+ * fake: the answers are the real binary's, and what is added is the ledger.
+ *
+ * `fail` is the other half, and it exists for one case only (AT21): a route
+ * that answers `500` without the request ever reaching the control plane, which
+ * is how a refusal is measured without teaching the real server to refuse.
+ *
+ * @param t Test context, used to close the proxy.
+ * @param plane The real control plane to forward to.
+ * @param fail Answers `500` for the calls it returns `true` for.
+ */
+async function recordingProxy(
+  t: TestHook,
+  plane: RunningControlPlane,
+  fail: (method: string, routePath: string) => boolean = () => false,
+): Promise<RecordingPlane> {
+  const calls: ProxiedCall[] = [];
+
+  const server = createServer((incoming, outgoing) => {
+    const chunks: Buffer[] = [];
+    incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+    incoming.on('end', () => {
+      void (async () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        const method = incoming.method ?? 'GET';
+        const routePath = incoming.url ?? '/';
+        calls.push({
+          method,
+          path: routePath,
+          body: raw === '' ? undefined : (JSON.parse(raw) as unknown),
+        });
+
+        if (fail(method, routePath)) {
+          outgoing.writeHead(500, { 'content-type': 'application/json' });
+          outgoing.end(JSON.stringify({ error: 'proxy_refused', message: 'AT21 refuses this route' }));
+          return;
+        }
+
+        const headers: Record<string, string> = {};
+        const authorization = incoming.headers.authorization;
+        if (authorization !== undefined) headers.authorization = authorization;
+        if (raw !== '') headers['content-type'] = 'application/json';
+
+        try {
+          const answer = await fetch(`${plane.baseUrl}${routePath}`, {
+            method,
+            headers,
+            body: raw === '' ? undefined : raw,
+          });
+          const text = await answer.text();
+          outgoing.writeHead(answer.status, { 'content-type': 'application/json' });
+          outgoing.end(text);
+        } catch (error) {
+          outgoing.writeHead(502, { 'content-type': 'application/json' });
+          outgoing.end(JSON.stringify({ error: 'proxy_failed', message: String(error) }));
+        }
+      })();
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address !== null && typeof address === 'object', 'the proxy did not take a port');
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    token: plane.token,
+    calls,
+    matching: (method, prefix) =>
+      calls.filter((entry) => entry.method === method && entry.path.startsWith(prefix)),
+  };
+}
+
+/** The report body, as the runner posts it. */
+interface PostedProbe {
+  cli: { available: boolean; version: string | null; authenticated: boolean };
+  mcp: Record<string, unknown>;
+  workspace: Record<string, unknown>;
+}
+
+/**
+ * An adapter with a probe and NOTHING optional on it.
+ *
+ * Neither `listModels` nor `discoverMcpServers`, and the second absence is what
+ * AT19 measures: an adapter that never implemented MCP discovery has to be
+ * reported as `{supported: false}` and never as an engine that found zero
+ * servers. Written out rather than wrapped around a real adapter, because
+ * "the method is not there" is exactly the fact under test and a wrapper that
+ * forwards it would put it back.
+ */
+class ProbeOnlyAdapter implements EngineAdapter {
+  readonly engineName = 'claude-code';
+  readonly #probe: CliProbe;
+
+  constructor(probe: CliProbe) {
+    this.#probe = probe;
+  }
+
+  async startSession(): Promise<string> {
+    throw new Error('this adapter never opens a session');
+  }
+
+  async getStatus(): Promise<SessionStatus> {
+    throw new Error('this adapter never opens a session');
+  }
+
+  async cancel(): Promise<void> {
+    // Nothing has ever been started, so there is nothing to take down.
+  }
+
+  capabilities(): EngineCapabilities {
+    return BASELINE_CAPABILITIES;
+  }
+
+  async verifyCli(): Promise<CliProbe> {
+    return this.#probe;
+  }
+}
+
+/**
+ * What an operator sees, and what a machine reports about itself (t401).
+ *
+ * The ticket's own summary of the gap: `GET /v1/runners` answered pairing and
+ * lease health and said nothing about whether the paired machine can actually
+ * run a session. What these cases pin is the reporting path — the probe goes out
+ * once at startup, whatever it found, and again whenever an operator asks for a
+ * re-check — plus the workspace facts the report carries, which are the only
+ * part of it computed here rather than by an adapter.
+ *
+ * Two things are deliberately NOT asserted. That a `false` fact stops anything:
+ * this is discovery on the same terms `listModels`/`discoverMcpServers` already
+ * are, never enforcement. And that a refused report stops the runner: AT21
+ * measures the opposite, on the identical reasoning t186's AT2 already wrote
+ * down for the model catalog.
+ */
+test('t401 — the runner reports its probe, and answers a re-check request', async (parent) => {
+  const plane = await bootControlPlane(parent);
+
+  await parent.test('AT17 — exactly one probe goes out, after the catalog and before the first tick', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const recorder = await recordingProxy(t, plane);
+    const { repoRoot, worktreesRoot } = initRepo(t, 't401-at17');
+    const runnerId = 'runner-t401-at17';
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+    });
+
+    // Three ticks' worth of loop, so "exactly one" is a claim about a running
+    // runner rather than about one that never got past its startup.
+    await waitFor(
+      'the runner ticked at least three times',
+      async () => Promise.resolve(recorder.matching('GET', '/v1/jobs').length >= 3),
+      plane,
+    );
+    await runner.stop();
+
+    const probes = recorder.matching('POST', `/v1/runners/${runnerId}/probes`);
+    assert.equal(probes.length, 1, 'the startup report goes out once, not once per tick');
+
+    const order = recorder.calls.map((call) => `${call.method} ${call.path}`);
+    const probeAt = order.indexOf(`POST /v1/runners/${runnerId}/probes`);
+    const firstTickAt = order.indexOf('GET /v1/jobs');
+    assert.ok(probeAt >= 0 && firstTickAt >= 0, order.join('\n'));
+    assert.ok(
+      probeAt < firstTickAt,
+      `the probe has to be out before the loop starts spending: ${order.join(' | ')}`,
+    );
+    assert.ok(
+      order.indexOf('POST /v1/engines/claude-code/models') < probeAt,
+      'and after the model catalog, which is where FR7 puts it',
+    );
+
+    const posted = probes[0]?.body as PostedProbe;
+    assert.deepEqual(
+      posted.workspace,
+      {
+        working_dir: repoRoot,
+        working_dir_resolved: repoRoot,
+        is_git_repo: true,
+        worktrees_root: worktreesRoot,
+        worktrees_root_resolved: worktreesRoot,
+        worktrees_root_exists: false,
+        worktrees_root_writable: true,
+      },
+      'the facts are about the REAL directories this runner was pointed at',
+    );
+  });
+
+  await parent.test('AT18 — a CLI that did not answer is still reported, unlike the catalog', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const recorder = await recordingProxy(t, plane);
+    const { repoRoot, worktreesRoot } = workspace(t, 't401-at18');
+    const runnerId = 'runner-t401-at18';
+
+    // The skip of t186's AT2 travels to stderr, and letting it through would
+    // read as the suite itself breaking.
+    const logged: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      logged.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write;
+    t.after(() => {
+      process.stderr.write = original;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'codex',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }, MISSING_PROBE),
+    });
+
+    await waitFor(
+      'the probe went out',
+      async () =>
+        Promise.resolve(recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length === 1),
+      plane,
+    );
+    await runner.stop();
+
+    const posted = recorder.matching('POST', `/v1/runners/${runnerId}/probes`)[0]
+      ?.body as PostedProbe;
+    assert.equal(
+      posted.cli.available,
+      false,
+      'reporting that the CLI is not there IS the fact worth telling an operator',
+    );
+    assert.equal(
+      recorder.matching('POST', '/v1/engines/').length,
+      0,
+      'while the model catalog is skipped for that same answer — the asymmetry is the point',
+    );
+    assert.ok(
+      logged.some((line) => line.includes('codex')),
+      `t186's own skip still has to be legible: ${JSON.stringify(logged)}`,
+    );
+  });
+
+  await parent.test('AT19 — an adapter with no discoverMcpServers reports `{supported: false}`', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const recorder = await recordingProxy(t, plane);
+    const { repoRoot, worktreesRoot } = workspace(t, 't401-at19');
+    const runnerId = 'runner-t401-at19';
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: () => ({
+        adapter: new ProbeOnlyAdapter({ available: true, version: '9.9.9', authenticated: true }),
+        decodeSessionText: decodeClaudeCodeSessionText,
+      }),
+    });
+
+    await waitFor(
+      'the probe went out',
+      async () =>
+        Promise.resolve(recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length === 1),
+      plane,
+    );
+    await runner.stop();
+
+    const posted = recorder.matching('POST', `/v1/runners/${runnerId}/probes`)[0]
+      ?.body as PostedProbe;
+    assert.deepEqual(
+      posted.mcp,
+      { supported: false },
+      'an absent capability and an empty list are different facts (`engine/types.ts`)',
+    );
+  });
+
+  await parent.test('AT20 — a pending re-check produces a second probe; a quiet tick produces none', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const recorder = await recordingProxy(t, plane);
+    const { repoRoot, worktreesRoot } = workspace(t, 't401-at20');
+    const runnerId = 'runner-t401-at20';
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+    });
+
+    const probes = (): number => recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length;
+
+    // Several quiet loops first: the re-check is asked for on every iteration,
+    // and every one of those answers `null`.
+    await waitFor(
+      'the runner asked about a re-check at least three times',
+      async () =>
+        Promise.resolve(recorder.matching('GET', `/v1/runners/${runnerId}/rechecks`).length >= 3),
+      plane,
+    );
+    assert.equal(probes(), 1, 'nothing pending, nothing else happens');
+
+    await api(plane, 'POST', `/v1/runners/${runnerId}/rechecks`, undefined, 201);
+
+    await waitFor('the re-check produced a second probe', async () => Promise.resolve(probes() >= 2), plane);
+
+    // ...and it is served by that report, so the loops that follow go quiet
+    // again instead of re-probing forever.
+    const afterServing = probes();
+    await delay(700);
+    await runner.stop();
+    assert.equal(probes(), afterServing, 'one request, one extra probe — never a loop that keeps going');
+  });
+
+  await parent.test('AT21 — a 500 from either call is written down and the loop keeps turning', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const runnerId = 'runner-t401-at21';
+    const recorder = await recordingProxy(
+      t,
+      plane,
+      (_method, routePath) => routePath.startsWith(`/v1/runners/${runnerId}/`),
+    );
+    const { repoRoot, worktreesRoot } = workspace(t, 't401-at21');
+
+    const logged: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      logged.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write;
+    t.after(() => {
+      process.stderr.write = original;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+    });
+
+    // Both counters, and not just the tick's: the re-check poll sits AFTER the
+    // loop's stop check, so a runner that has ticked three times has asked
+    // about a re-check either three times or twice. Waiting on the number this
+    // case actually asserts is what keeps it off that boundary.
+    await waitFor(
+      'the loop went on turning through the refusals',
+      async () =>
+        Promise.resolve(
+          recorder.matching('GET', '/v1/jobs').length >= 3 &&
+            recorder.matching('GET', `/v1/runners/${runnerId}/rechecks`).length >= 3,
+        ),
+      plane,
+    );
+
+    // The whole claim of the case: this resolves. A soft failure that threw out
+    // of `runRunner` would leave this hanging until the file's own deadline.
+    await runner.stop();
+
+    assert.ok(
+      recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length >= 1,
+      'the report was attempted, and refused',
+    );
+    assert.ok(
+      recorder.matching('GET', `/v1/runners/${runnerId}/rechecks`).length >= 3,
+      'and the re-check check went on being asked, refusal after refusal',
+    );
+    assert.ok(
+      logged.some((line) => line.includes('500')),
+      `a silent refusal leaves an operator with no way to learn why: ${JSON.stringify(logged)}`,
+    );
+  });
+
+  await parent.test('AT22 — is_git_repo tells a real checkout from a plain directory', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    /** Starts one runner and gives back the workspace facts it reported. */
+    const factsOf = async (
+      label: string,
+      space: { repoRoot: string; worktreesRoot: string },
+    ): Promise<Record<string, unknown>> => {
+      const recorder = await recordingProxy(t, plane);
+      const runnerId = `runner-t401-${label}`;
+      const runner = await startRunner(t, runRunner, {
+        url: recorder.baseUrl,
+        token: recorder.token,
+        projectId: 1,
+        runnerId,
+        engine: 'claude-code',
+        repoRoot: space.repoRoot,
+        worktreesRoot: space.worktreesRoot,
+        runnerCap: 1,
+        projectCap: 4,
+        intervalMs: 200,
+        leaseTtlSeconds: 10,
+        engineFactory: () => ({
+          adapter: new ProbeOnlyAdapter({ available: true, version: '9.9.9', authenticated: true }),
+          decodeSessionText: decodeClaudeCodeSessionText,
+        }),
+      });
+
+      await waitFor(
+        `${label} reported its probe`,
+        async () =>
+          Promise.resolve(recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length === 1),
+        plane,
+      );
+      await runner.stop();
+
+      return (recorder.matching('POST', `/v1/runners/${runnerId}/probes`)[0]?.body as PostedProbe)
+        .workspace;
+    };
+
+    const inRepo = await factsOf('at22-repo', initRepo(t, 't401-at22-repo'));
+    assert.equal(inRepo.is_git_repo, true, 'a real checkout answers `true`');
+
+    const plain = await factsOf('at22-plain', workspace(t, 't401-at22-plain'));
+    assert.equal(
+      plain.is_git_repo,
+      false,
+      'a directory with no `.git` is `false` and never a thrown spawn error',
+    );
+  });
+
+  await parent.test('AT23 — a worktrees root that does not exist yet resolves without throwing', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+    const recorder = await recordingProxy(t, plane);
+    const space = initRepo(t, 't401-at23');
+    const runnerId = 'runner-t401-at23';
+
+    // Three levels of nothing: the walk up has to pass two absent directories
+    // before it reaches the temp base that really exists and really is writable.
+    const worktreesRoot = path.join(space.scratch, 'not', 'here', 'yet', 'worktrees');
+    assert.equal(existsSync(worktreesRoot), false, 'the fixture starts with the root absent');
+
+    const runner = await startRunner(t, runRunner, {
+      url: recorder.baseUrl,
+      token: recorder.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot: space.repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: () => ({
+        adapter: new ProbeOnlyAdapter({ available: true, version: '9.9.9', authenticated: true }),
+        decodeSessionText: decodeClaudeCodeSessionText,
+      }),
+    });
+
+    await waitFor(
+      'the probe went out',
+      async () =>
+        Promise.resolve(recorder.matching('POST', `/v1/runners/${runnerId}/probes`).length === 1),
+      plane,
+    );
+    await runner.stop();
+
+    const facts = (recorder.matching('POST', `/v1/runners/${runnerId}/probes`)[0]?.body as PostedProbe)
+      .workspace;
+    assert.equal(facts.worktrees_root_resolved, worktreesRoot);
+    assert.equal(facts.worktrees_root_exists, false, 'lazily created is an ordinary state, not an error');
+    assert.equal(
+      facts.worktrees_root_writable,
+      true,
+      'the walk up found the temp base, which this process can write in',
+    );
+  });
 });

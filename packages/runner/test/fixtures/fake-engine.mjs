@@ -44,9 +44,17 @@
  * - `FAKE_ENGINE_SPAWN_CHILD` "1" = leaves a grandchild alive that also ignores
  *                             SIGTERM (C4, "the child that outlives the parent").
  * - `FAKE_ENGINE_VERSION`     answer to `--version` (the verifyCli probe).
+ * - `FAKE_ENGINE_MCP_LIST`    answer to `mcp list` (the discovery probe of
+ *                             t400). Default: the empty output of an engine
+ *                             that names no MCP server.
  *
- * `--version` is handled BEFORE anything else and without reading stdin: it is
- * the interface's probe that "spends no quota", and it opens no session.
+ * `--version` and `mcp list` are handled BEFORE anything else and without
+ * reading stdin: both are probes that "spend no quota", and NEITHER opens a
+ * session. Falling through would be worse than merely slow — the fallthrough
+ * spawns the grandchild and writes `FAKE_ENGINE_RECORD`, so a test that reads
+ * that sidecar to find the SESSION's pid would find a probe's instead. Which is
+ * exactly what happened when t401 made the daemon's startup call
+ * `discoverMcpServers()` (`cli/run.ts`) for the first time.
  *
  * No path of this script calls `process.exit()` after writing: in POSIX the
  * stdout of a pipe is asynchronous, and exiting right away truncates the lines
@@ -152,6 +160,14 @@ async function main() {
 
   if (argv.includes('--version')) {
     process.stdout.write(`${env.FAKE_ENGINE_VERSION ?? '9.9.9 (Fake Engine)'}\n`);
+    return;
+  }
+
+  // `claude mcp list` / `codex mcp list --json`: a listing, not a session. The
+  // default is the empty answer, which is what an engine with nothing
+  // configured really prints.
+  if (argv[0] === 'mcp' && argv[1] === 'list') {
+    process.stdout.write(env.FAKE_ENGINE_MCP_LIST ?? '');
     return;
   }
 

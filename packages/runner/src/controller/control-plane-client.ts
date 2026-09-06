@@ -215,6 +215,60 @@ export interface EngineCatalog {
   models: Array<ReportedModel & { updated_at: string }>;
 }
 
+/**
+ * What a runner reports about its own machine (t401).
+ *
+ * Declared here, in the wire's own spelling, like everything else in this file:
+ * the `EngineAdapter` vocabulary — `CliProbe.available`, `McpDiscovery.origin`,
+ * `resolvedAt` — dies in `cli/run.ts`, and what crosses the boundary is the
+ * API's data format. Importing the control plane's type would pierce the very
+ * boundary this module exists to hold.
+ */
+export interface ProbeReport {
+  cli: { available: boolean; version: string | null; authenticated: boolean };
+  /**
+   * What discovery found, or the fact that this engine has none.
+   *
+   * Two shapes and not one with an empty list, because they are two different
+   * facts: `discoverMcpServers?()` is optional ON THE MEMBER, and an adapter
+   * that never implemented it is NOT an engine with zero MCP servers
+   * (`engine/types.ts`). Collapsing them here would tell an operator a lie
+   * about their own machine.
+   */
+  mcp:
+    | { supported: false }
+    | {
+        supported: true;
+        servers: Array<{ name: string }>;
+        origin: 'cli' | 'file';
+        resolved_at: string | null;
+      };
+  workspace: {
+    working_dir: string;
+    working_dir_resolved: string;
+    is_git_repo: boolean;
+    worktrees_root: string;
+    worktrees_root_resolved: string;
+    worktrees_root_exists: boolean;
+    worktrees_root_writable: boolean;
+  };
+}
+
+/** The same report, as the control plane hands it back after storing it. */
+export interface RunnerProbe extends ProbeReport {
+  runner_id: string;
+  reported_at: string;
+}
+
+/** An operator's standing request that this runner report again (t401). */
+export interface RunnerRecheck {
+  id: number;
+  runner_id: string;
+  requested_at: string;
+  /** When a probe answered it. Always `null` in what this client reads: it only asks for the pending one. */
+  served_at: string | null;
+}
+
 /** Possible states of a lease, in the control plane's vocabulary. */
 export type LeaseStatus = 'active' | 'released' | 'expired';
 
@@ -362,6 +416,53 @@ export class ControlPlaneClient {
       `/v1/engines/${encodeURIComponent(engine)}/models`,
       { models },
     );
+  }
+
+  /**
+   * Reports what this machine is — CLI, MCP servers, workspace (t401, FR7).
+   *
+   * Replaces whatever this runner reported before: latest wins, one probe per
+   * runner, the same semantics {@link ControlPlaneClient.reportEngineModels}
+   * already has for the catalogue. Unlike that one, reporting is never skipped
+   * for a CLI that did not answer — `available: false` IS the fact an operator
+   * needs.
+   *
+   * It also SERVES a pending re-check, on the control plane's side and in the
+   * same transaction as the write. There is no acknowledgement call to make
+   * afterwards; a fresh report is the answer to the request.
+   *
+   * @param runnerId This runner's own id. A credential is good for one
+   *   identity, and another runner's id is a `403`.
+   * @param report What the machine said about itself.
+   * @returns The probe as it was stored.
+   * @throws {ControlPlaneClientError} When the control plane refuses the shape
+   *   (400), the credential (401/403) or the id (404). Whoever calls decides
+   *   whether that stops anything — and in `run.ts` it does not.
+   */
+  async reportProbe(runnerId: string, report: ProbeReport): Promise<RunnerProbe> {
+    const { probe } = await this.#post<{ probe: RunnerProbe }>(
+      `/v1/runners/${encodeURIComponent(runnerId)}/probes`,
+      report,
+    );
+    return probe;
+  }
+
+  /**
+   * Has anybody asked this runner to report again? (t401, FR9)
+   *
+   * Pull and not push, and that is the whole design: the control plane holds a
+   * pending row, the runner asks about it on its own loop, and reporting a
+   * fresh probe is what closes it. Nothing here opens a socket, and the runner
+   * stays what it is — an ordinary HTTP client of the public API (D1, D11).
+   *
+   * @param runnerId This runner's own id; another's is a `403`.
+   * @returns The pending request, or `null` when nothing is waiting.
+   */
+  async getPendingRecheck(runnerId: string): Promise<RunnerRecheck | null> {
+    const { recheck } = await this.#get<{ recheck: RunnerRecheck | null }>(
+      `/v1/runners/${encodeURIComponent(runnerId)}/rechecks`,
+    );
+    return recheck;
   }
 
   /**

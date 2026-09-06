@@ -196,14 +196,16 @@ test(
       // runner a node with nothing to run. t354 moved it again with
       // `0026_project_partition.sql`, which turns `project_id` from a label into
       // a key: a class of graph is unique per project, not per database (D25).
-      // And t403 moved it a last time with `0027_settings.sql`, the
-      // project-scoped key/value table the local runner's defaults live in —
-      // written as `0026` and renumbered at the merge with t354, which is this
-      // count's whole point restated one more time.
+      // And t403 moved it again with `0027_settings.sql`, the project-scoped
+      // key/value table the local runner's defaults live in — written as `0026`
+      // and renumbered at the merge with t354, which is this count's whole point
+      // restated one more time. t401 moved it last with
+      // `0028_runner_probe.sql`: what a paired machine reports about itself, and
+      // the operator's request that it report again.
       assert.equal(
         first.readiness.migrationsApplied,
-        27,
-        'a brand-new database applies the twenty-seven migrations the package ships',
+        28,
+        'a brand-new database applies the twenty-eight migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

@@ -1356,8 +1356,13 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
 
     assert.deepEqual(
       adapter.calls,
-      ['verifyCli', 'listModels'],
-      'the startup path probes the CLI, and only then asks it for a catalog',
+      // Three since t401, and the third one is not a duplicate to be
+      // deduplicated: the probe REPORT is built from a fresh `verifyCli()`
+      // because `verifyEngineCli` above throws the `CliProbe` away and keeps one
+      // boolean, and a report assembled from that boolean would be inventing a
+      // `version` and an `authenticated` it never saw. The call spends no quota.
+      ['verifyCli', 'listModels', 'verifyCli'],
+      'the startup path probes the CLI, asks it for a catalog, and probes again to report',
     );
     assert.equal(
       adapter.pairedAtProbe,
@@ -1960,9 +1965,17 @@ test('t401 — the runner reports its probe, and answers a re-check request', as
       engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
     });
 
+    // Both counters, and not just the tick's: the re-check poll sits AFTER the
+    // loop's stop check, so a runner that has ticked three times has asked
+    // about a re-check either three times or twice. Waiting on the number this
+    // case actually asserts is what keeps it off that boundary.
     await waitFor(
       'the loop went on turning through the refusals',
-      async () => Promise.resolve(recorder.matching('GET', '/v1/jobs').length >= 3),
+      async () =>
+        Promise.resolve(
+          recorder.matching('GET', '/v1/jobs').length >= 3 &&
+            recorder.matching('GET', `/v1/runners/${runnerId}/rechecks`).length >= 3,
+        ),
       plane,
     );
 

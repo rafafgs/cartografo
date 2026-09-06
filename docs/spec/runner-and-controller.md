@@ -692,7 +692,11 @@ transaction that writes the row. What is still without a trace is the ordinary
 The runner's credential is **its own**, issued at pairing, and the
 "who calls" column below is contract, not convention: whoever pairs, revokes and
 sees the whole fleet is the operator (a `usuario` credential), and the runner
-only reaches the four routes of its own dispatch plus `GET /v1/jobs`. The
+only reaches the four routes of its own dispatch, `GET /v1/jobs`, and the three
+through which it reports what its own machine is — the model catalogue
+(`POST /v1/engines/:name/models`, t166) and the probe pair
+(`POST /v1/runners/:id/probes` and `GET /v1/runners/:id/rechecks`, t401): eight
+routes in all. The
 runner's route list is literal
 ([`auth.ts`](../../packages/core/src/auth.ts)): a new route is born outside it,
 and that is how `GET /v1/runners` is the operator's without anything having been
@@ -702,12 +706,15 @@ written to refuse it — through the same door `GET /v1/executions` and
 | Method | Route | Who calls | What it does |
 |---|---|---|---|
 | `POST` | `/v1/runners` | operator | Pairs a runner. `201` the first time — with `token`, the runner's credential, returned exactly once —, `200` (idempotent) with `token: null` if the `id` already exists. |
-| `GET` | `/v1/runners` | operator | Lists the fleet with each runner's health: `active_leases`, `last_heartbeat` (the largest `heartbeat_at` of **any** lease it ever had) and `last_expiration` (`{job_id, expires_at, expiration_reason}` of the last one that ran out, or `null`). All derived from the `lease` table; there is no runner ping. |
+| `GET` | `/v1/runners` | operator | Lists the fleet with each runner's health: `active_leases`, `last_heartbeat` (the largest `heartbeat_at` of **any** lease it ever had) and `last_expiration` (`{job_id, expires_at, expiration_reason}` of the last one that ran out, or `null`). All derived from the `lease` table; there is no runner ping. Since t401 each row also carries `probe`: the machine's latest self-report, or `null` if it never sent one. |
 | `POST` | `/v1/runners/:id/revocations` | operator | Revokes every live credential of that runner. `200 {revoked: <how many>}`, including `0`: calling again is not an error. |
 | `POST` | `/v1/leases` | runner or operator | Claims the expired ones and tries to grant. `201` with the lease, or `200` with `{lease: null, reason}`. |
 | `POST` | `/v1/leases/:id/heartbeats` | runner or operator | Renews the deadline. Optional body `{ttl_seconds}`; without it, the lease's TTL is kept. |
 | `POST` | `/v1/leases/:id/releases` | runner or operator | Closes the lease and gives the slot back immediately. |
 | `GET` | `/v1/leases` | runner or operator | Lists, with `project_id`, `runner_id` and `status` filters. No pagination at this stage. |
+| `POST` | `/v1/runners/:id/probes` | runner or operator | Reports what that machine is: `{cli: {available, version, authenticated}, mcp: {supported: false} \| {supported: true, servers: [{name}], origin, resolved_at}, workspace: {working_dir, working_dir_resolved, is_git_repo, worktrees_root, worktrees_root_resolved, worktrees_root_exists, worktrees_root_writable}}`. Latest wins: one probe per runner, replaced whole. Storing it also stamps `served_at` on whatever re-check was pending for that runner, in the same transaction — which is why there is no route acknowledging one. |
+| `POST` | `/v1/runners/:id/rechecks` | operator | Asks that runner to report again on its next loop iteration. `201` the first time; `200` with the SAME row while it is still pending, so an operator asking twice never queues two. Operator-only by omission, on the reasoning `GET /v1/runners` above already states. |
+| `GET` | `/v1/runners/:id/rechecks` | runner or operator | `{recheck: null}`, or the pending `{id, runner_id, requested_at, served_at: null}`. The runner polls it on its own loop, at the dispatch interval: there is no second interval knob and no push channel. |
 
 ### The scope of the runner credential
 
@@ -722,7 +729,8 @@ difference between them matters:
   does not come in by prefix; it comes in because somebody wrote it there.
 - **Outside its own identity** — inside those routes, the credential holds for
   **one** `runner_id`. Asking for a lease for another runner, beating a heartbeat
-  or releasing another's lease, or listing another's leases, are all `403`.
+  or releasing another's lease, listing another's leases, reporting another's
+  probe or reading another's pending re-check, are all `403`.
   `GET /v1/leases` with no filter is filled in silently with the credential's
   runner; with the filter pointing at another, it is refused.
 

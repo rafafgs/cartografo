@@ -22,8 +22,10 @@
  * Since t143 the hook also authorizes, and the second check is a different
  * question from the first: authentication asks "does this token resolve", and
  * authorization asks "may THIS credential be here". A `usuario` credential is
- * unrestricted, as it always was; a `runner` credential opens only the five
- * routes a runner really calls (FR2) and is refused everywhere else with
+ * unrestricted, as it always was; a `runner` credential opens only the routes a
+ * runner really calls (FR2) — the list below, and no count repeated here, which
+ * is the sentence t166 and t401 each had to come back and correct — and is
+ * refused everywhere else with
  * `out_of_scope_credential` (403) — a third refusal, deliberately distinct
  * from the two 401s, because "your token is dead" and "your token is alive and
  * has no business here" send whoever reads it to opposite places.
@@ -77,6 +79,20 @@ const RUNNER_SURFACE: ReadonlySet<string> = new Set([
   // deliberately NOT here: reading the whole fleet's menu is the operator's,
   // for the reason `GET /v1/runners` already states.
   'POST /v1/engines/:name/models',
+  // t401. The other half of the same act: a runner saying what THIS machine is
+  // — its CLI preflight, the MCP servers its engine names, whether the two
+  // directories it was pointed at are what they claim. The scope inside the
+  // route is narrower than this list can express: the handler refuses another
+  // runner's `:id` with the same `out_of_scope_credential` the lease routes use.
+  'POST /v1/runners/:id/probes',
+  // ...and picking up the operator's request that it report again. A read of
+  // its OWN pending re-check and nothing else, scoped in the handler the same
+  // way.
+  'GET /v1/runners/:id/rechecks',
+  // `POST /v1/runners/:id/rechecks` is deliberately NOT here, on the reasoning
+  // `GET /v1/engines` above already states: ordering a machine to re-probe is
+  // fleet management, and a runner credential that could do it would turn one
+  // compromised machine into a lever on every other one.
 ]);
 
 declare module 'fastify' {

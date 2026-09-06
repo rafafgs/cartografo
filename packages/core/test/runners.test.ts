@@ -437,6 +437,10 @@ test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a 
     active_leases: 0,
     last_heartbeat: null,
     last_expiration: null,
+    // t401. `null` and not an absent key: a machine that has never said
+    // anything about itself is a different state from one that reported a CLI
+    // it could not find, and the row says which of the two this is.
+    probe: null,
   });
 
   // Fleet-wide health is the operator's view, exactly like `GET /v1/executions`

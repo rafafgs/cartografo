@@ -1,0 +1,164 @@
+[
+  {
+    "signal_id": "2026-09-03-IRBR3-flow_institutional-01",
+    "ticker": "IRBR3",
+    "signal_type": "flow_institutional",
+    "query": "gstats.net_z",
+    "value": 3395575.0,
+    "z": 2.7227,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-IRBR3-flow_mixed-02",
+    "ticker": "IRBR3",
+    "signal_type": "flow_mixed",
+    "query": "gstats.net_z",
+    "value": -17576127.0,
+    "z": -3.8815,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-IRBR3-streak_mixed-03",
+    "ticker": "IRBR3",
+    "signal_type": "streak_mixed",
+    "query": "gstats.streak_days",
+    "value": -35210488.0,
+    "z": 9.0,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-IRBR3-flow_foreign-04",
+    "ticker": "IRBR3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 21884381.0,
+    "z": 3.7512,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-IRBR3-streak_foreign-05",
+    "ticker": "IRBR3",
+    "signal_type": "streak_foreign",
+    "query": "gstats.streak_days",
+    "value": 40234537.0,
+    "z": 10.0,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-OBTC3-trades-06",
+    "ticker": "OBTC3",
+    "signal_type": "trades",
+    "query": "features.trades_z",
+    "value": 7827.0,
+    "z": 2.5964,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-OBTC3-broker-07",
+    "ticker": "OBTC3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": 21557440.0,
+    "z": 8.0,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-OBTC3-broker-08",
+    "ticker": "OBTC3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": -36580812.0,
+    "z": 8.0,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-OBTC3-streak_foreign-09",
+    "ticker": "OBTC3",
+    "signal_type": "streak_foreign",
+    "query": "gstats.streak_days",
+    "value": 14200303.0,
+    "z": 10.0,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-RENT4-volume-10",
+    "ticker": "RENT4",
+    "signal_type": "volume",
+    "query": "features.fin_z",
+    "value": 30014034.0,
+    "z": 4.2783,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-RENT4-block-11",
+    "ticker": "RENT4",
+    "signal_type": "block",
+    "query": "features.mean_trade_ratio",
+    "value": 124539.5602,
+    "z": 21.1979,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-RENT4-concentration-12",
+    "ticker": "RENT4",
+    "signal_type": "concentration",
+    "query": "features.hhi_ratio",
+    "value": 0.9119,
+    "z": 5.7818,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-RENT4-closing_auction-13",
+    "ticker": "RENT4",
+    "signal_type": "closing_auction",
+    "query": "features.closing_auction_ratio",
+    "value": 0.6771,
+    "z": 5.5839,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-ASAI3-flow_mixed-14",
+    "ticker": "ASAI3",
+    "signal_type": "flow_mixed",
+    "query": "gstats.net_z",
+    "value": -59828115.0,
+    "z": -7.0091,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-ASAI3-flow_foreign-15",
+    "ticker": "ASAI3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 34963883.0,
+    "z": 3.2694,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-ASAI3-flow_retail-16",
+    "ticker": "ASAI3",
+    "signal_type": "flow_retail",
+    "query": "gstats.net_z",
+    "value": 26599847.0,
+    "z": 3.3551,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-ASAI3-broker-17",
+    "ticker": "ASAI3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": -27418492.0,
+    "z": -8.9122,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-03-VTRU3-broker-18",
+    "ticker": "VTRU3",
+    "signal_type": "broker",
+    "query": "gstats.net_z",
+    "value": 5365712.0,
+    "z": 2.8721,
+    "computed_at": "2026-09-03T21:00:00-03:00"
+  }
+]

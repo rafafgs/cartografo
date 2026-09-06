@@ -1,0 +1,267 @@
+{
+  "id": "contextualize-flow-signals",
+  "version": "1.0.0",
+  "hash": "sha256:5cb2f384cb048d7ba2b4012aef18472ff41787e48c472447dcc419e95a16e0b7",
+  "role": "work",
+  "description": "Puts each triaged signal beside the ticker's own recent figures and any fact of the day that touches it.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "fixture",
+      "triaged_signals"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "fixture": {
+        "type": "object",
+        "description": "what `check-intake` established about this crossing's data: which day it is, where the four files are and how many rows each of them holds. It is the only node that touches the filesystem to find out, and every node after it reads the paths from here instead of assembling one.",
+        "required": [
+          "trading_day",
+          "paths",
+          "row_counts"
+        ],
+        "properties": {
+          "trading_day": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the fixture day this crossing runs against: `day-1`, `day-2` or `day-3`."
+          },
+          "paths": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_flow": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signals": {
+                "type": "string",
+                "minLength": 1
+              },
+              "facts": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "row_counts": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "broker_flow": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "signals": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "facts": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              }
+            }
+          }
+        }
+      },
+      "triaged_signals": {
+        "type": "array",
+        "description": "the materially interesting subset of `signals.json`, one entry per signal that survived the triage. Empty when the triage discards, which is a successful triage and not a failure.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "signal_type",
+            "why"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which criterion it meets, in one sentence, citing the value that meets it."
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal and is the common case. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers (D20).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "context",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "context": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one entry per triaged signal: the recent trend, and any fact related to it.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "trend",
+            "related_facts"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trend": {
+              "type": "string",
+              "minLength": 1,
+              "description": "what the daily figures say about where this ticker has been: the move, the turnover against its own recent level, the number of trades."
+            },
+            "figures_cited": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "the fields of `daily-figures.json` the trend rests on, by name."
+            },
+            "related_facts": {
+              "type": "array",
+              "description": "the entries of `facts.json` that touch this ticker or the whole session. Empty is a real answer: most signals have no fact beside them, and saying so is what stops the next node from inventing one.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "fact_id",
+                  "headline"
+                ],
+                "properties": {
+                  "fact_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "headline": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "`triage` advanced, so `triaged_signals` carries at least one entry",
+    "`fixture.paths` names the day's `daily-figures.json` and `facts.json`"
+  ],
+  "checks": [
+    {
+      "id": "context-is-read-not-recalled",
+      "type": "agentic",
+      "description": "The defect this catches is a trend the session remembers rather than reads. A figure that is not in the file poisons every node after this one, because nothing downstream opens the file again.",
+      "instruction": "For each entry of `context`, open the fixture and check the two halves separately.\n\n1. Does every figure quoted in `trend` appear in `daily-figures.json` for that ticker, with that value? Quote the row.\n2. Is every entry of `related_facts` really in `facts.json`, with that `fact_id` and that headline — and does it actually touch the ticker or the whole session?\n\nAn empty `related_facts` is correct far more often than not. What fails the check is a fact attached to a ticker it says nothing about.",
+      "required_evidence": [
+        "daily_figures_row_quoted_for_each_ticker_in_context",
+        "fact_ids_matched_against_the_facts_file_of_the_day",
+        "list_of_signals_whose_related_facts_came_back_empty"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "factory-graphs/b3-flow-radar/fixtures/**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Put each signal beside what the day already knows\n\nYour job is to give every triaged signal the context a reader needs before an\nexplanation is worth anything: where this ticker has been, and whether the day\nalready carries a fact that touches it.\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the target repository:\nthe result comes back **through the output contract**, and what records it is\nthe control plane. Reading, you read the fixture this class ships — and only\nthat. The network is closed on every node of this bundle (RF-28): there is no\nresearch step here, and a claim you cannot cite to a fixture record is a claim\nthis graph has no place for.\n\nThe files are where `fixture.paths` says they are:\n\n{{input.fixture.paths}}\n\nTwo of them matter here — `daily_figures` and `facts` — and the day is\n{{input.fixture.trading_day}}.\n\n## What to read, per signal\n\nThese are the signals the triage kept:\n\n{{input.triaged_signals}}\n\nFor each one:\n\n- **The trend.** In `daily-figures.json`, find the ticker's row: open, high,\n  low, close, vwap, turnover (`fin`), number of trades, number of brokers. Say\n  where the ticker has been in terms a reader can check, and name the fields you\n  used in `figures_cited`.\n- **The facts.** In `facts.json`, look for anything touching that ticker — or\n  the whole session, which is what an index-portfolio turn or a market-wide\n  closing-auction note is. Carry the `fact_id` and the headline.\n\n**An empty `related_facts` is a real answer.** Most signals have no fact beside\nthem, and saying so plainly is what stops the node after this one from\ninventing an explanation the day never offered. Do not stretch a market-wide\nfact into a ticker-specific one.\n\nYou explain nothing here. Naming the driver is the next node's work, and doing\nit early only means doing it with less.\n\n## What this graph is not\n\nThis is signal DETECTION, and the product is a reading of the flow with its\nobjections attached. Nothing you produce here is a trade instruction: no buy,\nno sell, no price target, no expected return. The final node records process\nmetrics — did the intake pass, how many signals survived the triage, did the\nred team run — because a market outcome is slow validation and never a round's\nmetric (D14, stated for bets and holding here for the same reason).\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.\n\n## What to return\n\n`context` — one entry per triaged signal, with `signal_id`, `ticker`, `trend`,\n`figures_cited` and `related_facts` — plus a `note`. Every triaged signal gets\nan entry: a signal you could find nothing about gets one that says so.",
+  "origin": {
+    "type": "native"
+  }
+}

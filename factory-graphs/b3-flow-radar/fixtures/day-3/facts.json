@@ -1,0 +1,30 @@
+[
+  {
+    "fact_id": "2026-09-04-ibov-01",
+    "ticker": "IBOV",
+    "headline": "The new Ibovespa theoretical portfolio takes effect in the next session, and local desks spent this one printing large one-way blocks on the eve of it.",
+    "source": "b3-radar/data/briefs/2026-09-04.json",
+    "published_at": "2026-09-04"
+  },
+  {
+    "fact_id": "2026-09-04-slce3-02",
+    "ticker": "SLCE3",
+    "headline": "Local desks sold SLCE3 and CMIN3 to foreign accounts in single-direction blocks, with one house well ahead of the others.",
+    "source": "b3-radar/data/briefs/2026-09-04.json",
+    "published_at": "2026-09-04"
+  },
+  {
+    "fact_id": "2026-09-04-cple3-03",
+    "ticker": "CPLE3",
+    "headline": "The same desks bought CPLE3 from retail accounts on the same session, the other side of the day's single theme.",
+    "source": "b3-radar/data/briefs/2026-09-04.json",
+    "published_at": "2026-09-04"
+  },
+  {
+    "fact_id": "2026-09-04-ibov-04",
+    "ticker": "IBOV",
+    "headline": "A dozen candidates closed with 26-63% of their turnover inside the closing auction — a common closing event to rule out before reading any of them as flow.",
+    "source": "b3-radar/data/briefs/2026-09-04.json",
+    "published_at": "2026-09-04"
+  }
+]

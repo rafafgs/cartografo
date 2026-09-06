@@ -1,0 +1,310 @@
+{
+  "id": "triage-flow-signals",
+  "version": "1.0.0",
+  "hash": "sha256:7db513d3031e33eee7e79f05fcf48788649fc8807efc6712eaab9087b2329685",
+  "role": "gate",
+  "description": "Filters the day's computed signals against the class's materiality criteria before any context is gathered on them.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "project",
+      "fixture"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the identity of the work itself — `id`, `title` and `body` — published by the input projection at `input.job` (t253). A crossing of this class is one trading day being read, and this is where whoever opened it said which day and why.",
+        "required": [
+          "id",
+          "title",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "free prose: what the reader of this crossing is looking for, when they said."
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "description": "the class's STATIC configuration, published by the projection at `input.project` (t253). The triage judges against the criteria declared here, never against criteria invented in the session.",
+        "required": [
+          "triage_criteria"
+        ],
+        "properties": {
+          "triage_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the materiality criteria of this class, and only these."
+          }
+        }
+      },
+      "fixture": {
+        "type": "object",
+        "description": "what `check-intake` established about this crossing's data: which day it is, where the four files are and how many rows each of them holds. It is the only node that touches the filesystem to find out, and every node after it reads the paths from here instead of assembling one.",
+        "required": [
+          "trading_day",
+          "paths",
+          "row_counts"
+        ],
+        "properties": {
+          "trading_day": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the fixture day this crossing runs against: `day-1`, `day-2` or `day-3`."
+          },
+          "paths": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_flow": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signals": {
+                "type": "string",
+                "minLength": 1
+              },
+              "facts": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "row_counts": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "broker_flow": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "signals": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "facts": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              }
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal and is the common case. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers (D20).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "triaged_signals",
+      "evaluated_criteria",
+      "rationale",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "mandatory in every skill of role gate. In this graph \"pass\" follows the \"advance\" edge and \"fail\" the \"discard\" edge. \"escalate_human\" exists because the format demands the three values — a session that needs the founder PAUSES with an input-request instead of settling it here."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the label of the edge this node took. The GRAPH's vocabulary and not the skill's, which is why there is no enum here: the same skill can live under two graphs with different labels. Declared because the report protocol tells the session to return ONE block only, with the label INSIDE the object of the contract (t161, t259), and with `additionalProperties: false` an `output` that did not declare it would be refused whole — which is exactly how bundle 2 lost a triaged thesis before t260 and t276. The key itself stays spelled the way the result protocol reserves it (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this graph's edge labels, and those are English.",
+        "examples": [
+          "advance",
+          "discard"
+        ]
+      },
+      "triaged_signals": {
+        "type": "array",
+        "description": "the materially interesting subset of `signals.json`, one entry per signal that survived the triage. Empty when the triage discards, which is a successful triage and not a failure.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "signal_type",
+            "why"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which criterion it meets, in one sentence, citing the value that meets it."
+            }
+          }
+        }
+      },
+      "evaluated_criteria": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one per criterion received; a criterion not evaluated gets an honest entry, it is never skipped.",
+        "items": {
+          "type": "object",
+          "required": [
+            "criterion",
+            "verdict",
+            "evidence"
+          ],
+          "properties": {
+            "criterion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "meets",
+                "does_not_meet",
+                "undetermined"
+              ]
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the record that supports the verdict, by file and row. A restatement of the signal is not evidence for it."
+            }
+          }
+        }
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "`check-intake` passed, so `fixture.paths` names four files that really exist",
+    "`project.triage_criteria` declared in the class graph, as a non-empty list"
+  ],
+  "checks": [
+    {
+      "id": "triage-against-the-declared-criteria",
+      "type": "agentic",
+      "description": "The triage exists so that context is gathered only on what deserves it. Its expensive defect is not discarding a real signal, it is passing a whole screen of noise and spending the four nodes after it on nothing.",
+      "instruction": "Check, criterion by criterion, whether the recorded verdict holds against the fixture itself.\n\n1. Does every criterion in `input.project.triage_criteria` appear in `evaluated_criteria`? A skipped criterion fails the check.\n2. Does every `meets` verdict cite a record — a `signal_id`, a ticker, a figure — rather than paraphrasing the signal itself?\n3. Is every entry of `triaged_signals` really in `signals.json` for this day, with the `signal_id` and `ticker` it claims?\n\nIf a signal was kept while a criterion carries `does_not_meet`, the rationale has to say why that one is not disqualifying. Without that, the check failed.",
+      "required_evidence": [
+        "evaluated_criterion_with_the_fixture_record_that_supports_it",
+        "list_of_the_criteria_with_an_undetermined_verdict_and_what_is_missing",
+        "triaged_signal_ids_matched_against_the_signals_file_of_the_day"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "factory-graphs/b3-flow-radar/fixtures/**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Triage the day's signals before spending context on them\n\nYour job is to decide which of this day's computed signals are materially\ninteresting — and nothing beyond that. You are not explaining them; you are\ndeciding which ones are worth explaining.\n\n**Crossing:** {{input.job.title}}\n**Trading day:** {{input.fixture.trading_day}}\n\n{{input.job.body}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the target repository:\nthe result comes back **through the output contract**, and what records it is\nthe control plane. Reading, you read the fixture this class ships — and only\nthat. The network is closed on every node of this bundle (RF-28): there is no\nresearch step here, and a claim you cannot cite to a fixture record is a claim\nthis graph has no place for.\n\nThe signals of the day are in the file `fixture.paths.signals` names:\n\n{{input.fixture.paths}}\n\nRead it with your own filesystem tools. It is a JSON array, one entry per\ncomputed signal, each carrying the query that produced it — `signal_id`,\n`ticker`, `signal_type`, `query`, `value`, `z`, `computed_at`. The row counts\n`check-intake` already established are here:\n\n{{input.fixture.row_counts}}\n\n## How to triage\n\nJudge against the criteria this class declared, and against those only:\n\n{{input.project.triage_criteria}}\n\nOne verdict per criterion, each with a record from the fixture behind it. A\ncriterion you cannot judge gets `undetermined` with the gap named — never a\n`meets` of convenience.\n\nThe question that decides the triage is always the same: **is this move large\nagainst the ticker's OWN recent behaviour, and is it not already explained?** A\nnumber that is big for the exchange and ordinary for the ticker is not a signal.\nNeither is a number the day's facts already account for — an index-portfolio\nturn, a closing auction, a block crossed between two houses is a transaction,\nnot a market reading.\n\nDiscarding is a product, not a failure. A day with nothing material in it is a\nreal answer, and recording why is what stops the same shape coming back next\nweek as if it were new.\n\n## What this graph is not\n\nThis is signal DETECTION, and the product is a reading of the flow with its\nobjections attached. Nothing you produce here is a trade instruction: no buy,\nno sell, no price target, no expected return. The final node records process\nmetrics — did the intake pass, how many signals survived the triage, did the\nred team run — because a market outcome is slow validation and never a round's\nmetric (D14, stated for bets and holding here for the same reason).\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.\n\n## What to return\n\nReturn in the format the output schema declares: `outcome`, `resultado`,\n`triaged_signals`, `evaluated_criteria`, `rationale`, `note`.\n\n- `outcome: \"pass\"` with `resultado: \"advance\"` — something here is worth\n  explaining. The executor follows the **advance** edge, on to the context.\n- `outcome: \"fail\"` with `resultado: \"discard\"` — nothing clears the criteria.\n  The executor follows the **discard** edge, straight to the scorecard, and\n  `triaged_signals` comes back empty.\n- `outcome: \"escalate_human\"` exists because the gate format demands the three\n  values. Needing the founder means ending the turn with the `input-request`\n  block above.",
+  "origin": {
+    "type": "native"
+  }
+}

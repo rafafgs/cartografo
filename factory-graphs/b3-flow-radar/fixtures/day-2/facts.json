@@ -1,0 +1,23 @@
+[
+  {
+    "fact_id": "2026-09-03-ibov-01",
+    "ticker": "IBOV",
+    "headline": "Retail accounts bought a net R$ 1.35 bn on a R$ 28.8 bn session while institutional, mixed and HFT desks sold, with foreign flow effectively flat.",
+    "source": "b3-radar/data/briefs/2026-09-03.json",
+    "published_at": "2026-09-03"
+  },
+  {
+    "fact_id": "2026-09-03-bbdc4-02",
+    "ticker": "BBDC4",
+    "headline": "Several of the day's largest turnovers, BBDC4 and PETR3 among them, are blocks and crosses between houses rather than directional flow.",
+    "source": "b3-radar/data/briefs/2026-09-03.json",
+    "published_at": "2026-09-03"
+  },
+  {
+    "fact_id": "2026-09-03-obtc3-03",
+    "ticker": "OBTC3",
+    "headline": "OBTC3 carries a seven-session broker streak on the sell side, a pattern the radar has been flagging on consecutive days rather than one that opened today.",
+    "source": "b3-radar/data/briefs/2026-09-03.json",
+    "published_at": "2026-09-03"
+  }
+]

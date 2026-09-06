@@ -1,0 +1,242 @@
+{
+  "id": "hypothesize-flow-driver",
+  "version": "1.0.0",
+  "hash": "sha256:eacb8dbd47ffe11700a4ddfc0d1c24073235b970eb72ae3e7cbc6d637099c055",
+  "role": "work",
+  "description": "Proposes what would explain each signal — accumulation, distribution, an index turn, an event — with a confidence and the context it cites.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "context"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "context": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one entry per triaged signal: the recent trend, and any fact related to it.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "trend",
+            "related_facts"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trend": {
+              "type": "string",
+              "minLength": 1,
+              "description": "what the daily figures say about where this ticker has been: the move, the turnover against its own recent level, the number of trades."
+            },
+            "figures_cited": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "the fields of `daily-figures.json` the trend rests on, by name."
+            },
+            "related_facts": {
+              "type": "array",
+              "description": "the entries of `facts.json` that touch this ticker or the whole session. Empty is a real answer: most signals have no fact beside them, and saying so is what stops the next node from inventing one.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "fact_id",
+                  "headline"
+                ],
+                "properties": {
+                  "fact_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "headline": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "triaged_signals": {
+        "type": "array",
+        "description": "the materially interesting subset of `signals.json`, one entry per signal that survived the triage. Empty when the triage discards, which is a successful triage and not a failure.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "signal_type",
+            "why"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which criterion it meets, in one sentence, citing the value that meets it."
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal and is the common case. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers (D20).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "hypotheses",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "hypotheses": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one explanation per triaged signal — what would have to be true for it to be flow.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "signal_id",
+            "ticker",
+            "driver",
+            "explanation",
+            "confidence",
+            "cited_context"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "driver": {
+              "type": "string",
+              "enum": [
+                "accumulation",
+                "distribution",
+                "index_rebalance",
+                "earnings_adjacent",
+                "scheduled_event",
+                "liquidity_event",
+                "undetermined"
+              ],
+              "description": "the shape of the explanation. `undetermined` is a legal answer and a cheap one: a named driver nobody can cite is worse than an honest gap."
+            },
+            "explanation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "confidence": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "cited_context": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "the `signal_id`s and `fact_id`s this explanation rests on. An explanation citing nothing is a guess wearing a contract."
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "`contextualize` produced at least one context entry"
+  ],
+  "checks": [
+    {
+      "id": "each-hypothesis-cites-the-context-it-rests-on",
+      "type": "agentic",
+      "description": "The expensive defect here is the confident explanation: a driver named with a `high` confidence and nothing under it. It survives the red team by sounding settled, and it is the one thing a brief must never carry.",
+      "instruction": "For each hypothesis, check three things against the context it received.\n\n1. Does every id in `cited_context` exist in the `context` or in the facts it carries?\n2. Does the named `driver` follow from what is cited, or does the citation merely sit beside a conclusion that came from elsewhere?\n3. Is the `confidence` earned? `high` needs the context to rule out the ordinary explanations — a scheduled event, a single broker, an auction. Where it does not, the honest answers are `low` or the `undetermined` driver.\n\nA hypothesis whose citation does not support its driver fails the check even when the driver turns out to be right.",
+      "required_evidence": [
+        "cited_context_ids_matched_against_the_context_received",
+        "confidence_confronted_with_what_the_context_rules_out",
+        "list_of_signals_that_got_the_undetermined_driver_and_why"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Say what would explain each signal\n\nYour job is one explanation per signal: what would have to be true for this\nflow to be what it looks like.\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the target repository:\nthe result comes back **through the output contract**, and what records it is\nthe control plane. Reading, you read the fixture this class ships — and only\nthat. The network is closed on every node of this bundle (RF-28): there is no\nresearch step here, and a claim you cannot cite to a fixture record is a claim\nthis graph has no place for.\n\nYou read the context and nothing else. The files were opened two nodes ago and\nthis node does not reopen them — what reached you is what there is:\n\n{{input.context}}\n\n## How to explain\n\nFor each context entry, name a `driver`:\n\n- `accumulation` — one side building a position over more than a session.\n- `distribution` — the mirror of it.\n- `index_rebalance` — flow that follows an index-portfolio turn rather than a\n  view about the company.\n- `earnings_adjacent` — positioning around a result or a disclosure.\n- `scheduled_event` — anything the calendar already promised: an auction, a\n  maturity, a listed corporate event.\n- `liquidity_event` — a block, a cross, a single print that moves a thin book.\n- `undetermined` — the context does not settle it.\n\n**`undetermined` is a cheap, correct answer, and a named driver nobody can cite\nis an expensive wrong one.** The ordinary explanation comes first: before flow\nmeans conviction, rule out the calendar, the auction and the single broker.\n\nEvery hypothesis carries `cited_context`: the `signal_id`s and `fact_id`s it\nrests on. An explanation citing nothing is a guess wearing a contract, and the\nred team after you will say so.\n\n`confidence` is earned by what the context RULES OUT, not by how well the story\nreads. `high` is for a signal whose ordinary explanations the context closes\noff one by one.\n\n## What this graph is not\n\nThis is signal DETECTION, and the product is a reading of the flow with its\nobjections attached. Nothing you produce here is a trade instruction: no buy,\nno sell, no price target, no expected return. The final node records process\nmetrics — did the intake pass, how many signals survived the triage, did the\nred team run — because a market outcome is slow validation and never a round's\nmetric (D14, stated for bets and holding here for the same reason).\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.\n\n## What to return\n\n`hypotheses` — one entry per context entry, each with `hypothesis_id`,\n`signal_id`, `ticker`, `driver`, `explanation`, `confidence` and\n`cited_context` — plus a `note`.",
+  "origin": {
+    "type": "native"
+  }
+}

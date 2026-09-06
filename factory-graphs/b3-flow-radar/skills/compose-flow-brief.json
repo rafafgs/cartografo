@@ -1,0 +1,286 @@
+{
+  "id": "compose-flow-brief",
+  "version": "1.0.0",
+  "hash": "sha256:86610ada032cccd026623738cefdb2278d06be756e75f3387f297e4a375483c7",
+  "role": "work",
+  "description": "Writes the day's reading: one section per surviving hypothesis, each carrying the objections it answered.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "hypotheses",
+      "objections",
+      "counter_evidence"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "hypotheses": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one explanation per triaged signal — what would have to be true for it to be flow.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "signal_id",
+            "ticker",
+            "driver",
+            "explanation",
+            "confidence",
+            "cited_context"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "driver": {
+              "type": "string",
+              "enum": [
+                "accumulation",
+                "distribution",
+                "index_rebalance",
+                "earnings_adjacent",
+                "scheduled_event",
+                "liquidity_event",
+                "undetermined"
+              ],
+              "description": "the shape of the explanation. `undetermined` is a legal answer and a cheap one: a named driver nobody can cite is worse than an honest gap."
+            },
+            "explanation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "confidence": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "cited_context": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "the `signal_id`s and `fact_id`s this explanation rests on. An explanation citing nothing is a guess wearing a contract."
+            }
+          }
+        }
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one entry per objection raised, each with a severity and the hypothesis's answer — or `null` when there was none. An empty list is refused by the contract: a red team that found nothing did not run.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "objection",
+            "severity",
+            "hypothesis_answer"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "hypothesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "`null` when the hypothesis has no answer to this objection."
+            }
+          }
+        }
+      },
+      "counter_evidence": {
+        "type": "array",
+        "minItems": 1,
+        "description": "the evidence the red team brings against the hypotheses, drawn from the fixture and cited by file and record. It is NOT researched: every node of this bundle declares `network.allowed: false`, so a researched field would name a capability the manifest forbids itself. What replaces research here is reading the rest of the day — the figures and the facts the hypothesis did not look at.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "file",
+            "record",
+            "evidence"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file": {
+              "type": "string",
+              "enum": [
+                "daily-figures.json",
+                "broker-flow.json",
+                "signals.json",
+                "facts.json"
+              ],
+              "description": "which of the day's four fixture files the record comes out of."
+            },
+            "record": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which record inside that file: a `fact_id`, a `signal_id`, a ticker, a ticker and a broker. Enough for a reader to open the file and find the same row."
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal and is the common case. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers (D20).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "brief",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "brief": {
+        "type": "object",
+        "required": [
+          "summary",
+          "sections"
+        ],
+        "description": "the day's reading, one section per surviving hypothesis.",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the whole day in a paragraph, including what did NOT survive."
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "hypothesis_id",
+                "ticker",
+                "heading",
+                "body"
+              ],
+              "properties": {
+                "hypothesis_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ticker": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "heading": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "surviving_objections": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "the objections this hypothesis answered, carried into the section rather than dropped: a reading that hides what was said against it is advocacy."
+                }
+              }
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "`red-team` returned `survives`, so at least one hypothesis answered its objections"
+  ],
+  "checks": [
+    {
+      "id": "the-brief-carries-what-was-said-against-it",
+      "type": "agentic",
+      "description": "A reading that drops the objections is advocacy with a contract around it. This check exists because the pressure at this node is to write well, and writing well is exactly what makes an unqualified claim dangerous here.",
+      "instruction": "Read the brief against the two inputs behind it.\n\n1. Is there exactly one section per SURVIVING hypothesis — and none for a hypothesis whose high-severity objection went unanswered?\n2. Does each section carry the objections that hypothesis answered, in terms a reader meets before the conclusion rather than after it?\n3. Does the summary say what did NOT survive? A day's reading that mentions only the survivors overstates itself by omission.\n4. Does any sentence read as an instruction to trade — a target, a direction, an expected return? That fails the check whatever else is right.",
+      "required_evidence": [
+        "section_per_surviving_hypothesis_matched_against_the_objections_it_answered",
+        "quotation_of_where_the_summary_states_what_did_not_survive",
+        "list_of_sentences_checked_for_a_trade_instruction"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Write the day's reading\n\nYour job is to turn what survived into something a person can read in two\nminutes and check in ten.\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the target repository:\nthe result comes back **through the output contract**, and what records it is\nthe control plane. Reading, you read the fixture this class ships — and only\nthat. The network is closed on every node of this bundle (RF-28): there is no\nresearch step here, and a claim you cannot cite to a fixture record is a claim\nthis graph has no place for.\n\nWhat survived, what was said against it, and where the counter-evidence came\nfrom:\n\n{{input.hypotheses}}\n\n{{input.objections}}\n\n{{input.counter_evidence}}\n\n## How to write it\n\nOne section per **surviving** hypothesis. A hypothesis whose high-severity\nobjection went unanswered gets no section — it died at the red team, and the\nbrief is not where it comes back.\n\nEach section carries the objections that hypothesis ANSWERED, in the body, not\nin a footnote. A reader who meets the conclusion before the objection has\nalready formed the impression the objection exists to correct.\n\nThe summary says what did not survive. A day's reading that mentions only the\nsurvivors overstates itself by omission, and the count of what died is the most\nhonest sentence in the document.\n\n## What this graph is not\n\nThis is signal DETECTION, and the product is a reading of the flow with its\nobjections attached. Nothing you produce here is a trade instruction: no buy,\nno sell, no price target, no expected return. The final node records process\nmetrics — did the intake pass, how many signals survived the triage, did the\nred team run — because a market outcome is slow validation and never a round's\nmetric (D14, stated for bets and holding here for the same reason).\n\nConcretely, at this node: no target, no direction, no expected return, no\nsentence a reader could act on as an instruction. The product is \"here is what\nthe flow looks like and here is what argues against it\".\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.\n\n## What to return\n\n`brief` — with `summary` and `sections`, each section carrying\n`hypothesis_id`, `ticker`, `heading`, `body` and the\n`surviving_objections` it answered — plus a `note`.",
+  "origin": {
+    "type": "native"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "title": "Read the B3 flow of day-1",
+  "body": "Run the radar over the first of the three trading days this bundle ships as fixtures. Nothing is fetched: check-intake opens factory-graphs/b3-flow-radar/fixtures/day-1/ and the five nodes after it read what is there.",
+  "entry_node_id": "check-intake",
+  "fields": {
+    "trading_day": "day-1"
+  }
+}

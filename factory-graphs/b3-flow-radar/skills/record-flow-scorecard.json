@@ -1,0 +1,498 @@
+{
+  "id": "record-flow-scorecard",
+  "version": "1.0.0",
+  "hash": "sha256:a06f38d07576210332c7ab6b1302e653a62e7c5f0f04c73354563164813a7a06",
+  "role": "work",
+  "description": "The single final node of the four ways of ending: writes down the crossing's process metrics and what the day left to watch.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "fixture",
+      "traversal"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "fixture": {
+        "type": "object",
+        "description": "what `check-intake` established about this crossing's data: which day it is, where the four files are and how many rows each of them holds. It is the only node that touches the filesystem to find out, and every node after it reads the paths from here instead of assembling one. Required here, and it is the ONE key that is: `check-intake` is the initial node, so every one of the four paths into this one carries it — including the short-circuit that comes straight from a failed intake.",
+        "required": [
+          "trading_day",
+          "paths",
+          "row_counts"
+        ],
+        "properties": {
+          "trading_day": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the fixture day this crossing runs against: `day-1`, `day-2` or `day-3`."
+          },
+          "paths": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_flow": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signals": {
+                "type": "string",
+                "minLength": 1
+              },
+              "facts": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "row_counts": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "broker_flow": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "signals": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "facts": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              }
+            }
+          }
+        }
+      },
+      "traversal": {
+        "type": "object",
+        "description": "what the crossing did, published by the projection at `input.traversal` (t253). The metrics below are recomputed from this and from the outputs, never from a self-report.",
+        "required": [
+          "nodes_visited"
+        ],
+        "properties": {
+          "nodes_visited": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "triaged_signals": {
+        "type": "array",
+        "description": "the materially interesting subset of `signals.json`, one entry per signal that survived the triage. Empty when the triage discards, which is a successful triage and not a failure.",
+        "items": {
+          "type": "object",
+          "required": [
+            "signal_id",
+            "ticker",
+            "signal_type",
+            "why"
+          ],
+          "properties": {
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which criterion it meets, in one sentence, citing the value that meets it."
+            }
+          }
+        }
+      },
+      "hypotheses": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one explanation per triaged signal — what would have to be true for it to be flow.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "signal_id",
+            "ticker",
+            "driver",
+            "explanation",
+            "confidence",
+            "cited_context"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signal_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "driver": {
+              "type": "string",
+              "enum": [
+                "accumulation",
+                "distribution",
+                "index_rebalance",
+                "earnings_adjacent",
+                "scheduled_event",
+                "liquidity_event",
+                "undetermined"
+              ],
+              "description": "the shape of the explanation. `undetermined` is a legal answer and a cheap one: a named driver nobody can cite is worse than an honest gap."
+            },
+            "explanation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "confidence": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "cited_context": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "the `signal_id`s and `fact_id`s this explanation rests on. An explanation citing nothing is a guess wearing a contract."
+            }
+          }
+        }
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one entry per objection raised, each with a severity and the hypothesis's answer — or `null` when there was none. An empty list is refused by the contract: a red team that found nothing did not run.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "objection",
+            "severity",
+            "hypothesis_answer"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "hypothesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "`null` when the hypothesis has no answer to this objection."
+            }
+          }
+        }
+      },
+      "counter_evidence": {
+        "type": "array",
+        "minItems": 1,
+        "description": "the evidence the red team brings against the hypotheses, drawn from the fixture and cited by file and record. It is NOT researched: every node of this bundle declares `network.allowed: false`, so a researched field would name a capability the manifest forbids itself. What replaces research here is reading the rest of the day — the figures and the facts the hypothesis did not look at.",
+        "items": {
+          "type": "object",
+          "required": [
+            "hypothesis_id",
+            "file",
+            "record",
+            "evidence"
+          ],
+          "properties": {
+            "hypothesis_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file": {
+              "type": "string",
+              "enum": [
+                "daily-figures.json",
+                "broker-flow.json",
+                "signals.json",
+                "facts.json"
+              ],
+              "description": "which of the day's four fixture files the record comes out of."
+            },
+            "record": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which record inside that file: a `fact_id`, a `signal_id`, a ticker, a ticker and a broker. Enough for a reader to open the file and find the same row."
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "brief": {
+        "type": "object",
+        "required": [
+          "summary",
+          "sections"
+        ],
+        "description": "the day's reading, one section per surviving hypothesis.",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the whole day in a paragraph, including what did NOT survive."
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "hypothesis_id",
+                "ticker",
+                "heading",
+                "body"
+              ],
+              "properties": {
+                "hypothesis_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ticker": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "heading": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "surviving_objections": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "the objections this hypothesis answered, carried into the section rather than dropped: a reading that hides what was said against it is advocacy."
+                }
+              }
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal and is the common case. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers (D20).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "process_metrics",
+      "record",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "process_metrics": {
+        "type": "object",
+        "description": "what the surveyor learns about this class. Process, never a market outcome: this is signal detection, and a reading that turned out to be right does not validate a crossing that skipped the red team.",
+        "required": [
+          "intake_passed",
+          "signals_triaged_count",
+          "red_team_ran",
+          "final_outcome"
+        ],
+        "properties": {
+          "intake_passed": {
+            "type": "boolean",
+            "description": "false on the crossing that short-circuited at `check-intake`."
+          },
+          "signals_triaged_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "how many signals the triage kept; 0 when it discarded the whole day."
+          },
+          "red_team_ran": {
+            "type": "boolean",
+            "description": "derived from `traversal.nodes_visited` containing \"red-team\"; false on both short paths that never reach it."
+          },
+          "final_outcome": {
+            "type": "string",
+            "enum": [
+              "published",
+              "no_signal",
+              "dead_hypothesis",
+              "intake_failed"
+            ],
+            "description": "the four ways this graph ends, one per path into this node."
+          },
+          "unanswered_high_objections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hypotheses_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes_executed": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "record": {
+        "type": "object",
+        "required": [
+          "trading_day",
+          "summary"
+        ],
+        "description": "the crossing, written down for whoever reads the class next.",
+        "properties": {
+          "trading_day": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "what this crossing did and where it ended, in a paragraph."
+          },
+          "what_to_watch": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "what the day left open for the next crossing to look at: a streak still running, a fact whose effect has not landed. Observations, never instructions."
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "the crossing reached this node by one of the four paths the graph declares",
+    "`fixture` present, which every path carries because `check-intake` is the initial node"
+  ],
+  "checks": [
+    {
+      "id": "metrics-recomputed-from-the-crossing-not-from-a-self-report",
+      "type": "agentic",
+      "description": "It is this metric the surveyor reads to propose a mutation on the graph; an estimated metric poisons the learning of the whole class.",
+      "instruction": "Recompute every metric from the inputs this node really received.\n\n1. Is `signals_triaged_count` the length of `triaged_signals` — 0 when the key is absent, which is what the two shortest paths look like?\n2. Does `red_team_ran` follow from `traversal.nodes_visited`, and not from the presence of an objections list?\n3. Does `final_outcome` match the path actually taken: `intake_failed`, `no_signal`, `dead_hypothesis` or `published`?\n4. Does the record carry any sentence that reads as a trade instruction? It must not.",
+      "required_evidence": [
+        "recomputation_of_signals_triaged_count_from_the_input_received",
+        "nodes_visited_quoted_beside_the_red_team_ran_value",
+        "path_taken_confronted_with_the_final_outcome_recorded"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Record what this crossing did\n\nYour job is the crossing's own metrics — not the market's. Four paths reach this\nnode and all four produce a record: a failed intake and a discarded day count\nas much as a published brief, which is exactly what makes the metrics comparable\nacross crossings.\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the target repository:\nthe result comes back **through the output contract**, and what records it is\nthe control plane. Reading, you read the fixture this class ships — and only\nthat. The network is closed on every node of this bundle (RF-28): there is no\nresearch step here, and a claim you cannot cite to a fixture record is a claim\nthis graph has no place for.\n\nWhat the crossing visited:\n\n{{input.traversal}}\n\nAnd the day it read:\n\n{{input.fixture}}\n\n## The four ways in\n\n| Path | `final_outcome` |\n|---|---|\n| `check-intake --fail-->` | `intake_failed` |\n| `triage --discard-->` | `no_signal` |\n| `red-team --dead-->` | `dead_hypothesis` |\n| `compose-brief --always-->` | `published` |\n\nThree of the four arrive without one or more of `triaged_signals`,\n`hypotheses`, `objections`, `counter_evidence` and `brief`. That is legal and\ndeclared: those keys are properties of this node's input and none of them is\nrequired. An absent key is data — it says which path this was — and it is never\na reason to invent a value.\n\n## How to compute the metrics\n\nRecompute from what you received, never from what a previous node said about\nitself:\n\n- `intake_passed` — did the crossing get past `check-intake`?\n- `signals_triaged_count` — the length of `triaged_signals`, or 0 when it did\n  not arrive.\n- `red_team_ran` — is `\"red-team\"` in `traversal.nodes_visited`?\n- `final_outcome` — the table above.\n\n## What this graph is not\n\nThis is signal DETECTION, and the product is a reading of the flow with its\nobjections attached. Nothing you produce here is a trade instruction: no buy,\nno sell, no price target, no expected return. The final node records process\nmetrics — did the intake pass, how many signals survived the triage, did the\nred team run — because a market outcome is slow validation and never a round's\nmetric (D14, stated for bets and holding here for the same reason).\n\n`what_to_watch` is observations, never instructions: a streak still running, a\nfact whose effect has not landed. Nothing here tells anybody to do anything.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.\n\n## What to return\n\n`process_metrics`, `record` and a `note`.",
+  "origin": {
+    "type": "native"
+  }
+}

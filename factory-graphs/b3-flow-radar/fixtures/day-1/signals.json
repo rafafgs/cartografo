@@ -1,0 +1,164 @@
+[
+  {
+    "signal_id": "2026-09-02-OBTC3-block-01",
+    "ticker": "OBTC3",
+    "signal_type": "block",
+    "query": "features.mean_trade_ratio",
+    "value": 5277.8703,
+    "z": 3.01,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-broker-02",
+    "ticker": "OBTC3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": -27284629.0,
+    "z": 7.0,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-flow_retail-03",
+    "ticker": "OBTC3",
+    "signal_type": "flow_retail",
+    "query": "gstats.net_z",
+    "value": 5376013.0,
+    "z": 3.3748,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-broker-04",
+    "ticker": "OBTC3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": 14634745.0,
+    "z": 7.0,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-flow_foreign-05",
+    "ticker": "OBTC3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 4374252.0,
+    "z": 4.3117,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-streak_foreign-06",
+    "ticker": "OBTC3",
+    "signal_type": "streak_foreign",
+    "query": "gstats.streak_days",
+    "value": 11609493.0,
+    "z": 9.0,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-OBTC3-broker-07",
+    "ticker": "OBTC3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": 588393.0,
+    "z": 27.4516,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-ALLD3-flow_foreign-08",
+    "ticker": "ALLD3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 2241122.0,
+    "z": 2.8537,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-ALLD3-streak_retail-09",
+    "ticker": "ALLD3",
+    "signal_type": "streak_retail",
+    "query": "gstats.streak_days",
+    "value": 2303654.0,
+    "z": 10.0,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-ALLD3-broker-10",
+    "ticker": "ALLD3",
+    "signal_type": "broker",
+    "query": "gstats.net_z",
+    "value": 179588.0,
+    "z": 4.9275,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-ALLD3-broker-11",
+    "ticker": "ALLD3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": -7296320.0,
+    "z": 8.0,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-ALLD3-broker-12",
+    "ticker": "ALLD3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": 646949.0,
+    "z": 24.0271,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-volume-13",
+    "ticker": "VULC3",
+    "signal_type": "volume",
+    "query": "features.fin_z",
+    "value": 120027882.0,
+    "z": 4.5001,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-trades-14",
+    "ticker": "VULC3",
+    "signal_type": "trades",
+    "query": "features.trades_z",
+    "value": 15547.0,
+    "z": 3.8291,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-flow_institutional-15",
+    "ticker": "VULC3",
+    "signal_type": "flow_institutional",
+    "query": "gstats.net_z",
+    "value": -6355685.0,
+    "z": -3.6919,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-flow_mixed-16",
+    "ticker": "VULC3",
+    "signal_type": "flow_mixed",
+    "query": "gstats.net_z",
+    "value": 5970797.0,
+    "z": 3.803,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-broker-17",
+    "ticker": "VULC3",
+    "signal_type": "broker",
+    "query": "gstats.net_z",
+    "value": -2112053.0,
+    "z": -6.125,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-02-VULC3-broker-18",
+    "ticker": "VULC3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": -5232709.0,
+    "z": -27.9967,
+    "computed_at": "2026-09-02T21:00:00-03:00"
+  }
+]

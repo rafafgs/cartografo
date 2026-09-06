@@ -927,6 +927,50 @@ test('AT14 — every required input of every node has a producer on every path i
   }
 });
 
+/*
+ * FR20 — the scorecard records PROCESS metrics, and this class's process is
+ * detecting a signal, never instructing a trade.
+ *
+ * D14 states the principle for bets ("P&L is slow validation, never a round's
+ * metric") and bundle 2 pins it in its own FR7 test. It is stated here for the
+ * radar, where the temptation is a different one: a brief that reads like
+ * research is one `price_target` key away from reading like an order.
+ */
+test('FR20 — record-flow-scorecard records process metrics, never a trade instruction', () => {
+  const manifest = readManifest('record-flow-scorecard.json');
+  const metrics = manifest.output.properties.process_metrics;
+
+  assert.ok(manifest.output.required.includes('process_metrics'));
+  for (const field of ['intake_passed', 'signals_triaged_count', 'red_team_ran', 'final_outcome']) {
+    assert.ok(metrics.required.includes(field), `process_metrics has to require "${field}"`);
+  }
+  assert.equal(metrics.properties.intake_passed.type, 'boolean');
+  assert.equal(metrics.properties.red_team_ran.type, 'boolean');
+  assert.equal(metrics.properties.signals_triaged_count.type, 'integer');
+  assert.equal(metrics.properties.signals_triaged_count.minimum, 0);
+  assert.deepEqual(metrics.properties.final_outcome.enum, [
+    'published',
+    'no_signal',
+    'dead_hypothesis',
+    'intake_failed',
+  ]);
+
+  const serialized = JSON.stringify(manifest.output);
+  for (const forbidden of [
+    'buy',
+    'sell',
+    'price_target',
+    'expected_return',
+    'recommendation',
+    'position_size_pct',
+  ]) {
+    assert.ok(
+      !serialized.includes(`"${forbidden}"`),
+      `this is signal detection, not a trade instruction: the output cannot carry "${forbidden}"`,
+    );
+  }
+});
+
 test('AT15 — the bundle classifies as checked, so an import needs no re-check', async () => {
   const { classifyContracts, validateContracts } = await contractValidator();
   const report = validateContracts(readJson(GRAPH_PATH), bundleSkillLookup());

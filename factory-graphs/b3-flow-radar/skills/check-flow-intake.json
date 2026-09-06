@@ -1,0 +1,270 @@
+{
+  "id": "check-flow-intake",
+  "version": "1.0.0",
+  "hash": "sha256:5d2c4938238d03c44ecb4f5023594e34472acdcbb3362f2189a8738504eb89e8",
+  "role": "gate",
+  "description": "Deterministic intake gate: the day's four fixture files exist, parse as JSON arrays and hold row counts inside the ranges the graph declares.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "project",
+      "trading_day"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the identity of the work itself — `id`, `title` and `body` — published by the input projection at `input.job` (t253). A crossing of this class is one trading day being read, and this is where whoever opened it said which day and why.",
+        "required": [
+          "id",
+          "title",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "free prose: what the reader of this crossing is looking for, when they said."
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "description": "the class's STATIC configuration, published by the projection at `input.project` (t253). This node reads exactly one key of it, and reads it as DATA: the row-count ranges live in the graph document, not inside the script, so the fixtures at rest and the check at runtime cannot drift apart.",
+        "required": [
+          "expected_row_counts"
+        ],
+        "properties": {
+          "expected_row_counts": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "description": "per fixture file, the `[min, max]` number of rows the day may carry.",
+            "properties": {
+              "daily_figures": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "broker_flow": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "signals": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "facts": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      },
+      "trading_day": {
+        "type": "string",
+        "enum": [
+          "day-1",
+          "day-2",
+          "day-3"
+        ],
+        "description": "which of the three fixture days this crossing runs against. A field this class declares in `custom_fields` and demands at this node, and therefore a flat scalar at the top of `input`, never a nested object (t168). The days are named `day-1` … `day-3` rather than by date so that no document encodes a date that reads as \"current\" long after it stops being one; the DATA inside each file is real and dated."
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "fixture",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "mandatory in every skill of role gate. In this graph \"pass\" follows the \"pass\" edge and \"fail\" the \"fail\" edge. \"escalate_human\" exists because the format demands the three values — a session that needs the founder PAUSES with an input-request instead of settling it here."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the label of the edge this node took. The GRAPH's vocabulary and not the skill's, which is why there is no enum here: the same skill can live under two graphs with different labels. Declared because the report protocol tells the session to return ONE block only, with the label INSIDE the object of the contract (t161, t259), and with `additionalProperties: false` an `output` that did not declare it would be refused whole — which is exactly how bundle 2 lost a triaged thesis before t260 and t276. The key itself stays spelled the way the result protocol reserves it (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this graph's edge labels, and those are English.",
+        "examples": [
+          "pass",
+          "fail"
+        ]
+      },
+      "fixture": {
+        "type": "object",
+        "description": "what `check-intake` established about this crossing's data: which day it is, where the four files are and how many rows each of them holds. It is the only node that touches the filesystem to find out, and every node after it reads the paths from here instead of assembling one.",
+        "required": [
+          "trading_day",
+          "paths",
+          "row_counts"
+        ],
+        "properties": {
+          "trading_day": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the fixture day this crossing runs against: `day-1`, `day-2` or `day-3`."
+          },
+          "paths": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_flow": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signals": {
+                "type": "string",
+                "minLength": 1
+              },
+              "facts": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "row_counts": {
+            "type": "object",
+            "required": [
+              "daily_figures",
+              "broker_flow",
+              "signals",
+              "facts"
+            ],
+            "properties": {
+              "daily_figures": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "broker_flow": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "signals": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              },
+              "facts": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when the file is missing or is not a JSON array at the top level."
+              }
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1,
+        "description": "on a pass, that the four files hold; on a fail, which file and which range failed. It is the whole of what a reader of the scorecard has to go on when the intake short-circuits."
+      }
+    }
+  },
+  "preconditions": [
+    "`trading_day` filled in (a class field, demanded at this node)",
+    "`project.expected_row_counts` declared in the class graph, with a `[min, max]` per file",
+    "the bundle's `fixtures/<trading_day>/` directory reachable from the working directory"
+  ],
+  "checks": [
+    {
+      "id": "fixture-rows-inside-the-declared-ranges",
+      "type": "deterministic",
+      "description": "The same invocation the node itself runs. On a shell node the check and the work are one command, and saying so twice — here and in the graph's `contract.checks` — is what t176's parity check holds the two declarations to.",
+      "command": "node factory-graphs/b3-flow-radar/scripts/check-intake.mjs {{input.trading_day}} {{input.project.expected_row_counts}}",
+      "timeout_s": 30
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "factory-graphs/b3-flow-radar/fixtures/**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "command": {
+    "argv": [
+      "node",
+      "factory-graphs/b3-flow-radar/scripts/check-intake.mjs",
+      "{{input.trading_day}}",
+      "{{input.project.expected_row_counts}}"
+    ],
+    "env_allowlist": [
+      "PATH"
+    ]
+  },
+  "instructions": "# Check the day's intake\n\nThis skill runs on the `shell` engine: there is no session and no model. What\nexecutes is `command.argv` — `factory-graphs/b3-flow-radar/scripts/check-intake.mjs`,\nspawned with no shell in between — and this body is here so that whoever reads\nthe registry can tell what the command does without running it.\n\n## What it does\n\nIt resolves `fixtures/<trading_day>/` (the working directory first, the bundle's\nown `fixtures/` failing that), reads the four files of the day, and answers one\nquestion in four parts: does each file exist, is each one a JSON array, and does\neach array's length fall inside the range `{{input.project.expected_row_counts}}`\ndeclares for it?\n\nIt prints one fenced `resultado` block — the same report protocol every other\nengine's node uses — carrying `outcome`, the `fixture` object the whole graph\nreads its paths from, and a `note` that names the file and the range when one\nfailed.\n\n## Exit codes\n\nA verdict exits `0`. `pass` and `fail` are both verdicts: a `fail` is a routing\ndecision this graph has an edge for, and dying on it would turn a legal outcome\ninto an incident. What exits non-zero is the ABSENCE of a verdict — a fixture\nfile that is not valid JSON at all, or a missing argument. Undetermined is not\na crash, and a crash is not undetermined.\n\n## Permissions\n\nIt reads `factory-graphs/b3-flow-radar/fixtures/**` and nothing else, writes\nnothing, opens no network, and inherits one environment variable: `PATH`, which\nis what lets `argv[0]` be the name `node` instead of an absolute path.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nNo node of this graph is obliged to escalate. There is no human-decision node\nhere: a radar that publishes a reading is not a desk that allocates capital,\nand `escalate_human` exists in the gate enum because the format demands the\nthree values, not because this graph routes on it.",
+  "origin": {
+    "type": "native"
+  }
+}

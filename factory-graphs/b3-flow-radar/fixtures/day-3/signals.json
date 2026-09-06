@@ -1,0 +1,164 @@
+[
+  {
+    "signal_id": "2026-09-04-RECV3-volume-01",
+    "ticker": "RECV3",
+    "signal_type": "volume",
+    "query": "features.fin_z",
+    "value": 97856172.0,
+    "z": 5.2947,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-block-02",
+    "ticker": "RECV3",
+    "signal_type": "block",
+    "query": "features.mean_trade_ratio",
+    "value": 11223.3252,
+    "z": 3.4008,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-broker-03",
+    "ticker": "RECV3",
+    "signal_type": "broker",
+    "query": "gstats.net_z",
+    "value": 2518767.0,
+    "z": 6.4795,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-flow_mixed-04",
+    "ticker": "RECV3",
+    "signal_type": "flow_mixed",
+    "query": "gstats.net_z",
+    "value": -39356151.0,
+    "z": -24.0399,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-streak_mixed-05",
+    "ticker": "RECV3",
+    "signal_type": "streak_mixed",
+    "query": "gstats.streak_days",
+    "value": -43397158.0,
+    "z": 5.0,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-flow_foreign-06",
+    "ticker": "RECV3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 29983750.0,
+    "z": 12.6125,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-streak_foreign-07",
+    "ticker": "RECV3",
+    "signal_type": "streak_foreign",
+    "query": "gstats.streak_days",
+    "value": 36655699.0,
+    "z": 7.0,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-broker-08",
+    "ticker": "RECV3",
+    "signal_type": "broker",
+    "query": "gstats.net_z",
+    "value": 10138395.0,
+    "z": 5.698,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-RECV3-broker-09",
+    "ticker": "RECV3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": -16043666.0,
+    "z": -60.8086,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-volume-10",
+    "ticker": "SLCE3",
+    "signal_type": "volume",
+    "query": "features.fin_z",
+    "value": 142891568.0,
+    "z": 2.6498,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-block-11",
+    "ticker": "SLCE3",
+    "signal_type": "block",
+    "query": "features.mean_trade_ratio",
+    "value": 15417.735,
+    "z": 3.5862,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-flow_mixed-12",
+    "ticker": "SLCE3",
+    "signal_type": "flow_mixed",
+    "query": "gstats.net_z",
+    "value": -65053832.0,
+    "z": -11.3245,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-streak_mixed-13",
+    "ticker": "SLCE3",
+    "signal_type": "streak_mixed",
+    "query": "gstats.streak_days",
+    "value": -95712461.0,
+    "z": 5.0,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-flow_foreign-14",
+    "ticker": "SLCE3",
+    "signal_type": "flow_foreign",
+    "query": "gstats.net_z",
+    "value": 50982333.0,
+    "z": 8.3744,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-broker-15",
+    "ticker": "SLCE3",
+    "signal_type": "broker",
+    "query": "gstats.streak_days",
+    "value": 70459832.0,
+    "z": 7.0,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-SLCE3-broker-16",
+    "ticker": "SLCE3",
+    "signal_type": "broker",
+    "query": "bstats.net_z",
+    "value": -38257727.0,
+    "z": -33.8799,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-EVEN3-volume-17",
+    "ticker": "EVEN3",
+    "signal_type": "volume",
+    "query": "features.fin_z",
+    "value": 16594858.0,
+    "z": 3.4313,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  },
+  {
+    "signal_id": "2026-09-04-EVEN3-block-18",
+    "ticker": "EVEN3",
+    "signal_type": "block",
+    "query": "features.mean_trade_ratio",
+    "value": 4507.0228,
+    "z": 3.0074,
+    "computed_at": "2026-09-04T21:00:00-03:00"
+  }
+]

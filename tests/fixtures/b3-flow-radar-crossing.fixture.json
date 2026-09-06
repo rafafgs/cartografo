@@ -1,0 +1,308 @@
+{
+  "description": "The crossing fixture of factory graph 3 (b3-flow-radar), read by AT5 and AT13 of tests/factory-graph-3.test.mjs. It is deliberately not a market call: the payloads are the smallest ones that still validate against both contracts of every node, and what the fixture proves is that the six contracts fit into one another and that each gate's routing is an edge the graph declares — never that any reading of any ticker is right. The data it quotes is real and comes from the bundle's own day-1 fixture (B3, 2026-09-02), because a crossing built on invented rows would prove the contracts fit and hide whether the fixture does. The frame keys below (`crossing`, `node`, `input`, `output`, `expected_edges`) belong to this file alone; the keys inside the payloads belong to the manifests.",
+  "expected_edges": {
+    "check-intake": "pass",
+    "triage": "advance",
+    "red-team": "survives"
+  },
+  "crossing": [
+    {
+      "node": "check-intake",
+      "input": {
+        "job": {
+          "id": 1,
+          "title": "Read the flow of day-1",
+          "body": "A sample crossing, present so every node has a piece of work to name."
+        },
+        "project": {
+          "expected_row_counts": {
+            "daily_figures": [40, 60],
+            "broker_flow": [80, 200],
+            "signals": [5, 25],
+            "facts": [1, 10]
+          }
+        },
+        "trading_day": "day-1"
+      },
+      "output": {
+        "outcome": "pass",
+        "fixture": {
+          "trading_day": "day-1",
+          "paths": {
+            "daily_figures": "factory-graphs/b3-flow-radar/fixtures/day-1/daily-figures.json",
+            "broker_flow": "factory-graphs/b3-flow-radar/fixtures/day-1/broker-flow.json",
+            "signals": "factory-graphs/b3-flow-radar/fixtures/day-1/signals.json",
+            "facts": "factory-graphs/b3-flow-radar/fixtures/day-1/facts.json"
+          },
+          "row_counts": {
+            "daily_figures": 50,
+            "broker_flow": 150,
+            "signals": 18,
+            "facts": 4
+          }
+        },
+        "note": "the four fixture files of \"day-1\" are present, are JSON arrays and hold row counts inside the declared ranges"
+      }
+    },
+    {
+      "node": "triage",
+      "input": {
+        "job": {
+          "id": 1,
+          "title": "Read the flow of day-1",
+          "body": "A sample crossing, present so every node has a piece of work to name."
+        },
+        "project": {
+          "triage_criteria": [
+            "the flow is large against the ticker's OWN trailing baseline",
+            "the ticker clears the liquidity floor",
+            "the signal is not already explained by a scheduled event in today's facts",
+            "the flow does not rest on a single broker's print"
+          ]
+        },
+        "fixture": {
+          "trading_day": "day-1",
+          "paths": {
+            "daily_figures": "factory-graphs/b3-flow-radar/fixtures/day-1/daily-figures.json",
+            "broker_flow": "factory-graphs/b3-flow-radar/fixtures/day-1/broker-flow.json",
+            "signals": "factory-graphs/b3-flow-radar/fixtures/day-1/signals.json",
+            "facts": "factory-graphs/b3-flow-radar/fixtures/day-1/facts.json"
+          },
+          "row_counts": {
+            "daily_figures": 50,
+            "broker_flow": 150,
+            "signals": 18,
+            "facts": 4
+          }
+        }
+      },
+      "output": {
+        "outcome": "pass",
+        "triaged_signals": [
+          {
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "signal_type": "volume",
+            "why": "features.fin_z reports z=4.50 on R$ 120.0 mn turnover, which is large against this ticker's own trailing level rather than against the exchange's."
+          }
+        ],
+        "evaluated_criteria": [
+          {
+            "criterion": "the flow is large against the ticker's OWN trailing baseline",
+            "verdict": "meets",
+            "evidence": "signals.json, 2026-09-02-VULC3-volume-13: query features.fin_z, z=4.50."
+          },
+          {
+            "criterion": "the ticker clears the liquidity floor",
+            "verdict": "meets",
+            "evidence": "daily-figures.json, VULC3: fin 120027882.0 over 15547 trades."
+          },
+          {
+            "criterion": "the signal is not already explained by a scheduled event in today's facts",
+            "verdict": "undetermined",
+            "evidence": "facts.json, 2026-09-02-ibov-01 names the coming index-portfolio turn for the whole session, so the ordinary explanation is open and not closed."
+          },
+          {
+            "criterion": "the flow does not rest on a single broker's print",
+            "verdict": "meets",
+            "evidence": "daily-figures.json, VULC3: n_brokers 30, so no single house can carry the whole net."
+          }
+        ],
+        "rationale": "One signal clears three criteria outright and leaves the fourth open, which is a question for the red team rather than a reason to discard here.",
+        "note": "Minimal payload: the shape is the subject here, not the reading."
+      }
+    },
+    {
+      "node": "contextualize",
+      "input": {
+        "fixture": {
+          "trading_day": "day-1",
+          "paths": {
+            "daily_figures": "factory-graphs/b3-flow-radar/fixtures/day-1/daily-figures.json",
+            "broker_flow": "factory-graphs/b3-flow-radar/fixtures/day-1/broker-flow.json",
+            "signals": "factory-graphs/b3-flow-radar/fixtures/day-1/signals.json",
+            "facts": "factory-graphs/b3-flow-radar/fixtures/day-1/facts.json"
+          },
+          "row_counts": {
+            "daily_figures": 50,
+            "broker_flow": 150,
+            "signals": 18,
+            "facts": 4
+          }
+        },
+        "triaged_signals": [
+          {
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "signal_type": "volume",
+            "why": "features.fin_z reports z=4.50 on R$ 120.0 mn turnover, which is large against this ticker's own trailing level rather than against the exchange's."
+          }
+        ]
+      },
+      "output": {
+        "context": [
+          {
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "trend": "VULC3 opened at 13.51 and closed at 13.30, a low of 12.98 and a high of 13.54, on R$ 120.0 mn across 15547 trades and 30 brokers: the turnover moved and the price did not.",
+            "figures_cited": ["open", "high", "low", "close", "fin", "n_trades", "n_brokers"],
+            "related_facts": [
+              {
+                "fact_id": "2026-09-02-vulc3-03",
+                "headline": "A crop of names traded anomalous volume with the price standing still, VULC3 at 7.1x its median turnover among them."
+              }
+            ]
+          }
+        ],
+        "note": "One context entry, for the one signal the triage kept."
+      }
+    },
+    {
+      "node": "hypothesize",
+      "input": {
+        "context": [
+          {
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "trend": "VULC3 opened at 13.51 and closed at 13.30, a low of 12.98 and a high of 13.54, on R$ 120.0 mn across 15547 trades and 30 brokers: the turnover moved and the price did not.",
+            "figures_cited": ["open", "high", "low", "close", "fin", "n_trades", "n_brokers"],
+            "related_facts": [
+              {
+                "fact_id": "2026-09-02-vulc3-03",
+                "headline": "A crop of names traded anomalous volume with the price standing still, VULC3 at 7.1x its median turnover among them."
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "hypotheses": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "driver": "accumulation",
+            "explanation": "Turnover at 7.1x the ticker's median with the close within 1.6% of the open is what one side taking size without paying up looks like; it is spread across 30 brokers, so it is not one print.",
+            "confidence": "low",
+            "cited_context": ["2026-09-02-VULC3-volume-13", "2026-09-02-vulc3-03"]
+          }
+        ],
+        "note": "Confidence stays low: the context does not rule out the index-portfolio turn the day's facts already name."
+      }
+    },
+    {
+      "node": "red-team",
+      "input": {
+        "fixture": {
+          "trading_day": "day-1",
+          "paths": {
+            "daily_figures": "factory-graphs/b3-flow-radar/fixtures/day-1/daily-figures.json",
+            "broker_flow": "factory-graphs/b3-flow-radar/fixtures/day-1/broker-flow.json",
+            "signals": "factory-graphs/b3-flow-radar/fixtures/day-1/signals.json",
+            "facts": "factory-graphs/b3-flow-radar/fixtures/day-1/facts.json"
+          },
+          "row_counts": {
+            "daily_figures": 50,
+            "broker_flow": 150,
+            "signals": 18,
+            "facts": 4
+          }
+        },
+        "context": [
+          {
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "trend": "VULC3 opened at 13.51 and closed at 13.30, a low of 12.98 and a high of 13.54, on R$ 120.0 mn across 15547 trades and 30 brokers: the turnover moved and the price did not.",
+            "figures_cited": ["open", "high", "low", "close", "fin", "n_trades", "n_brokers"],
+            "related_facts": [
+              {
+                "fact_id": "2026-09-02-vulc3-03",
+                "headline": "A crop of names traded anomalous volume with the price standing still, VULC3 at 7.1x its median turnover among them."
+              }
+            ]
+          }
+        ],
+        "hypotheses": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "driver": "accumulation",
+            "explanation": "Turnover at 7.1x the ticker's median with the close within 1.6% of the open is what one side taking size without paying up looks like; it is spread across 30 brokers, so it is not one print.",
+            "confidence": "low",
+            "cited_context": ["2026-09-02-VULC3-volume-13", "2026-09-02-vulc3-03"]
+          }
+        ]
+      },
+      "output": {
+        "outcome": "pass",
+        "objections": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "objection": "The whole session carries an anomalous-volume crop ahead of B3's index-portfolio turn, so volume with no price move is the day's common background rather than this ticker's own story.",
+            "severity": "medium",
+            "hypothesis_answer": "Accepted as unresolved, which is why the confidence stays low: the reading is that one side took size, not that it did so for a reason this day settles."
+          }
+        ],
+        "counter_evidence": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "file": "facts.json",
+            "record": "2026-09-02-ibov-01",
+            "evidence": "B3's four-monthly turn of the theoretical index portfolios is due this month, and the first full September session already carries the volume that usually precedes it."
+          }
+        ],
+        "note": "One serious objection, answered by narrowing the claim rather than by defending it."
+      }
+    },
+    {
+      "node": "compose-brief",
+      "input": {
+        "hypotheses": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "signal_id": "2026-09-02-VULC3-volume-13",
+            "ticker": "VULC3",
+            "driver": "accumulation",
+            "explanation": "Turnover at 7.1x the ticker's median with the close within 1.6% of the open is what one side taking size without paying up looks like; it is spread across 30 brokers, so it is not one print.",
+            "confidence": "low",
+            "cited_context": ["2026-09-02-VULC3-volume-13", "2026-09-02-vulc3-03"]
+          }
+        ],
+        "objections": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "objection": "The whole session carries an anomalous-volume crop ahead of B3's index-portfolio turn, so volume with no price move is the day's common background rather than this ticker's own story.",
+            "severity": "medium",
+            "hypothesis_answer": "Accepted as unresolved, which is why the confidence stays low: the reading is that one side took size, not that it did so for a reason this day settles."
+          }
+        ],
+        "counter_evidence": [
+          {
+            "hypothesis_id": "hypothesis-1",
+            "file": "facts.json",
+            "record": "2026-09-02-ibov-01",
+            "evidence": "B3's four-monthly turn of the theoretical index portfolios is due this month, and the first full September session already carries the volume that usually precedes it."
+          }
+        ]
+      },
+      "output": {
+        "brief": {
+          "summary": "One signal of eighteen survived the day: VULC3 turned 7.1x its median volume with the price standing still. It survived with its objection attached rather than answered — the session's index-portfolio background explains volume like this across several names — so the reading is narrow on purpose. Nothing else in the day cleared the triage.",
+          "sections": [
+            {
+              "hypothesis_id": "hypothesis-1",
+              "ticker": "VULC3",
+              "heading": "VULC3 — size taken without paying up, against a background that explains volume",
+              "body": "R$ 120.0 mn against a 7.1x median, 15547 trades across 30 brokers, and a close 1.6% under the open. Before that reads as one side accumulating: the whole session carries an anomalous-volume crop ahead of B3's index-portfolio turn, and this signal does not separate itself from it. What the day supports is that the size was real and spread; what it does not support is why.",
+              "surviving_objections": [
+                "The index-portfolio turn explains volume with no price move across several names, and this signal does not separate itself from that background."
+              ]
+            }
+          ]
+        },
+        "note": "One section, for the one hypothesis that survived, carrying the objection it did not close."
+      }
+    }
+  ]
+}

@@ -1,0 +1,692 @@
+{
+  "problem_class": "b3-flow-radar",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "B3 flow radar — reading one trading day",
+    "description": "Factory graph 3 (RF-13): check intake -> triage -> contextualize -> hypothesize -> red team -> compose brief -> scorecard. The layer-2 graph of t331's flow radar, kept in shape and cut loose from its data: three real consecutive trading days ship inside the bundle as fixtures, so the map runs with no network and no configuration (RF-28). One final node collects the four ways a crossing can end, so the process metrics hold per crossing and not only for the published one.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-09-06",
+    "source": "written by hand from t331's design (t406); no synthesis involved"
+  },
+  "nodes": [
+    {
+      "id": "check-intake",
+      "role": "intake-gate",
+      "node_type": "gate",
+      "engine": "shell",
+      "description": "Deterministic gate on the day's data: the four fixture files exist, parse as JSON arrays and hold row counts inside the ranges the document declares. Runs as a command, not as a session — the first real consumer of the `shell` engine (t332).",
+      "skill_ref": {
+        "id": "check-flow-intake",
+        "version": "1.0.0",
+        "hash": "sha256:5d2c4938238d03c44ecb4f5023594e34472acdcbb3362f2189a8738504eb89e8"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "project",
+            "trading_day"
+          ],
+          "properties": {
+            "job": {
+              "type": "object",
+              "description": "the identity of the work itself — the crossing that reads one trading day"
+            },
+            "project": {
+              "type": "object",
+              "description": "the static configuration of the class; the row-count ranges live here, as data, so the check reads them instead of carrying them as a constant"
+            },
+            "trading_day": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which of the three fixture days this crossing runs against; a field of this class, demanded at this node"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "outcome",
+            "fixture",
+            "note"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "pass",
+                "fail",
+                "escalate_human"
+              ],
+              "description": "passed follows the \"pass\" edge; failed, the \"fail\" edge"
+            },
+            "resultado": {
+              "type": "string",
+              "description": "the label of the edge this node took, riding inside the report (t161, t259). Declared in the pinned skill as an optional string with no enum, so a closed `output` never refuses a routing report — the defect bundle 2 repaired in t260 and t276, avoided here from the first version."
+            },
+            "fixture": {
+              "type": "object",
+              "description": "trading_day, the four paths and the four row counts"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which file and which range failed, when one did"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "node factory-graphs/b3-flow-radar/scripts/check-intake.mjs {{input.trading_day}} {{input.project.expected_row_counts}}",
+            "description": "On a shell node the work and its verification are the same command: what proves the intake is the exit code and the block of the process the node itself runs."
+          }
+        ]
+      }
+    },
+    {
+      "id": "triage",
+      "role": "triager",
+      "node_type": "gate",
+      "description": "Filters the day's computed signals against the class's materiality criteria before any context is gathered on them.",
+      "skill_ref": {
+        "id": "triage-flow-signals",
+        "version": "1.0.0",
+        "hash": "sha256:7db513d3031e33eee7e79f05fcf48788649fc8807efc6712eaab9087b2329685"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "job",
+            "project",
+            "fixture"
+          ],
+          "properties": {
+            "job": {
+              "type": "object",
+              "description": "the identity of the work itself: which day is being read, and what for"
+            },
+            "project": {
+              "type": "object",
+              "description": "the static configuration of the class: the materiality criteria"
+            },
+            "fixture": {
+              "type": "object",
+              "description": "what `check-intake` established: the day, the four file paths and the row counts. Produced by the initial node, so every path in the graph carries it."
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "outcome",
+            "triaged_signals",
+            "evaluated_criteria",
+            "rationale",
+            "note"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "pass",
+                "fail",
+                "escalate_human"
+              ],
+              "description": "passed follows the \"advance\" edge; failed, the \"discard\" edge"
+            },
+            "resultado": {
+              "type": "string",
+              "description": "the label of the edge this node took, riding inside the report (t161, t259). Declared in the pinned skill as an optional string with no enum, so a closed `output` never refuses a routing report — the defect bundle 2 repaired in t260 and t276, avoided here from the first version."
+            },
+            "triaged_signals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the materially interesting subset; empty when the triage discards"
+            },
+            "evaluated_criteria": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1,
+              "description": "one per declared criterion, each with a verdict and a fixture record"
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why this subset and not another"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the scorecard"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Did every declared criterion get a verdict backed by a record of the day's own fixture, and is every kept signal really in `signals.json`? Attach, per criterion, the row that supports the verdict.",
+            "required_evidence": true,
+            "description": "Passing a screen of noise spends the four nodes after this one on nothing, and no command detects it."
+          }
+        ]
+      }
+    },
+    {
+      "id": "contextualize",
+      "role": "researcher",
+      "node_type": "work",
+      "description": "Puts each triaged signal beside the ticker's own recent figures and any fact of the day that touches it. It reads the fixture, never the network.",
+      "skill_ref": {
+        "id": "contextualize-flow-signals",
+        "version": "1.0.0",
+        "hash": "sha256:5cb2f384cb048d7ba2b4012aef18472ff41787e48c472447dcc419e95a16e0b7"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "fixture",
+            "triaged_signals"
+          ],
+          "properties": {
+            "fixture": {
+              "type": "object",
+              "description": "what `check-intake` established: the day, the four file paths and the row counts. Produced by the initial node, so every path in the graph carries it."
+            },
+            "triaged_signals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the signals the triage kept"
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "context",
+            "note"
+          ],
+          "properties": {
+            "context": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1,
+              "description": "one entry per triaged signal: the trend, and the facts related to it"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the scorecard"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Does every figure quoted in a trend really appear in `daily-figures.json` for that ticker, and does every related fact exist in `facts.json` and actually touch the ticker? Attach the quoted rows.",
+            "required_evidence": true,
+            "description": "A figure the session remembered instead of reading poisons every node after this one, because nothing downstream opens the file again."
+          }
+        ]
+      }
+    },
+    {
+      "id": "hypothesize",
+      "role": "analyst",
+      "node_type": "work",
+      "description": "Proposes what would explain each signal — accumulation, distribution, an index turn, a scheduled event — with a confidence and the context it cites.",
+      "skill_ref": {
+        "id": "hypothesize-flow-driver",
+        "version": "1.0.0",
+        "hash": "sha256:eacb8dbd47ffe11700a4ddfc0d1c24073235b970eb72ae3e7cbc6d637099c055"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "context"
+          ],
+          "properties": {
+            "context": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "what the day already knows about each triaged signal"
+            },
+            "triaged_signals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the signals the triage kept"
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "hypotheses",
+            "note"
+          ],
+          "properties": {
+            "hypotheses": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1,
+              "description": "one explanation per signal, each with a driver, a confidence and the context it cites"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the scorecard"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Does every id in `cited_context` exist in the context received, does the named driver follow from what is cited, and is a `high` confidence earned by what the context RULES OUT? Attach the citation behind each driver.",
+            "required_evidence": true,
+            "description": "The confident explanation with nothing under it survives a red team by sounding settled; it is this class's most expensive defect."
+          }
+        ]
+      }
+    },
+    {
+      "id": "red-team",
+      "role": "red-team",
+      "node_type": "gate",
+      "description": "A role dedicated to knocking each hypothesis down with counter-evidence taken from the day's own fixture; a hypothesis that does not answer a serious objection dies here.",
+      "skill_ref": {
+        "id": "red-team-flow-hypothesis",
+        "version": "1.0.0",
+        "hash": "sha256:c3f517e7b0cdcecaddb414d437b21b3e616250a880042ac99f1e063ad48924db"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "fixture",
+            "context",
+            "hypotheses"
+          ],
+          "properties": {
+            "fixture": {
+              "type": "object",
+              "description": "what `check-intake` established: the day, the four file paths and the row counts. Produced by the initial node, so every path in the graph carries it."
+            },
+            "context": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "what the hypotheses were built on"
+            },
+            "hypotheses": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the explanations to be attacked"
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "outcome",
+            "objections",
+            "counter_evidence",
+            "note"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "pass",
+                "fail",
+                "escalate_human"
+              ],
+              "description": "passed follows the \"survives\" edge; failed, the \"dead\" edge"
+            },
+            "resultado": {
+              "type": "string",
+              "description": "the label of the edge this node took, riding inside the report (t161, t259). Declared in the pinned skill as an optional string with no enum, so a closed `output` never refuses a routing report — the defect bundle 2 repaired in t260 and t276, avoided here from the first version."
+            },
+            "objections": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1,
+              "description": "each one with a severity and the hypothesis's answer, or null when there was none"
+            },
+            "counter_evidence": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "minItems": 1,
+              "description": "drawn from the day's fixture and cited by file and record — never researched: every skill of this bundle closes the network"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the scorecard"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Does every counter-evidence entry open at the file and record it cites, was each hypothesis attacked on its own weakest point, and does no `pass` coexist with an unanswered high-severity objection? Attach the quoted rows.",
+            "required_evidence": true,
+            "description": "A gate verifies with evidence of its own: rereading the hypotheses and agreeing with them is not a red team."
+          }
+        ]
+      }
+    },
+    {
+      "id": "compose-brief",
+      "role": "writer",
+      "node_type": "work",
+      "description": "Writes the day's reading: one section per surviving hypothesis, each carrying the objections it answered. A reading, never an instruction.",
+      "skill_ref": {
+        "id": "compose-flow-brief",
+        "version": "1.0.0",
+        "hash": "sha256:86610ada032cccd026623738cefdb2278d06be756e75f3387f297e4a375483c7"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "hypotheses",
+            "objections",
+            "counter_evidence"
+          ],
+          "properties": {
+            "hypotheses": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the explanations, from two steps back"
+            },
+            "objections": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "what the red team said against them, from the step immediately prior"
+            },
+            "counter_evidence": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "the records the red team cited"
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "brief",
+            "note"
+          ],
+          "properties": {
+            "brief": {
+              "type": "object",
+              "description": "summary plus one section per surviving hypothesis"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the scorecard"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Is there exactly one section per surviving hypothesis, does each carry the objections that hypothesis answered, does the summary state what did NOT survive, and is there any sentence that reads as an instruction to trade? Attach the sections beside the objections they answer.",
+            "required_evidence": true,
+            "description": "A reading that drops the objections is advocacy with a contract around it, and the pressure at this node is to write well."
+          }
+        ]
+      }
+    },
+    {
+      "id": "scorecard",
+      "role": "recorder",
+      "node_type": "work",
+      "description": "The single final node of the four ways of ending: writes down the crossing's process metrics and what the day left to watch.",
+      "skill_ref": {
+        "id": "record-flow-scorecard",
+        "version": "1.0.0",
+        "hash": "sha256:a06f38d07576210332c7ab6b1302e653a62e7c5f0f04c73354563164813a7a06"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "fixture",
+            "traversal"
+          ],
+          "properties": {
+            "fixture": {
+              "type": "object",
+              "description": "what `check-intake` established: the day, the four file paths and the row counts. Produced by the initial node, so every path in the graph carries it."
+            },
+            "traversal": {
+              "type": "object",
+              "description": "what the crossing visited; the metrics are recomputed from it"
+            },
+            "triaged_signals": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "absent on the two paths that never reached the triage's advance"
+            },
+            "hypotheses": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "absent on the three short paths"
+            },
+            "objections": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "absent unless the red team ran"
+            },
+            "counter_evidence": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "absent unless the red team ran"
+            },
+            "brief": {
+              "type": "object",
+              "description": "absent unless the crossing published one"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "process_metrics",
+            "record",
+            "note"
+          ],
+          "properties": {
+            "process_metrics": {
+              "type": "object",
+              "description": "intake_passed, signals_triaged_count, red_team_ran and final_outcome. Process, never a market outcome, and never a trade instruction."
+            },
+            "record": {
+              "type": "object",
+              "description": "the crossing written down, plus what the day left to watch"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line for whoever reads the class next"
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Was every metric recomputed from the inputs this node really received — the length of `triaged_signals`, `traversal.nodes_visited`, the path actually taken — rather than from a self-report? Attach the recomputation of each one.",
+            "required_evidence": true,
+            "description": "It is this metric the surveyor reads to propose a mutation on the graph; an estimated metric poisons the learning of the whole class."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "check-intake",
+      "to": "triage",
+      "condition": "pass",
+      "description": "The day's four files are there, parse and hold the declared row counts: there is data to read."
+    },
+    {
+      "from": "check-intake",
+      "to": "scorecard",
+      "condition": "fail",
+      "description": "A file is missing, unreadable as an array or outside its range. The crossing ends at the record, and it still produces a metric — the cheapest ending in the graph."
+    },
+    {
+      "from": "triage",
+      "to": "contextualize",
+      "condition": "advance",
+      "description": "Something in the day clears the materiality criteria and is worth explaining."
+    },
+    {
+      "from": "triage",
+      "to": "scorecard",
+      "condition": "discard",
+      "description": "Nothing clears the criteria. A day with no material signal is a real answer, and it is recorded as one."
+    },
+    {
+      "from": "contextualize",
+      "to": "hypothesize",
+      "condition": "always",
+      "description": "A single way out: once the context is read, it is explained."
+    },
+    {
+      "from": "hypothesize",
+      "to": "red-team",
+      "condition": "always",
+      "description": "A single way out: every explanation goes to the red team, including — and especially — the one that reads well."
+    },
+    {
+      "from": "red-team",
+      "to": "compose-brief",
+      "condition": "survives",
+      "description": "At least one hypothesis answered its serious objections; the objections travel on with it and are carried into the brief."
+    },
+    {
+      "from": "red-team",
+      "to": "scorecard",
+      "condition": "dead",
+      "description": "An unanswered high-severity objection kills the reading. The day is recorded with what killed it."
+    },
+    {
+      "from": "compose-brief",
+      "to": "scorecard",
+      "condition": "always",
+      "description": "A single way out: the brief written, the crossing is scored."
+    }
+  ],
+  "initial_node": "check-intake",
+  "final_nodes": [
+    "scorecard"
+  ],
+  "custom_fields": [
+    {
+      "name": "trading_day",
+      "type": "string",
+      "required_at": "check-intake",
+      "description": "Which of the three fixture days this crossing reads: `day-1`, `day-2` or `day-3`. Demanded at `check-intake` because that is the gate that opens the files, and a crossing with no day named has nothing to open. The days are named rather than dated so that no document encodes a date that reads as \"current\" long after it stops being one; the data inside each file is real and dated."
+    }
+  ],
+  "project": {
+    "description": "The base class's example configuration. `repo` is this repository itself — the fixtures the graph reads live inside it, so the job's working directory for this class is the cartografo checkout, the same dogfood posture `factory-graphs/software-development` takes. A project variant overwrites this whole object (D13); what is here is what the class declares for itself.",
+    "repo": ".",
+    "fixtures_root": "factory-graphs/b3-flow-radar/fixtures",
+    "triage_criteria": [
+      "the flow is large against the ticker's OWN trailing baseline, not against the exchange's: the signal's declared query has to carry a z of at least 2.5",
+      "the ticker clears the liquidity floor — at least R$ 1 million of median daily turnover in the trailing window — so the move is not an artefact of a thin book",
+      "the signal is not already explained by a scheduled event in today's facts: an index-portfolio turn, a closing auction, a listed corporate event",
+      "the flow does not rest on a single broker's print: a one-house net is a transaction, not a market reading"
+    ],
+    "expected_row_counts": {
+      "daily_figures": [
+        40,
+        60
+      ],
+      "broker_flow": [
+        80,
+        200
+      ],
+      "signals": [
+        5,
+        25
+      ],
+      "facts": [
+        1,
+        10
+      ]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "fact_id": "2026-09-02-ibov-01",
+    "ticker": "IBOV",
+    "headline": "B3's four-monthly turn of the theoretical index portfolios is due this month, and the first full September session already carries the volume and foreign flow that usually precede it.",
+    "source": "b3-radar/data/briefs/2026-09-02.json",
+    "published_at": "2026-09-02"
+  },
+  {
+    "fact_id": "2026-09-02-vamo3-02",
+    "ticker": "VAMO3",
+    "headline": "VAMO3 closed +16.1% on R$ 137.7 mn against a R$ 36.2 mn window median, with foreign buying split across three houses rather than concentrated in one.",
+    "source": "b3-radar/data/briefs/2026-09-02.json",
+    "published_at": "2026-09-02"
+  },
+  {
+    "fact_id": "2026-09-02-vulc3-03",
+    "ticker": "VULC3",
+    "headline": "A crop of names traded anomalous volume with the price standing still, VULC3 at 7.1x its median turnover among them.",
+    "source": "b3-radar/data/briefs/2026-09-02.json",
+    "published_at": "2026-09-02"
+  },
+  {
+    "fact_id": "2026-09-02-ecor3-04",
+    "ticker": "ECOR3",
+    "headline": "The session's advance was broad rather than a single story: ECOR3 +6.8% among the candidates, with retail net buying R$ 988 mn across the tape.",
+    "source": "b3-radar/data/briefs/2026-09-02.json",
+    "published_at": "2026-09-02"
+  }
+]

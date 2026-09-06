@@ -961,3 +961,96 @@ test('t180 — the intake refusals are English prose in the one envelope', async
     'the dependencies close a cycle: a → b → a',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t417 — a draft is never born under a project nobody declared.              */
+/*                                                                            */
+/* The intake is the second door into `createJob`: `POST /intake/:id/          */
+/* confirmations` calls it once per item with `draft.project_id`, the value    */
+/* `POST /intake` never checked for anything but integer-ness. So the bug      */
+/* t417 names on `POST /v1/jobs` was fully reproducible from here, one HTTP    */
+/* call further in — and these two cases close both ends of it.               */
+/* -------------------------------------------------------------------------- */
+
+/** The scope refusal, in the slice these two cases assert on. */
+interface ScopeRefusal {
+  error: string;
+  message?: string;
+  project_id?: number;
+}
+
+test('t417 AT4 — POST /v1/intake refuses a project nobody declared and opens no draft', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const refused = await request<ScopeRefusal>(ctx, 'POST', '/v1/intake', {
+    class: CLASS,
+    request: 'break the request into tickets',
+    items: [{ ref: 'a', title: 'a ticket' }],
+    project_id: 99,
+  });
+
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project', 'the same code every scoped read answers');
+  assert.equal(refused.body.message, 'no project answers to this scope');
+  assert.equal(refused.body.project_id, 99, 'the scope rides as a sibling field');
+
+  assert.equal(countDrafts(ctx), 0, 'a draft over a project that does not exist is never written');
+});
+
+test('t417 AT5 — confirming a draft of a phantom project is refused, and creates no job', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  // Written straight to the table, the same technique t410's AT5 uses: since
+  // the case above, `POST /v1/intake` no longer produces this state, and what
+  // is under test is what a draft ALREADY in it does at the confirmation gate —
+  // an import, a restored dump, a row from before this ticket.
+  const timestamp = new Date().toISOString();
+  const inserted = ctx.db
+    .prepare(
+      `INSERT INTO intake_draft (project_id, execution_id, class, request, items, status,
+                                 created_jobs, created_at, updated_at)
+       VALUES (99, NULL, ?, ?, ?, 'pending', NULL, ?, ?)`,
+    )
+    .run(
+      CLASS,
+      'break the request into tickets',
+      JSON.stringify([
+        {
+          ref: 'a',
+          title: 'a ticket of a project that does not exist',
+          body: null,
+          acceptance_criteria: null,
+          fields: null,
+          tier: null,
+          depends_on: [],
+        },
+      ]),
+      timestamp,
+      timestamp,
+    );
+  const draftId = Number(inserted.lastInsertRowid);
+
+  const refused = await request<ScopeRefusal>(
+    ctx,
+    'POST',
+    `/v1/intake/${draftId}/confirmations`,
+    {},
+  );
+
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(
+    refused.body.error,
+    'unknown_project',
+    'the exception `createJob` throws is answered, never escaping as a 500',
+  );
+  assert.equal(refused.body.message, 'no project answers to this scope');
+  assert.equal(refused.body.project_id, 99);
+
+  assert.equal(countJobs(ctx), 0, 'no traveller is born out of a draft that cannot be read back');
+  const draft = await request<DraftResponse>(ctx, 'GET', `/v1/intake/${draftId}`);
+  assert.equal(draft.body.draft.status, 'pending', 'and the draft did not move either');
+});

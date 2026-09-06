@@ -768,3 +768,20 @@ test('t354 — the envelope accepts a project as a subject, and only for its own
 test('t354 — project.created is one of the known types', () => {
   assert.ok(KNOWN_TYPES.includes('project.created'));
 });
+
+/* -------------------------------------------------------------------------- */
+/* t339 — job.unblocked stops being payload-free: a person may state why.      */
+/* -------------------------------------------------------------------------- */
+
+test('t339 — job.unblocked accepts an optional reason, and still nothing else', () => {
+  assert.deepEqual(requireValidData('job.unblocked', { reason: 'the promotion is approved' }), {
+    reason: 'the promotion is approved',
+  });
+  // Absent is the automatic unblock-on-answer's case, and it normalizes to the
+  // explicit `null` every unstated optional field gets.
+  assert.deepEqual(requireValidData('job.unblocked', {}), { reason: null });
+
+  refuses('job.unblocked', { motivo: 'x' }, 'motivo');
+  refuses('job.unblocked', { reason: '' }, 'reason');
+  refuses('job.unblocked', { reason: 'ok', consecutive_failures: 3 }, 'consecutive_failures');
+});

@@ -50,6 +50,7 @@ import {
   recordHookDeliverySuccess,
   type HookDeliveryTask,
 } from '../repositories/hooks.ts';
+import { claimDelivery } from '../repositories/webhooks.ts';
 import { createPollingDispatcher } from '../util/polling-dispatcher.ts';
 import {
   DEFAULT_TICK_INTERVAL_MS,
@@ -126,7 +127,14 @@ export function registerHookDispatcher(
   const clock = { now: options.now ?? now };
 
   /** One attempt, which can only ever end as a recorded success or failure. */
-  const attempt = async (task: HookDeliveryTask): Promise<void> => {
+  const attempt = async (task: HookDeliveryTask, moment: string): Promise<void> => {
+    // Before anything else, and before anything leaves the process: the claim is
+    // what makes this delivery THIS routine's (t359, RF-06). A lost claim is not
+    // an error and not a failed attempt — another routine owns the row, so this
+    // one writes nothing at all. Shared with t142's dispatcher, like everything
+    // else about WHEN and HOW an attempt happens.
+    if (!claimDelivery(db, 'hook_delivery', task.id, moment, deliveryTimeoutMs, clock)) return;
+
     const event = eventById(db, task.event_id);
     if (event === undefined) {
       // Cannot happen while the foreign key holds; recorded as a failure anyway,
@@ -175,7 +183,7 @@ export function registerHookDispatcher(
 
       // `allSettled` and not `all`: one attempt that throws where it was not
       // expected to must not cancel the batch of the other hooks.
-      await Promise.allSettled(batch.map(attempt));
+      await Promise.allSettled(batch.map((task) => attempt(task, moment)));
 
       // A full batch means there may be more behind it. Everything just handled
       // is either terminal or scheduled into the future, so the next read is

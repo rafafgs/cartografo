@@ -48,7 +48,8 @@ const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
  * a disagreement it reports, it is a mention it never sees, and AT2 would have
  * failed on "no counts found" instead of on the count. Growing the dictionary
  * is what keeps the pin reading the document; the numbers themselves are still
- * read off §1 and never written here.
+ * read off §1 and never written here. t339's two job-flag writes pushed the
+ * count on again, to fifteen, without this list needing to move.
  */
 const NUMERALS = new Map([
   ['one', 1],

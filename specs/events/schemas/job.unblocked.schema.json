@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.unblocked.schema.json",
   "title": "job.unblocked",
-  "description": "The blocking flag came down and the job can move again. Parity with flowpilot's EventKind.UNBLOCKED. No payload: the fact is the falling of the flag itself.",
+  "description": "The blocking flag came down and the job can move again. Parity with flowpilot's EventKind.UNBLOCKED. The fall of the flag is the fact; `reason` is what a person adds to it when they are the one lowering it.",
   "type": "object",
   "allOf": [
     {
@@ -24,7 +24,16 @@
     "data": {
       "type": "object",
       "required": [],
-      "properties": {},
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why the flag came down, in free text, when a person is the one lowering it (t339). Optional, unlike job.blocked.reason: the control plane's own unblock-on-answer states none — the answer is already the fact — and demanding one there would be inventing a sentence nobody said.",
+          "examples": ["three weeks of real trades back this rule; releasing the promotion"]
+        }
+      },
       "additionalProperties": false
     }
   }

@@ -108,7 +108,7 @@ import {
   type LeaseFilters,
 } from '../repositories/leases.ts';
 import { now } from '../repositories/common.ts';
-import { announceFinishedExecution, getJob } from '../repositories/job.ts';
+import { announceFinishedExecution, getJob, jobProjectId } from '../repositories/job.ts';
 import { getRunner } from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal } from './common.ts';
@@ -232,17 +232,22 @@ export function registerLeases(
     // shape a full cap answers with — that one means "not now, try the next
     // one", and this request will never succeed however many times it is
     // retried.
-    const job = getJob(db, body.job_id as number);
-    if (job !== null && job.project_id !== body.project_id) {
+    // `jobProjectId` and not `getJob`: since t410 `getJob` reads inside ONE
+    // partition, so from the claim's own project a foreign job and a job that
+    // was never created both answer `null` — the two cases this check exists to
+    // tell apart. The narrow read answers the partition alone, and only for an
+    // id the caller already named.
+    const jobProject = jobProjectId(db, body.job_id as number);
+    if (jobProject !== null && jobProject !== body.project_id) {
       return refusal(
         reply,
         409,
         'cross_project_reference',
-        `job ${job.id} belongs to project ${job.project_id}, and this claim declares project ${String(body.project_id)}: a lease may not cross a project boundary (D25)`,
+        `job ${String(body.job_id)} belongs to project ${jobProject}, and this claim declares project ${String(body.project_id)}: a lease may not cross a project boundary (D25)`,
         {
           job_id: body.job_id,
           project_id: body.project_id,
-          job_project_id: job.project_id,
+          job_project_id: jobProject,
         },
       );
     }

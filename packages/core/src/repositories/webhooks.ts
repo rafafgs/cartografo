@@ -89,6 +89,14 @@ export interface SubscriptionFilters {
   activeOnly?: boolean;
 }
 
+/**
+ * The two queues the claim is shared between (t359).
+ *
+ * A literal union and not a `string`: it is what makes the interpolated table
+ * name in {@link claimDelivery} safe by type rather than by convention.
+ */
+export type DeliveryTable = 'webhook_delivery' | 'hook_delivery';
+
 /** A delivery that is due, already carrying what an attempt needs (FR5). */
 export interface DeliveryTask {
   id: number;
@@ -135,11 +143,6 @@ const DEACTIVATED = 'subscription deactivated';
  */
 function hydrate(row: SubscriptionRow): Subscription {
   return { ...row, filter_types: jsonOrNull<string[]>(row.filter_types) };
-}
-
-/** An ISO 8601 instant shifted by milliseconds — the backoff's arithmetic. */
-function addMilliseconds(instant: string, ms: number): string {
-  return new Date(Date.parse(instant) + ms).toISOString();
 }
 
 /**
@@ -395,10 +398,98 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
 }
 
 /**
+ * An ISO 8601 instant shifted by milliseconds — the queue's whole arithmetic.
+ *
+ * Here rather than in each repository since t359: `src/repositories/hooks.ts`
+ * had a character-for-character copy of it, and the claim below made it a third
+ * caller. It lives next to {@link claimDelivery} because the two answer the same
+ * question — "until when is this row spoken for?".
+ */
+export function addMilliseconds(instant: string, ms: number): string {
+  return new Date(Date.parse(instant) + ms).toISOString();
+}
+
+/**
+ * Takes the delivery for THIS routine, before anything goes out (t359, RF-06).
+ *
+ * One guarded `UPDATE`, decided by rowcount, and it is the whole mechanism.
+ * Until this function existed, both daemons read their due rows and sent; what
+ * stopped two attempts going out for one delivery was environmental — one
+ * process, whose ticks cannot overlap (`src/util/polling-dispatcher.ts`), behind
+ * a file lock that forbids a second control plane (`src/db/lock.ts`). RF-06 asks
+ * for the property BY CONSTRUCTION, because a second process is exactly what a
+ * hosted step adds, and retrofitting it afterwards means retrofitting it onto a
+ * queue that has already double-delivered.
+ *
+ * It is the same `WHERE ... AND status = 'pending'` guard
+ * {@link recordDeliverySuccess} and {@link recordDeliveryFailure} already used
+ * around their outcome writes, moved one step EARLIER — to before the network
+ * call instead of only after it.
+ *
+ * Three things are decided here, and only one of them is the race:
+ *
+ * - **Who sends.** Rowcount 1 is a win and the caller may attempt; rowcount 0
+ *   means another routine got there first, or the row is no longer `pending`,
+ *   and the loser writes nothing at all — no call, no attempt, no event.
+ * - **The attempt is counted at claim time.** The claim runs unconditionally and
+ *   before the routine can know how it will go, so it is the only correct place
+ *   to count it. That is why the outcome writers no longer increment.
+ * - **A crash is a retry, not a loss.** `next_attempt_at` is pushed by one
+ *   attempt timeout, so a routine that never comes back leaves a row that
+ *   becomes due again once that timeout elapses — for any dispatcher, which
+ *   claims it again, consuming one more backoff step. Exactly the ordinary cost
+ *   of one more failed attempt.
+ *
+ * `table` is a literal union and never a caller-supplied string, so the
+ * interpolation below has no injection surface. Two tables share one function
+ * because they share one mechanism: `src/repositories/hooks.ts` imports this
+ * rather than defining a second copy, the same direction
+ * `src/hooks/dispatcher.ts` already imports its schedule and its ceilings.
+ *
+ * @param db Open database.
+ * @param table Which delivery queue the row lives in.
+ * @param id Delivery id.
+ * @param moment The tick's reference instant — the same one that selected it.
+ * @param attemptTimeoutMs How long the claim holds the row; the dispatcher's own
+ *   per-attempt timeout, so a claim only ever outlives its attempt on a crash.
+ * @param options Injectable clock.
+ * @returns `true` when this routine may attempt the delivery, `false` when it
+ *   lost the race and must do nothing whatsoever.
+ */
+export function claimDelivery(
+  db: Database,
+  table: DeliveryTable,
+  id: number,
+  moment: string,
+  attemptTimeoutMs: number,
+  options: ClockOptions = {},
+): boolean {
+  const claimedAt = (options.now ?? now)();
+
+  const effect = db
+    .prepare(
+      `UPDATE ${table}
+          SET attempts = attempts + 1,
+              next_attempt_at = ?,
+              claimed_at = ?
+        WHERE id = ? AND status = 'pending' AND next_attempt_at <= ?`,
+    )
+    .run(addMilliseconds(claimedAt, attemptTimeoutMs), claimedAt, id, moment);
+
+  return effect.changes === 1;
+}
+
+/**
  * Closes a delivery that got a 2xx (FR6).
  *
  * Guarded by `status = 'pending'`: a delivery closed while this attempt was in
- * flight — the subscription was deactivated meanwhile — stays closed.
+ * flight — the subscription was deactivated meanwhile — stays closed. Since
+ * t359 that guard also catches the delivery a LATER routine already re-claimed
+ * and delivered, after this one's claim expired: the write finds nothing
+ * pending and changes nothing.
+ *
+ * It does not touch `attempts`: {@link claimDelivery} counted this attempt
+ * before it went out.
  *
  * @param db Open database.
  * @param id Delivery id.
@@ -407,7 +498,7 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
 export function recordDeliverySuccess(db: Database, id: number, options: ClockOptions = {}): void {
   db.prepare(
     `UPDATE webhook_delivery
-        SET status = 'delivered', attempts = attempts + 1, delivered_at = ?, last_error = NULL
+        SET status = 'delivered', delivered_at = ?, last_error = NULL
       WHERE id = ? AND status = 'pending'`,
   ).run((options.now ?? now)(), id);
 }
@@ -420,6 +511,11 @@ export function recordDeliverySuccess(db: Database, id: number, options: ClockOp
  * attempt that just failed has no step left, the delivery is `exhausted` and
  * terminal — the row stays, because "tried six times and gave up" is the fact
  * whoever debugs a silent integration is looking for.
+ *
+ * Since t359 the count it reads is the count already made: {@link claimDelivery}
+ * incremented `attempts` before this attempt went out, so the failing attempt is
+ * `attempts` and its step is `backoff[attempts - 1]`. Adding one here as well
+ * would count every attempt twice and burn the schedule in half.
  *
  * @param db Open database.
  * @param attempt Delivery id, what went wrong, and the schedule.
@@ -438,20 +534,20 @@ export function recordDeliveryFailure(
       .get(attempt.id) as { attempts: number } | undefined;
     if (current === undefined) return;
 
-    const made = current.attempts + 1;
+    const made = current.attempts;
     const step = attempt.backoff[made - 1];
 
     if (step === undefined) {
       db.prepare(
-        `UPDATE webhook_delivery SET status = 'exhausted', attempts = ?, last_error = ?
+        `UPDATE webhook_delivery SET status = 'exhausted', last_error = ?
           WHERE id = ? AND status = 'pending'`,
-      ).run(made, attempt.message, attempt.id);
+      ).run(attempt.message, attempt.id);
       return;
     }
 
     db.prepare(
-      `UPDATE webhook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
+      `UPDATE webhook_delivery SET last_error = ?, next_attempt_at = ?
         WHERE id = ? AND status = 'pending'`,
-    ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
+    ).run(attempt.message, addMilliseconds(clock(), step), attempt.id);
   })();
 }

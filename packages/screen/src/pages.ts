@@ -40,6 +40,7 @@ import type {
   ApiClient,
   ExecutionSummary,
   Job,
+  Project,
   Question,
   RunnerHealth,
   Session,
@@ -74,6 +75,8 @@ const STYLE = `
   header.topo { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
   header.topo h1 { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
   nav a { margin-right: 1rem; }
+  form.project-switcher { display: flex; align-items: baseline; gap: .4rem; font-size: .8rem; margin-left: auto; }
+  form.project-switcher label { opacity: .6; letter-spacing: .02em; }
   h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; opacity: .7; margin: 1.75rem 0 .6rem; }
   .quadro { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
   .grupo { flex: 1 1 16rem; min-width: 15rem; }
@@ -107,8 +110,72 @@ export function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
-/** The shared shell: same navigation on every page, so there is no dead end. */
-function layout(title: string, body: string): string {
+/**
+ * What project a page is showing, and what the switcher may switch to (t354).
+ *
+ * The screen holds NO state of its own beyond the `cartografo_project` cookie
+ * the router reads (D11 unchanged): this object is built per request out of
+ * that cookie plus one `GET /v1/projects`, and it dies with the response.
+ *
+ * `projects` is allowed to be empty, and the switcher then draws nothing. That
+ * is the honest answer for a control plane too old to know the route, and it
+ * keeps a listing failure from turning every page of the screen into a 502.
+ */
+export interface ProjectScope {
+  /** The project every read of this page is scoped to. */
+  projectId: number;
+  /** Every project that exists, for the switcher. */
+  projects: Project[];
+}
+
+/** The single-project reading, for a page that was not given a scope. */
+export const DEFAULT_SCOPE: ProjectScope = Object.freeze({ projectId: 1, projects: [] });
+
+/**
+ * The switcher's markup, in the nav every page carries.
+ *
+ * The class name is English, unlike the `.quadro`/`.pergunta` beside it: those
+ * are a DOM contract the acceptance tests and the stylesheet already select on
+ * and t133's exception 10 froze, and this one is new — nothing is born in
+ * Portuguese (D24).
+ *
+ * A plain form and no script: it POSTs to `/project`, the router sets the
+ * cookie and sends the browser back where it was. `onchange` submits it so the
+ * common case is one click, and the submit button is what keeps it usable with
+ * scripting off — the same posture the answer form on the questions page takes.
+ *
+ * Nothing is drawn while there is only one project: a switcher with one option
+ * is furniture, and the screen has no room for furniture.
+ *
+ * @param scope The project in force and the ones that exist.
+ * @returns The `<form>`, or an empty string.
+ */
+function projectSwitcher(scope: ProjectScope): string {
+  if (scope.projects.length < 2) return '';
+
+  const options = scope.projects
+    .map(
+      (project) =>
+        `<option value="${project.id}"${project.id === scope.projectId ? ' selected' : ''}>${escapeHtml(project.name)}</option>`,
+    )
+    .join('');
+
+  return `<form class="project-switcher" method="post" action="/project">
+    <label for="project_id">project</label>
+    <select id="project_id" name="project_id" onchange="this.form.submit()">${options}</select>
+    <button type="submit">switch</button>
+  </form>`;
+}
+
+/**
+ * The shared shell: same navigation on every page, so there is no dead end.
+ *
+ * @param title Page title.
+ * @param body Already-escaped page body.
+ * @param scope Which project is in force; the switcher is drawn from it (t354).
+ * @returns The whole document.
+ */
+function layout(title: string, body: string, scope: ProjectScope = DEFAULT_SCOPE): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -128,6 +195,7 @@ function layout(title: string, body: string): string {
     <a href="/">proposals</a>
     <a href="/graph-editor.html">graph</a>
   </nav>
+  ${projectSwitcher(scope)}
 </header>
 ${body}
 </body>
@@ -341,11 +409,14 @@ function totalsHtml(timeline: Timeline): string {
  * @param client Client of the public API.
  * @returns The board page.
  */
-export async function boardPage(client: ApiClient): Promise<Page> {
-  const jobs = await client.listJobs();
+export async function boardPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const jobs = await client.listJobs({ project_id: scope.projectId });
   return {
     status: 200,
-    html: layout('board', `<h2>board · ${jobs.length} job(s)</h2>\n${jobBoard(jobs)}`),
+    html: layout('board', `<h2>board · ${jobs.length} job(s)</h2>\n${jobBoard(jobs)}`, scope),
   };
 }
 
@@ -355,8 +426,11 @@ export async function boardPage(client: ApiClient): Promise<Page> {
  * @param client Client of the public API.
  * @returns The executions list page.
  */
-export async function executionsPage(client: ApiClient): Promise<Page> {
-  const executions = await client.listExecutions();
+export async function executionsPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const executions = await client.listExecutions({ project_id: scope.projectId });
 
   const row = (execution: ExecutionSummary): string => {
     const label =
@@ -381,7 +455,7 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
   </tbody>
 </table>`;
 
-  return { status: 200, html: layout('executions', `<h2>executions</h2>\n${body}`) };
+  return { status: 200, html: layout('executions', `<h2>executions</h2>\n${body}`, scope) };
 }
 
 /**
@@ -401,7 +475,13 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
  * @param client Client of the public API.
  * @returns The fleet page.
  */
-export async function runnersPage(client: ApiClient): Promise<Page> {
+export async function runnersPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  // Unscoped on purpose: the fleet is not partitioned (see `listRunners`). The
+  // scope reaches here only so the page carries the same switcher as every
+  // other one — a nav that disappeared on one page would be a dead end.
   const runners = await client.listRunners();
 
   const missing = (what: string): string => `<span class="vazio">${escapeHtml(what)}</span>`;
@@ -435,7 +515,10 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
   </tbody>
 </table>`;
 
-  return { status: 200, html: layout('runners', `<h2>runners · ${runners.length}</h2>\n${body}`) };
+  return {
+    status: 200,
+    html: layout('runners', `<h2>runners · ${runners.length}</h2>\n${body}`, scope),
+  };
 }
 
 /**
@@ -449,11 +532,16 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
  * @param executionId Execution id.
  * @returns The execution page.
  */
-export async function executionPage(client: ApiClient, executionId: number): Promise<Page> {
+export async function executionPage(
+  client: ApiClient,
+  executionId: number,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const project_id = scope.projectId;
   const [jobs, sessions, questions] = await Promise.all([
-    client.listJobs({ execution_id: executionId }),
-    client.listSessions({ execution_id: executionId }),
-    client.listQuestions({ execution_id: executionId, status: 'pending' }),
+    client.listJobs({ execution_id: executionId, project_id }),
+    client.listSessions({ execution_id: executionId, project_id }),
+    client.listQuestions({ execution_id: executionId, status: 'pending', project_id }),
   ]);
 
   const questionQueue =
@@ -471,6 +559,7 @@ ${jobBoard(jobs)}
 ${sessionsTable(sessions)}
 <h2>pending questions</h2>
 ${questionQueue}`,
+      scope,
     ),
   };
 }
@@ -481,8 +570,14 @@ ${questionQueue}`,
  * @param client Client of the public API.
  * @returns The question queue page.
  */
-export async function questionsPage(client: ApiClient): Promise<Page> {
-  const questions = await client.listQuestions({ status: 'pending' });
+export async function questionsPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const questions = await client.listQuestions({
+    status: 'pending',
+    project_id: scope.projectId,
+  });
 
   const body =
     questions.length === 0
@@ -491,7 +586,7 @@ export async function questionsPage(client: ApiClient): Promise<Page> {
 
   return {
     status: 200,
-    html: layout('questions', `<h2>pending questions · ${questions.length}</h2>\n${body}`),
+    html: layout('questions', `<h2>pending questions · ${questions.length}</h2>\n${body}`, scope),
   };
 }
 
@@ -508,12 +603,17 @@ export async function questionsPage(client: ApiClient): Promise<Page> {
  * @param jobId Job id.
  * @returns The job page, or 404 when it does not exist.
  */
-export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
+export async function jobPage(
+  client: ApiClient,
+  jobId: number,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const project_id = scope.projectId;
   const [job, events, sessions, questions] = await Promise.all([
-    client.getJob(jobId),
-    client.jobEvents(jobId),
-    client.listSessions({ job_id: jobId }),
-    client.listQuestions({ job_id: jobId }),
+    client.getJob(jobId, { project_id }),
+    client.jobEvents(jobId, { project_id }),
+    client.listSessions({ job_id: jobId, project_id }),
+    client.listQuestions({ job_id: jobId, project_id }),
   ]);
 
   if (job === null || events === null) {
@@ -547,6 +647,7 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
 ${segments}
 <h2>totals</h2>
 ${totalsHtml(timeline)}`,
+      scope,
     ),
   };
 }

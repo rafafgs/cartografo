@@ -338,6 +338,10 @@ export function requireProject(
  */
 export function withoutProject(body: unknown): unknown {
   if (!isObject(body) || !(PROJECT_FIELD in body)) return body;
-  const { [PROJECT_FIELD]: _scope, ...rest } = body;
+  // Copied and deleted rather than destructured with a rest spread: the
+  // discarded binding a rest spread needs is a variable nothing reads, which the
+  // lint rule refuses and a reader has to look twice at.
+  const rest = { ...body };
+  delete rest[PROJECT_FIELD];
   return rest;
 }

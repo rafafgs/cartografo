@@ -624,6 +624,18 @@ only suggests an existing class when it recognizes a resemblance. It is the
 graph's versioning root and the telemetry's aggregation unit — two graphs of the
 same class are comparable; of different classes, not.
 
+**A class is unique per PROJECT, not per database (D25).** Two projects may each
+register `software-development`, and they are two lineages that share a name and
+nothing else: the base-lineage uniqueness index is on `(project_id, class)`, and
+every key and every foreign key of `graph`/`graph_version`/`proposal` carries the
+project with it ([`entities-versioning.md`](entities-versioning.md) §1). What did
+NOT change is what `graph.id` means: still the class for a base lineage, still
+the caller's chosen string for a variant, and still the segment `/v1/graphs/:id`
+addresses — the scope travels beside it as `project_id`, never inside it. Nothing
+about the DOCUMENT changed either: `project_id` is where a graph is put, not a
+field of the graph, so the same document hashes to the same version id in every
+project (§2).
+
 `lineage` (D13) positions this graph inside the class:
 
 ```json

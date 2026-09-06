@@ -1,13 +1,13 @@
 # Specification: the versioning entities and the API
 
-**API version:** `v1` · **Migration:** [`packages/core/migrations/0002_grafo_versao_proposta.sql`](../../packages/core/migrations/0002_grafo_versao_proposta.sql)
-**Founding decision:** [D15](../../DECISIONS.md) — "graph versioning: in the database, with git's ideas"
+**API version:** `v1` · **Migrations:** [`0002_grafo_versao_proposta.sql`](../../packages/core/migrations/0002_grafo_versao_proposta.sql), [`0026_project_partition.sql`](../../packages/core/migrations/0026_project_partition.sql)
+**Founding decisions:** [D15](../../DECISIONS.md) — "graph versioning: in the database, with git's ideas"; [D25](../../DECISIONS.md) — a class is unique per project, not per database
 
 The graph is data (D15), and [`docs/spec/graph.md`](graph.md) specifies the
 format of that data. This document specifies where it **lives** and how it
-**moves**: the three tables that keep the lineage, the snapshot and the
-hypothesis; the procedure that gives a version its identity; the semantic diff
-vocabulary; and the API that exposes all of it.
+**moves**: the project that partitions it, the three tables that keep the
+lineage, the snapshot and the hypothesis; the procedure that gives a version its
+identity; the semantic diff vocabulary; and the API that exposes all of it.
 
 The whole idea fits in one sentence: we version the way git thinks, with no git
 in the core. A version is addressed by the hash of its own content, points at its
@@ -17,12 +17,13 @@ pointer back and deletes nothing — it is what lets the topografo cross
 
 ---
 
-## 1. The three entities
+## 1. The four entities
 
 | Entity | What it is | Does it change? |
 |---|---|---|
+| `project` | The **partition**: a name a person switches on, and the scope every row below is keyed by (D25). | Never — renaming and removing one are out of scope. |
 | `graph` | The **lineage**: the class, the lineage type (base or variant) and the pointer to the version that holds today. | Only the pointer. |
-| `graph_version` | An immutable **snapshot** of the whole document, addressed by the hash of its content, with a pointer to its parent. | Never. |
+| `graph_version` | An immutable **snapshot** of the whole document, addressed by the hash of its content, with a pointer to its parent. | Only `contracts_state`/`contracts_report`. |
 | `proposal` | A **hypothesis**: the target version, the semantic diff with its inverses, the evidence that motivated it and the metric it expects to move. | Only the status and the result. |
 
 `class` is a column of `graph`, not a table of its own: D8 fixes the class as an
@@ -31,52 +32,117 @@ variant as attributes of the graph, not as an entity with a life cycle of its
 own. That is why a class's base lineage is born with `id = class`. If a navigable
 class with no graph ever exists, extracting the table is additive.
 
+**A class is unique per project, not per database (D25).** Until t354 `graph.id`
+was a bare primary key and `graph_class_base_unique` was on `(class)` alone,
+which made the class a name of the whole database: two projects could not both
+hold `software-development`. The keys widened rather than moving to a surrogate
+integer, and `id` still means exactly what it meant — the class for a base
+lineage, the caller's chosen string for a variant. A surrogate was rejected
+because `graph_id` and `target_version` already travel on the wire and inside the
+append-only event log as strings, and a type change on a field that is already
+history costs more than a widening.
+
 ```sql
+CREATE TABLE project (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,   -- what the operator switches on at the screen
+  created_at  TEXT NOT NULL
+);
+
 CREATE TABLE graph (
-  id                  TEXT PRIMARY KEY,          -- the class, for the base lineage (D8)
+  project_id          INTEGER NOT NULL REFERENCES project(id),
+  id                  TEXT NOT NULL,             -- the class, for the base lineage (D8)
   class               TEXT NOT NULL,
   lineage_type        TEXT NOT NULL CHECK (lineage_type IN ('base', 'variant')),
   base_class          TEXT,                      -- variant only (D13)
   origin_proposal_id  INTEGER REFERENCES proposal(id),
-  current_version_id  TEXT REFERENCES graph_version(id),
+  current_version_id  TEXT,
   created_at          TEXT NOT NULL,
+  PRIMARY KEY (project_id, id),
+  FOREIGN KEY (project_id, current_version_id) REFERENCES graph_version(project_id, id),
   CHECK (
     (lineage_type = 'base' AND base_class IS NULL)
     OR (lineage_type = 'variant' AND base_class IS NOT NULL)
   )
 );
 
-CREATE UNIQUE INDEX graph_class_base_unique ON graph (class) WHERE lineage_type = 'base';
+CREATE UNIQUE INDEX graph_class_base_unique
+  ON graph (project_id, class) WHERE lineage_type = 'base';
 
 CREATE TABLE graph_version (
-  id               TEXT PRIMARY KEY,   -- sha256:<64 hex> of the canonical snapshot (§2)
-  graph_id         TEXT NOT NULL REFERENCES graph(id),
-  parent_version   TEXT REFERENCES graph_version(id),
+  project_id       INTEGER NOT NULL REFERENCES project(id),
+  id               TEXT NOT NULL,      -- sha256:<64 hex> of the canonical snapshot (§2)
+  graph_id         TEXT NOT NULL,
+  parent_version   TEXT,
   snapshot         TEXT NOT NULL,      -- the complete graph document, canonicalized
   source           TEXT NOT NULL CHECK (source IN ('manual', 'synthesizer', 'proposal')),
   proposal_id      INTEGER REFERENCES proposal(id),
   created_at       TEXT NOT NULL,
   contracts_state  TEXT NOT NULL DEFAULT 'unchecked'
                      CHECK (contracts_state IN ('checked', 'unchecked', 'failed')),
-  contracts_report TEXT NOT NULL DEFAULT '[]'   -- JSON: ContractProblem[]
+  contracts_report TEXT NOT NULL DEFAULT '[]',   -- JSON: ContractProblem[]
+  PRIMARY KEY (project_id, id),
+  FOREIGN KEY (project_id, graph_id) REFERENCES graph(project_id, id),
+  FOREIGN KEY (project_id, parent_version) REFERENCES graph_version(project_id, id)
 );
 
 CREATE TABLE proposal (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  graph_id            TEXT NOT NULL REFERENCES graph(id),
-  target_version      TEXT NOT NULL REFERENCES graph_version(id),
+  project_id          INTEGER NOT NULL REFERENCES project(id),
+  graph_id            TEXT NOT NULL,
+  target_version      TEXT NOT NULL,
   operations          TEXT NOT NULL,   -- JSON: Operacao[] (§3)
   evidence            TEXT NOT NULL,   -- JSON
   expected_metric     TEXT NOT NULL,   -- JSON
   status              TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending', 'applied', 'reverted', 'rejected')),
-  applied_version_id  TEXT REFERENCES graph_version(id),
+                        CHECK (status IN ('pending', 'approved', 'applied', 'reverted', 'rejected')),
+  applied_version_id  TEXT,
   revert_reason       TEXT,
+  rejection_reason    TEXT,
   result              TEXT,            -- JSON
   created_at          TEXT NOT NULL,
-  updated_at          TEXT NOT NULL
+  updated_at          TEXT NOT NULL,
+  dedupe_key          TEXT,
+  FOREIGN KEY (project_id, graph_id) REFERENCES graph(project_id, id),
+  FOREIGN KEY (project_id, target_version) REFERENCES graph_version(project_id, id),
+  FOREIGN KEY (project_id, applied_version_id) REFERENCES graph_version(project_id, id)
 );
 ```
+
+**Every foreign key between the three carries `project_id`**, so a reference can
+never cross a project boundary silently: a version's parent, a proposal's target
+and a lineage's current pointer are all inside the project that owns them. Two of
+those the schema forces rather than merely preferring — `graph_version(id)` stops
+being a unique key the moment the primary key widens, so a plain
+`REFERENCES graph_version(id)` would answer `foreign key mismatch` on the first
+write.
+
+**The version's `id` is still the content hash and still means the same thing**
+(§2). The same hash may now exist once per project, and that is not a collision:
+two projects registering the same document are describing the same content, and
+content that has not changed cannot get a new id because somebody else registered
+it.
+
+### Which other tables are partitioned, and which are deliberately not
+
+`skill` and `hook_secret` carry `project_id` too — the registry and the hook
+keys are per project, so two projects can import the same factory bundle. `job`,
+`lease`, `intake_draft`, `webhook_subscription`, `hook_delivery` and `event`
+already carried the column before D25.
+
+`session`, `input_request`, `webhook_delivery` and `job_dependency` do NOT have
+one, and never will: they inherit the partition through a foreign key and resolve
+it by reading their owner. That is D25's own rule.
+
+**`credential` and `engine_model` are excluded on purpose, and it is not an
+oversight to fix.** A credential is either the operator's one bearer or a
+runner's pairing, and [`runner-and-controller.md`](runner-and-controller.md) §1
+says plainly that "the runner is not scoped to a project; pairing is identity
+alone" — a `project_id NOT NULL` there would make the thing that PROVES pairing
+carry a fixed project, and would give the operator one token per project, which
+nothing asks for. `engine_model` is written by a runner reporting which models
+its own engine exposes, at discovery time, before any project is ever declared:
+it is a fact about a machine, not about a project.
 
 **`contracts_state` is the one column of `graph_version` that changes after the
 row is written.** Everything else about a version is frozen — the

@@ -118,7 +118,25 @@ import {
   questionsPage,
   runnersPage,
   type Page,
+  type ProjectScope,
 } from './pages.ts';
+
+/**
+ * The cookie the project switcher writes, and the only state this screen keeps.
+ *
+ * D11 is unchanged by it: a cookie lives in the browser, the screen reads it
+ * per request and forgets it, and nothing about the choice reaches the control
+ * plane except as a `project_id` on reads the operator could already make.
+ */
+export const PROJECT_COOKIE = 'cartografo_project';
+
+/**
+ * The project a page shows when the cookie says nothing (t354).
+ *
+ * The same `1` the API defaults to, so a browser that has never touched the
+ * switcher sees exactly what this screen showed before the switcher existed.
+ */
+export const DEFAULT_PROJECT_ID = 1;
 
 /** Default screen port. Next door to the control plane's, and never the same. */
 export const DEFAULT_PORT = 4318;
@@ -297,6 +315,79 @@ export function screenPortFromEnv(env: NodeJS.ProcessEnv = process.env): number 
   return parsePortFromEnv(env, PORT_ENV, DEFAULT_PORT);
 }
 
+/**
+ * The project this request is looking at, out of its cookie.
+ *
+ * A cookie a person edited by hand is not a reason to refuse a page: anything
+ * that is not a run of digits reads as the default, silently. What the wrong
+ * value could produce is a `404 unknown_project` from the control plane, and
+ * that is a failure of the SCOPE and not of the page — so it is filtered out
+ * here, where the answer is cheap.
+ *
+ * @param header The raw `Cookie` header, if the browser sent one.
+ * @returns The project id, or {@link DEFAULT_PROJECT_ID}.
+ */
+export function projectFromCookie(header: string | undefined): number {
+  if (header === undefined) return DEFAULT_PROJECT_ID;
+
+  for (const pair of header.split(';')) {
+    const separator = pair.indexOf('=');
+    if (separator === -1) continue;
+    if (pair.slice(0, separator).trim() !== PROJECT_COOKIE) continue;
+    const value = pair.slice(separator + 1).trim();
+    return /^[0-9]+$/.test(value) ? Number(value) : DEFAULT_PROJECT_ID;
+  }
+
+  return DEFAULT_PROJECT_ID;
+}
+
+/**
+ * The scope every GET route hands to its page: the cookie plus the project list.
+ *
+ * The listing is what the switcher draws itself from, and a failure to get it
+ * is deliberately NOT a failure of the page: a control plane that does not know
+ * `GET /v1/projects` answers a 404, and turning that into a 502 would take the
+ * whole screen down over a piece of navigation. An empty list draws no
+ * switcher, which is exactly what a single-project deployment wants anyway.
+ *
+ * That tolerance covers a body without `projects` in it too, and not only a
+ * refusal. `ApiClient` mirrors the wire and hands back what came, so an upstream
+ * that answers `200` with something else entirely produces `undefined` rather
+ * than a throw — and the one read of this screen that is allowed to come back
+ * empty must not be the one that turns a strange answer into a broken page.
+ *
+ * @param client Client of the public API.
+ * @param request The incoming request, for its cookie.
+ * @returns The project in force and the ones that exist.
+ */
+async function readScope(client: ApiClient, request: IncomingMessage): Promise<ProjectScope> {
+  const projectId = projectFromCookie(request.headers.cookie);
+  try {
+    const projects = await client.listProjects();
+    return { projectId, projects: Array.isArray(projects) ? projects : [] };
+  } catch {
+    return { projectId, projects: [] };
+  }
+}
+
+/**
+ * Does this GET path render one of the screen's own views?
+ *
+ * Outside `route()` on purpose, and not merely for tidiness: the paths are
+ * listed once in the dispatch below, and a second copy of them inside the same
+ * function would be two lists to keep agreeing — which is exactly what
+ * `test/spec-routes.test.ts` reads `route()` to prevent.
+ *
+ * @param pathname Path, already normalized.
+ * @returns Whether the answer is going to be a rendered page.
+ */
+function rendersAView(pathname: string): boolean {
+  return (
+    ['/board', '/executions', '/input-requests', '/runners'].includes(pathname) ||
+    /^\/(executions|jobs)\/[^/]+$/.test(pathname)
+  );
+}
+
 /** Reads a route `:id` as a positive integer; `null` when it is not one. */
 function routeId(raw: string): number | null {
   if (!/^[0-9]+$/.test(raw)) return null;
@@ -328,7 +419,15 @@ async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
 }
 
 /** A route's answer: a page, or a redirect. */
-type RouteResult = Page | { redirect: string };
+type RouteResult =
+  | Page
+  | {
+      redirect: string;
+      /** `Set-Cookie` to send with it, when the redirect exists to write one. */
+      cookie?: string;
+      /** `303` by default — the way back from a POST is a GET. */
+      status?: number;
+    };
 
 /**
  * Turns an API failure into a page, without inventing success.
@@ -388,21 +487,25 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
   const method = request.method ?? 'GET';
 
   if (method === 'GET') {
+    // Read ONCE per request, and only for a path that is going to render: the
+    // scope costs a call to the control plane, and a 404 must not pay for it.
+    const scope = rendersAView(pathname) ? await readScope(client, request) : undefined;
+
     // `/board`, and not `/`: the root belongs to the proposal inbox (t111),
     // which was already this package's static `index.html` when this half
     // arrived. The two halves link to each other through the navigation;
     // neither disappears.
-    if (pathname === '/board') return await boardPage(client);
-    if (pathname === '/executions') return await executionsPage(client);
-    if (pathname === '/input-requests') return await questionsPage(client);
-    if (pathname === '/runners') return await runnersPage(client);
+    if (pathname === '/board') return await boardPage(client, scope);
+    if (pathname === '/executions') return await executionsPage(client, scope);
+    if (pathname === '/input-requests') return await questionsPage(client, scope);
+    if (pathname === '/runners') return await runnersPage(client, scope);
 
     const executionMatch = /^\/executions\/([^/]+)$/.exec(pathname);
     if (executionMatch !== null) {
       const id = routeId(executionMatch[1]);
       return id === null
         ? errorPage(404, 'invalid execution', 'An execution id is an integer.')
-        : await executionPage(client, id);
+        : await executionPage(client, id, scope);
     }
 
     const jobMatch = /^\/jobs\/([^/]+)$/.exec(pathname);
@@ -410,11 +513,26 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       const id = routeId(jobMatch[1]);
       return id === null
         ? errorPage(404, 'invalid job', 'A job id is an integer.')
-        : await jobPage(client, id);
+        : await jobPage(client, id, scope);
     }
   }
 
   if (method === 'POST') {
+    if (pathname === '/project') {
+      // The same origin gate every other write of this screen gets (t192): a
+      // form on any other page can aim at a same-site POST, and switching the
+      // project somebody else is looking at is a small thing to be able to do
+      // from outside.
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
+        );
+      }
+      return await switchProject(request);
+    }
+
     const answerMatch = /^\/input-requests\/([^/]+)\/answer$/.exec(pathname);
     if (answerMatch !== null) {
       // The same gate the proxy gets (t192), and for the same reason: this is a
@@ -438,6 +556,55 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
   }
 
   return errorPage(404, 'page not found', `There is no ${pathname === '' ? '/' : pathname}.`);
+}
+
+/**
+ * `POST /project` — the switcher, which writes a cookie and nothing else (t354).
+ *
+ * The only route of this screen that changes something and does NOT talk to the
+ * control plane: what project a browser is looking at is this browser's
+ * business, and sending it upstream would be the screen keeping state on
+ * somebody else's server (D11).
+ *
+ * `302` and back to the referrer, not `303` to a fixed page: the answer form
+ * redirects to the queue because the write CHANGED the queue, while switching
+ * the project changes which version of the page you were already on you get —
+ * so the way back is where you came from. A referrer that did not come, or came
+ * from somewhere else, falls back to the board rather than being trusted into
+ * an open redirect.
+ */
+async function switchProject(request: IncomingMessage): Promise<RouteResult> {
+  const fields = await readForm(request);
+  const raw = (fields.get('project_id') ?? '').trim();
+  if (!/^[0-9]+$/.test(raw)) {
+    return errorPage(400, 'invalid project', 'A project id is an integer.');
+  }
+
+  return {
+    redirect: backTo(request.headers.referer),
+    cookie: `${PROJECT_COOKIE}=${raw}; Path=/; SameSite=Lax; Max-Age=31536000`,
+    status: 302,
+  };
+}
+
+/**
+ * Where the switcher sends the browser: back where it was, or the board.
+ *
+ * Only the PATH of the referrer survives, and that is the whole guard: a
+ * `Location` built from a header a stranger controls is an open redirect, and
+ * dropping the origin makes the answer same-site by construction.
+ *
+ * @param referer The `Referer` header, if the browser sent one.
+ * @returns A path of this screen.
+ */
+function backTo(referer: string | undefined): string {
+  if (referer === undefined) return '/board';
+  try {
+    const { pathname, search } = new URL(referer, 'http://tela.local');
+    return pathname === '/' || pathname === '' ? '/board' : `${pathname}${search}`;
+  } catch {
+    return '/board';
+  }
 }
 
 /**
@@ -687,7 +854,9 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
         }
 
         if ('redirect' in result) {
-          response.writeHead(303, { location: result.redirect });
+          const headers: Record<string, string> = { location: result.redirect };
+          if (result.cookie !== undefined) headers['set-cookie'] = result.cookie;
+          response.writeHead(result.status ?? 303, headers);
           response.end();
           return;
         }

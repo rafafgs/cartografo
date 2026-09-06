@@ -25,6 +25,18 @@ public API any tool can consume.
 development one and the investment thesis one. Import one with a single command
 and you already have a governed process.
 
+**Keep more than one project in the same installation, and switch between them
+on the screen.** A project is a name you give — `default` is the one that is
+already there — and everything that belongs to a map lives inside one: the
+classes, the maps and their versions, the registered skills, the keys a hook
+signs with. Two projects do not see each other's maps, and each can register a
+class of the same name: `software-development` in one has nothing to do with
+`software-development` in the other. Every page of the screen carries a switcher
+in its navigation, and every command takes `--project <name-or-id>`, so importing
+a bundle into a second project is one flag. What is deliberately NOT per project
+is the machine side: a runner pairs once with the installation, not with a
+project, and the models its engine offers are a fact about the machine.
+
 **Declare a new problem and get a map** *(under construction: it is a terminal
 command, not a flow on the screen)*. You describe the problem; the synthesizer
 proposes a map using the registered skills; you edit it; the system validates it

@@ -207,8 +207,11 @@ test('t250 AT — the image builds, answers /health, and keeps its database on t
       body: JSON.stringify({ engine: WITNESS }),
     });
 
-    assert.equal(response.status, 200, await response.text());
-    const body = (await response.json()) as { engine?: string };
+    // Read once, assert after: `assert.equal`'s message argument is evaluated
+    // whether or not it is needed, and a body consumed there is a body gone.
+    const text = await response.text();
+    assert.equal(response.status, 200, text);
+    const body = JSON.parse(text) as { engine?: string };
     assert.equal(body.engine, WITNESS, 'the control plane echoes back the setting it wrote');
   });
 
@@ -224,12 +227,13 @@ test('t250 AT — the image builds, answers /health, and keeps its database on t
       headers: { authorization: `Bearer ${token}` },
     });
 
+    const text = await response.text();
     assert.equal(
       response.status,
       200,
-      `the same token has to work: a second startup mints no new one\n${await response.text()}`,
+      `the same token has to work: a second startup mints no new one\n${text}`,
     );
-    const body = (await response.json()) as { engine?: string };
+    const body = JSON.parse(text) as { engine?: string };
     assert.equal(
       body.engine,
       WITNESS,

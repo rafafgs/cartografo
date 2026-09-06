@@ -1,0 +1,63 @@
+# Two containers from one image: the control plane and the screen (D23, t250).
+#
+# The runner is not here on purpose. D23 puts it on the machine where the
+# authenticated engine CLI and the target repository are, which is the host —
+# see "Running in a container" in `README.md` for the one command that starts it
+# beside these two.
+#
+# No top-level `version:` key: the Compose Specification dropped it, and a file
+# that still carries one only gets a warning for its trouble.
+
+services:
+  # The only writer in the system (D1). It owns `/data`, and nothing else mounts
+  # that volume.
+  control-plane:
+    build: .
+    environment:
+      # The one place the port is opened, and the reason it is here rather than
+      # in the `Dockerfile`: inside a container the code's own `127.0.0.1`
+      # default (`packages/core/src/index.ts`) is the container's own interface,
+      # so a published port would reach nothing. Opening the address is a
+      # decision, and a decision belongs where an operator reads it — not baked
+      # into an image for everyone who ever runs it. Every `/v1` route is behind
+      # a credential; `4317` on your host is not a public port.
+      CARTOGRAFO_HOST: 0.0.0.0
+      CARTOGRAFO_DB_PATH: /data/cartografo.db
+    volumes:
+      - cartografo-db:/data
+    ports:
+      - "4317:4317"
+
+  # One more client of the public API, with no privilege of its own (D11).
+  screen:
+    build: .
+    # Replaces the image's default command wholesale — the image declares `CMD`
+    # and no `ENTRYPOINT` precisely so this one key is enough.
+    command: ["cartografo-screen"]
+    environment:
+      # Same reasoning as the control plane's `CARTOGRAFO_HOST` above, and the
+      # same default left untouched in the image
+      # (`packages/screen/src/server.ts`).
+      CARTOGRAFO_SCREEN_HOST: 0.0.0.0
+      CARTOGRAFO_URL: http://control-plane:4317
+      # The operator's own value, substituted from the shell that runs
+      # `docker compose up`. Deliberately no default: this file is versioned, and
+      # a token written into a versioned file is a token published.
+      CARTOGRAFO_TOKEN: ${CARTOGRAFO_TOKEN}
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    # The image's baked healthcheck probes port 4317, which this service never
+    # listens on. Left enabled it would report unhealthy forever, for a reason
+    # that says nothing about the screen; and the screen has no `/health` route
+    # of its own to put in its place.
+    healthcheck:
+      disable: true
+    ports:
+      - "4318:4318"
+
+volumes:
+  # Named, so that `docker compose down` and a rebuilt image both leave the
+  # database where it was. Removing it is `docker compose down --volumes`, and
+  # that really is the data gone.
+  cartografo-db:

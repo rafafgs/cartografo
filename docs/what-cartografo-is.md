@@ -24,7 +24,10 @@ token to paste, nothing to answer. One `Ctrl-C` takes all three down again, and
 not want. Everything on your machine; everything the screen shows comes from a
 public API any tool can consume, and the interface and the runner are separate
 processes with no privilege of their own — being started for you changes
-nothing about that.
+nothing about that. The server and the interface also ship as a container image,
+with a `docker compose up` that brings the two of them up together and keeps the
+database on a volume of its own; the runner stays outside it, on the machine
+where your engine CLI is already signed in.
 
 **Start from ready-made maps.** Factory graphs come in the box: three of them —
 the software development one, the investment thesis one and the B3 flow radar,

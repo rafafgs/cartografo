@@ -227,6 +227,26 @@ A broken subscriber is nobody's problem but its own: a batch's deliveries go out
 together, each with its own timeout, and no failure delays another subscriber's,
 holds up the fan-out or touches the control plane's write path.
 
+**The sweep that finds what is due is not scoped to a project, on purpose.** One
+tick, two halves, and only the first of them has a partition to decide. The
+FAN-OUT is per project: it reads the log through the subscription's own
+`project_id`, so a `webhook_delivery` row can only ever be created for an event
+of the project that subscription was registered in. By the time the DELIVERY
+half sees that row the question is already answered and written down as a
+foreign key — the row belongs to exactly one subscription, which belongs to
+exactly one project, and the join the sweep does is back to that same row. So it
+asks "what is due right now?" and nothing else, across every project at once.
+That is not an omission: a project filter there would sort the same rows into
+the same batches and buy nothing, while making a periodic job need a scope it
+has no way to choose. Transition hooks work the same way and are self-contained
+on top of it — `hook_delivery` copies the `url` and the `secret` out of the graph
+at queue time ([`transition-hooks.md`](transition-hooks.md)).
+
+The proof is not this paragraph: `packages/core/test/partition-isolation.test.ts`
+registers one subscription per project over one database, records one fact in
+each, and asserts each subscriber received only its own — over that same
+unfiltered sweep.
+
 **A delivery is claimed before it is attempted, so it goes out exactly once.**
 Whatever routine is about to send a delivery first takes it for itself with a
 single guarded `UPDATE`, decided by rowcount; only the routine whose update

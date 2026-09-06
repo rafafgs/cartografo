@@ -97,6 +97,15 @@ export interface WatchOptions {
   url: string;
   /** Operator credential; both lenses and the stream present it. */
   token: string;
+  /**
+   * Project the stream is scoped to. Default: `1`.
+   *
+   * `runWatch` itself enforces no restriction on this value — it is general,
+   * and threads whatever it is given into the default stream. The CLI is
+   * where `--project` other than `1` is refused, because the flow and cost
+   * lenses this command triggers still read and write against project 1 only.
+   */
+  projectId?: number;
   /** Which lens to run. Default: both. */
   lens?: LensSelection;
   /** Report what each lens WOULD run, and run neither. Default: false. */
@@ -194,6 +203,7 @@ export async function runWatch(options: WatchOptions): Promise<void> {
     watchFinishedExecutions({
       url: options.url,
       token: options.token,
+      ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
       ...(options.doFetch === undefined ? {} : { doFetch: options.doFetch }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.log === undefined ? {} : { log: options.log }),

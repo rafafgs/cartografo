@@ -315,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    29,
-    'a fresh database applies the twenty-nine migrations of the package and nothing else',
+    30,
+    'a fresh database applies the thirty migrations of the package and nothing else',
   );
 
   const objects = db
@@ -977,4 +977,95 @@ test('t354 AT — migration 0026 partitions five populated tables onto project 1
      VALUES ('project.created', 2, NULL, 'project', '2', 'system', 'control-plane', ?, '{"name":"second"}')`,
   ).run(moment);
   assert.equal(counted(db, "SELECT count(*) AS n FROM event WHERE entity_type = 'project'"), 1);
+});
+
+test('t417 AT8 — migration 0031 reassigns orphaned rows to project 1 and leaves the rest alone', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { listMigrations, migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+
+  // Same shape as the 0026 case above: the database is taken to the migration
+  // BEFORE this one and seeded there, so what runs afterwards repairs populated
+  // tables instead of visiting empty ones.
+  const upToPrevious = path.join(base, 'up-to-previous');
+  mkdirSync(upToPrevious);
+  const all = listMigrations(REAL_MIGRATIONS_DIR);
+  const repair = all.find((migration) => migration.number === 31);
+  assert.ok(
+    repair,
+    'artifact does not exist yet: packages/core/migrations/0031_reassign_orphan_projects.sql',
+  );
+  assert.doesNotMatch(
+    readFileSync(repair.path, 'utf8'),
+    /\b(BEGIN|COMMIT|ROLLBACK)\b/i,
+    'the migration does not open a transaction of its own: the runner is what transacts',
+  );
+  assert.doesNotMatch(
+    readFileSync(repair.path, 'utf8'),
+    /\bDELETE\s+FROM\b/i,
+    'nothing is ever removed (D2/D15): the repair is an UPDATE and only an UPDATE',
+  );
+
+  for (const migration of all.filter((entry) => entry.number < 31)) {
+    writeMigration(upToPrevious, migration.file, readFileSync(migration.path, 'utf8'));
+  }
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+  migrate(db, upToPrevious);
+
+  const moment = '2026-09-06T12:00:00.000Z';
+  // A second REAL project, so "already valid" is proved on something other than
+  // the number the repair happens to write.
+  db.prepare("INSERT INTO project (id, name, created_at) VALUES (2, 'second', ?)").run(moment);
+
+  const seedJob = db.prepare(
+    `INSERT INTO job (project_id, execution_id, title, corpo, criterios_de_aceite, fields, tier,
+                      entry_node_id, current_node_id, blocked, block_reason, graph_version_id,
+                      created_at, updated_at)
+     VALUES (?, NULL, ?, NULL, NULL, NULL, NULL, 'redigir', 'redigir', 0, NULL, NULL, ?, ?)`,
+  );
+  seedJob.run(99, 'orphan job', moment, moment);
+  seedJob.run(2, 'job of a project that exists', moment, moment);
+
+  const seedSubscription = db.prepare(
+    `INSERT INTO webhook_subscription (project_id, url, secret, filter_types, initial_event_id,
+                                       created_at, deactivated_at)
+     VALUES (?, ?, 'a-secret', NULL, 0, ?, NULL)`,
+  );
+  seedSubscription.run(99, 'https://example.invalid/orphan', moment);
+  seedSubscription.run(2, 'https://example.invalid/real', moment);
+
+  const seedDraft = db.prepare(
+    `INSERT INTO intake_draft (project_id, execution_id, class, request, items, status,
+                               created_jobs, created_at, updated_at)
+     VALUES (?, NULL, 'software-development', ?, '[]', 'pending', NULL, ?, ?)`,
+  );
+  seedDraft.run(99, 'the orphan request', moment, moment);
+  seedDraft.run(2, 'a request of a project that exists', moment, moment);
+
+  writeMigration(upToPrevious, repair.file, readFileSync(repair.path, 'utf8'));
+  assert.deepEqual(migrate(db, upToPrevious), [repair.id], 'only the repair was pending');
+
+  // FR7: every orphan of the three tables now answers to project 1.
+  const scopeOf = (table: string, column: string, value: string): number =>
+    (db.prepare(`SELECT project_id AS p FROM ${table} WHERE ${column} = ?`).get(value) as {
+      p: number;
+    }).p;
+
+  assert.equal(scopeOf('job', 'title', 'orphan job'), 1);
+  assert.equal(scopeOf('webhook_subscription', 'url', 'https://example.invalid/orphan'), 1);
+  assert.equal(scopeOf('intake_draft', 'request', 'the orphan request'), 1);
+
+  // ...and the rows that already named a real project did not move.
+  assert.equal(scopeOf('job', 'title', 'job of a project that exists'), 2);
+  assert.equal(scopeOf('webhook_subscription', 'url', 'https://example.invalid/real'), 2);
+  assert.equal(scopeOf('intake_draft', 'request', 'a request of a project that exists'), 2);
+
+  // Nothing was removed, which is the other half of the decision.
+  for (const table of ['job', 'webhook_subscription', 'intake_draft']) {
+    assert.equal(counted(db, `SELECT count(*) AS n FROM ${table}`), 2, `${table} still has 2 rows`);
+  }
 });

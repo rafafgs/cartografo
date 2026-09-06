@@ -1,0 +1,5 @@
+{
+  "title": "Add a titleCase helper beside slugify",
+  "body": "`lib/text.js` exports `slugify` and nothing else, and the demo project needs the other half of the pair: a `titleCase(text)` export that upper-cases the first letter of every word and lower-cases the rest, leaving the spacing between the words alone. Add it to `lib/text.js` beside `slugify`, with its own cases in `test/text.test.js` — at least one for an ordinary phrase and one for input that is already upper-cased. `npm test` is green before this change and has to stay green after it; nothing else in the project may need to move.",
+  "entry_node_id": "refine"
+}

@@ -609,6 +609,15 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       }
       return await submitAnswer(client, id, request);
     }
+
+    // Two routes and not one `(block|unblock)` alternation: `spec-routes.test.ts`
+    // reads the paths this function recognizes straight off the source, and a
+    // path it cannot spell is a path the specification cannot be checked against.
+    const unblockMatch = /^\/jobs\/([^/]+)\/unblock$/.exec(pathname);
+    if (unblockMatch !== null) return await flagRoute(client, request, unblockMatch[1], false);
+
+    const blockMatch = /^\/jobs\/([^/]+)\/block$/.exec(pathname);
+    if (blockMatch !== null) return await flagRoute(client, request, blockMatch[1], true);
   }
 
   return errorPage(404, 'page not found', `There is no ${pathname === '' ? '/' : pathname}.`);
@@ -785,6 +794,90 @@ async function submitAnswer(
   // 303 and not 302: after a POST the way back is a GET — that is what stops
   // the browser from resending the answer when someone reloads the page.
   return { redirect: '/input-requests' };
+}
+
+/**
+ * What both flag routes do before they write: the gate, then the id (t339).
+ *
+ * The same gate every other write of this screen gets (t192), and it runs BEFORE
+ * the id is even parsed — a request from somewhere else gets one answer, and not
+ * a 404 that tells it which job ids exist.
+ *
+ * @param client Client of the public API.
+ * @param request The raw request.
+ * @param rawId The `:id` segment, still a string.
+ * @param blocking `true` to raise the flag, `false` to lower it.
+ * @returns The redirect, or the page that says why not.
+ */
+async function flagRoute(
+  client: ApiClient,
+  request: IncomingMessage,
+  rawId: string,
+  blocking: boolean,
+): Promise<RouteResult> {
+  if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+    return errorPage(
+      403,
+      'untrusted origin',
+      'This form only accepts submissions that started on this page. Reload and try again.',
+    );
+  }
+
+  const id = routeId(rawId);
+  if (id === null) return errorPage(404, 'invalid job', 'A job id is an integer.');
+  return await submitFlag(client, id, blocking, request);
+}
+
+/**
+ * `POST /jobs/:id/block` and `POST /jobs/:id/unblock` — the flag, from the board (t339).
+ *
+ * Real writes against the real control plane, and the same redirect-after-POST
+ * shape `submitAnswer` uses: 303, and back to a page reread from the API. Each
+ * one lands where the person who did it is now looking — `/board` after a
+ * release, because the point was to get a queue of held jobs moving, and
+ * `/jobs/:id` after a hold, because the block was about that one job.
+ *
+ * Two boundaries drawn HERE and not upstream:
+ *
+ * 1. **A blank reason is refused before the network.** `job.blocked` already
+ *    requires one, so the control plane would refuse the block anyway — but
+ *    `job.unblocked.reason` is optional (t339), and a whitespace-only sentence
+ *    would land in the log as a fact that says nothing. The same 400 the answer
+ *    form draws, and for the same reason.
+ * 2. **The actor is always sent.** `resolveActor` on the control plane turns an
+ *    absent one into the API's own identity, so omitting it would record the
+ *    system as having done what a person did — the one failure mode
+ *    `packages/core/src/repositories/input-request.ts` names when it explains
+ *    why the answer-driven unblock carries the answerer's actor.
+ */
+async function submitFlag(
+  client: ApiClient,
+  jobId: number,
+  blocking: boolean,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const fields = await readForm(request);
+  const reason = (fields.get('reason') ?? '').trim();
+  if (reason === '') {
+    return errorPage(
+      400,
+      'blank reason',
+      `Say why the job ${blocking ? 'should stop here' : 'can move again'} before sending.`,
+    );
+  }
+
+  const typed = (fields.get('actor_ref') ?? '').trim();
+  const input = {
+    reason,
+    actor: { type: 'user' as const, ref: typed === '' ? DEFAULT_ANSWERED_BY : typed },
+  };
+
+  if (blocking) {
+    await client.blockJob(jobId, input);
+    return { redirect: `/jobs/${jobId}` };
+  }
+  await client.unblockJob(jobId, input);
+  return { redirect: '/board' };
 }
 
 /** The screen, up. */

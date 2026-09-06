@@ -28,20 +28,48 @@
  *
  * `tipo` inside `filter_types` is NOT translated: those are taxonomy event-type
  * names (`trabalho.criado`), which are D20's second child.
+ *
+ * ## The two reads take the project, and the `DELETE` may not do without it
+ *
+ * Since t412 both `GET /webhooks` and `DELETE /webhooks/:id` open with
+ * `requireProject` (D25). The `DELETE` is the one where it is load-bearing
+ * rather than tidy: it used to deactivate by numeric id alone, so any valid
+ * credential could silence another project's consumer just by guessing an id.
+ * A subscription of another project now answers the same `404` an unknown id
+ * already answered, because from inside this project it is not a subscription
+ * that exists.
+ *
+ * The `GET` changed meaning, not merely mechanism: an omitted `?project_id=`
+ * used to leave the filter ABSENT, which listed every project at once. It is
+ * now the default project, like every other scoped listing in this package —
+ * "not said" has one meaning on this wire, and it is project 1
+ * (`routes/common.ts`, `declaredProject`).
+ *
+ * ## And since t417 the write takes it too
+ *
+ * t412 left `POST /webhooks` accepting any integer as its `project_id`, and
+ * named closing that a ticket of its own. This is that ticket: the body's shape
+ * is still read by `readProject` (integer-ness, defaulting to project 1), and
+ * then the resolved scope has to name a project that exists — otherwise the
+ * same `404 unknown_project` the two reads above already answer. The read and
+ * the write now refuse the same scope for the same reason, which is the whole
+ * point: a subscription written into a partition `GET /webhooks` cannot hand
+ * back is a row nothing can read.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { KNOWN_TYPES, ValidationError } from '../db/event-validation.ts';
-import { DEFAULT_PROJECT, integerFromQuery } from '../repositories/common.ts';
+import { DEFAULT_PROJECT } from '../repositories/common.ts';
+import { getProject } from '../repositories/projects.ts';
 import {
   createSubscription,
   deactivateSubscription,
   listSubscriptions,
   type NewSubscription,
 } from '../repositories/webhooks.ts';
-import { notFound, routeId, withValidation } from './common.ts';
+import { notFound, refusal, requireProject, routeId, withValidation } from './common.ts';
 
 /** Schemes a delivery can be sent over. */
 const SCHEMES = ['http:', 'https:'];
@@ -146,7 +174,20 @@ function readSubscription(raw: unknown): NewSubscription {
 export function registerWebhooks(app: FastifyInstance, db: Database): void {
   app.post('/webhooks', async (request, reply) =>
     withValidation(reply, () => {
-      const subscription = createSubscription(db, readSubscription(request.body));
+      const declared = readSubscription(request.body);
+
+      // The shape was right; now the scope has to name something (t417, FR5).
+      // `readProject` above checks integer-ness and stops there, which is how a
+      // subscription came to be written into a partition the scoped listing has
+      // no way to hand back. Same code, same message, same sibling field as
+      // every other scope refusal of this API.
+      if (getProject(db, declared.project_id) === undefined) {
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: declared.project_id,
+        });
+      }
+
+      const subscription = createSubscription(db, declared);
       reply.code(201);
       return subscription;
     }),
@@ -154,11 +195,9 @@ export function registerWebhooks(app: FastifyInstance, db: Database): void {
 
   app.get('/webhooks', async (request, reply) =>
     withValidation(reply, () => {
-      const projectId = integerFromQuery(
-        'project_id',
-        (request.query as { project_id?: string }).project_id,
-      );
-      return { webhooks: listSubscriptions(db, { project_id: projectId }) };
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+      return { webhooks: listSubscriptions(db, { project_id: scope.project.id }) };
     }),
   );
 
@@ -168,7 +207,10 @@ export function registerWebhooks(app: FastifyInstance, db: Database): void {
   // What the verb does NOT mean is a row leaving the database (FR3).
   app.delete('/webhooks/:id', async (request, reply) =>
     withValidation(reply, () => {
-      const subscription = deactivateSubscription(db, routeId(request.params));
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const subscription = deactivateSubscription(db, routeId(request.params), scope.project.id);
       return subscription ?? notFound(reply, 'webhook');
     }),
   );

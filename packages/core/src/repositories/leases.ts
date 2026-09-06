@@ -163,12 +163,32 @@ function addSeconds(instant: string, seconds: number): string {
 }
 
 /**
+ * The lease with this id, optionally only if it lives in a given project.
+ *
+ * `projectId` is optional for the same reason `getProposal`'s is (t412, FR1/FR6):
+ * a caller holding an id somebody else typed has to say which project it is
+ * asking from, and a caller re-reading a row it just wrote does not.
+ *
+ * No ROUTE passes it today, and that is recorded rather than accidental (the
+ * ficha's own Out of Scope): heartbeat and release address a lease by its own
+ * id and check it against the caller's `runner_id`, never against an
+ * independently declared project, so there is no scope for them to hand in
+ * that would not be invented here. The filter exists so that the third read of
+ * a partitioned table has the shape the other two have, and it is proven at
+ * the repository level.
+ *
  * @param db Open database.
  * @param id Lease id.
+ * @param projectId Partition to read inside; every project when unstated.
  * @returns The lease, or `undefined`.
  */
-export function getLease(db: Database, id: number): Lease | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM lease WHERE id = ?`).get(id) as Lease | undefined;
+export function getLease(db: Database, id: number, projectId?: number): Lease | undefined {
+  if (projectId === undefined) {
+    return db.prepare(`SELECT ${COLUMNS} FROM lease WHERE id = ?`).get(id) as Lease | undefined;
+  }
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM lease WHERE project_id = ? AND id = ?`)
+    .get(projectId, id) as Lease | undefined;
 }
 
 /**

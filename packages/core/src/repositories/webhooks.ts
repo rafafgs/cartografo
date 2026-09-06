@@ -191,14 +191,35 @@ export function createSubscription(
 }
 
 /**
+ * The subscription with this id, optionally only if it lives in a given project.
+ *
+ * `projectId` is optional for the reason `repositories/proposals.ts`'s
+ * `getProposal` spells out (t412, FR1/FR8): a route holding an id off the wire
+ * has to say which project it is asking from, and {@link createSubscription},
+ * re-reading the row it just inserted, has nothing to prove.
+ *
  * @param db Open database.
  * @param id Subscription id.
+ * @param projectId Partition to read inside; every project when unstated.
  * @returns The subscription, or `undefined`.
  */
-export function getSubscription(db: Database, id: number): Subscription | undefined {
-  const row = db
-    .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription WHERE id = ?`)
-    .get(id) as SubscriptionRow | undefined;
+export function getSubscription(
+  db: Database,
+  id: number,
+  projectId?: number,
+): Subscription | undefined {
+  const row = (
+    projectId === undefined
+      ? db
+          .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription WHERE id = ?`)
+          .get(id)
+      : db
+          .prepare(
+            `SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription
+              WHERE project_id = ? AND id = ?`,
+          )
+          .get(projectId, id)
+  ) as SubscriptionRow | undefined;
   return row === undefined ? undefined : hydrate(row);
 }
 
@@ -238,33 +259,54 @@ export function listSubscriptions(
  * Calling it twice is not an error and does not move the instant of the first
  * call: deactivating is a state, not an event to be counted.
  *
+ * `projectId` is REQUIRED here and optional on the read above, and the split is
+ * the whole of t412's FR9: this is a WRITE, and there is no caller that can
+ * honestly say "any project" about silencing a consumer. Without it, `DELETE
+ * /v1/webhooks/:id` deactivated by numeric id alone, so any valid credential
+ * could stop another project's deliveries just by guessing one.
+ *
+ * The scope is in the `WHERE` of the guarded `UPDATE` as well as in the read
+ * that precedes it. Re-comparing `current.project_id` in JavaScript would say
+ * the same thing, but only about the row this transaction happened to read
+ * first; putting it in the statement makes the write itself unable to reach
+ * outside the project, which is the property worth having.
+ *
+ * The two delivery rows need no project of their own: `webhook_delivery`
+ * inherits the partition through its subscription and never carries the column
+ * (D25), and by the time they are touched the subscription has already been
+ * proven to be this project's.
+ *
  * @param db Open database.
  * @param id Subscription id.
+ * @param projectId Partition the subscription has to live in.
  * @param options Injectable clock.
- * @returns The deactivated subscription, or `undefined` when the id is unknown.
+ * @returns The deactivated subscription, or `undefined` when the id is unknown
+ *   — which includes an id that names a subscription of another project.
  */
 export function deactivateSubscription(
   db: Database,
   id: number,
+  projectId: number,
   options: ClockOptions = {},
 ): Subscription | undefined {
   const clock = options.now ?? now;
 
   return db.transaction((): Subscription | undefined => {
-    const current = getSubscription(db, id);
+    const current = getSubscription(db, id, projectId);
     if (current === undefined) return undefined;
     if (current.deactivated_at !== null) return current;
 
     const moment = clock();
     db.prepare(
-      'UPDATE webhook_subscription SET deactivated_at = ? WHERE id = ? AND deactivated_at IS NULL',
-    ).run(moment, id);
+      `UPDATE webhook_subscription SET deactivated_at = ?
+        WHERE project_id = ? AND id = ? AND deactivated_at IS NULL`,
+    ).run(moment, projectId, id);
     db.prepare(
       `UPDATE webhook_delivery SET status = 'exhausted', last_error = ?
         WHERE subscription_id = ? AND status = 'pending'`,
     ).run(DEACTIVATED, id);
 
-    return getSubscription(db, id);
+    return getSubscription(db, id, projectId);
   })();
 }
 

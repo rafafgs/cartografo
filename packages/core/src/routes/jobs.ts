@@ -24,6 +24,17 @@
  * since migration `0003` and nothing read it back until then, which is why the
  * board of every project showed on one screen.
  *
+ * ## What the two job GETs publish, without doing anything (t415)
+ *
+ * `GET /jobs` and `GET /jobs/:id` carry two more fields since RF-30 —
+ * `state`, one of six words for what the job is doing right now, and
+ * `state_since`, the instant it started doing it. Neither is a column and
+ * neither is assembled here: `repositories/job.ts` derives both while it builds
+ * the projection, off the log, the lease table and the job's graph version, and
+ * these handlers return the object as they always have. The cost of the board
+ * did not change shape either — the resolution is batched for the whole list,
+ * and `test/jobs.test.ts`'s AT17 counts the statements to prove it.
+ *
  * The four WRITES below are deliberately left alone. Scoping a mutation is a
  * different risk — a wrong scope there refuses or misdirects a live transition
  * instead of merely widening a read — and it is the write-side slice of the
@@ -43,6 +54,7 @@ import { listInputRequests } from '../repositories/input-request.ts';
 import {
   CrossProjectVersionReferenceError,
   GraphVersionNotReadyError,
+  UnknownProjectError,
   blockJob,
   getJob,
   createJob,
@@ -95,7 +107,7 @@ const CREATE_JOB_SCHEMA = {
  * - the job itself, for `input.job` and for the class's own field values;
  * - the version's snapshot, for the class's `project` object and for each
  *   node's `contract.produces`. A version that no longer resolves is read as no
- *   graph at all — the same posture `isAtFinalNode` and `requireFieldsOfNode`
+ *   graph at all — the same posture `hasArrived` and `requireFieldsOfNode`
  *   already take in `repositories/job.ts`;
  * - the job's COMPLETED sessions of this round. Only `completed`, because an
  *   incomplete session's report is not a fact about the graph, and only this
@@ -230,10 +242,23 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       });
     } catch (error) {
       // `withValidation` re-throws anything that is not a `ValidationError`, and
-      // correctly so — neither of these is a verdict about the body. Both are
-      // the same 409 in the same envelope, with their context as SIBLING
-      // fields, so a client that reads one of the three codes reads all of them.
+      // correctly so — none of these three is a verdict about the body. All of
+      // them travel in the same envelope, with their context as SIBLING fields,
+      // so a client that reads one of the codes reads all of them.
       //
+      // The scope names no project at all (t417, FR2). A 404 and not a 409,
+      // because this is an ABSENCE and not a conflict — and byte for byte the
+      // body `requireProject` gives `GET /v1/jobs?project_id=99`, so the two
+      // halves of the same partition answer the same words to the same mistake.
+      if (error instanceof UnknownProjectError) {
+        // The code is spelled out rather than read off `error.code`, which
+        // holds the same value: `test/write-scope-guard.test.ts` sweeps this
+        // source for the literal, and a route that hides its answer behind a
+        // property is a route the guard cannot vouch for.
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: error.projectId,
+        });
+      }
       // The version resolves, but in another project (t410, FR7): the request
       // is reaching across a partition, which is a conflict and never a silent
       // accept. A hash that resolves in NO project is untouched by this branch

@@ -36,6 +36,7 @@ import type { Database } from '../db/connection.ts';
 import { validateItems } from '../domain/intake.ts';
 import { DEFAULT_PROJECT, resolveActor } from '../repositories/common.ts';
 import { getClassBase, getVersion } from '../repositories/graphs.ts';
+import { UnknownProjectError } from '../repositories/job.ts';
 import {
   amendDraft,
   confirmDraft,
@@ -47,6 +48,7 @@ import {
   INTAKE_ACTOR,
   type Draft,
 } from '../repositories/intake.ts';
+import { getProject } from '../repositories/projects.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal, withValidation } from './common.ts';
 
@@ -127,8 +129,20 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       return refusal(reply, 400, 'invalid_field', '"execution_id" has to be an integer');
     }
 
+    // The scope has to name a project that EXISTS (t417, FR4), and the check is
+    // here — at the point of origin — rather than only at the confirmation
+    // gate: `confirmDraft` hands `draft.project_id` straight to `createJob`, so
+    // a draft born under a phantom project is this ticket's own defect waiting
+    // one HTTP call. Same body as every other scope refusal of this API.
+    const scope = (projectId as number | undefined | null) ?? DEFAULT_PROJECT;
+    if (getProject(db, scope) === undefined) {
+      return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+        project_id: scope,
+      });
+    }
+
     const created = createDraft(db, {
-      project_id: (projectId as number | undefined | null) ?? DEFAULT_PROJECT,
+      project_id: scope,
       execution_id: (executionId as number | undefined | null) ?? null,
       class: body.class,
       request: body.request,
@@ -196,46 +210,65 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
   // body reaches `validateEvent`: `withValidation` is what turns the refusal of a
   // malformed `actor` into the 400 every other route of this API answers with,
   // instead of letting the domain validator's message escape as a 500 (t139).
-  app.post<IdParam>('/intake/:id/confirmations', async (request, reply) =>
-    withValidation(reply, () => {
-      const draft = load(db, request.params.id);
-      if (draft === undefined) return unknownDraft(reply, request.params.id);
-      if (draft.status !== 'pending') return notPending(reply, draft);
+  app.post<IdParam>('/intake/:id/confirmations', async (request, reply) => {
+    try {
+      return await withValidation(reply, () => {
+        const draft = load(db, request.params.id);
+        if (draft === undefined) return unknownDraft(reply, request.params.id);
+        if (draft.status !== 'pending') return notPending(reply, draft);
 
-      // The pointer is read HERE, at confirmation time, and not when the draft was
-      // opened: between proposing a breakdown and accepting it the class may have
-      // gained a version, and the travellers belong to the one that holds now.
-      const graph = getClassBase(db, draft.class);
-      const version =
-        graph?.current_version_id === null || graph?.current_version_id === undefined
-          ? undefined
-          : getVersion(db, graph.current_version_id);
-      if (graph === undefined || version === undefined) {
-        return refusal(
-          reply,
-          404,
-          'unknown_graph',
-          `class "${draft.class}" has no graph version in force`,
-          { class: draft.class },
-        );
-      }
+        // The pointer is read HERE, at confirmation time, and not when the draft was
+        // opened: between proposing a breakdown and accepting it the class may have
+        // gained a version, and the travellers belong to the one that holds now.
+        const graph = getClassBase(db, draft.class);
+        const version =
+          graph?.current_version_id === null || graph?.current_version_id === undefined
+            ? undefined
+            : getVersion(db, graph.current_version_id);
+        if (graph === undefined || version === undefined) {
+          return refusal(
+            reply,
+            404,
+            'unknown_graph',
+            `class "${draft.class}" has no graph version in force`,
+            { class: draft.class },
+          );
+        }
 
-      // `actor` is the EVENT envelope's actor, checked by `validateEvent`
-      // inside `confirmDraft` (t226, FR2; English since t227). What comes back
-      // is what `/v1` publishes, with nothing in between (t286).
-      const body = isObject(request.body) ? request.body : {};
-      const confirmation = confirmDraft(db, {
-        draft,
-        initial_node: version.snapshot.initial_node,
-        graph_version_id: version.id,
-        actor: resolveActor(body.actor, INTAKE_ACTOR),
+        // `actor` is the EVENT envelope's actor, checked by `validateEvent`
+        // inside `confirmDraft` (t226, FR2; English since t227). What comes back
+        // is what `/v1` publishes, with nothing in between (t286).
+        const body = isObject(request.body) ? request.body : {};
+        const confirmation = confirmDraft(db, {
+          draft,
+          initial_node: version.snapshot.initial_node,
+          graph_version_id: version.id,
+          actor: resolveActor(body.actor, INTAKE_ACTOR),
+        });
+
+        reply.code(201);
+        // Named key by key rather than returned whole: `Confirmation` is a return
+        // value and this is a response body, and a field added to the first should
+        // not reach `/v1` because nobody stopped it (t286).
+        return { draft: confirmation.draft, jobs: confirmation.jobs };
       });
-
-      reply.code(201);
-      // Named key by key rather than returned whole: `Confirmation` is a return
-      // value and this is a response body, and a field added to the first should
-      // not reach `/v1` because nobody stopped it (t286).
-      return { draft: confirmation.draft, jobs: confirmation.jobs };
-    }),
-  );
+    } catch (error) {
+      // `createJob` refuses a draft whose project no longer answers to anything
+      // (t417, FR3). Since FR4 this branch is reachable only for a draft that
+      // predates this ticket — an import, a restored dump — and the `0031`
+      // migration repairs those, so in practice it is unreachable and answered
+      // anyway: the same posture `routes/examples.ts` takes with its own
+      // `class_already_registered`. What it must never be is a raw 500.
+      if (error instanceof UnknownProjectError) {
+        // The code is spelled out rather than read off `error.code`, which
+        // holds the same value: `test/write-scope-guard.test.ts` sweeps this
+        // source for the literal, and a route that hides its answer behind a
+        // property is a route the guard cannot vouch for.
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: error.projectId,
+        });
+      }
+      throw error;
+    }
+  });
 }

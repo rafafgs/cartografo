@@ -144,17 +144,20 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    */
   app.get('/executions/:id/events', async (request, reply) =>
     withValidation(reply, () => {
-      // The scope is RESOLVED and not applied, deliberately (t410): a project
-      // nobody declared is a refusal on this route like on the three above it —
-      // one family answers one way — but filtering the log itself belongs to
-      // the event slice of the t355 split, which owns `db/events.ts` and the
-      // `project_id` filter it already has. Widening that here would be a
-      // second owner for the same decision.
+      // The scope is resolved AND applied since t414, the event slice of the
+      // t355 split that owns `db/events.ts`: `execution_id` is a number an
+      // operator chooses, so two projects numbering their rounds independently
+      // share one, and reading the log by that number alone handed each of them
+      // the other's facts. `projetoId` is the `event.project_id` column exactly,
+      // which is the same partition the three routes above count over.
       const scope = requireProject(db, request, reply);
       if (scope.project === undefined) return scope.refusal;
 
       const executionId = routeId(request.params);
-      return { execution_id: executionId, events: listEvents(db, { execution_id: executionId }) };
+      return {
+        execution_id: executionId,
+        events: listEvents(db, { execution_id: executionId, projetoId: scope.project.id }),
+      };
     }),
   );
 }

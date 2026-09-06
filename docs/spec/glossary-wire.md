@@ -310,6 +310,37 @@ writes the same thing in lowercase.
 |---|---|---|---|
 | api | `x-cartografo-assinatura` | `x-cartografo-signature` | `packages/core/src/webhooks/signature.ts:41` |
 
+### 1.8 The six states of a job (t415)
+
+Born in English, so there is nothing to map from. These rows exist for the
+reason the handful of others whose `today` equals its `becomes` exist — `runner`
+in 1.6, `lease` in 2.3 — to say *explicitly* that the name does not change, and
+so that whoever adds a state later finds the vocabulary written down instead of
+inventing a seventh word beside it.
+
+Rafael decided the six names on 2026-09-05, and that they enter this glossary.
+
+`state` and `state_since` are derived at read time and stored nowhere: neither
+has a row in **4.2**, because neither is a column. What decides them is
+`deriveJobState`, in the priority order the module documents; what reads the
+facts for a whole board at once is `resolveJobStates`, next to the projection.
+
+| surface | today | becomes | defined in |
+|---|---|---|---|
+| api | `state` | `state` | `packages/core/src/repositories/job.ts` |
+| api | `state_since` | `state_since` | `packages/core/src/repositories/job.ts` |
+| api | `awaiting_you` | `awaiting_you` | `packages/core/src/domain/job-state.ts` |
+| api | `blocked_unasked` | `blocked_unasked` | `packages/core/src/domain/job-state.ts` |
+| api | `running` | `running` | `packages/core/src/domain/job-state.ts` |
+| api | `unowned` | `unowned` | `packages/core/src/domain/job-state.ts` |
+| api | `completed` | `completed` | `packages/core/src/domain/job-state.ts` |
+| api | `queued` | `queued` | `packages/core/src/domain/job-state.ts` |
+
+`completed` is the one word this table shares with another surface: it is also
+the session status of 1.6 (`concluida`) and the job's own terminal flag. Same
+word, three subjects, and no ambiguity on the wire — a state, a status and a
+boolean never travel in the same field.
+
 ---
 
 ## 2. Events

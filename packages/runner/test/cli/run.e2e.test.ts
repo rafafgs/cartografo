@@ -1888,10 +1888,14 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       'the worktree was cut from the repository `workspace_root` names',
     );
 
+    // Scoped, like the `/v1/sessions` read above it: `GET /v1/executions/:id/events`
+    // filters the log by project since t414, and this case's job lives in a
+    // project it declared for itself. Unscoped, this reads the DEFAULT project's
+    // log and finds nothing.
     const { events } = await api<{ events: Event[] }>(
       plane,
       'GET',
-      '/v1/executions/74071/events',
+      `/v1/executions/74071/events?project_id=${String(projectId)}`,
     );
     const opened = events.filter((event) => event.type === 'session.opened');
     assert.ok(opened.length > 0, 'a session was opened for this execution');
@@ -2125,7 +2129,12 @@ test('t404 — a runner with no paths of its own falls back to the control plane
 
     await runner.stop();
 
-    const { events } = await api<{ events: Event[] }>(plane, 'GET', '/v1/executions/74101/events');
+    // Scoped for the same reason as AT7's read (t414).
+    const { events } = await api<{ events: Event[] }>(
+      plane,
+      'GET',
+      `/v1/executions/74101/events?project_id=${String(projectId)}`,
+    );
     const opened = events.filter((event) => event.type === 'session.opened');
     assert.ok(opened.length > 0, 'a session was opened for this execution');
     assert.deepEqual(

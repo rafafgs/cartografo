@@ -95,9 +95,10 @@ interface WriteTarget {
 /**
  * The audit (FR8). Re-verify against `src/routes/` before trusting it.
  *
- * Eleven entries validate and two do not. The eleven are not all t417's work:
+ * Twelve entries validate and two do not. The twelve are not all t417's work:
  * `graph`, `graph_version`, `proposal`, `skill` and `hook_secret` have done
- * this since t354, and they are here so the sweep proves its POSITIVE case on
+ * this since t354, and `POST /proposals` since t412 gave the same treatment to
+ * the row it writes. They are here so the sweep proves its POSITIVE case on
  * routes this ticket never touched — a guard that only ever sees the rows one
  * ticket wrote proves that ticket, not the rule.
  */
@@ -183,6 +184,17 @@ const WRITE_TARGETS: readonly WriteTarget[] = Object.freeze([
     route: '/graphs/:id/offer',
     validates: true,
     reason: 'already correct since t354 — here to prove the sweep\'s positive case',
+  },
+  {
+    table: 'proposal',
+    file: 'proposals.ts',
+    verb: 'post',
+    route: '/proposals',
+    validates: true,
+    reason:
+      'already correct since t412, which opened create() with requireProject so the graph and '
+      + 'version lookups happen inside the scope the row is then written into — audited here on '
+      + 'the merge that brought it, never fixed',
   },
   {
     table: 'skill',

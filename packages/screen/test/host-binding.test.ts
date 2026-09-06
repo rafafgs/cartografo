@@ -22,6 +22,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { startScreenRouter } from '../src/router.ts';
 import {
   DEFAULT_SCREEN_HOST,
   SCREEN_HOST_ENV,
@@ -42,6 +43,35 @@ test('t250 AT — a blank value is not a configuration', () => {
 test('t250 AT — CARTOGRAFO_SCREEN_HOST moves the address', () => {
   assert.equal(resolveScreenHost({ [SCREEN_HOST_ENV]: '0.0.0.0' }), '0.0.0.0');
   assert.equal(resolveScreenHost({ [SCREEN_HOST_ENV]: ' 0.0.0.0 ' }), '0.0.0.0');
+});
+
+test('t250 AT — the address the COMMAND binds is the resolved one too', async () => {
+  // The case that matters most, and the one the first pass of this file missed:
+  // `packages/screen/bin/screen.mjs` runs `runScreenCli` out of `router.ts`,
+  // which had a listening address of its own. A knob honoured only by
+  // `server.ts` moves nothing at all inside the container — the screen comes up
+  // on the container's own loopback, announces itself ready, and refuses the
+  // browser.
+  const before = process.env[SCREEN_HOST_ENV];
+  process.env[SCREEN_HOST_ENV] = '0.0.0.0';
+
+  const screen = await startScreenRouter({
+    controlPlaneUrl: 'http://127.0.0.1:4317',
+    port: 0,
+  }).finally(() => {
+    if (before === undefined) delete process.env[SCREEN_HOST_ENV];
+    else process.env[SCREEN_HOST_ENV] = before;
+  });
+
+  try {
+    assert.match(
+      screen.url,
+      /^http:\/\/0\.0\.0\.0:\d+$/,
+      'the screen the command starts is on another address than the one asked for',
+    );
+  } finally {
+    await screen.close();
+  }
 });
 
 test('t250 AT — the resolved address is the one the socket actually binds', async () => {

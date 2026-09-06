@@ -20,7 +20,12 @@
 
 import type { Server } from 'node:http';
 
-import { parsePortFromEnv, resolveControlPlaneToken, resolveControlPlaneUrl } from './proxy.ts';
+import {
+  parsePortFromEnv,
+  resolveControlPlaneToken,
+  resolveControlPlaneUrl,
+  resolveScreenHost,
+} from './proxy.ts';
 import { createScreenRouter, installCrashGuard, READY_EVENT } from './router.ts';
 
 export { INDEX_FILE, PUBLIC_DIR, resolveStaticFile } from './static.ts';
@@ -32,11 +37,10 @@ export const SCREEN_PORT_ENV = 'CARTOGRAFO_SCREEN_PORT';
 export const DEFAULT_SCREEN_PORT = 4318;
 
 /**
- * Listening address. Loopback, and staying there: the screen holds a service
- * credential and takes none from the browser (`t124`, D11), so its own port —
- * not a login — is what keeps a passer-by out of the only writer in the system.
+ * The screen's listening address, resolved in `proxy.ts` beside the port and the
+ * control plane URL — one resolver for both entry points (t199, t250).
  */
-export const SCREEN_HOST = '127.0.0.1';
+export { DEFAULT_SCREEN_HOST, SCREEN_HOST_ENV, resolveScreenHost } from './proxy.ts';
 
 /**
  * Name of the readiness event printed on stdout, next to `cartografo.ready`.
@@ -70,6 +74,7 @@ export function resolveScreenPort(env: NodeJS.ProcessEnv = process.env): number 
   return parsePortFromEnv(env, SCREEN_PORT_ENV, DEFAULT_SCREEN_PORT);
 }
 
+
 /**
  * Builds the HTTP server without listening.
  *
@@ -84,21 +89,23 @@ export function createScreenServer(controlPlaneUrl: string, token?: string): Ser
 /**
  * Starts the screen.
  *
- * @param env Environment with `CARTOGRAFO_SCREEN_PORT`, `CARTOGRAFO_URL` and the
- *   credential (`CARTOGRAFO_SCREEN_TOKEN`, or `CARTOGRAFO_TOKEN`).
+ * @param env Environment with `CARTOGRAFO_SCREEN_HOST`, `CARTOGRAFO_SCREEN_PORT`,
+ *   `CARTOGRAFO_URL` and the credential (`CARTOGRAFO_SCREEN_TOKEN`, or
+ *   `CARTOGRAFO_TOKEN`).
  * @returns The screen, up, with what it takes to shut it down.
  */
 export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise<Screen> {
   const controlPlaneUrl = resolveControlPlaneUrl(env);
   const port = resolveScreenPort(env);
+  const host = resolveScreenHost(env);
   const server = createScreenServer(controlPlaneUrl, resolveControlPlaneToken(env));
 
   const bound = await new Promise<number>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, SCREEN_HOST, () => {
+    server.listen(port, host, () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
-        reject(new Error(`the screen could not listen on ${SCREEN_HOST}:${port}`));
+        reject(new Error(`the screen could not listen on ${host}:${port}`));
         return;
       }
       resolve(address.port);
@@ -107,7 +114,7 @@ export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise
 
   return {
     server,
-    url: `http://${SCREEN_HOST}:${bound}`,
+    url: `http://${host}:${bound}`,
     port: bound,
     controlPlaneUrl,
     close: async () => {

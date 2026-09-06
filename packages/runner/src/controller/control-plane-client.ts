@@ -466,7 +466,7 @@ export class ControlPlaneClient {
   }
 
   /**
-   * Jobs that are ready to be dispatched.
+   * Jobs of one project that are ready to be dispatched.
    *
    * Both filters live here, on the client side, so as to consume t102's
    * contract without depending on a query parameter that ticket never promised.
@@ -478,11 +478,23 @@ export class ControlPlaneClient {
    * every tick. The field has come out of `GET /v1/jobs` since t152 — what was
    * missing was somebody reading it.
    *
+   * The SCOPE, on the other hand, is the server's own filter and has to be sent
+   * (t410): `GET /v1/jobs` reads one project's board since that ticket, and a
+   * poll that names none reads project 1's. A runner working project 2 would
+   * then see an empty board on every tick and dispatch nothing at all — no
+   * error, no event, just silence — which is the same shape of failure t198's
+   * first crossing hit. Every lease this client asks for is already scoped
+   * (`requestLease`), so the controller has the number to send.
+   *
+   * @param projectId Project whose board to read; omitted, the server's own
+   *   default (project 1) answers, which is what every caller written before
+   *   the partition meant.
    * @returns Only the jobs that can still move, in the order the server sent
    *   them.
    */
-  async listReleasedJobs(): Promise<Job[]> {
-    const { jobs } = await this.#get<{ jobs: Job[] }>('/v1/jobs');
+  async listReleasedJobs(projectId?: number): Promise<Job[]> {
+    const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
+    const { jobs } = await this.#get<{ jobs: Job[] }>(`/v1/jobs${scope}`);
     return jobs.filter((job) => job.blocked === false && job.completed === false);
   }
 

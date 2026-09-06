@@ -1758,7 +1758,9 @@ test('t401 — the runner reports its probe, and answers a re-check request', as
 
     const order = recorder.calls.map((call) => `${call.method} ${call.path}`);
     const probeAt = order.indexOf(`POST /v1/runners/${runnerId}/probes`);
-    const firstTickAt = order.indexOf('GET /v1/jobs');
+    // A PREFIX and not the whole line: the poll carries `?project_id=` since
+    // t410, and the first tick is still the first tick.
+    const firstTickAt = order.findIndex((entry) => entry.startsWith('GET /v1/jobs'));
     assert.ok(probeAt >= 0 && firstTickAt >= 0, order.join('\n'));
     assert.ok(
       probeAt < firstTickAt,

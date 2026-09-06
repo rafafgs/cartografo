@@ -19,6 +19,17 @@
  * two repositories hand back — nothing here translates on the way out. The
  * EVENTS inside `events` keep their own envelope, which is the taxonomy's and
  * therefore D20's second child.
+ *
+ * ## The scope (t410, D25)
+ *
+ * A round is a grouper PER PROJECT: `execution_id` is a number an operator
+ * chooses, so two projects numbering their rounds independently land on the
+ * same one as a matter of course, and every count published here — `jobs`,
+ * `blocked_jobs`, `pending_input_requests`, `finished_at`, the per-version and
+ * per-node breakdowns — is computed over the jobs of ONE project. All four
+ * routes resolve the scope with `requireProject`, so an undeclared project is a
+ * `404 unknown_project` on the whole family rather than on three quarters of
+ * it; what the fourth one does with the scope is said at its own call site.
  */
 
 import type { FastifyInstance } from 'fastify';

@@ -13,6 +13,23 @@
  * `validateEvent` and `job.created`'s contract belongs to D20's second child.
  * Since t286 nothing translates on the way out either — `repositories/job.ts`
  * hands back the object `/v1` publishes, so these handlers return it as it is.
+ *
+ * ## The scope, on the READS only (t410, D25)
+ *
+ * The four GETs resolve `project_id` before they touch the table, with the same
+ * `requireProject` of `routes/common.ts` that `routes/graphs.ts` and
+ * `routes/skills.ts` already call: absent means project 1, a project nobody
+ * declared is a `404 unknown_project`, and a job of another project answers the
+ * same `404 not_found` a nonexistent id gets. `job` has carried `project_id`
+ * since migration `0003` and nothing read it back until then, which is why the
+ * board of every project showed on one screen.
+ *
+ * The four WRITES below are deliberately left alone. Scoping a mutation is a
+ * different risk — a wrong scope there refuses or misdirects a live transition
+ * instead of merely widening a read — and it is the write-side slice of the
+ * same split. `POST /jobs` is the one write this ticket touched, and not to
+ * scope it: it already took `project_id` off its own body, and what changed is
+ * that the graph version it names is now resolved in THAT project.
  */
 
 import type { FastifyInstance } from 'fastify';

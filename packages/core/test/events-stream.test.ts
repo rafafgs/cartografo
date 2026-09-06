@@ -214,6 +214,20 @@ async function startStreamApp(
   return { url, app };
 }
 
+/**
+ * Declares a project and returns the id it was minted with (t354, FR1).
+ *
+ * The same three lines `test/jobs.test.ts` and `test/executions.test.ts` already
+ * carry. The id is the SERVER's — `POST /v1/projects` takes a name and nothing
+ * else — so a case that needs two projects asks for two and uses what comes
+ * back, rather than naming a number.
+ */
+async function declareProject(ctx: TestContext, name: string): Promise<number> {
+  const response = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.id;
+}
+
 /** Records a `job.transitioned` through the API. */
 async function moveJob(ctx: TestContext, id: number, target: string): Promise<void> {
   const response = await request<Job>(ctx, 'POST', `/v1/jobs/${id}/transitions`, {
@@ -281,23 +295,87 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const stream = await openStream(`${url}/v1/events/stream?project_id=42`);
+  // DECLARED, and no longer two numbers picked out of the air (t414). This case
+  // used to create jobs under projects `7` and `42` without either of them being
+  // a row anywhere — `job.project_id` has no `REFERENCES project(id)`
+  // (migration `0003`), so nothing stopped it. Now that the route resolves its
+  // scope the way every other `/v1` route does, an undeclared project is a
+  // `404`, and the ids are whatever `POST /v1/projects` minted.
+  const other = await declareProject(ctx, 'the neighbouring project');
+  const mine = await declareProject(ctx, 'the project being watched');
+
+  const stream = await openStream(`${url}/v1/events/stream?project_id=${mine}`);
   t.after(() => stream.abort());
 
-  await createJob(ctx, { title: 'from another project', entry_node_id: 'entrada', project_id: 7 });
-  const mine = await createJob(ctx, {
-    title: 'from project 42',
+  await createJob(ctx, {
+    title: 'from another project',
     entry_node_id: 'entrada',
-    project_id: 42,
+    project_id: other,
+  });
+  const job = await createJob(ctx, {
+    title: 'from the project being watched',
+    entry_node_id: 'entrada',
+    project_id: mine,
   });
 
-  await waitFor(() => stream.messages.length >= 1, "project 42's job to reach the stream");
+  await waitFor(() => stream.messages.length >= 1, "the watched project's job to reach the stream");
   await settle();
 
   assert.equal(stream.messages.length, 1, "the other project's event must not be delivered");
   const delivered = JSON.parse(stream.messages[0].data) as Event;
-  assert.equal(delivered.project_id, 42);
-  assert.equal(delivered.entity.id, mine.id);
+  assert.equal(delivered.project_id, mine);
+  assert.equal(delivered.entity.id, job.id);
+});
+
+test('t414 — an undeclared ?project_id is a 404, and nothing is upgraded to SSE', async (t) => {
+  requireArtifacts(T123_ARTIFACTS.streamRoutes, T123_ARTIFACTS.server);
+  const ctx = await startAuthorizedControlPlane(t);
+
+  // Aborted from the outside, and the STATUS asserted before the body is read:
+  // a route that wrongly opened the stream hands back a body that never ends,
+  // and `response.json()` on it would hang this file instead of failing it.
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const response = await fetch(`${ctx.url}/v1/events/stream?project_id=4242`, {
+    signal: controller.signal,
+  });
+
+  assert.equal(response.status, 404, 'a well-formed id naming no project row is a refusal');
+  assert.ok(
+    !(response.headers.get('content-type') ?? '').includes('text/event-stream'),
+    'the connection must never become a stream before the scope is resolved',
+  );
+  assert.ok(
+    (response.headers.get('content-type') ?? '').includes('application/json'),
+    'the refusal is an ordinary JSON response',
+  );
+
+  const body = (await response.json()) as { error: string; project_id?: number };
+  assert.equal(body.error, 'unknown_project');
+  assert.equal(body.project_id, 4242, 'the scope rides on the refusal as a sibling field');
+});
+
+test('t414 — no ?project_id at all still opens, on the default project', async (t) => {
+  requireArtifacts(T123_ARTIFACTS.streamRoutes);
+  const ctx = await startAuthorizedControlPlane(t);
+  const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
+
+  const stream = await openStream(`${url}/v1/events/stream`);
+  t.after(() => stream.abort());
+
+  assert.equal(stream.status, 200);
+  assert.equal(stream.contentType, 'text/event-stream');
+
+  // The regression guard the mandatory filter needs: making the scope mandatory
+  // must not make the PARAMETER mandatory. Absent, it is `DEFAULT_PROJECT`, and
+  // a caller that never heard of projects sees exactly what AT1 sees.
+  const job = await createJob(ctx, { title: 'in the default project', entry_node_id: 'entrada' });
+
+  await waitFor(() => stream.messages.length >= 1, 'the default project’s job to reach the stream');
+
+  const delivered = JSON.parse(stream.messages[0].data) as Event;
+  assert.equal(delivered.project_id, 1);
+  assert.equal(delivered.entity.id, job.id);
 });
 
 test('AT4 — an unknown ?type is a 400, and nothing is upgraded to SSE', async (t) => {

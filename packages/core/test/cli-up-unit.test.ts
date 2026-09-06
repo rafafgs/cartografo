@@ -32,6 +32,7 @@ import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as UpModule from '../src/cli/up.ts';
 import type { ChildHandle, UpControlPlane, UpFlags } from '../src/cli/up.ts';
 import { UsageError } from '../src/cli/url.ts';
+import { verifyToken } from '../src/repositories/credentials.ts';
 import { capture } from './cli-unit-support.ts';
 import { MIGRATIONS_DIR, requireArtifacts } from './support.ts';
 
@@ -67,7 +68,9 @@ async function openMigrated(t: TestHook, base: string): Promise<Database> {
   const db = openDatabase(path.join(base, 'cartografo.db'));
   applyPragmas(db);
   migrate(db, MIGRATIONS_DIR);
-  t.after(() => db.close());
+  t.after(() => {
+    db.close();
+  });
   return db;
 }
 
@@ -294,9 +297,6 @@ test('t405 AT4 — the browser is opened once, on the screen, and only when it w
 
 test('t405 AT5 — both children are spawned by name, credentialed, and with no path flags', async (t) => {
   const { RUNNER_BINARY, SCREEN_BINARY } = await loadUp();
-  const { verifyToken } = await import(
-    new URL('../src/repositories/credentials.ts', import.meta.url).href
-  );
 
   const both = await runSeamed(t, { browser: false, runner: true, screen: true });
 
@@ -308,14 +308,14 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
 
   const runner = both.spawned.find((call) => call.command === RUNNER_BINARY);
   assert.ok(runner !== undefined);
-  assert.deepEqual(
-    runner.args,
-    [],
-    'the runner is given nothing: --working-dir/--worktrees-root/--engine are the settings fallback\'s (t404)',
-  );
   for (const flag of ['--working-dir', '--worktrees-root', '--engine', '--project']) {
     assert.ok(!runner.args.includes(flag), `the runner must not be given ${flag}`);
   }
+  assert.deepEqual(
+    runner.args,
+    [],
+    'the runner is given nothing at all: those three are the settings fallback\'s (t404)',
+  );
 
   const screen = both.spawned.find((call) => call.command === SCREEN_BINARY);
   assert.ok(screen !== undefined);
@@ -382,4 +382,26 @@ test('t405 FR1 — the readiness line `up` prints carries the same five keys as 
   );
   assert.equal(readiness.event, 'cartografo.ready');
   assert.equal(run.shutdowns, 1, 'the stop shuts the control plane down exactly once');
+});
+
+test('t405 FR2 — a leading `--…` is `up`\'s own flag, and a bad one is exit 2 either way', async () => {
+  const { runCli } = await import(new URL('../src/cli/index.ts', import.meta.url).href) as {
+    runCli: (args: string[], env?: NodeJS.ProcessEnv) => Promise<number>;
+  };
+
+  // Both spellings reach the same parser, and both fail the same way. Without
+  // the router's leading-`--` detection the first line below would die with
+  // `unknown subcommand: "--no-brwoser"`, which says nothing about the typo.
+  for (const line of [['--no-brwoser'], ['up', '--no-brwoser'], ['--no-browser', 'extra']]) {
+    const run = await capture(async () => await runCli(line, {}));
+
+    assert.equal(run.code, 2, `${line.join(' ')}: a wrong command line is exit 2`);
+    assert.match(run.stderr, /up does not understand/, line.join(' '));
+    assert.doesNotMatch(
+      run.stderr,
+      /unknown subcommand/,
+      'a flag of `up` is not a subcommand nobody declared',
+    );
+    assert.equal(run.stdout, '', 'nothing was started, so nothing announced itself');
+  }
 });

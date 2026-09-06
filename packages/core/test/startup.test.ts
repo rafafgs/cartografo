@@ -752,6 +752,33 @@ async function eventually<T>(what: string, check: () => Promise<T | undefined>):
   throw new Error(`${what} did not happen in 60s${lastError === undefined ? '' : ` (last error: ${String(lastError)})`}`);
 }
 
+/**
+ * Waits until the runner the command spawned has paired with it.
+ *
+ * The one honest happens-after this file has for everything `up` does AFTER it
+ * printed `cartografo.ready`. The readiness line is the CONTROL PLANE's, by
+ * design (FR1): the credential, the workspace and the two children all come
+ * after it, so a test that asserted on any of them the instant the line
+ * appeared would be racing the command it is testing — which is exactly how
+ * the first version of this file read a workspace whose empty commit had not
+ * been made yet. The pairing is the last of those steps to finish, so a runner
+ * on the list means every one of them is done.
+ *
+ * @param url Base URL of the control plane.
+ * @param token Operator credential — the printed `bootstrapToken`.
+ * @returns The paired runners.
+ */
+async function awaitPairedRunner(url: string, token: string): Promise<Array<{ id: string }>> {
+  return await eventually('the spawned runner pairs', async () => {
+    const response = await fetch(`${url}/v1/runners`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (response.status !== 200) return undefined;
+    const body = (await response.json()) as { runners: Array<{ id: string }> };
+    return body.runners.length > 0 ? body.runners : undefined;
+  });
+}
+
 test(
   't405 AT7 — `cartografo --no-browser` brings the screen and a local runner up with it, and provisions the default workspace',
   { timeout: 300_000 },
@@ -783,22 +810,15 @@ test(
       const token = startup.readiness.bootstrapToken ?? '';
       assert.ok(token.length > 0, 'a brand-new database still prints its operator credential');
 
+      // FR6: the runner came up on the settings fallback, with no path flag of
+      // its own, and paired.
+      const runners = await awaitPairedRunner(startup.readiness.url, token);
+      assert.equal(runners.length, 1, 'exactly one local runner, not two and not none');
+
       // FR5: the runner has nowhere to cut a worktree from until this exists.
       const workspace = workspaceOf(home);
       assert.ok(existsSync(path.join(workspace, '.git')), 'the default workspace is a git repository');
       assert.equal(commitCount(workspace), '1', 'with exactly one commit, so a branch can be cut from it');
-
-      // FR6: the runner came up on the settings fallback, with no path flag of
-      // its own, and paired.
-      const runners = await eventually('the spawned runner pairs', async () => {
-        const response = await fetch(`http://127.0.0.1:${port}/v1/runners`, {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        if (response.status !== 200) return undefined;
-        const body = (await response.json()) as { runners: Array<{ id: string }> };
-        return body.runners.length > 0 ? body.runners : undefined;
-      });
-      assert.equal(runners.length, 1, 'exactly one local runner, not two and not none');
 
       // FR6/FR7: and the screen is answering on its own port, in its own process.
       const screenStatus = await eventually('the spawned screen answers', async () => {
@@ -831,7 +851,10 @@ test(
       args: ['--no-browser', '--no-screen'],
       env: { HOME: home },
     });
+    let token: string;
     try {
+      token = first.readiness.bootstrapToken ?? '';
+      await awaitPairedRunner(first.readiness.url, token);
       assert.equal(commitCount(workspace), '1');
     } finally {
       await first.shutdown();
@@ -850,6 +873,7 @@ test(
     try {
       assert.equal(second.readiness.event, 'cartografo.ready');
       assert.equal(second.readiness.migrationsApplied, 0);
+      await awaitPairedRunner(second.readiness.url, token);
       assert.equal(commitCount(workspace), '1', 'the second startup left the workspace exactly as it was');
     } finally {
       await second.shutdown();
@@ -966,6 +990,10 @@ test(
     });
     try {
       assert.equal(second.readiness.event, 'cartografo.ready');
+      // Waited for on purpose: the assertion below is an ABSENCE, and one
+      // checked before the command reached its provisioning step would pass
+      // without proving anything.
+      await awaitPairedRunner(second.readiness.url, token);
       assert.equal(
         existsSync(mine),
         false,
@@ -997,7 +1025,10 @@ test(
     });
     try {
       // A different port, for t209's own reason: on the same one the refusal
-      // would be about the address instead of about the file.
+      // would be about the address instead of about the file. The screen gets
+      // a port of its own too, so the assertion after the exit can tell "it
+      // never started one" from "somebody else is on 4318".
+      const screenPort = await freePort();
       const refused = spawn(process.execPath, [BIN_PATH], {
         cwd: base,
         env: {
@@ -1005,7 +1036,7 @@ test(
           HOME: home,
           CARTOGRAFO_DB_PATH: databasePath,
           CARTOGRAFO_PORT: String(await freePort()),
-          CARTOGRAFO_SCREEN_PORT: String(await freePort()),
+          CARTOGRAFO_SCREEN_PORT: String(screenPort),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -1034,10 +1065,14 @@ test(
       assert.ok(stderr.includes(`${databasePath}.lock`), `the refusal has to name the lock file:\n${stderr}`);
       assert.equal(stdout.trim(), '', 'a startup that was refused announces nothing');
 
-      // And it spawned nothing on the way down: a refused startup that had
-      // already forked a screen would leave one behind with nobody to stop it.
-      const survivors = spawnSync('pgrep', ['-P', String(refused.pid)], { encoding: 'utf8' });
-      assert.equal(survivors.stdout.trim(), '', 'the refused command left no child process behind');
+      // And it started nothing on the way down. A refusal that had already
+      // forked a screen would have left it listening with nobody to stop it —
+      // an orphan `pgrep -P` could not find, because its parent is the process
+      // that just died. What the port answers is the honest question.
+      await assert.rejects(
+        fetch(`http://127.0.0.1:${screenPort}/board`),
+        'the refused command left a screen of its own listening',
+      );
     } finally {
       await first.shutdown();
     }

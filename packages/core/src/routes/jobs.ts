@@ -53,6 +53,7 @@ import { listInputRequests } from '../repositories/input-request.ts';
 import {
   CrossProjectVersionReferenceError,
   GraphVersionNotReadyError,
+  UnknownProjectError,
   blockJob,
   getJob,
   createJob,
@@ -197,10 +198,23 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       });
     } catch (error) {
       // `withValidation` re-throws anything that is not a `ValidationError`, and
-      // correctly so — neither of these is a verdict about the body. Both are
-      // the same 409 in the same envelope, with their context as SIBLING
-      // fields, so a client that reads one of the three codes reads all of them.
+      // correctly so — none of these three is a verdict about the body. All of
+      // them travel in the same envelope, with their context as SIBLING fields,
+      // so a client that reads one of the codes reads all of them.
       //
+      // The scope names no project at all (t417, FR2). A 404 and not a 409,
+      // because this is an ABSENCE and not a conflict — and byte for byte the
+      // body `requireProject` gives `GET /v1/jobs?project_id=99`, so the two
+      // halves of the same partition answer the same words to the same mistake.
+      if (error instanceof UnknownProjectError) {
+        // The code is spelled out rather than read off `error.code`, which
+        // holds the same value: `test/write-scope-guard.test.ts` sweeps this
+        // source for the literal, and a route that hides its answer behind a
+        // property is a route the guard cannot vouch for.
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: error.projectId,
+        });
+      }
       // The version resolves, but in another project (t410, FR7): the request
       // is reaching across a partition, which is a conflict and never a silent
       // accept. A hash that resolves in NO project is untouched by this branch

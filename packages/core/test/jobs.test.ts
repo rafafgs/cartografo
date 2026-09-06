@@ -2736,3 +2736,69 @@ test('t415 AT17 — the board costs the same number of statements whatever the j
       'the read has to be bounded, or a state per row is a query per row',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t417 — the write side of the same partition (D25).                         */
+/*                                                                            */
+/* t410 gave `GET /v1/jobs*` a `404 unknown_project` and left `POST /v1/jobs`  */
+/* taking `project_id` as a bare integer, by its own Out of Scope. The pair    */
+/* wrote rows nothing could read back: created under a project nobody had      */
+/* declared, refused by every read of the same scope. These cases charge for   */
+/* the write refusing what the read already refuses, in the same words.        */
+/* -------------------------------------------------------------------------- */
+
+test('t417 AT1 — POST /v1/jobs refuses a project nobody declared, and writes nothing', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const before = createdJobs(ctx);
+
+  const refused = await request<ScopeRefusal>(ctx, 'POST', '/v1/jobs', {
+    title: 'a job of a project that does not exist',
+    entry_node_id: 'redigir',
+    project_id: 99,
+  });
+
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(
+    refused.body.error,
+    'unknown_project',
+    'the same code GET /v1/jobs?project_id=99 already answers (t410): a write that lands where ' +
+      'no read can reach is the defect this closes',
+  );
+  assert.equal(
+    refused.body.message,
+    'no project answers to this scope',
+    'and the same message, byte for byte — one scope refusal, not two dialects of it',
+  );
+  assert.equal(refused.body.project_id, 99, 'the scope rides as a SIBLING field, never in details');
+
+  assert.equal(createdJobs(ctx), before, 'a refused job records no `job.created`');
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM job').get() as { total: number };
+  assert.equal(rows.total, 0, 'and it is not a row either — not even an id from the sequence');
+});
+
+test('t417 AT2 — a declared project, and the default, still create a job unchanged', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const implicit = await createJob(ctx, {
+    title: 'no project_id at all, which is project 1',
+    entry_node_id: 'redigir',
+  });
+  const explicit = await createJob(ctx, {
+    title: 'a project that really was declared',
+    entry_node_id: 'redigir',
+    project_id: 2,
+  });
+
+  assert.ok(implicit.id > 0 && explicit.id > 0);
+
+  // And both are readable in their own scope, which is the whole point of the
+  // refusal above: a created job is a job that can be read back.
+  const mine = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
+  assert.deepEqual(mine.body.jobs.map((job) => job.id), [implicit.id]);
+  const theirs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs?project_id=2');
+  assert.deepEqual(theirs.body.jobs.map((job) => job.id), [explicit.id]);
+});

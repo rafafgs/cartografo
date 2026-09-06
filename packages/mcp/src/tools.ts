@@ -481,13 +481,6 @@ const WRITE = Object.freeze({
   openWorldHint: true,
 });
 
-/** An empty argument object — the shape half the read tools take. */
-const NO_ARGUMENTS: InputSchema = {
-  type: 'object',
-  properties: {},
-  additionalProperties: false,
-};
-
 /**
  * Resolves which version a caller means.
  *
@@ -501,9 +494,11 @@ async function resolveVersion(
   client: ApiClient,
   args: Record<string, unknown>,
 ): Promise<GraphVersion> {
+  const projectId = optionalInteger(args, 'project_id');
+
   const versionId = optionalText(args, 'version_id');
   if (versionId !== undefined) {
-    const version = await client.getGraphVersion(versionId);
+    const version = await client.getGraphVersion(versionId, projectId);
     if (version === null) throw new ToolError(`no graph version with id "${versionId}"`);
     return version;
   }
@@ -516,8 +511,10 @@ async function resolveVersion(
 
   const current =
     graphId !== undefined
-      ? (await client.listGraphs()).find((graph) => graph.id === graphId)?.current_version_id
-      : (await client.listClasses()).find((row) => row.class === className)?.current_version_id;
+      ? (await client.listGraphs(projectId)).find((graph) => graph.id === graphId)
+          ?.current_version_id
+      : (await client.listClasses(projectId)).find((row) => row.class === className)
+          ?.current_version_id;
 
   if (current === undefined) {
     throw new ToolError(
@@ -530,7 +527,7 @@ async function resolveVersion(
     );
   }
 
-  const version = await client.getGraphVersion(current);
+  const version = await client.getGraphVersion(current, projectId);
   if (version === null) throw new ToolError(`the version in force (${current}) could not be read`);
   return version;
 }
@@ -540,17 +537,24 @@ export const TOOLS: readonly Tool[] = Object.freeze([
   {
     name: 'cartografo_status',
     description:
-      'Whether the control plane is up and what it is holding right now: problem classes, paired runners, executions, and the counts of jobs, blocked jobs, pending questions and pending proposals. Start here when asked how the cartografo is doing.',
-    inputSchema: NO_ARGUMENTS,
+      'Whether the control plane is up and what it is holding right now: problem classes, paired runners, executions, and the counts of jobs, blocked jobs, pending questions and pending proposals. Start here when asked how the cartografo is doing. project_id scopes classes, executions, jobs and pending questions; pending_proposals always counts across every project — GET /v1/proposals is not scoped yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
     annotations: { title: 'Control plane status', ...READ_ONLY },
-    run: async (client) => {
+    run: async (client, args) => {
+      const projectId = optionalInteger(args, 'project_id');
       const [health, classes, runners, executions, jobs, questions, proposals] = await Promise.all([
         client.health(),
-        client.listClasses(),
+        client.listClasses(projectId),
         client.listRunners(),
-        client.listExecutions(),
-        client.listJobs(),
-        client.listInputRequests({ status: 'pending' }),
+        client.listExecutions(projectId),
+        client.listJobs({ project_id: projectId }),
+        client.listInputRequests({ status: 'pending', project_id: projectId }),
         client.listProposals({ status: 'pending' }),
       ]);
 
@@ -582,10 +586,20 @@ export const TOOLS: readonly Tool[] = Object.freeze([
     name: 'cartografo_list_graphs',
     description:
       'The problem classes registered and every lineage under them — bases and the variants forked off them — each with the version currently in force. Use it to find the graph_id or class another tool needs.',
-    inputSchema: NO_ARGUMENTS,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
     annotations: { title: 'List graphs and classes', ...READ_ONLY },
-    run: async (client) => {
-      const [classes, graphs] = await Promise.all([client.listClasses(), client.listGraphs()]);
+    run: async (client, args) => {
+      const projectId = optionalInteger(args, 'project_id');
+      const [classes, graphs] = await Promise.all([
+        client.listClasses(projectId),
+        client.listGraphs(projectId),
+      ]);
       return { classes, graphs };
     },
   },
@@ -599,6 +613,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
         class: { type: 'string', description: 'Problem class; reads the version in force.' },
         graph_id: { type: 'string', description: 'Lineage id; reads the version in force.' },
         version_id: { type: 'string', description: 'An exact version id (sha256:…).' },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       additionalProperties: false,
     },
@@ -617,13 +632,17 @@ export const TOOLS: readonly Tool[] = Object.freeze([
           type: 'boolean',
           description: 'Include each skill’s input and output schemas, its preconditions and its checks. Default false.',
         },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       additionalProperties: false,
     },
     annotations: { title: 'List skills', ...READ_ONLY },
     run: async (client, args) => {
       const withContract = optionalBoolean(args, 'include_contract', false);
-      const skills = await client.listSkills({ id: optionalText(args, 'id') });
+      const skills = await client.listSkills({
+        id: optionalText(args, 'id'),
+        project_id: optionalInteger(args, 'project_id'),
+      });
       return { skills: skills.map((skill) => skillDigest(skill, withContract)) };
     },
   },
@@ -635,15 +654,16 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       type: 'object',
       properties: {
         execution_id: { type: 'integer', description: 'Only the jobs of this execution.' },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       additionalProperties: false,
     },
     annotations: { title: 'List jobs', ...READ_ONLY },
     run: async (client, args) => {
-      const executionId = optionalInteger(args, 'execution_id');
-      const jobs = await client.listJobs(
-        executionId === undefined ? {} : { execution_id: executionId },
-      );
+      const jobs = await client.listJobs({
+        execution_id: optionalInteger(args, 'execution_id'),
+        project_id: optionalInteger(args, 'project_id'),
+      });
       return { jobs: jobs.map(jobDigest) };
     },
   },
@@ -659,6 +679,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
           type: 'boolean',
           description: 'Include the event log of this job. Default true.',
         },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       required: ['job_id'],
       additionalProperties: false,
@@ -667,14 +688,18 @@ export const TOOLS: readonly Tool[] = Object.freeze([
     run: async (client, args) => {
       const id = requireInteger(args, 'job_id');
       const includeTimeline = optionalBoolean(args, 'include_timeline', true);
+      const projectId = optionalInteger(args, 'project_id');
 
-      const job = await client.getJob(id);
+      const job = await client.getJob(id, projectId);
       if (job === null) throw new ToolError(`no job with id ${id}`);
 
+      // job_id alone already disambiguates one job's rows (same reasoning
+      // `packages/core/src/routes/jobs.ts` documents for the equivalent
+      // server-side reads) — no project_id here.
       const [sessions, questions, timeline] = await Promise.all([
         client.listSessions({ job_id: id }),
         client.listInputRequests({ job_id: id }),
-        includeTimeline ? client.jobEvents(id) : Promise.resolve(null),
+        includeTimeline ? client.jobEvents(id, projectId) : Promise.resolve(null),
       ]);
 
       return {
@@ -689,9 +714,17 @@ export const TOOLS: readonly Tool[] = Object.freeze([
     name: 'cartografo_list_executions',
     description:
       'The executions that exist, each with how many jobs it holds, how many are blocked and how many questions are waiting on a human.',
-    inputSchema: NO_ARGUMENTS,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
     annotations: { title: 'List executions', ...READ_ONLY },
-    run: async (client) => ({ executions: await client.listExecutions() }),
+    run: async (client, args) => ({
+      executions: await client.listExecutions(optionalInteger(args, 'project_id')),
+    }),
   },
   {
     name: 'cartografo_list_sessions',
@@ -702,6 +735,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       properties: {
         job_id: { type: 'integer', description: 'Only the sessions of this job.' },
         execution_id: { type: 'integer', description: 'Only the sessions of this execution.' },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       additionalProperties: false,
     },
@@ -710,6 +744,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       const sessions = await client.listSessions({
         job_id: optionalInteger(args, 'job_id'),
         execution_id: optionalInteger(args, 'execution_id'),
+        project_id: optionalInteger(args, 'project_id'),
       });
       return { sessions: sessions.map(sessionDigest) };
     },
@@ -731,6 +766,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
           enum: ['end', 'start'],
           description: 'Which end to read from. Default "end".',
         },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       required: ['session_id'],
       additionalProperties: false,
@@ -743,7 +779,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       const limit = Math.min(asked, TRANSCRIPT_MAX_CHARS);
       const from = optionalChoice(args, 'from', ['end', 'start']) ?? 'end';
 
-      const envelope = await client.sessionTranscript(id);
+      const envelope = await client.sessionTranscript(id, optionalInteger(args, 'project_id'));
       if (envelope === null) throw new ToolError(`no session with id ${id}`);
 
       const whole = envelope.transcript ?? '';
@@ -776,6 +812,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
         },
         job_id: { type: 'integer', description: 'Only the requests of this job.' },
         execution_id: { type: 'integer', description: 'Only the requests of this execution.' },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
       },
       additionalProperties: false,
     },
@@ -785,6 +822,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
         status: optionalChoice(args, 'status', INPUT_REQUEST_STATUSES),
         job_id: optionalInteger(args, 'job_id'),
         execution_id: optionalInteger(args, 'execution_id'),
+        project_id: optionalInteger(args, 'project_id'),
       });
       return { input_requests: requests.map(inputRequestDigest) };
     },
@@ -792,7 +830,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
   {
     name: 'cartografo_list_proposals',
     description:
-      'The graph changes a surveyor proposed, with the lens that proposed them, the metric each expects to move and the operations each carries. Reading only: approving, applying, rejecting and reverting a proposal are decisions taken by a human at the screen, and this server exposes no tool for them.',
+      'The graph changes a surveyor proposed, with the lens that proposed them, the metric each expects to move and the operations each carries. Reading only: approving, applying, rejecting and reverting a proposal are decisions taken by a human at the screen, and this server exposes no tool for them. Always reads across every project — GET /v1/proposals is not scoped by project_id yet.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -868,9 +906,12 @@ export const TOOLS: readonly Tool[] = Object.freeze([
             '"entry_node_id" is required unless you name a "class" or a "graph_version_id" to take the initial node from',
           );
         }
+        const projectId = optionalInteger(args, 'project_id');
         const version = await resolveVersion(
           client,
-          className !== undefined ? { class: className } : { version_id: versionId },
+          className !== undefined
+            ? { class: className, project_id: projectId }
+            : { version_id: versionId, project_id: projectId },
         );
         pinnedVersion = version.id;
         entryNode = entryNode ?? version.snapshot.initial_node;
@@ -975,6 +1016,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
           description:
             'The whole graph document: problem_class, lineage, metadata, nodes, edges, initial_node, final_nodes.',
         },
+        project_id: { type: 'integer', description: 'Project to register it in. Default 1.' },
       },
       required: ['document'],
       additionalProperties: false,
@@ -985,7 +1027,9 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       if (typeof document !== 'object' || document === null || Array.isArray(document)) {
         throw new ToolError('"document" has to be the graph document, as an object');
       }
-      return clipStrings(await client.registerGraph(document));
+      return clipStrings(
+        await client.registerGraph(document, optionalInteger(args, 'project_id')),
+      );
     },
   },
 ]);

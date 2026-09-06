@@ -17,9 +17,14 @@ strength of its own history.
 ## What you can do with it
 
 **Install it and bring it up in one command.** `npx cartografo` creates the
-local database and brings up the server; `npx cartografo-screen` opens the
-interface. Everything on your machine; everything the screen shows comes from a
-public API any tool can consume.
+local database, brings up the server, starts the interface and one local runner
+beside it, and opens your browser on the interface — no second terminal, no
+token to paste, nothing to answer. One `Ctrl-C` takes all three down again, and
+`--no-browser`, `--no-runner` and `--no-screen` leave out whichever part you did
+not want. Everything on your machine; everything the screen shows comes from a
+public API any tool can consume, and the interface and the runner are separate
+processes with no privilege of their own — being started for you changes
+nothing about that.
 
 **Start from ready-made maps.** Factory graphs come in the box: three of them —
 the software development one, the investment thesis one and the B3 flow radar,

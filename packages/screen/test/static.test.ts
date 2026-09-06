@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -99,10 +99,10 @@ test('t206 AT4 — every file the page is really made of resolves, and is served
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name);
 
-  assert.ok(names.includes(INDEX_FILE), `src/public has no ${INDEX_FILE} to serve at /`);
+  assert.ok(names.includes(INDEX_FILE), `src/public has no ${INDEX_FILE} to serve at /inbox`);
   assert.ok(names.length >= 5, `found only ${names.length} files; this is not reading the directory`);
 
-  for (const requested of ['/', ...names.map((name) => `/${name}`)]) {
+  for (const requested of ['/inbox', ...names.map((name) => `/${name}`)]) {
     const resolved = resolveStaticFile(requested);
     assert.ok(resolved !== null, `the screen stopped serving ${requested}`);
     assert.ok(
@@ -114,4 +114,42 @@ test('t206 AT4 — every file the page is really made of resolves, and is served
     assert.equal(served.status, 200, `${requested} did not come back as a file`);
     assert.ok(served.body.length > 0, `${requested} came back empty`);
   }
+});
+
+/**
+ * t402 AT11 — the inbox moved from `/` to `/inbox`, in both directions.
+ *
+ * The root became the check page (RF-10), which is rendered by `pages.ts` and
+ * reached through `route()`. That only works if `resolveStaticFile` stops
+ * claiming `/`: the router tries the file first, and a resolver that still
+ * answered there would keep serving `index.html` over a view that exists.
+ *
+ * So both halves are asserted, and the second is the one that matters: the
+ * document really moved (byte for byte against the file on disk), and the old
+ * address really stopped answering with it.
+ */
+test('t402 AT11 — /inbox serves index.html byte for byte, and / no longer does', async () => {
+  const { INDEX_FILE, PUBLIC_DIR, resolveStaticFile, serveStatic } = await loadStatic();
+
+  const onDisk = readFileSync(path.join(PUBLIC_DIR, INDEX_FILE));
+
+  assert.equal(
+    resolveStaticFile('/inbox'),
+    path.join(PUBLIC_DIR, INDEX_FILE),
+    'the inbox no longer has an address of its own',
+  );
+  const served = await serveStatic('/inbox');
+  assert.equal(served.status, 200);
+  assert.deepEqual(served.body, onDisk, '/inbox does not serve the inbox document');
+  assert.match(served.headers['content-type'], /^text\/html/);
+
+  assert.equal(
+    resolveStaticFile('/'),
+    null,
+    'the root still resolves to a file, so the check page can never be reached',
+  );
+
+  // `/inbox.js` is a different path and keeps being the module it always was —
+  // the new mapping matches the exact path, not a prefix of it.
+  assert.equal(resolveStaticFile('/inbox.js'), path.join(PUBLIC_DIR, 'inbox.js'));
 });

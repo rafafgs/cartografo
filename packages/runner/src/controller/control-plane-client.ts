@@ -153,8 +153,11 @@ export interface Proposal {
  * problems in a 400 — and a bad draft is cheap and reversible, so mirroring
  * that judgement here would be a second copy that can drift.
  *
- * `projeto_id` and `execucao_id` do not appear: the route defaults both, and
- * the field arrives the day somebody needs it.
+ * `execucao_id` does not appear: the route defaults it, and the field arrives
+ * the day somebody needs it. `project_id` DOES appear, since t421 — the
+ * `intake` command resolves a `--project` (default 1, `command-line.ts`) and
+ * has to say which project the draft is created in, the same way it already
+ * has to say which project's classes it checked against.
  */
 export interface IntakeInput {
   /** Class whose registered graph the batch will cross. */
@@ -163,6 +166,8 @@ export interface IntakeInput {
   request: string;
   /** The proposed breakdown, exactly as whoever wrote it declared. */
   items: readonly unknown[];
+  /** Project the draft is created in. Always present — the caller always resolves one. */
+  project_id: number;
 }
 
 /**
@@ -737,6 +742,27 @@ export class ControlPlaneClient {
   /* ------------------------------------------------------------------------ */
   /* t144 — the one write intake generation adds.                             */
   /* ------------------------------------------------------------------------ */
+
+  /**
+   * Every class registered for one project — the read `intake` consults before
+   * it opens a session (FR3a).
+   *
+   * The project travels as a query filter, not a path segment, following the
+   * same convention {@link ControlPlaneClient.getSettings} already uses for
+   * `GET /v1/settings` and {@link ControlPlaneClient.listReleasedJobs} follows
+   * for `GET /v1/jobs`. Required, with no default baked in here: `--project`'s
+   * default (1) is `command-line.ts`'s decision, not this client's.
+   *
+   * @param projectId Project whose registered classes to read.
+   * @returns The classes registered for that project, in the order the route
+   *   sent them.
+   */
+  async getClasses(projectId: number): Promise<readonly { class: string }[]> {
+    const { classes } = await this.#get<{ classes: Array<{ class: string }> }>(
+      `/v1/classes?project_id=${String(projectId)}`,
+    );
+    return classes;
+  }
 
   /**
    * Proposes an intake draft — which is born, always, `pending`.

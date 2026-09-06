@@ -117,7 +117,7 @@ Chaining the `approve` is the one point where this page steps out of the inbox's
 rhythm, and it is deliberate: the person who has just edited the graph **is** the
 person the human gate would ask, and a second click on their own draft would be
 ceremony, not judgement. A topografo's proposal still stops at `pendente` and
-still waits for somebody at `/` — principle 5's safety ladder is about a change
+still waits for somebody at `/inbox` — principle 5's safety ladder is about a change
 **somebody else** proposed.
 
 What the page produces is byte for byte what a scripted client would produce:

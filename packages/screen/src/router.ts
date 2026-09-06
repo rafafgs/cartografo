@@ -94,7 +94,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
-import { ApiClient, ApiError, NetworkError } from './client.ts';
+import { ApiClient, ApiError, NetworkError, type Settings } from './client.ts';
 import {
   API_PREFIX,
   CONTROL_PLANE_URL_ENV,
@@ -111,6 +111,7 @@ import { resolveStaticFile, serveStatic } from './static.ts';
 import {
   DEFAULT_ANSWERED_BY,
   boardPage,
+  checkPage,
   errorPage,
   examplesPage,
   executionPage,
@@ -384,7 +385,7 @@ async function readScope(client: ApiClient, request: IncomingMessage): Promise<P
  */
 function rendersAView(pathname: string): boolean {
   return (
-    ['/board', '/examples', '/executions', '/input-requests', '/runners'].includes(pathname) ||
+    ['/', '/board', '/examples', '/executions', '/input-requests', '/runners'].includes(pathname) ||
     /^\/(executions|jobs)\/[^/]+$/.test(pathname)
   );
 }
@@ -484,7 +485,16 @@ export function failurePage(error: unknown, controlPlaneUrl: string): Page {
  * @returns The page, or the redirect target.
  */
 async function route(client: ApiClient, request: IncomingMessage): Promise<RouteResult> {
-  const pathname = new URL(request.url ?? '/', 'http://tela.local').pathname.replace(/\/+$/, '');
+  // The trailing slash is stripped so `/board/` and `/board` are one address —
+  // with one exception, and it is the whole of t402's FR9: the EXACT root keeps
+  // its own literal instead of collapsing to the empty string. The root used to
+  // belong to the static half, so nothing here ever had to name it; now it is
+  // the check page, and a normalization that erased it would leave that page's
+  // own branch permanently unreachable — dead code that
+  // `test/spec-routes.test.ts` would nonetheless read as a route and demand a
+  // row of the specification for.
+  const requested = new URL(request.url ?? '/', 'http://tela.local').pathname;
+  const pathname = requested === '/' ? requested : requested.replace(/\/+$/, '');
   const method = request.method ?? 'GET';
 
   if (method === 'GET') {
@@ -492,10 +502,11 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     // scope costs a call to the control plane, and a 404 must not pay for it.
     const scope = rendersAView(pathname) ? await readScope(client, request) : undefined;
 
-    // `/board`, and not `/`: the root belongs to the proposal inbox (t111),
-    // which was already this package's static `index.html` when this half
-    // arrived. The two halves link to each other through the navigation;
-    // neither disappears.
+    // The root is the check (t402): the first page a person opens is a check
+    // that runs itself, not a form and not a list. The proposal inbox that used
+    // to live here moved to `/inbox`, one line away in `static.ts`, and the two
+    // halves keep reaching each other through the navigation both pages carry.
+    if (pathname === '/') return await checkPage(client, scope);
     if (pathname === '/board') return await boardPage(client, scope);
     if (pathname === '/examples') return await examplesPage(client, scope);
     if (pathname === '/executions') return await executionsPage(client, scope);
@@ -533,6 +544,34 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
         );
       }
       return await switchProject(request);
+    }
+
+    if (pathname === '/settings') {
+      // The same gate every other write of this screen gets (t192). This one
+      // moves where every future session of a project is allowed to write, so a
+      // form on somebody else's page reaching it would be among the worst.
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
+        );
+      }
+      return await saveSettings(client, request);
+    }
+
+    const recheckMatch = /^\/runners\/([^/]+)\/rechecks$/.exec(pathname);
+    if (recheckMatch !== null) {
+      // The same gate, and before the id is even read: a request from elsewhere
+      // gets one answer, and not a 404 that tells it which runners exist.
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
+        );
+      }
+      return await requestRecheck(client, decodeURIComponent(recheckMatch[1]));
     }
 
     const exampleMatch = /^\/examples\/([^/]+)\/run$/.exec(pathname);
@@ -658,6 +697,63 @@ async function runExample(
   // 303 and not 302, for the same reason the answer form gives: after a POST
   // the way back is a GET, and a reload must not start a second demo.
   return { redirect: `/executions/${executionId}` };
+}
+
+/**
+ * `POST /runners/:id/rechecks` — "check again", on the check page (t402, FR5).
+ *
+ * It writes for real (`POST /v1/runners/:id/rechecks`) and comes back to `/`.
+ * What it does NOT do is wait for the answer: the runner serves the request on
+ * its next loop tick by reporting a fresh probe, and the reload IS the refresh
+ * — the same posture every other view of this screen takes, none of which
+ * polls.
+ *
+ * The form body is not read: there is nothing in it. The id comes off the path
+ * and everything else — whether a re-check is already pending, whether this
+ * runner exists at all — is the control plane's answer to one request, and a
+ * failure raises out of the client onto `failurePage` like every other route
+ * here.
+ */
+async function requestRecheck(client: ApiClient, runnerId: string): Promise<RouteResult> {
+  await client.requestRunnerRecheck(runnerId);
+
+  // 303 and not 302, the same reason the answer form gives: after a POST the
+  // way back is a GET, and a reload must not queue a second re-check.
+  return { redirect: '/' };
+}
+
+/**
+ * `POST /settings` — the two roots, from the check page's inline form (t402, FR6).
+ *
+ * **A blank field is not sent.** `PATCH /v1/settings` refuses an empty string
+ * with `invalid_setting_value`, on purpose: an empty root is not "no root", it
+ * is a value nothing could be started from. So a half-filled form writes the
+ * half that was filled, and the screen never forwards a request it already
+ * knows will be refused — turning a partial edit into a 502 would be this
+ * screen inventing a failure out of a decision the operator was allowed to
+ * take.
+ *
+ * Only the two roots, and deliberately never `engine`: the check page reads
+ * that key to decide which fix actions to draw, and a form that could rewrite
+ * it would let a typo silently change what the page then claims about the
+ * machine. Changing the engine stays a `PATCH` any API client can make.
+ */
+async function saveSettings(client: ApiClient, request: IncomingMessage): Promise<RouteResult> {
+  const fields = await readForm(request);
+
+  const patch: Settings = {};
+  const workspaceRoot = (fields.get('workspace_root') ?? '').trim();
+  const worktreesRoot = (fields.get('worktrees_root') ?? '').trim();
+  if (workspaceRoot !== '') patch.workspace_root = workspaceRoot;
+  if (worktreesRoot !== '') patch.worktrees_root = worktreesRoot;
+
+  // Nothing filled is nothing to write, and the control plane never hears about
+  // it: an empty patch is a form somebody submitted by accident, not an edit.
+  if (Object.keys(patch).length > 0) {
+    await client.updateSettings(patch, { project_id: projectFromCookie(request.headers.cookie) });
+  }
+
+  return { redirect: '/' };
 }
 
 /**

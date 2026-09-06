@@ -26,10 +26,11 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The twelve routes
+## 1. The fifteen routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
+| `GET /` | The check: whether this machine is ready to run anything, per paired runner — engine, model credential, the `cartografo` MCP server, workspace — or the single "everything is ready" panel with a way into the board. | `GET /v1/runners` (probe embedded), `GET /v1/settings` |
 | `GET /board` | The board: every job, grouped by `no_atual`, with the blocking reason where there is one. | `GET /v1/jobs` |
 | `GET /examples` | The bundles the control plane can demonstrate: one card each, with the demo's title, whether the class is already registered, and a form that runs it. | `GET /v1/examples` |
 | `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
@@ -42,6 +43,8 @@ runs in `npm run lint`, and locked down by
 | `POST /jobs/:id/block` | Nothing: it raises the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/jobs/:id`. | `POST /v1/jobs/:id/blocks` |
 | `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
+| `POST /runners/:id/rechecks` | Nothing: it asks one runner to report about its machine again and redirects (303) to `/`. The runner serves the request on its next loop tick; reloading is what shows the new probe. | `POST /v1/runners/:id/rechecks` |
+| `POST /settings` | Nothing: it writes `workspace_root`/`worktrees_root` for the project in the cookie and redirects (303) to `/`. A field left blank is not sent. | `PATCH /v1/settings` |
 
 Every view renders **on the request**. There is no polling, no websocket and no
 auto-refresh: reloading the page is the update, and the screen's state is always
@@ -78,19 +81,62 @@ between them, in this order:
 | Path | Who answers |
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
-| A file from `src/public/` — `/`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The twelve routes of this specification, rendered on the server. |
+| A file from `src/public/` — `/inbox`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
+| Anything else | The fifteen routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
 precisely its `null` that hands `/executions` and `/jobs/7` to the views instead
 of 404-ing them as a missing file.
 
-**Why the board is `/board` and not `/`.** The root was already the inbox's
-`index.html` when this half arrived, and changing that would break the inbox's
-acceptance tests with no functional gain: the two halves reach each other through
-the navigation both pages carry at the top. It is layout, not a boundary —
-changing our minds costs one line on each side.
+**What the root is, and why it is not the board.** For a long time `/` was the
+inbox's `index.html`, because that half arrived first; the board stayed at
+`/board` and the two reached each other through the navigation. That was layout
+and not a boundary, and t402 changed our minds, at the cost of one line on each
+side: the root is now the **check**, and the inbox moved to `/inbox`.
+
+The reason is RNF-01 — nothing is asked that the system can discover. The first
+page a person opens should not be a list they cannot yet read, nor a form asking
+them for facts a paired runner already reported about its own machine. So `/`
+either says everything this machine needs is ready, with a way into the board,
+or names exactly what is missing with exactly one way to fix each. It reads
+`GET /v1/runners` (unscoped, with t401's embedded probe) and `GET /v1/settings`
+(scoped, t403) in parallel, opens no route of its own on the core's side, and
+gains no privilege doing it (D11).
+
+**The check is per runner, never per fleet.** One group per paired runner, each
+with the same four lines, so a fleet of more than one never hides a broken
+machine behind a working one. A runner with `probe: null` — paired, but it has
+never reported — gets four lines reading "waiting for this runner's first
+report" and no diagnosis at all: with nothing known there is nothing to react
+to, and an install command drawn against a machine that may well be fine is the
+page inventing a failure. The only action offered there is `POST
+/runners/:id/rechecks`.
+
+Two of the four lines are deliberately narrower than they look:
+
+- **the MCP line asks whether the `cartografo` server is registered**, not
+  whether the engine supports MCP at all — the second is not something a command
+  fixes, and the first is what gets the model driving the browser onto the same
+  map as the person reading it. `mcp: {supported:false}` (an adapter with no
+  discovery, t400) reads as "can't be checked automatically" and never as a
+  failure: an adapter that never implemented discovery is not an engine with
+  zero MCP servers;
+- **the credential line names the environment variables each adapter actually
+  checks** (`CREDENTIAL_VARIABLES`, `CODEX_CREDENTIAL_VARIABLES`) and the
+  credential file each preflight reads (`~/.claude.json`'s `oauthAccount`,
+  `$CODEX_HOME/auth.json`), rather than a login subcommand. No such subcommand
+  is evidenced anywhere in this repository, and asserting one on the page whose
+  premise is "nothing is asked that the system can't discover" would ship an
+  unverified command with the same authority as the measured ones.
+
+The same rule is why `claude-code`'s engine line has no install command and says
+so: no npm package name for that CLI is recorded here, and `codex`'s line cites
+`npx --yes @openai/codex@latest` only because that is how this repository's own
+codex evidence was gathered.
+
+**Nothing redirects the old root.** D20's precedent stands: nothing here is
+public yet, so `/` did not move, it is simply somewhere else now.
 
 ### What the proxy refuses
 
@@ -104,9 +150,10 @@ The gate closes exactly that hole.
 It reads **fetch metadata**, and nothing else: `Sec-Fetch-Site` and `Origin` are
 written by the browser's network stack and forbidden to the page's script — not
 even in `no-cors` can a hostile page forge them. Writes are refused (`/v1/*` with
-a method other than `GET`/`HEAD`, and this specification's
-`POST /input-requests/:id/answer`, `POST /jobs/:id/unblock` and
-`POST /jobs/:id/block`) when:
+a method other than `GET`/`HEAD`, and every `POST` of this specification —
+`/input-requests/:id/answer`, `/jobs/:id/unblock`, `/jobs/:id/block`,
+`/project`, `/examples/:class/run`, `/runners/:id/rechecks` and `/settings`)
+when:
 
 1. **`Sec-Fetch-Site` came and is neither `same-origin` nor `none`** — the
    browser itself is saying the request was born somewhere else;
@@ -301,7 +348,7 @@ existed:
 | `GET /v1/sessions?trabalho_id=` | There was only a filter by execution; without this one, "this job's sessions" cannot be asked for — and without them there is no session end on the timeline. |
 | `GET /v1/input-requests?trabalho_id=` | Symmetric to the previous one, for the same reason: the end of the waits. |
 | `GET /v1/examples` | There was no way to **discover** which bundles are ready to be demonstrated. The screen opens no directory and knows no path (D11), so listing `factory-graphs/` on this side would have been the very shortcut this layer exists without. It scans an examples root — `CARTOGRAFO_EXAMPLES_ROOT`, `factory-graphs/` by default — for every subdirectory carrying a `demo/job.json`, and answers `{examples: [{class, bundle, demo_title, registered}]}` (t408). |
-| `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). |
+| `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). Since t409 a bundle may also ship a `demo/repo/`, and when it does the route copies it into the project's `workspace_root` as a git repository BEFORE anything is written — the demo of `software-development` needs a real checkout to cut worktrees from. That step adds two refusals to the `409` this row already answered, both of which write nothing at all: `workspace_root_unset` (the setting points nowhere) and `workspace_not_empty` (the workspace already holds work, including the work a previous demo run put there). Neither is signalled ahead of the click: they reach the operator through the same generic failure page as any other write this route refuses. |
 
 The filters add up as an **AND** with the ones that already existed, and an
 invalid filter is a **400**, never a filter ignored in silence.
@@ -365,8 +412,10 @@ one of them is changing the contract; changing a CSS class is not.
 | `data-no-atual` | a board group | the node's id |
 | `data-trabalho` | a job card | the job's id |
 | `data-execucao` | a line of the execution list | the id, or empty in the `null` group |
-| `data-campo` | a count cell or a derived-field cell | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao` |
-| `data-runner` | a line of the runner table | the runner's id |
+| `data-campo` | a count cell, a derived-field cell, or a line of the check | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao`, and on `/`: `runner`, `engine`, `credential`, `mcp`, `workspace` |
+| `data-estado` | a line of the check, beside its `data-campo` | `met` or `unmet` |
+| `data-pronto` | the "everything is ready" panel on `/` | how many paired runners were checked |
+| `data-runner` | a line of the runner table, or a group of the check | the runner's id |
 | `data-sessao` | a line of the session table | the session's id |
 | `data-transcricao` | the link in the transcript cell, in the session table | the session's id (the `href` is `/v1/sessions/:id/transcript`) |
 | `data-pergunta` | a question card | the question's id |
@@ -400,7 +449,7 @@ Every item is another ticket's declared scope, not an oversight:
   lineages (D13).
 - **The proposal approval inbox** (the `proposta` entity, distinct from
   `pergunta`) — it is the package's other half, served at
-  `/` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
+  `/inbox` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
 - **Logging in from the browser** — the API is authenticated and the
   screen a service credential (`CARTOGRAFO_SCREEN_TOKEN`, with `CARTOGRAFO_TOKEN`
   as a fallback), which it presents on every call to the control plane. The
@@ -423,4 +472,7 @@ Every item is another ticket's declared scope, not an oversight:
   ([`runner-and-controller.md`](runner-and-controller.md) §5). A paired runner
   that never picked up work appears with all three fields empty, just like one
   that is down. Inventing a liveness signal here that the API does not have would
-  be exactly the shortcut D11 forbids.
+  be exactly the shortcut D11 forbids. The check at `/` inherits the same limit
+  and says the same thing in its own words: a runner with `probe: null` is
+  "waiting for this runner's first report", which covers both the machine that
+  is starting up and the machine that will never answer.

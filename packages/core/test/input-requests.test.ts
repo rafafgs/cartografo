@@ -692,10 +692,16 @@ test('AT6 — an answered one from another project is never a precedent, not eve
 
   const text = 'Renumber the migration to 0003?';
 
+  // A DECLARED project since t411, and the mirror below says which one it is
+  // reading from: the route resolves the scope before the repository runs, so
+  // an undeclared `project_id` is now a `404 unknown_project` and an unscoped
+  // read is the default project's. What this case is about — a precedent never
+  // crossing the boundary, in either direction — is untouched.
+  const second = await declareSecondProject(ctx);
   const otherJob = await createJob(ctx, {
     title: 'from another project',
     entry_node_id: 'entrada',
-    project_id: 42,
+    project_id: second,
   });
   const theirs = await askAndAnswer(ctx, otherJob.id, text, 'Keep 0002');
 
@@ -712,7 +718,7 @@ test('AT6 — an answered one from another project is never a precedent, not eve
 
   // And the mirror: whoever asks from the other side sees their own history.
   const fromThere = await askQuestion(ctx, otherJob.id, text);
-  const theirPrecedents = await precedentsOf(ctx, fromThere.id);
+  const theirPrecedents = await precedentsOf(ctx, fromThere.id, `?project_id=${second}`);
   assert.deepEqual(
     theirPrecedents.body.precedents.map((row) => row.id),
     [theirs.id],
@@ -955,4 +961,140 @@ test('t149 AT4 — answering an input request that does not exist is still a 404
   );
   assert.equal(auto.status, 404);
   assert.equal(auto.body.error, 'not_found');
+});
+
+/* -------------------------------------------------------------------------- */
+/* Reads that resolve the project through the owning job (t411)                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The second project every t411 case reads from.
+ *
+ * Declared through `POST /v1/projects`, because the routes under test refuse a
+ * scope no project answers to — the same `404 unknown_project`
+ * `GET /v1/classes?project_id=99` already gives.
+ */
+async function declareSecondProject(ctx: TestContext): Promise<number> {
+  const created = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  return created.body.id;
+}
+
+test('t411 — GET /v1/input-requests?project_id= lists only that project\'s queue', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const theirJob = await createJob(ctx, {
+    title: 'of the second project',
+    entry_node_id: 'entrada',
+    project_id: second,
+    execution_id: 7,
+  });
+  const myJob = await createJob(ctx, {
+    title: 'of the default project',
+    entry_node_id: 'entrada',
+    execution_id: 7,
+  });
+
+  const theirs = await askQuestion(ctx, theirJob.id, 'Which engine adapter goes in dispatch?');
+  const mine = await askQuestion(ctx, myJob.id, 'Renumber the migration to 0003?');
+
+  const listed = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?project_id=${second}`,
+  );
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.deepEqual(
+    listed.body.input_requests.map((item) => item.id),
+    [theirs.id],
+    "the queue is the owning job's project, and nothing else",
+  );
+
+  const undeclared = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    '/v1/input-requests',
+  );
+  assert.equal(undeclared.status, 200);
+  assert.deepEqual(
+    undeclared.body.input_requests.map((item) => item.id),
+    [mine.id],
+    'an absent scope is the default project, exactly as every other route reads it',
+  );
+
+  // The status slice still adds up as AND on top of the scope.
+  const pending = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?project_id=${second}&status=answered`,
+  );
+  assert.deepEqual(pending.body.input_requests, [], 'AND, not OR');
+});
+
+test('t411 — GET /v1/input-requests?project_id=<unknown> is a 404 unknown_project', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { title: 'mine', entry_node_id: 'entrada' });
+  await askQuestion(ctx, job.id, 'Renumber the migration to 0003?');
+
+  const refused = await request<{ error: string; project_id: number }>(
+    ctx,
+    'GET',
+    '/v1/input-requests?project_id=99',
+  );
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project');
+  assert.equal(refused.body.project_id, 99, 'the refusal names the scope nobody answers to');
+});
+
+test('t411 — precedents refuse an input request of another project, and answer their own', async (t) => {
+  requireArtifacts(...ARTIFACTS, SIMILARITY_ARTIFACT);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const text = 'Renumber the migration to 0003?';
+
+  const theirJob = await createJob(ctx, {
+    title: 'of the second project',
+    entry_node_id: 'entrada',
+    project_id: second,
+  });
+  const theirs = await askAndAnswer(ctx, theirJob.id, text, 'Keep 0002');
+  const theirQuestion = await askQuestion(ctx, theirJob.id, text);
+
+  // The SAME refusal an unknown id gets: from the default project that input
+  // request does not exist, and a second code here would leak that it does
+  // somewhere else.
+  const fromDefault = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/input-requests/${theirQuestion.id}/precedents?project_id=1`,
+  );
+  assert.equal(fromDefault.status, 404, JSON.stringify(fromDefault.body));
+  assert.equal(fromDefault.body.error, 'not_found');
+
+  const undeclared = await precedentsOf(ctx, theirQuestion.id);
+  assert.equal(undeclared.status, 404, 'an absent scope is the default project, not "any"');
+
+  const fromTheirs = await precedentsOf(ctx, theirQuestion.id, `?project_id=${second}`);
+  assert.equal(fromTheirs.status, 200, JSON.stringify(fromTheirs.body));
+  assert.deepEqual(
+    fromTheirs.body.precedents.map((row) => row.id),
+    [theirs.id],
+    'whoever asks from inside the project still sees its own history',
+  );
+
+  // ...and the default project's own precedent base is untouched.
+  const myJob = await createJob(ctx, { title: 'mine', entry_node_id: 'entrada' });
+  const myPrecedent = await askAndAnswer(ctx, myJob.id, text, 'Renumber to 0003');
+  const myQuestion = await askQuestion(ctx, myJob.id, text);
+  const mine = await precedentsOf(ctx, myQuestion.id);
+  assert.equal(mine.status, 200);
+  assert.deepEqual(
+    mine.body.precedents.map((row) => row.id),
+    [myPrecedent.id],
+  );
 });

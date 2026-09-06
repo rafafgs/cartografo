@@ -221,3 +221,53 @@ test('AT4 — the three exported reads keep their `(baseUrl, fetchImpl)` signatu
   assert.equal(captured.length, 3);
   for (const request of captured) assert.ok(!request.headers.has('authorization'));
 });
+
+/* -------------------------------------------------------------------------- */
+/* t420 — the reader's second, independent axis of scope: the project (D25).  */
+/* -------------------------------------------------------------------------- */
+
+test('t420 — a reader built with a projectId scopes all three reads on the wire', async () => {
+  const { createControlPlaneReader } = await loadClient();
+
+  const captured: CapturedRequest[] = [];
+  const reader = createControlPlaneReader(BASE_URL, { projectId: 3, fetchImpl: recorder(captured) });
+
+  await readEverything(reader, captured);
+
+  assert.deepEqual(captured.map((request) => request.url), [
+    `${BASE_URL}/v1/classes?project_id=3`,
+    `${BASE_URL}/v1/graph-versions/${encodeURIComponent(VERSION_ID)}?project_id=3`,
+    `${BASE_URL}/v1/skills?project_id=3`,
+  ]);
+});
+
+test('t420 — a reader built with no projectId sends no `project_id` anywhere', async () => {
+  const { createControlPlaneReader } = await loadClient();
+
+  const captured: CapturedRequest[] = [];
+  const reader = createControlPlaneReader(BASE_URL, { fetchImpl: recorder(captured) });
+
+  await readEverything(reader, captured);
+
+  assert.equal(captured.length, 3);
+  for (const request of captured) {
+    assert.ok(!request.url.includes('project_id'), `${request.url} invented a project nobody named`);
+  }
+});
+
+test('t420 — the three exported reads accept a trailing projectId and scope identically', async () => {
+  const { fetchClasses, fetchClassVersion, fetchSkills } = await loadClient();
+
+  const captured: CapturedRequest[] = [];
+  const fetchImpl = recorder(captured);
+
+  await fetchClasses(BASE_URL, fetchImpl, undefined, 3);
+  await fetchClassVersion(BASE_URL, VERSION_ID, fetchImpl, undefined, 3);
+  await fetchSkills(BASE_URL, fetchImpl, undefined, 3);
+
+  assert.deepEqual(captured.map((request) => request.url), [
+    `${BASE_URL}/v1/classes?project_id=3`,
+    `${BASE_URL}/v1/graph-versions/${encodeURIComponent(VERSION_ID)}?project_id=3`,
+    `${BASE_URL}/v1/skills?project_id=3`,
+  ]);
+});

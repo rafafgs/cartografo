@@ -569,10 +569,12 @@ never the actor that happened to push the job that closed the account.
 {}
 ```
 
-**No payload**, for the same reason as `job.unblocked`: the envelope's
-`execution_id`, `entity.id` and `occurred_at` already say which round ended and
-when, and repeating that inside `data` would be duplicated data within the event
-itself.
+**No payload**, because the envelope's `execution_id`, `entity.id` and
+`occurred_at` already say which round ended and when, and repeating that inside
+`data` would be duplicated data within the event itself. `job.unblocked` used to
+be cited here as the precedent; it stopped being payload-free in t339, when a
+human unblock gained a reason to state. The reasoning is the one that outlived
+the example.
 
 **Once, forever.** The fact is recorded the first time the condition holds, in
 the SAME transaction as the transition that made it true, and never again — a

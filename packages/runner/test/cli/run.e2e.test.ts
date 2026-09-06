@@ -440,6 +440,11 @@ async function blockEveryJob(plane: RunningControlPlane, projectId?: number): Pr
  * silence. Every case that wants a project OTHER than the default has to ask
  * for one here first.
  *
+ * `GET /v1/sessions` reads the same way since t411 — it resolves a session's
+ * scope through the `session.opened` event and refuses an undeclared project —
+ * so the wait below, which polls that route with this id, needs the project to
+ * exist for exactly the same reason the poll does.
+ *
  * @param plane The control plane to declare in.
  * @param name Name of the project; unique per plane, so each case brings its
  *   own.
@@ -1855,7 +1860,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74071',
+        `/v1/sessions?execution_id=74071&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
@@ -1883,10 +1888,14 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       'the worktree was cut from the repository `workspace_root` names',
     );
 
+    // Scoped, like the `/v1/sessions` read above it: `GET /v1/executions/:id/events`
+    // filters the log by project since t414, and this case's job lives in a
+    // project it declared for itself. Unscoped, this reads the DEFAULT project's
+    // log and finds nothing.
     const { events } = await api<{ events: Event[] }>(
       plane,
       'GET',
-      '/v1/executions/74071/events',
+      `/v1/executions/74071/events?project_id=${String(projectId)}`,
     );
     const opened = events.filter((event) => event.type === 'session.opened');
     assert.ok(opened.length > 0, 'a session was opened for this execution');
@@ -1953,7 +1962,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74081',
+        `/v1/sessions?execution_id=74081&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
@@ -2113,14 +2122,19 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74101',
+        `/v1/sessions?execution_id=74101&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);
 
     await runner.stop();
 
-    const { events } = await api<{ events: Event[] }>(plane, 'GET', '/v1/executions/74101/events');
+    // Scoped for the same reason as AT7's read (t414).
+    const { events } = await api<{ events: Event[] }>(
+      plane,
+      'GET',
+      `/v1/executions/74101/events?project_id=${String(projectId)}`,
+    );
     const opened = events.filter((event) => event.type === 'session.opened');
     assert.ok(opened.length > 0, 'a session was opened for this execution');
     assert.deepEqual(
@@ -2184,7 +2198,7 @@ test('t404 — a runner with no paths of its own falls back to the control plane
       const { sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execution_id=74111',
+        `/v1/sessions?execution_id=74111&project_id=${projectId}`,
       );
       return sessions.some((session) => session.status === 'completed');
     }, plane, projectId);

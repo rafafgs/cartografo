@@ -95,6 +95,8 @@ const STYLE = `
   form textarea { width: 100%; min-height: 3.5rem; font: inherit; padding: .4rem; }
   form label[for] { display: block; font-size: .8rem; letter-spacing: .02em; opacity: .7; margin-bottom: .2rem; }
   form .opcoes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
+  form.action { margin-top: .5rem; max-width: 52rem; }
+  form.action p { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin: .4rem 0 0; font-size: .8rem; }
   .linha-do-tempo { list-style: none; padding: 0; max-width: 52rem; }
   .segmento { display: grid; grid-template-columns: 11rem 1fr; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid currentColor; }
   .segmento .balde { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
@@ -219,6 +221,55 @@ export function formatDuration(ms: number | null): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
+/**
+ * The form behind a job's blocked flag — one action, a reason, and a name (t339).
+ *
+ * The same shape for both halves, because they are the same decision seen from
+ * either side: state why, say who, submit. Which one a surface offers is decided
+ * by the flag alone, never by the form — a blocked job gets `unblock` and
+ * nothing else, a healthy one gets `block` and nothing else. Offering an action
+ * the control plane would refuse is the failure mode `resolveActionsForStatus`
+ * exists to prevent on the inbox, and it is avoided here the same way.
+ *
+ * The reason field carries a visible `<label>` tied by `for`/`id`, the same rule
+ * `questionCard` follows and for the same reason: it is the required field of
+ * the form, and a placeholder is not a reliable accessible name. The id is
+ * qualified by the action as well as the job, because `/jobs/:id` renders one of
+ * these on a page that also has a header with the same job's id.
+ *
+ * `actor_ref` defaults to {@link DEFAULT_ANSWERED_BY} for the reason that
+ * constant records: the screen holds one service credential and asks the browser
+ * for nothing, so "tela" is honestly all the system knows when nobody types a
+ * name. What it must NOT do is send nothing — an absent actor makes the control
+ * plane record its own identity, and the audit would then say the system blocked
+ * what a person blocked.
+ *
+ * @param job The job the action is about.
+ * @param action `block` or `unblock` — the route, the button and the id prefix.
+ * @param prompt The label over the reason field.
+ * @returns The form, ready to go into a card or a page.
+ */
+function flagForm(job: Job, action: 'block' | 'unblock', prompt: string): string {
+  const field = `reason-${action}-${job.id}`;
+  return `<form class="action" method="post" action="/jobs/${job.id}/${action}">
+      <label for="${field}">${escapeHtml(prompt)}</label>
+      <textarea id="${field}" name="reason" required placeholder="in one sentence, so the log says why"></textarea>
+      <p>
+        <label>who is doing this <input name="actor_ref" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
+        <button type="submit">${action}</button>
+      </p>
+    </form>`;
+}
+
+/**
+ * A job on the board — and, when it is being held, the door out of it (t339).
+ *
+ * Unblock lives HERE and not on `/jobs/:id` because releasing is done to a
+ * queue: the standing consumer files every rule promotion as a job born
+ * blocked, and the human gate is walking the held column and letting them
+ * through. Block is the opposite act — deliberate, one at a time — and lives on
+ * the job's own page, so the board's grid does not carry a form on every card.
+ */
 function jobCard(job: Job): string {
   const classes = job.blocked ? 'cartao bloqueado' : 'cartao';
   const reason =
@@ -227,10 +278,12 @@ function jobCard(job: Job): string {
       : job.blocked
         ? '<p class="motivo">⛔ blocked, with no reason declared</p>'
         : '';
+  const release = job.blocked ? flagForm(job, 'unblock', 'why it can move again') : '';
   return `<article class="${classes}" data-trabalho="${job.id}">
       <div class="id">#${job.id}</div>
       <a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>
       ${reason}
+      ${release}
     </article>`;
 }
 
@@ -690,12 +743,18 @@ export async function jobPage(
       ? '<p class="vazio">Nothing has happened to this job yet.</p>'
       : `<ul class="linha-do-tempo">\n${timeline.segments.map(segmentHtml).join('\n')}\n</ul>`;
 
+  // Mutually exclusive with the blocked state, the same way the board's unblock
+  // form is: a job that is already held has nothing to block, and the way out of
+  // it is on `/board` (t339).
+  const hold = job.blocked ? '' : `<h2>hold this job</h2>\n${flagForm(job, 'block', 'why it should stop here')}`;
+
   return {
     status: 200,
     html: layout(
       job.title,
       `<h2>#${job.id} · ${escapeHtml(job.title)}</h2>
 <p>current node <strong>${escapeHtml(job.current_node_id)}</strong> · execution ${execution} · ${escapeHtml(state)}</p>
+${hold}
 <h2>timeline</h2>
 ${segments}
 <h2>totals</h2>

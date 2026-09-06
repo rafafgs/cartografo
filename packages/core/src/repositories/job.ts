@@ -1196,13 +1196,20 @@ export function blockOnRepeatedFailure(
 
 /** Body of `POST /v1/jobs/:id/unblocks`. */
 export interface UnblockInput {
+  /** Why, when whoever lowered the flag has something to say (t339). */
+  reason?: unknown;
   actor?: unknown;
 }
 
 /**
  * Lowers the flag and records `job.unblocked` (FR6).
  *
- * The event has no payload: the fact is the fall of the flag itself.
+ * The fall of the flag is the fact; the reason is what a PERSON adds to it
+ * (t339). It stays optional for the caller that has none to give: answering an
+ * input request unblocks the job in the same transaction
+ * (`repositories/input-request.ts`), and there the answer already IS the reason
+ * — an invented sentence there would be worse than the `null` the validator
+ * normalizes an absent optional field to.
  *
  * @param db Open handle.
  * @param id Job id.
@@ -1211,7 +1218,7 @@ export interface UnblockInput {
  */
 export function unblockJob(db: Database, id: number, input: UnblockInput): Job | null {
   return mutate(db, id, 'job.unblocked', input.actor, API_ACTOR, () => ({
-    data: {},
+    data: { reason: input.reason },
     sql: 'blocked = ?, block_reason = NULL',
     values: [asInteger(false)],
   }));

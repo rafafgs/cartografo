@@ -38,7 +38,14 @@ const API_GAPS_HEADING = '## 4.';
 /** Method and path in the first cell of a route-table row, as in `GET /board`. */
 const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
 
-/** The numerals this spec spells out, and what each one is worth. */
+/**
+ * The numerals this spec spells out, and what each one is worth.
+ *
+ * The list is the VOCABULARY the pin can read, and it has to stay ahead of the
+ * route count: a numeral the spec spells and this map does not know is a count
+ * that silently stops being checked, which is the drift AT2 exists to catch.
+ * It was extended to twelve when t339 added the two job-flag writes.
+ */
 const NUMERALS = new Map([
   ['one', 1],
   ['two', 2],
@@ -50,6 +57,8 @@ const NUMERALS = new Map([
   ['eight', 8],
   ['nine', 9],
   ['ten', 10],
+  ['eleven', 11],
+  ['twelve', 12],
 ]);
 
 /** A spelled-out count of routes, anywhere in the prose. */

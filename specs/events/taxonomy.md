@@ -167,12 +167,21 @@ manual.
 
 #### `job.unblocked` — [schema](schemas/job.unblocked.schema.json)
 
-Emitted when the flag comes down. Actor: `system` or `user`. No payload — the
-fact is the falling of the flag itself.
+Emitted when the flag comes down. Actor: `system` or `user`. The fall of the
+flag is the fact; `reason` is what a **person** adds to it.
 
 ```json
-{}
+{"reason":"three weeks of real trades back this rule; releasing the promotion"}
 ```
+
+`reason` is **optional**, and deliberately not required the way
+`job.blocked.reason` is. It is populated by a human override — the screen's
+unblock action on the board, or any caller that states why — and is `null` for
+the control plane's own unblock: answering an input request lowers the flag in
+the same transaction, and there the answer already IS the reason, so inventing
+a sentence would put words in nobody's mouth. It is the same reading
+`job.blocked.consecutive_failures` gets, `null` for every block the failure cap
+did not raise.
 
 #### `job.amended` — [schema](schemas/job.amended.schema.json)
 

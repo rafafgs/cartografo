@@ -26,7 +26,7 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The ten routes
+## 1. The twelve routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
@@ -38,6 +38,8 @@ runs in `npm run lint`, and locked down by
 | `GET /runners` | The fleet: one runner per line, with active leases, the last heartbeat and the last lease it lost to the TTL. | `GET /v1/runners` |
 | `POST /examples/:id/run` | Nothing: it runs the example and redirects (303) to `/executions/<the round it allocated>`. The `:id` here is the example's problem class, not an integer. | `POST /v1/examples/:class/run` |
 | `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
+| `POST /jobs/:id/unblock` | Nothing: it lowers the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/board`. | `POST /v1/jobs/:id/unblocks` |
+| `POST /jobs/:id/block` | Nothing: it raises the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/jobs/:id`. | `POST /v1/jobs/:id/blocks` |
 | `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
 
@@ -77,7 +79,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The ten routes of this specification, rendered on the server. |
+| Anything else | The twelve routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
@@ -103,7 +105,8 @@ It reads **fetch metadata**, and nothing else: `Sec-Fetch-Site` and `Origin` are
 written by the browser's network stack and forbidden to the page's script — not
 even in `no-cors` can a hostile page forge them. Writes are refused (`/v1/*` with
 a method other than `GET`/`HEAD`, and this specification's
-`POST /input-requests/:id/answer`) when:
+`POST /input-requests/:id/answer`, `POST /jobs/:id/unblock` and
+`POST /jobs/:id/block`) when:
 
 1. **`Sec-Fetch-Site` came and is neither `same-origin` nor `none`** — the
    browser itself is saying the request was born somewhere else;
@@ -242,6 +245,48 @@ the fact and nothing else; the cycle happens on the other side of the HTTP. It
 was written before that wiring existed and did not change a line when it arrived —
 which was exactly the bet.
 
+### Blocking and unblocking are real writes too
+
+The board used to show a held job and its reason and offer no way out of it: the
+flag could only come down from a terminal. Two new writes close that, and they
+are the same act seen from either side — a reason, a person, and one call to a
+route the control plane already published:
+
+| The screen's route | What it calls | Where it lands |
+|---|---|---|
+| `POST /jobs/:id/unblock` | `POST /v1/jobs/:id/unblocks` | **303** to `/board` |
+| `POST /jobs/:id/block` | `POST /v1/jobs/:id/blocks` | **303** to `/jobs/:id` |
+
+**One surface per action, and never both on one page.** Unblock is offered on
+`/board`'s cards, because releasing is done to a QUEUE — the standing consumer
+files every rule promotion as a job born blocked, and the human gate is walking
+the held column. Block is offered on `/jobs/:id`, because stopping a healthy job
+is deliberate and one at a time, and a form on every card of the grid would cost
+more than it buys. Each form is mutually exclusive with the state it changes: a
+blocked card offers unblock and nothing else, a healthy job page offers block and
+nothing else. Offering an action the API would refuse is the failure the inbox's
+own state table exists to prevent
+([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3).
+
+Two boundary choices, the same pair §3 draws for the answer form:
+
+- **A blank reason is refused by the screen** (400), before the network.
+  `job.blocked` already requires one, so the control plane would refuse that
+  half anyway — but `job.unblocked.reason` is deliberately **optional**
+  ([`specs/events/taxonomy.md`](../../specs/events/taxonomy.md)), because the
+  control plane's own unblock-on-answer has no reason to state. Optional
+  upstream and mandatory at this door is the whole point: a person who clicks
+  says why, and the automatic path is not made to invent a sentence.
+- **The actor is always sent, and never defaulted.** `resolveActor` in the
+  control plane turns an absent `actor` into the API's own identity — "the
+  control plane", not a person. A board action that left it out would record the
+  system as having released what a human released, which is exactly the
+  distinction
+  [`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts)
+  keeps for the answer-driven unblock. `actor_ref` falls back to `"tela"` when
+  the field comes in empty, for the same honesty reason `respondido_por` does:
+  the screen holds one service credential and asks the browser for none.
+
 ---
 
 ## 4. The five API gaps this layer closed
@@ -305,7 +350,7 @@ that copy a clicked option into the answer field; without them, typing the answe
 still works.
 
 It is a choice of scale, not of taste: the screen is a reading HTTP client with
-one form, and a front-end pipeline would cost more maintenance than the whole
+a few forms, and a front-end pipeline would cost more maintenance than the whole
 thing it would serve. It is also reversible — the boundary D11 freezes is the
 HTTP contract between the screen and the core, not what the screen uses inside.
 

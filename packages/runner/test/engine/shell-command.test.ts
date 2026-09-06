@@ -23,6 +23,7 @@ import {
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/shell-command.ts';
+import { ShellAdapter } from '../../src/engine/shell-adapter.ts';
 import { SessionStartError, type SessionSpec } from '../../src/engine/types.ts';
 
 const spec = (extra: Partial<SessionSpec> = {}): SessionSpec => ({
@@ -95,6 +96,19 @@ test('nothing goes to the child through stdin', () => {
   // to a library default rather than to anything the node did.
   assert.equal(ENGINE_STDIO[0], 'ignore');
   assert.deepEqual([...ENGINE_STDIO], ['ignore', 'pipe', 'pipe']);
+});
+
+test('this adapter discovers no MCP server, because it has no engine to ask (t400)', () => {
+  // The identical absence `listModels` already has here, and for the identical
+  // reason: `discoverMcpServers` reads the configuration of an ENGINE, and a
+  // command is not one. The contract is additive, so an adapter that implements
+  // neither is conformant and not degraded — what would be wrong is answering
+  // `{ servers: [] }`, which reads as "this engine knows of no MCP server"
+  // rather than "there is no engine here to know of any".
+  const adapter = new ShellAdapter();
+
+  assert.equal(adapter.discoverMcpServers, undefined);
+  assert.equal(adapter.listModels, undefined);
 });
 
 /* --- the environment: closed by default (FR4) ------------------------------- */

@@ -28,6 +28,7 @@ import { registerInputRequests } from './routes/input-requests.ts';
 import { registerProposals } from './routes/proposals.ts';
 import { registerRunners } from './routes/runners.ts';
 import { registerSessions } from './routes/sessions.ts';
+import { registerSettings } from './routes/settings.ts';
 import { registerSkills } from './routes/skills.ts';
 import { registerJobs } from './routes/jobs.ts';
 import { registerWebhooks } from './routes/webhooks.ts';
@@ -285,6 +286,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerEvents(inner, options.db));
       scope.register(async (inner) => registerWebhooks(inner, options.db));
       scope.register(async (inner) => registerHookSecrets(inner, options.db));
+      scope.register(async (inner) => registerSettings(inner, options.db));
     },
     { prefix: API_PREFIX },
   );

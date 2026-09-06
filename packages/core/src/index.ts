@@ -8,6 +8,7 @@
  * migrations").
  */
 
+import os from 'node:os';
 import path from 'node:path';
 
 import type { FastifyInstance } from 'fastify';
@@ -15,7 +16,9 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, applyPragmas, databasePath, type Database } from './db/connection.ts';
 import { acquireLock } from './db/lock.ts';
 import { migrate } from './db/migrate.ts';
+import { DEFAULT_PROJECT } from './repositories/common.ts';
 import { hasLiveCredential, issueCredential } from './repositories/credentials.ts';
+import { seedDefaultSettings } from './repositories/settings.ts';
 import { DEFAULT_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_RUNNER } from './routes/leases.ts';
 import { createApp } from './server.ts';
 
@@ -236,6 +239,20 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   try {
     applyPragmas(db);
     migrationsApplied = migrate(db, MIGRATIONS_DIR);
+
+    // The local runner's three defaults (t403, RF-08), seeded right after the
+    // schema exists so `GET /v1/settings` answers correctly even for an
+    // operator who never touches the later one-command flow. `INSERT OR
+    // IGNORE` underneath (`seedDefaultSettings`) is what makes this safe to run
+    // on every startup: a key a previous startup seeded, or a later `PATCH`
+    // changed, is left exactly as it is. Neither directory is created here —
+    // only the path a later ticket will provision is recorded.
+    seedDefaultSettings(db, DEFAULT_PROJECT, {
+      workspace_root: path.join(os.homedir(), '.cartografo', 'workspace'),
+      worktrees_root: path.join(os.homedir(), '.cartografo', 'worktrees'),
+      engine: 'claude-code',
+    });
+
     // Inside the `try`, like `serverPort`: a misconfigured ceiling — or a
     // misconfigured level — stops the startup, and the handle opened above is
     // closed on the way out.

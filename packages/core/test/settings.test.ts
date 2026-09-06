@@ -121,7 +121,7 @@ test('t403 AT3 — updateSettings with one unknown key alongside a valid one wri
 
   assert.throws(
     () => updateSettings(db, 1, { engine: 'codex', nonsense: 'x' }),
-    undefined,
+    /unknown/,
     'a patch with an unknown key has to throw before writing anything',
   );
 

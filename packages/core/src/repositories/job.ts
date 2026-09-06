@@ -410,6 +410,29 @@ export function getJob(db: Database, id: number, projectId: number = DEFAULT_PRO
   return row === undefined ? null : toJob(db, row);
 }
 
+/**
+ * The project a job id lives in, whichever project that is (t412, FR7).
+ *
+ * The one read of this file that crosses the partition on purpose, and it
+ * answers a single integer rather than a job. `POST /v1/leases` has to tell two
+ * cases apart: an id naming no row at all, which is leased over without comment
+ * because the controller is what decides eligibility, and an id naming a job
+ * that exists and contradicts the claim, which is `409 cross_project_reference`.
+ * {@link getJob} cannot say which of the two it is — since t410 it reads inside
+ * one partition, so both answer `null` — and widening it back would undo the
+ * boundary that ticket drew.
+ *
+ * Nothing of the job crosses: the caller learns which project owns an id it
+ * already named, and only in order to refuse it. The non-leaking convention of
+ * {@link readScopedRow} is untouched everywhere a job is READ.
+ */
+export function jobProjectId(db: Database, id: number): number | null {
+  const row = db.prepare('SELECT project_id FROM job WHERE id = ?').get(id) as
+    | { project_id: number }
+    | undefined;
+  return row === undefined ? null : row.project_id;
+}
+
 /** What the node input projection needs off the job itself (t253, FR7). */
 export interface JobContextSeed {
   /** The ticket, as `input.job` publishes it plus the class's own fields. */

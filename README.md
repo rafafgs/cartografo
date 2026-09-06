@@ -314,12 +314,23 @@ mutation that stays a proposal until a human decides. Copying any of it into a
 tool of your own, under any architecture, is the use this repository was written
 for.
 
+## Releasing
+
+Bump `packages/core/package.json`'s `version`, add an entry to
+[`CHANGELOG.md`](CHANGELOG.md), tag `vX.Y.Z` matching that version, and push
+the tag — `.github/workflows/release.yml` does the rest: the same four gates
+CI runs, then `npm pack` and `npm publish --provenance`. A manual
+`workflow_dispatch` run of that workflow is always a dry run, whoever triggers
+it; only a tag push performs a real publish. Publishing to npm is Rafael's own
+act (D23): this repository never runs that path on its own.
+
 ## Reference
 
 - [`docs/getting-started.md`](docs/getting-started.md) — the cold-start walkthrough.
 - [`docs/what-cartografo-is.md`](docs/what-cartografo-is.md) — the concept at length.
 - [`docs/spec/`](docs/spec) — the formats and the components, specified.
 - [`DECISIONS.md`](DECISIONS.md) — every decision on record, with its date and its reason.
+- [`CHANGELOG.md`](CHANGELOG.md) — what shipped in each release.
 
 Related work worth knowing: ADAS (automated search of agentic designs), DSPy
 (pipeline optimization from metrics), process mining (van der Aalst), LangGraph

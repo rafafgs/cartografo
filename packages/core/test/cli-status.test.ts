@@ -1,6 +1,12 @@
 /**
  * Acceptance tests of `status` (t108, FR5; counts made real by t199, FR1).
  *
+ * Since t354 the field that holds the graph CLASSES is called `classes`, and
+ * `projects` holds the real projects D25 introduced (`GET /v1/projects`). The
+ * old name meant the classes, which was merely loose while no project existed
+ * and became a collision the moment one did — so the rename lands in the same
+ * delivery that creates the collision, and these pins move with it.
+ *
  * The shape of `--json` is pinned byte for byte against an empty control plane,
  * for the same reason `health.test.ts` pins the `/health` body: it is machine
  * output, and a field that silently appears or disappears breaks its consumers.
@@ -86,7 +92,8 @@ test('AT8 — status --json against an empty control plane has a pinned shape', 
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
   assert.equal(
     result.stdout.trim(),
-    '{"server":"ok","projects":[],"jobs":0,"pendingInputRequests":0}',
+    '{"server":"ok","classes":[],"projects":[{"id":1,"name":"default"}],' +
+      '"jobs":0,"pendingInputRequests":0}',
   );
 });
 
@@ -111,12 +118,14 @@ test('AT9 — after importing, status --json lists the class with its current ve
 
   const report = JSON.parse(result.stdout) as {
     server: string;
-    projects: { class: string; current_version_id: string }[];
+    classes: { class: string; current_version_id: string }[];
+    projects: { id: number; name: string }[];
     jobs: number | null;
     pendingInputRequests: number | null;
   };
   assert.equal(report.server, 'ok');
-  assert.deepEqual(report.projects, [{ class: FACTORY_CLASS, current_version_id: version }]);
+  assert.deepEqual(report.classes, [{ class: FACTORY_CLASS, current_version_id: version }]);
+  assert.deepEqual(report.projects, [{ id: 1, name: 'default' }]);
   assert.equal(report.jobs, 1, 'the job created through the API is counted');
   assert.equal(report.pendingInputRequests, 1, 'the pending question is counted');
 
@@ -152,7 +161,7 @@ test('AT10 — an unreachable server keeps both counts null, never zero', { time
   assert.notEqual(result.code, 0);
   assert.equal(
     result.stdout.trim(),
-    '{"server":"unavailable","projects":null,"jobs":null,"pendingInputRequests":null}',
+    '{"server":"unavailable","classes":null,"projects":null,"jobs":null,"pendingInputRequests":null}',
     '`null` is "could not be queried"; `0` would claim an empty queue nobody looked at',
   );
 });

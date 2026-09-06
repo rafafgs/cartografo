@@ -136,11 +136,27 @@ export interface Event {
   data: Record<string, unknown>;
 }
 
-/** The slice asked of a listing route. */
+/** A project, as `GET /v1/projects` returns it (t354). */
+export interface Project {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+/**
+ * The slice asked of a listing route.
+ *
+ * `project_id` is the partition and not a filter like the other three (D25,
+ * t354): every read of this client carries it, and the screen takes it from a
+ * cookie the switcher writes. It is optional here for one reason only — the
+ * routes default to project 1, so a call that omits it means exactly what it
+ * meant before this ticket.
+ */
 export interface Filter {
   execution_id?: number;
   job_id?: number;
   status?: string;
+  project_id?: number;
 }
 
 /**
@@ -194,6 +210,7 @@ function queryString(filter: Filter): string {
   if (filter.status !== undefined) params.set('status', filter.status);
   if (filter.execution_id !== undefined) params.set('execution_id', String(filter.execution_id));
   if (filter.job_id !== undefined) params.set('job_id', String(filter.job_id));
+  if (filter.project_id !== undefined) params.set('project_id', String(filter.project_id));
   const text = params.toString();
   return text === '' ? '' : `?${text}`;
 }
@@ -250,13 +267,27 @@ export class ApiClient {
   }
 
   /**
+   * Every project that exists — what the switcher in the navigation draws.
+   *
+   * Unscoped, and it is the one read here that is: "which projects exist" is
+   * the question a scope would be an answer to (t354).
+   *
+   * @returns The projects, in id order.
+   */
+  async listProjects(): Promise<Project[]> {
+    const { projects } = await this.#get<{ projects: Project[] }>('/v1/projects');
+    return projects;
+  }
+
+  /**
    * One job.
    *
    * @param id Job id.
+   * @param filter Scope of the read.
    * @returns The job, or `null` when the control plane says it does not exist.
    */
-  async getJob(id: number): Promise<Job | null> {
-    return await this.#getOrNull<Job>(`/v1/jobs/${id}`);
+  async getJob(id: number, filter: Filter = {}): Promise<Job | null> {
+    return await this.#getOrNull<Job>(`/v1/jobs/${id}${queryString(filter)}`);
   }
 
   /**
@@ -265,8 +296,10 @@ export class ApiClient {
    * @param id Job id.
    * @returns Events in order, or `null` if the job does not exist.
    */
-  async jobEvents(id: number): Promise<Event[] | null> {
-    const body = await this.#getOrNull<{ events: Event[] }>(`/v1/jobs/${id}/events`);
+  async jobEvents(id: number, filter: Filter = {}): Promise<Event[] | null> {
+    const body = await this.#getOrNull<{ events: Event[] }>(
+      `/v1/jobs/${id}/events${queryString(filter)}`,
+    );
     return body === null ? null : body.events;
   }
 
@@ -275,15 +308,21 @@ export class ApiClient {
    *
    * @returns One row per execution, with the `null` group last.
    */
-  async listExecutions(): Promise<ExecutionSummary[]> {
+  async listExecutions(filter: Filter = {}): Promise<ExecutionSummary[]> {
     const { executions } = await this.#get<{ executions: ExecutionSummary[] }>(
-      '/v1/executions',
+      `/v1/executions${queryString(filter)}`,
     );
     return executions;
   }
 
   /**
    * The fleet: every paired runner, with what the lease table says about it.
+   *
+   * The one listing here that takes no scope, and deliberately: a runner is not
+   * scoped to a project — "pairing is identity alone"
+   * (`docs/spec/runner-and-controller.md` §1) — so the fleet reads the same from
+   * every project, and passing a `project_id` the route has no column for would
+   * suggest otherwise.
    *
    * @returns Runners in pairing order, as the control plane sent them.
    */

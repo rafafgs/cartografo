@@ -26,7 +26,7 @@ import { MIGRATIONS_DIR, requireArtifacts } from './support.ts';
 
 /** Artifacts this file exercises. */
 const T403_ARTIFACTS = Object.freeze({
-  migration: 'migrations/0026_settings.sql',
+  migration: 'migrations/0027_settings.sql',
   repository: 'src/repositories/settings.ts',
 });
 

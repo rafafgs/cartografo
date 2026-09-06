@@ -298,6 +298,9 @@ const TABLES = Object.freeze([
   'hook_delivery',
   'hook_secret',
   'setting',
+  // t354: the project stops being a loose integer in an envelope and becomes a
+  // row every partitioned table references (D25).
+  'project',
 ]);
 
 test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAULT', async (t) => {
@@ -312,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    26,
-    'a fresh database applies the twenty-six migrations of the package and nothing else',
+    27,
+    'a fresh database applies the twenty-seven migrations of the package and nothing else',
   );
 
   const objects = db
@@ -759,4 +762,219 @@ test('t279 AT10 — a checksum that matches is silent on every startup after the
     ledgerBefore,
     'and the ledger is not rewritten either',
   );
+});
+
+/** A `SELECT count(*) AS n` row, which the test below asks for a dozen times. */
+function counted(
+  db: import('../src/db/connection.ts').Database,
+  sql: string,
+  ...args: string[]
+): number {
+  return (db.prepare(sql).get(...args) as { n: number }).n;
+}
+
+test('t354 AT — migration 0026 partitions five populated tables onto project 1', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { listMigrations, migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+
+  // The same shape as the 0010 test above: the database is taken to the
+  // migration BEFORE this one and seeded there, so what runs afterwards is a
+  // rebuild of populated tables and not a fresh CREATE. D20 recreated the
+  // development database for a rename; this one is a structural widening with a
+  // real backfill, and it has to migrate in place.
+  const upToPrevious = path.join(base, 'up-to-previous');
+  mkdirSync(upToPrevious);
+  const all = listMigrations(REAL_MIGRATIONS_DIR);
+  const partition = all.find((migration) => migration.number === 26);
+  assert.ok(
+    partition,
+    'artifact does not exist yet: packages/core/migrations/0026_project_partition.sql',
+  );
+  assert.doesNotMatch(
+    readFileSync(partition.path, 'utf8'),
+    /\b(BEGIN|COMMIT|ROLLBACK)\b/i,
+    'the migration does not open a transaction of its own: the runner is what transacts',
+  );
+
+  for (const migration of all.filter((entry) => entry.number < 26)) {
+    writeMigration(upToPrevious, migration.file, readFileSync(migration.path, 'utf8'));
+  }
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+  migrate(db, upToPrevious);
+
+  assert.equal(
+    counted(db, "SELECT count(*) AS n FROM pragma_table_info('project')"),
+    0,
+    'the point of the test is that the project table is NOT there before 0026',
+  );
+
+  // A lineage, two versions (one born of a proposal), two proposals, a skill
+  // and a hook secret — one row in every table this migration widens, with the
+  // cross-references that made 0010 have to detach child pointers.
+  const moment = '2026-09-06T12:00:00.000Z';
+  const firstVersion = `sha256:${'c'.repeat(64)}`;
+  const secondVersion = `sha256:${'d'.repeat(64)}`;
+  db.prepare(
+    `INSERT INTO graph (id, class, lineage_type, current_version_id, created_at)
+     VALUES ('drafting', 'drafting', 'base', NULL, ?)`,
+  ).run(moment);
+  db.prepare(
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, created_at)
+     VALUES (?, 'drafting', NULL, '{}', 'manual', ?)`,
+  ).run(firstVersion, moment);
+  const seedProposal = db.prepare(
+    `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
+                           status, dedupe_key, created_at, updated_at)
+     VALUES ('drafting', ?, '[]', '{"source":"telemetry"}', '{"nome":"x"}', ?, ?, ?, ?)`,
+  );
+  seedProposal.run(firstVersion, 'pending', 'a-key', moment, moment);
+  seedProposal.run(firstVersion, 'applied', null, moment, moment);
+  db.prepare(
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id, created_at)
+     VALUES (?, 'drafting', ?, '{}', 'proposal', 2, ?)`,
+  ).run(secondVersion, firstVersion, moment);
+  db.prepare('UPDATE proposal SET applied_version_id = ? WHERE id = 2').run(secondVersion);
+  db.prepare('UPDATE graph SET current_version_id = ?, origin_proposal_id = 1 WHERE id = ?').run(
+    secondVersion,
+    'drafting',
+  );
+  db.prepare(
+    `INSERT INTO skill (id, version, hash, role, description, input, output, preconditions,
+                        checks, permissions, instructions, source, registered_at)
+     VALUES ('refine-ticket', '1.0.0', 'sha256:abc', 'work', 'refines', '{}', '{}', '[]',
+             '[]', '{}', 'refine it', '{"type":"native"}', ?)`,
+  ).run(moment);
+  db.prepare('INSERT INTO hook_secret (name, value, created_at) VALUES (?, ?, ?)').run(
+    'review-hook',
+    'hmac-key',
+    moment,
+  );
+
+  const graphBefore = db.prepare('SELECT id, class, created_at FROM graph').all();
+  const versionsBefore = db
+    .prepare('SELECT id, graph_id, parent_version, proposal_id FROM graph_version ORDER BY id')
+    .all();
+  const proposalsBefore = db
+    .prepare(
+      'SELECT id, graph_id, target_version, applied_version_id, dedupe_key FROM proposal ORDER BY id',
+    )
+    .all();
+
+  writeMigration(upToPrevious, partition.file, readFileSync(partition.path, 'utf8'));
+  assert.deepEqual(migrate(db, upToPrevious), [partition.id], 'only the partition was pending');
+
+  // FR1: the project table exists and holds exactly the default row.
+  assert.deepEqual(db.prepare('SELECT id, name FROM project ORDER BY id').all(), [
+    { id: 1, name: 'default' },
+  ]);
+  assert.equal(
+    typeof (db.prepare('SELECT created_at FROM project WHERE id = 1').get() as {
+      created_at: unknown;
+    }).created_at,
+    'string',
+  );
+
+  // FR2: every row of every widened table is backfilled onto project 1.
+  for (const table of ['graph', 'graph_version', 'proposal', 'skill', 'hook_secret']) {
+    const total = counted(db, `SELECT count(*) AS n FROM ${table}`);
+    assert.ok(total > 0, `${table} has to have been seeded before the migration`);
+    assert.equal(
+      counted(db, `SELECT count(*) AS n FROM ${table} WHERE project_id = 1`),
+      total,
+      `every row of ${table} is backfilled onto project 1`,
+    );
+  }
+
+  // ...and nothing else about those rows moved.
+  assert.deepEqual(db.prepare('SELECT id, class, created_at FROM graph').all(), graphBefore);
+  assert.deepEqual(
+    db
+      .prepare('SELECT id, graph_id, parent_version, proposal_id FROM graph_version ORDER BY id')
+      .all(),
+    versionsBefore,
+    'the version chain and its proposals survive the rebuild identical',
+  );
+  assert.deepEqual(
+    db
+      .prepare(
+        'SELECT id, graph_id, target_version, applied_version_id, dedupe_key FROM proposal ORDER BY id',
+      )
+      .all(),
+    proposalsBefore,
+  );
+  assert.equal(
+    (db.prepare('SELECT origin_proposal_id FROM graph').get() as { origin_proposal_id: number })
+      .origin_proposal_id,
+    1,
+    'a lineage that declares its origin still names the same proposal',
+  );
+  assert.equal(
+    db.prepare('PRAGMA foreign_key_check').all().length,
+    0,
+    'no dangling reference survives the drop/rename of three tables in a cycle',
+  );
+
+  // FR3: the class is unique PER PROJECT, and the same hash may exist once in
+  // each — which is the whole of D25 expressed as two constraints.
+  db.prepare("INSERT INTO project (id, name, created_at) VALUES (2, 'second', ?)").run(moment);
+  db.prepare(
+    `INSERT INTO graph (project_id, id, class, lineage_type, current_version_id, created_at)
+     VALUES (2, 'drafting', 'drafting', 'base', NULL, ?)`,
+  ).run(moment);
+  db.prepare(
+    `INSERT INTO graph_version (project_id, id, graph_id, parent_version, snapshot, source, created_at)
+     VALUES (2, ?, 'drafting', NULL, '{}', 'manual', ?)`,
+  ).run(firstVersion, moment);
+  assert.equal(
+    counted(db, 'SELECT count(*) AS n FROM graph_version WHERE id = ?', firstVersion),
+    2,
+    'one hash, once per project',
+  );
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `INSERT INTO graph (project_id, id, class, lineage_type, current_version_id, created_at)
+           VALUES (2, 'drafting-again', 'drafting', 'base', NULL, ?)`,
+        )
+        .run(moment),
+    /UNIQUE/i,
+    'a class still has at most one base lineage — inside its own project',
+  );
+
+  // The skill lineage follows the same rule: two projects import the same
+  // bundle, and `(id, version)` no longer collides across them.
+  db.prepare(
+    `INSERT INTO skill (project_id, id, version, hash, role, description, input, output,
+                        preconditions, checks, permissions, instructions, source, registered_at)
+     VALUES (2, 'refine-ticket', '1.0.0', 'sha256:abc', 'work', 'refines', '{}', '{}', '[]',
+             '[]', '{}', 'refine it', '{"type":"native"}', ?)`,
+  ).run(moment);
+  assert.equal(counted(db, "SELECT count(*) AS n FROM skill WHERE id = 'refine-ticket'"), 2);
+
+  // And a live hook secret of the same name in two projects is two live rows.
+  db.prepare(
+    'INSERT INTO hook_secret (project_id, name, value, created_at) VALUES (2, ?, ?, ?)',
+  ).run('review-hook', 'another-key', moment);
+  assert.equal(
+    counted(
+      db,
+      "SELECT count(*) AS n FROM hook_secret WHERE name = 'review-hook' AND revoked_at IS NULL",
+    ),
+    2,
+    'the partial unique index is scoped by project, or project 2 could not register the name',
+  );
+
+  // The event log admits the new subject.
+  db.prepare(
+    `INSERT INTO event (type, project_id, execution_id, entity_type, entity_id,
+                        actor_type, actor_ref, occurred_at, data)
+     VALUES ('project.created', 2, NULL, 'project', '2', 'system', 'control-plane', ?, '{"name":"second"}')`,
+  ).run(moment);
+  assert.equal(counted(db, "SELECT count(*) AS n FROM event WHERE entity_type = 'project'"), 1);
 });

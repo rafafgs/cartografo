@@ -873,3 +873,59 @@ test('t283 — a same-hash reimport re-checks nothing and records nothing', asyn
     'no re-check, no event: the log does not grow on a rerun that changed nothing',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t354 — one registry per project (D25).                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The same `(id, version)` in two projects, and the same one twice in one.
+ *
+ * The registry's key was `(id, version)` since t215, which made "two projects
+ * import the same factory bundle" a `409` — the second project would be told to
+ * bump a version it does not own. The key is `(project_id, id, version)` now,
+ * and the refusal it existed for is untouched INSIDE a project: one version
+ * still cannot name two different bodies (D4).
+ */
+test('t354 — the same manifest registers once per project, and still conflicts inside one', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const second = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(second.status, 201, JSON.stringify(second.body));
+
+  const manifest = importedManifest();
+
+  const inDefault = await post(ctx, { ...manifest, project_id: 1 });
+  assert.equal(inDefault.status, 201, JSON.stringify(inDefault.body));
+
+  const inSecond = await post(ctx, { ...manifest, project_id: 2 });
+  assert.equal(
+    inSecond.status,
+    201,
+    `a registry is per project (D25): ${JSON.stringify(inSecond.body)}`,
+  );
+  assert.equal(inSecond.body.hash, manifest.hash, 'the pin is the content, not the project');
+
+  // The same version with DIFFERENT content, inside project 2: still a 409.
+  const moved = importedManifest({ instructions: '# Feature Development\n\nOutro protocolo.' });
+  const conflicted = await post(ctx, { ...moved, project_id: 2 });
+  assert.equal(conflicted.status, 409, JSON.stringify(conflicted.body));
+  assert.equal(conflicted.body.error, 'skill_version_conflict');
+
+  // ...and the same content again is the idempotent reimport, per project.
+  const reimported = await post(ctx, { ...manifest, project_id: 2 });
+  assert.equal(reimported.status, 200, JSON.stringify(reimported.body));
+});
+
+test('t354 — POST /v1/skills refuses an unknown project before writing anything', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const refused = await post(ctx, { ...importedManifest(), project_id: 99 });
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project');
+
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM skill').get() as { total: number };
+  assert.equal(rows.total, 0, 'a refused request writes nothing');
+});

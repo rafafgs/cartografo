@@ -19,7 +19,7 @@ import { request, requireArtifacts, startControlPlane, type TestContext } from '
 
 /** The artifacts this suite exercises; the initial red names the missing one. */
 const T403_ARTIFACTS = Object.freeze({
-  migration: 'migrations/0026_settings.sql',
+  migration: 'migrations/0027_settings.sql',
   repository: 'src/repositories/settings.ts',
   routes: 'src/routes/settings.ts',
 });

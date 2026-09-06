@@ -39,6 +39,23 @@
  * `/promote` and `/offer` emit nothing, and correctly so: they only open a
  * pending proposal, with no version written and no pointer moved.
  *
+ * ## The scope (t354, D25)
+ *
+ * Every route here resolves `project_id` before it touches a table —
+ * `requireProject` in `routes/common.ts`, which reads the query string then the
+ * body, defaults to project 1 and answers `404 unknown_project` for a project
+ * nobody declared. The PATHS do not move: `:id` is still the lineage id and
+ * still means the class for a base graph; what changed is that `:id` alone no
+ * longer identifies a row, because a class is unique per project rather than
+ * per database.
+ *
+ * `POST /graphs` is the one route whose body cannot simply carry the scope: the
+ * body IS the graph document, and the version id is the hash of the whole of
+ * it. So the scope is taken off the body before anything validates or hashes
+ * (`withoutProject`), which is what lets the same document register in two
+ * projects and produce the SAME hash — content that has not changed cannot get
+ * a new id just because somebody else registered it.
+ *
  * What the routes return is what `repositories/graphs.ts` returns, handed back
  * untouched (t226 FR1, t289). There used to be a `toGraph`/`toGraphVersion`/
  * `toClass` wrapper around every one of them, translating a Portuguese-spelled
@@ -77,7 +94,14 @@ import {
 import { createProposal, getProposal } from '../repositories/proposals.ts';
 import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
-import { ERROR_RESPONSE_SCHEMA, OPEN_OBJECT_SCHEMA, refusal } from './common.ts';
+import {
+  ERROR_RESPONSE_SCHEMA,
+  OPEN_OBJECT_SCHEMA,
+  refusal,
+  requireProject,
+  withValidation,
+  withoutProject,
+} from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -150,6 +174,7 @@ const REGISTER_GRAPH_SCHEMA = {
       additionalProperties: true,
     },
     400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
     409: ERROR_RESPONSE_SCHEMA,
     422: ERROR_RESPONSE_SCHEMA,
   },
@@ -192,9 +217,17 @@ const OPEN_PROPOSAL_SCHEMA = {
   },
 } as const;
 
-/** The two listings, which take nothing and cannot refuse. */
+/**
+ * The two listings. They take the scope, and the only thing they refuse is a
+ * project nobody declared (t354) — an empty list would say "there is nothing
+ * here" for "there is no here".
+ */
 const LIST_SCHEMA = {
-  response: { 200: OPEN_OBJECT_SCHEMA },
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+  },
 } as const;
 
 /** The three reads by id: the row, or the `404` that says there is none. */
@@ -202,6 +235,7 @@ const READ_BY_ID_SCHEMA = {
   params: ID_PARAM_SCHEMA,
   response: {
     200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
     404: ERROR_RESPONSE_SCHEMA,
   },
 } as const;
@@ -214,35 +248,47 @@ const READ_BY_ID_SCHEMA = {
  */
 export function registerGraphs(app: FastifyInstance, db: Database): void {
   app.post('/graphs', { schema: REGISTER_GRAPH_SCHEMA }, (request, reply) =>
-    create(db, request, reply),
+    withValidation(reply, () => create(db, request, reply)),
   );
 
   app.post<IdParam>('/graphs/:id/fork', { schema: FORK_GRAPH_SCHEMA }, (request, reply) =>
-    fork(db, request, reply),
+    withValidation(reply, () => fork(db, request, reply)),
   );
   app.post<IdParam>('/graphs/:id/promote', { schema: OPEN_PROPOSAL_SCHEMA }, (request, reply) =>
-    promote(db, request, reply),
+    withValidation(reply, () => promote(db, request, reply)),
   );
   app.post<IdParam>('/graphs/:id/offer', { schema: OPEN_PROPOSAL_SCHEMA }, (request, reply) =>
-    offer(db, request, reply),
+    withValidation(reply, () => offer(db, request, reply)),
   );
 
-  app.get('/classes', { schema: LIST_SCHEMA }, () => readClasses(db));
-  app.get('/graphs', { schema: LIST_SCHEMA }, () => readGraphs(db));
+  app.get('/classes', { schema: LIST_SCHEMA }, (request, reply) =>
+    withValidation(reply, () => readClasses(db, request, reply)),
+  );
+  app.get('/graphs', { schema: LIST_SCHEMA }, (request, reply) =>
+    withValidation(reply, () => readGraphs(db, request, reply)),
+  );
   app.get<IdParam>('/graphs/:id', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
-    readGraph(db, request, reply),
+    withValidation(reply, () => readGraph(db, request, reply)),
   );
   app.get<IdParam>('/graphs/:id/versions', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
-    readVersions(db, request, reply),
+    withValidation(reply, () => readVersions(db, request, reply)),
   );
   app.get<IdParam>('/graph-versions/:id', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
-    readVersion(db, request, reply),
+    withValidation(reply, () => readVersion(db, request, reply)),
   );
 }
 
 /** `POST /graphs` — a graph document becomes a lineage plus its first version. */
 async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
-  const document = request.body;
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  // The scope comes OFF the body before anything reads it. The version id is
+  // the hash of the whole document, so a `project_id` left inside would give
+  // the same graph a different id in every project — and `cartografo export`
+  // would stop round-tripping (`docs/spec/entities-versioning.md` §2).
+  const document = withoutProject(request.body);
 
   const report = validateGraph(document);
   if (!report.valid) {
@@ -291,7 +337,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // is held to is the skill's, resolved by `(id, version)` off the pin, the same
   // read `repositories/session.ts` does when a report comes back.
   const contracts = validateContracts(document, (ref) => {
-    const skill = getSkill(db, ref.id, { version: ref.version });
+    const skill = getSkill(db, ref.id, { version: ref.version }, project.id);
     return skill === null ? undefined : { input: skill.input, output: skill.output };
   });
 
@@ -336,13 +382,13 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     };
   }
 
-  if (getClassBase(db, className) !== undefined) {
+  if (getClassBase(db, className, project.id) !== undefined) {
     return refusal(
       reply,
       409,
       'class_already_registered',
       `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
-      { class: className },
+      { class: className, project_id: project.id },
     );
   }
 
@@ -351,10 +397,12 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // before letting anything run against this version. A version is never
   // WRITTEN `failed` from this route: that state is only ever reached later, by
   // a re-check that finally had every manifest to judge with.
-  const { graph, version } = registerBaseGraph(db, document as GraphDocument, {
-    state,
-    problems: contracts.problems,
-  });
+  const { graph, version } = registerBaseGraph(
+    db,
+    document as GraphDocument,
+    { state, problems: contracts.problems },
+    project.id,
+  );
   reply.code(201);
   // The report rides on the SUCCESS too (t284). A skip that says nothing is
   // indistinguishable from a clean pass on the wire, and the two mean opposite
@@ -435,9 +483,16 @@ async function fork(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const base = getGraph(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const base = getGraph(db, request.params.id, project.id);
   if (base === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
 
   if (base.lineage_type !== 'base') {
@@ -464,8 +519,8 @@ async function fork(
     );
   }
 
-  if (getGraph(db, id) !== undefined) {
-    return refusal(reply, 409, 'id_already_registered', `a lineage with the id "${id}" already exists`, { id });
+  if (getGraph(db, id, project.id) !== undefined) {
+    return refusal(reply, 409, 'id_already_registered', `a lineage with the id "${id}" already exists in this project`, { id, project_id: project.id });
   }
 
   // Existence only, at any status: the topographer does not know how to propose
@@ -483,13 +538,19 @@ async function fork(
         { origin_proposal_id: rawOrigin },
       );
     }
-    if (getProposal(db, rawOrigin) === undefined) {
+    // The same refusal for "no such proposal" and for "a proposal of another
+    // project", and deliberately so: a reference may never cross a project
+    // boundary, so from inside this project the other one's proposal is not a
+    // proposal that exists. Two codes here would leak which ids are taken
+    // elsewhere and would make a boundary read as a permission problem.
+    const origin = getProposal(db, rawOrigin);
+    if (origin === undefined || origin.project_id !== project.id) {
       return refusal(
         reply,
         400,
         'unknown_origin_proposal',
-        'origin_proposal_id references no proposal',
-        { origin_proposal_id: rawOrigin },
+        'origin_proposal_id references no proposal of this project',
+        { origin_proposal_id: rawOrigin, project_id: project.id },
       );
     }
     originProposalId = rawOrigin;
@@ -498,7 +559,9 @@ async function fork(
   // Defensive invariant: a lineage with no pointer is a graph that exists
   // without holding, which no code path here creates.
   const source =
-    base.current_version_id === null ? undefined : getVersion(db, base.current_version_id);
+    base.current_version_id === null
+      ? undefined
+      : getVersion(db, base.current_version_id, project.id);
   if (source === undefined) {
     return refusal(
       reply,
@@ -524,11 +587,13 @@ async function fork(
     },
   };
 
-  // The hash IS the version's identity, and it is global, not scoped per
-  // lineage: two forks of the same base with the same origin would produce the
-  // same document, and one row cannot belong to two lineages at once.
+  // The hash IS the version's identity, and inside a project it is not scoped
+  // per lineage: two forks of the same base with the same origin would produce
+  // the same document, and one row cannot belong to two lineages at once. Since
+  // t354 it IS scoped per project — the same hash may exist once in each,
+  // because the content is the same and the partition is not.
   const versionId = hashSnapshot(document);
-  if (getVersionSummary(db, versionId) !== undefined) {
+  if (getVersionSummary(db, versionId, project.id) !== undefined) {
     return refusal(
       reply,
       409,
@@ -568,9 +633,16 @@ async function promote(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const variant = getGraph(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const variant = getGraph(db, request.params.id, project.id);
   if (variant === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
 
   if (variant.lineage_type !== 'variant') {
@@ -585,7 +657,7 @@ async function promote(
 
   // D13: the variant shares the class of the base it was forked from, so the
   // class IS the pointer back to the base — there is no second column to read.
-  const base = getClassBase(db, variant.class);
+  const base = getClassBase(db, variant.class, project.id);
   if (base === undefined) {
     return refusal(
       reply,
@@ -622,9 +694,16 @@ async function offer(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const base = getGraph(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const base = getGraph(db, request.params.id, project.id);
   if (base === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
 
   if (base.lineage_type !== 'base') {
@@ -649,9 +728,12 @@ async function offer(
     );
   }
 
-  const variant = getGraph(db, variantId);
+  const variant = getGraph(db, variantId, project.id);
   if (variant === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: variantId });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: variantId,
+      project_id: project.id,
+    });
   }
 
   if (variant.lineage_type !== 'variant' || variant.base_class !== base.class) {
@@ -674,14 +756,28 @@ async function offer(
   });
 }
 
-/** `GET /classes` — the class catalogue (D8). */
-async function readClasses(db: Database): Promise<unknown> {
-  return { classes: listClasses(db) };
+/** `GET /classes` — the class catalogue of one project (D8, D25). */
+async function readClasses(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+  return { classes: listClasses(db, project.id) };
 }
 
-/** `GET /graphs` — every lineage, base and variant alike. */
-async function readGraphs(db: Database): Promise<unknown> {
-  return { graphs: listGraphs(db) };
+/** `GET /graphs` — every lineage of one project, base and variant alike. */
+async function readGraphs(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+  return { graphs: listGraphs(db, project.id) };
 }
 
 /** `GET /graphs/:id` — one lineage. */
@@ -690,9 +786,16 @@ async function readGraph(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const graph = getGraph(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const graph = getGraph(db, request.params.id, project.id);
   if (graph === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
   return { graph };
 }
@@ -707,11 +810,18 @@ async function readVersions(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const graph = getGraph(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const graph = getGraph(db, request.params.id, project.id);
   if (graph === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
-  return { versions: listVersions(db, graph.id) };
+  return { versions: listVersions(db, graph.id, project.id) };
 }
 
 /** `GET /graph-versions/:id` — one version, snapshot included. */
@@ -720,9 +830,16 @@ async function readVersion(
   request: FastifyRequest<IdParam>,
   reply: FastifyReply,
 ): Promise<unknown> {
-  const version = getVersion(db, request.params.id);
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  const version = getVersion(db, request.params.id, project.id);
   if (version === undefined) {
-    return refusal(reply, 404, 'unknown_graph_version', undefined, { id: request.params.id });
+    return refusal(reply, 404, 'unknown_graph_version', undefined, {
+      id: request.params.id,
+      project_id: project.id,
+    });
   }
   return { graph_version: version };
 }
@@ -779,6 +896,10 @@ function openProposal(
   data: Direction,
 ): Record<string, unknown> {
   const { target, source } = data;
+  // Both lineages came out of the same `requireProject` call, so they share a
+  // project by construction; reading it off the target says which one without
+  // threading a fourth parameter through the two callers.
+  const projectId = target.project_id;
 
   // Defensive invariant, the same one the fork route guards: a lineage with no
   // pointer is a graph that exists without holding, which no path here creates.
@@ -806,6 +927,7 @@ function openProposal(
   }
 
   const proposal = createProposal(db, {
+    project_id: projectId,
     graph_id: target.id,
     target_version: target.current_version_id as string,
     operations,
@@ -820,5 +942,5 @@ function openProposal(
 /** The document that holds today for a lineage, or `undefined` if the pointer is empty. */
 function current(db: Database, graph: Graph): GraphDocument | undefined {
   if (graph.current_version_id === null) return undefined;
-  return getVersion(db, graph.current_version_id)?.snapshot;
+  return getVersion(db, graph.current_version_id, graph.project_id)?.snapshot;
 }

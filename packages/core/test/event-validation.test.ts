@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 20 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 21 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -269,6 +269,10 @@ test('t196 AT9 — the catalogue is the 20 type names of the taxonomy, in its or
       // round over (D21, t245). It is last here because it is last in the
       // taxonomy's own catalogue, which is what this assertion mirrors.
       'execution.finished',
+      // The seventh group, and the twenty-first type: a project was declared
+      // (D25, t354). Last for the same reason `execution.finished` was — the
+      // taxonomy appends a group, it does not reshuffle the ones before it.
+      'project.created',
     ],
   );
 });
@@ -724,4 +728,43 @@ test('t268 FR3 — output_accepted is a boolean, and false is a measurement', ()
   for (const value of ['sim', 1]) {
     refuses('session.finished', { status: 'completed', output_accepted: value }, 'output_accepted');
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t354 — the project becomes an entity, and its birth an event.               */
+/* -------------------------------------------------------------------------- */
+
+test('t354 — project.created carries the name, and nothing else', () => {
+  assert.deepEqual(requireValidData('project.created', { name: 'second' }), { name: 'second' });
+  refuses('project.created', {}, 'name');
+  refuses('project.created', { name: '' }, 'name');
+  refuses('project.created', { name: 'second', owner: 'rafael' }, 'owner');
+});
+
+test('t354 — the envelope accepts a project as a subject, and only for its own type', () => {
+  const envelope = {
+    type: 'project.created',
+    project_id: 2,
+    execution_id: null,
+    entity: { type: 'project', id: 2 },
+    actor: { type: 'system', ref: 'control-plane' },
+    occurred_at: '2026-09-06T12:00:00.000Z',
+    data: { name: 'second' },
+  };
+  assert.equal(requireValidEvent(envelope).entity.type, 'project');
+
+  assert.throws(
+    () => requireValidEvent({ ...envelope, entity: { type: 'job', id: 2 } }),
+    ValidationError,
+    'project.created talks about a project and about nothing else',
+  );
+  assert.throws(
+    () => requireValidEvent({ ...envelope, type: 'project.renamed' }),
+    ValidationError,
+    'an unknown type is still refused: renaming a project is out of scope',
+  );
+});
+
+test('t354 — project.created is one of the known types', () => {
+  assert.ok(KNOWN_TYPES.includes('project.created'));
 });

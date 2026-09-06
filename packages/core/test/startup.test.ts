@@ -193,13 +193,17 @@ test(
       // running against a version nobody ever contract-checked — and t332 once
       // again with `0025_skill_command.sql`, the column a shell skill's argv is
       // kept in, without which the registry would accept a manifest and hand the
-      // runner a node with nothing to run. t403 added
-      // `0026_settings.sql`, the project-scoped key/value table the local
-      // runner's defaults live in, and moved this count once more.
+      // runner a node with nothing to run. t354 moved it again with
+      // `0026_project_partition.sql`, which turns `project_id` from a label into
+      // a key: a class of graph is unique per project, not per database (D25).
+      // And t403 moved it a last time with `0027_settings.sql`, the
+      // project-scoped key/value table the local runner's defaults live in —
+      // written as `0026` and renumbered at the merge with t354, which is this
+      // count's whole point restated one more time.
       assert.equal(
         first.readiness.migrationsApplied,
-        26,
-        'a brand-new database applies the twenty-six migrations the package ships',
+        27,
+        'a brand-new database applies the twenty-seven migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

@@ -18,7 +18,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { isObject } from '../util/is-object.ts';
-import { UsageError, requestJson } from './url.ts';
+import { DEFAULT_PROJECT_ID, UsageError, requestJson } from './url.ts';
 
 /** Options of `export`. */
 export interface ExportOptions {
@@ -28,6 +28,12 @@ export interface ExportOptions {
   url: string;
   /** Output file; defaults to `./<class>.graph.json`. */
   output?: string;
+  /**
+   * Project the class is read from, already resolved to an id by the router
+   * (t354). A class is unique per project (D25), so the same name may name two
+   * different lineages and this is what tells them apart.
+   */
+  projectId?: number;
 }
 
 /** One `label  value` line of the success output. */
@@ -43,13 +49,14 @@ function line(label: string, value: string): string {
  */
 export async function runExport(options: ExportOptions): Promise<number> {
   if (options.className.trim() === '') throw new UsageError('export needs a class');
+  const projectId = options.projectId ?? DEFAULT_PROJECT_ID;
 
   const fromLineage = await requestJson(
-    `${options.url}/v1/graphs/${encodeURIComponent(options.className)}`,
+    `${options.url}/v1/graphs/${encodeURIComponent(options.className)}?project_id=${projectId}`,
   );
   if (fromLineage.status === 404) {
     process.stderr.write(
-      `cartografo: unknown_graph — no class "${options.className}" registered at ${options.url}\n`,
+      `cartografo: unknown_graph — no class "${options.className}" registered in project ${projectId} at ${options.url}\n`,
     );
     return 1;
   }
@@ -71,7 +78,7 @@ export async function runExport(options: ExportOptions): Promise<number> {
   }
 
   const fromVersion = await requestJson(
-    `${options.url}/v1/graph-versions/${encodeURIComponent(versionId)}`,
+    `${options.url}/v1/graph-versions/${encodeURIComponent(versionId)}?project_id=${projectId}`,
   );
   if (fromVersion.status !== 200) {
     process.stderr.write(

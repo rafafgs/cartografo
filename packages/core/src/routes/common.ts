@@ -51,9 +51,13 @@
  * moved them, because they are the body of `POST /v1/intake` (§1.1).
  */
 
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import type { Database } from '../db/connection.ts';
 import { ValidationError } from '../db/event-validation.ts';
+import { DEFAULT_PROJECT } from '../repositories/common.ts';
+import { getProject, type Project } from '../repositories/projects.ts';
+import { isObject } from '../util/is-object.ts';
 
 /**
  * Body of an error response.
@@ -199,4 +203,145 @@ export function routeId(params: unknown): number {
     throw new ValidationError([`id has to be an integer (got: ${String(raw)})`]);
   }
   return parsed;
+}
+
+/* -------------------------------------------------------------------------- */
+/* t354 — the scope of a request, resolved in one place.                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The name of the scope, on the query string and in a body alike.
+ *
+ * One spelling, and it is the one `POST /v1/jobs` and `POST /v1/leases` have
+ * used since the envelope existed: this ticket extends a convention rather than
+ * inventing one.
+ */
+export const PROJECT_FIELD = 'project_id';
+
+/**
+ * Reads the scope a request declared, WITHOUT deciding whether it exists.
+ *
+ * The query string is read before the body, and both are read on every route,
+ * because the shape of a body varies and the question does not. Two routes make
+ * that matter: `POST /v1/graphs` takes the pure graph document as its body and
+ * `POST /v1/skills` takes the raw manifest, so neither has an envelope to hold
+ * a scope — a caller says it on the query string there, or in the body and lets
+ * the route strip it before hashing (see {@link withoutProject}).
+ *
+ * Absent is the DEFAULT and not an error: every call that omitted the scope
+ * before this ticket keeps meaning project 1, which is what makes the
+ * single-project path survive the partition unchanged.
+ *
+ * On the wire a scope is always an ID. Resolving a NAME is the CLI's affair —
+ * `cli/index.ts` turns `--project second` into `2` against `GET /v1/projects`
+ * before any other call goes out — because a route that took both would make
+ * one request mean two things the day somebody names a project `2`.
+ *
+ * @param request The incoming request.
+ * @returns The id the caller said, or `DEFAULT_PROJECT`.
+ * @throws {ValidationError} When something came and it is not an integer — a
+ *   filter that is wrong is a `400`, never a filter quietly ignored.
+ */
+export function declaredProject(request: FastifyRequest): number {
+  const query = isObject(request.query) ? request.query : {};
+  const fromQuery = query[PROJECT_FIELD];
+  if (fromQuery !== undefined && fromQuery !== null && fromQuery !== '') {
+    return readScope(fromQuery);
+  }
+
+  const body = isObject(request.body) ? request.body : {};
+  const fromBody = body[PROJECT_FIELD];
+  if (fromBody !== undefined && fromBody !== null) return readScope(fromBody);
+
+  return DEFAULT_PROJECT;
+}
+
+/**
+ * A scope has to be an integer; anything else is a `400`.
+ *
+ * A query string carries text, so a digit run coming from there is coerced —
+ * `?project_id=2` and a body's `"project_id": 2` are the same request said two
+ * ways. `Number()` is not used on its own because it reads `''` as `0` and
+ * `'2abc'` as `NaN`, and both would become a filter nobody wrote.
+ */
+function readScope(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^[0-9]+$/.test(value.trim())) return Number(value.trim());
+  throw new ValidationError([
+    `${PROJECT_FIELD} has to be a project id (an integer); got ${JSON.stringify(value)}`,
+  ]);
+}
+
+/**
+ * What a route got when it asked which project it is working in.
+ *
+ * Exactly one of the two is set. It is a result and not a `Project | undefined`
+ * because a route has to RETURN the refusal body, and a bare `undefined` would
+ * make every call site rebuild it — which is how two spellings of one refusal
+ * appear.
+ */
+export interface ResolvedScope {
+  /** The project, when one answered to the scope. */
+  project?: Project;
+  /** The body to return, when none did; `reply` is already marked `404`. */
+  refusal?: ErrorResponse & Record<string, unknown>;
+}
+
+/**
+ * The project a request is scoped to, or the `404` that says there is none.
+ *
+ * Called by every route before it touches a partitioned table. An unknown
+ * project is a refusal and never an empty result: "there is nothing here" and
+ * "there is no here" are different answers, and answering the first for the
+ * second turns a typo into a wrong conclusion.
+ *
+ * `project_id` rides on the refusal as a SIBLING property, like every other
+ * route context in this file: a client reads it with one lookup instead of
+ * parsing a sentence.
+ *
+ * @param db Open database.
+ * @param request The incoming request.
+ * @param reply Fastify reply, marked with the status when it refuses.
+ * @returns The project, or the refusal to hand back.
+ */
+export function requireProject(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): ResolvedScope {
+  const declared = declaredProject(request);
+  const project = getProject(db, declared);
+  if (project !== undefined) return { project };
+
+  return {
+    refusal: refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+      [PROJECT_FIELD]: declared,
+    }),
+  };
+}
+
+/**
+ * The same body, without the scope field.
+ *
+ * `POST /v1/graphs` and `POST /v1/skills` take a raw document as their body —
+ * a graph, a manifest — and both are CONTENT-ADDRESSED: the version id is the
+ * hash of the whole document, and the skill pin is the hash of the manifest's
+ * content fields. So a `project_id` the caller put in the body has to come back
+ * out before anything is validated or hashed, or the same document would get a
+ * different id in each project and `cartografo export` would stop round-tripping.
+ *
+ * The scope is not a field of the document. It is where the document is being
+ * put.
+ *
+ * @param body Whatever came in.
+ * @returns The same value, minus `project_id` when it was an object carrying one.
+ */
+export function withoutProject(body: unknown): unknown {
+  if (!isObject(body) || !(PROJECT_FIELD in body)) return body;
+  // Copied and deleted rather than destructured with a rest spread: the
+  // discarded binding a rest spread needs is a variable nothing reads, which the
+  // lint rule refuses and a reader has to look twice at.
+  const rest = { ...body };
+  delete rest[PROJECT_FIELD];
+  return rest;
 }

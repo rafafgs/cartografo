@@ -26,7 +26,7 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The seven routes
+## 1. The eight routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
@@ -37,10 +37,25 @@ runs in `npm run lint`, and locked down by
 | `GET /runners` | The fleet: one runner per line, with active leases, the last heartbeat and the last lease it lost to the TTL. | `GET /v1/runners` |
 | `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
 | `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
+| `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
 
 Every view renders **on the request**. There is no polling, no websocket and no
 auto-refresh: reloading the page is the update, and the screen's state is always
 the state the API has just reported.
+
+**Which project a view shows** comes from the `cartografo_project` cookie, and
+from nowhere else (D25, t354). Every GET above reads it — defaulting to project
+`1` when it is absent or is not a number — and passes `project_id` on every call
+it makes to the API; every page draws the switcher in its navigation, out of one
+`GET /v1/projects`. `POST /project` is the switcher's own route, and it is the
+one write of this screen that never touches the control plane: what a browser is
+looking at is that browser's business, and sending it upstream would be the
+screen keeping state on somebody else's server (D11).
+
+`GET /runners` is the one view that does not scope its read, and deliberately: a
+runner is not scoped to a project — "pairing is identity alone"
+([`runner-and-controller.md`](runner-and-controller.md) §1) — so the fleet reads
+the same from every project.
 
 **An execution is not an entity.** `execucao_id` is an opaque grouper (there is
 no `execucao` table in v1), so `/executions/99` with nothing inside answers
@@ -60,7 +75,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The seven routes of this specification, rendered on the server. |
+| Anything else | The eight routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is

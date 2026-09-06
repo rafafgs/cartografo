@@ -114,7 +114,7 @@ Three consequences that run through this whole ficha:
 
 ## The catalogue
 
-19 types, in 6 groups. "Who emits" is the expected `actor.type`; the examples
+21 types, in 7 groups. "Who emits" is the expected `actor.type`; the examples
 show the content of `data` and came out of `example-log.jsonl`.
 
 ### Job
@@ -580,6 +580,42 @@ runner: it releases the lease after reporting the transition) will only be
 declared finished if some job of it moves again afterwards. Closing that is the
 ficha that links `lease` and `job` from both sides, as the header of migration
 `0004` already foresees.
+
+### Project
+
+The partition every other entity of this log lives in (D25). `entity.type` =
+`project`, and `entity.id` is the row's integer id.
+
+The seventh group, and the second one whose subject never travels a graph. Until
+t354 `project_id` was a LABEL: the envelope carried it from the very first
+ficha, so telemetry would be born partitionable, and the value was a constant
+because there was no row to point at. D25 (2026-09-05) made the project a real,
+nameable thing — a class of graph is unique per project, not per database — and
+a thing that can be declared has a moment at which it was.
+
+The envelope's own `project_id` on this event is the NEW project's id and not
+the one that declared it. That is deliberate: it keeps
+`GET /v1/events?project_id=2` a complete account of project 2, instead of one
+missing its first line.
+
+#### `project.created` — [schema](schemas/project.created.schema.json)
+
+Emitted when `POST /v1/projects` writes the row, in the same transaction.
+Actor: always `system` / `control-plane` — a bearer token proves possession and
+not identity, so what is recorded is the component that acted.
+
+```json
+{"name": "default"}
+```
+
+**One field, and it is required.** The envelope already says WHICH project
+(`project_id`, `entity.id`) and WHEN (`occurred_at`); `name` is the only thing
+the row has that the envelope cannot carry, and it is what the screen's switcher
+and `cartografo --project <name>` address the project by.
+
+**No `project.renamed` and no `project.archived`.** Renaming and removing a
+project are out of scope by name (t354), and a type enters this catalogue
+together with the code that emits it — never before.
 
 ## Parity with flowpilot
 

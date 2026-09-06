@@ -37,6 +37,19 @@
  * The response field names are the manifest format's own keys, English since
  * t178; the route paths, the query parameters and the error envelope are English
  * too (D18/D20).
+ *
+ * ## One registry per project (t354, D25)
+ *
+ * Every route here resolves `project_id` first — on the query string for the
+ * reads, in the body for `POST /skills` — and defaults to project 1, so every
+ * call written before this ticket keeps meaning what it meant. Two projects
+ * importing the same factory bundle both register `refine-ticket@1.0.0`, and
+ * D4's "one version never names two bodies" still bites inside each of them.
+ *
+ * `POST /skills` takes the scope out of the body before the registry sees it
+ * (`withoutProject`), for the same reason `POST /graphs` does: the body IS the
+ * manifest, the pin is the hash of its content, and a `project_id` left inside
+ * would be a field of a document that has no such field.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -49,15 +62,15 @@ import {
   listSkills,
   registerSkill,
 } from '../repositories/skill.ts';
-import { notFound, type ErrorResponse } from './common.ts';
+import { notFound, requireProject, withValidation, withoutProject, type ErrorResponse } from './common.ts';
 
 interface ListQuery {
-  Querystring: { id?: string };
+  Querystring: { id?: string; project_id?: string };
 }
 
 interface IdParam {
   Params: { id: string };
-  Querystring: { version?: string; hash?: string };
+  Querystring: { version?: string; hash?: string; project_id?: string };
 }
 
 interface VersionParam {
@@ -77,8 +90,11 @@ function asked(value: string | undefined): string | undefined {
  */
 export function registerSkills(app: FastifyInstance, db: Database): void {
   app.post('/skills', async (request, reply) => {
+    const scope = requireProject(db, request, reply);
+    if (scope.project === undefined) return scope.refusal;
+
     try {
-      const { skill, created } = registerSkill(db, request.body);
+      const { skill, created } = registerSkill(db, withoutProject(request.body), scope.project.id);
       // 200 and not 201 for a reimport: `201` would claim a write that did not
       // happen, and the caller that cares about the difference — `cartografo
       // import`, counting created against known — is the one that reads it.
@@ -93,20 +109,41 @@ export function registerSkills(app: FastifyInstance, db: Database): void {
     }
   });
 
-  app.get<ListQuery>('/skills', async (request) => ({
-    skills: listSkills(db, { id: asked(request.query.id) }),
-  }));
+  app.get<ListQuery>('/skills', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+      return { skills: listSkills(db, { id: asked(request.query.id) }, scope.project.id) };
+    }),
+  );
 
-  app.get<IdParam>('/skills/:id', async (request, reply) => {
-    const skill = getSkill(db, request.params.id, {
-      version: asked(request.query.version),
-      hash: asked(request.query.hash),
-    });
-    return skill ?? notFound(reply, 'skill');
-  });
+  app.get<IdParam>('/skills/:id', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
 
-  app.patch<VersionParam>('/skills/:id/:version', async (request, reply) => {
-    const skill = deprecateSkill(db, request.params.id, request.params.version);
-    return skill ?? notFound(reply, 'skill version');
-  });
+      const skill = getSkill(
+        db,
+        request.params.id,
+        { version: asked(request.query.version), hash: asked(request.query.hash) },
+        scope.project.id,
+      );
+      return skill ?? notFound(reply, 'skill');
+    }),
+  );
+
+  app.patch<VersionParam>('/skills/:id/:version', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const skill = deprecateSkill(
+        db,
+        request.params.id,
+        request.params.version,
+        scope.project.id,
+      );
+      return skill ?? notFound(reply, 'skill version');
+    }),
+  );
 }

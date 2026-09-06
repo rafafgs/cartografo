@@ -1,5 +1,11 @@
--- 0026_settings — a project-scoped key/value surface for the local runner's
+-- 0027_settings — a project-scoped key/value surface for the local runner's
 -- defaults (t403, RF-08).
+--
+-- Written as `0026` and renumbered to `0027` at the merge with t354, which took
+-- `0026_project_partition.sql` first: two tickets each adding a migration is the
+-- conflict git does not report, and `src/db/migrate.ts` fails loudly on a
+-- repeated number. Same precedent as the headers of 0003, 0005, 0017, 0019, 0022
+-- and 0026.
 --
 -- Every per-project row that existed before this migration is a domain entity
 -- (`job`, `lease`, `hook_occurrence`) — never a plain configuration value. The
@@ -22,8 +28,14 @@
 -- `PRIMARY KEY (project_id, key)`: one row per key per project, and the same
 -- pair `INSERT ... ON CONFLICT` upserts against.
 --
--- No foreign key to a `project` table — one does not exist yet, matching every
--- other project-scoped table in the schema.
+-- No foreign key to a `project` table. t354's `0026_project_partition.sql` did
+-- create one, and it deliberately left `job`, `lease`, `intake_draft`,
+-- `webhook_subscription`, `hook_delivery` and `event` carrying `project_id` as a
+-- plain column: only the five tables whose KEYS had to widen got the reference.
+-- `setting` is in the first group — its key is already `(project_id, key)` and
+-- nothing about it needs the schema to enforce the parent — so it stays where
+-- the majority of project-scoped tables are, and adding the reference is a
+-- later, deliberate sweep rather than this ticket's business.
 --
 -- English top to bottom: the t279 frozen-names rule protects the pre-existing
 -- Portuguese migration files, and this one is new (2026-08-18 language mandate).

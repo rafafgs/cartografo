@@ -50,7 +50,8 @@
             "input_request",
             "lease",
             "graph_version",
-            "execution"
+            "execution",
+            "project"
           ]
         },
         "id": {
@@ -58,7 +59,7 @@
             "integer",
             "string"
           ],
-          "description": "The id of the entity named in entity.type itself. An integer for job/session/input_request/lease/execution — for an execution it is the execution_id itself; a string for graph_version, whose id is the hash of the snapshot (D15)."
+          "description": "The id of the entity named in entity.type itself. An integer for job/session/input_request/lease/execution/project — for an execution it is the execution_id itself; a string for graph_version, whose id is the hash of the snapshot (D15)."
         }
       },
       "additionalProperties": false

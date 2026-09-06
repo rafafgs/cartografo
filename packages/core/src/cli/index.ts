@@ -33,13 +33,16 @@ import { runExport } from './export.ts';
 import { runImport } from './import.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
+import { isObject } from '../util/is-object.ts';
 import {
+  DEFAULT_PROJECT_ID,
   DeniedError,
   ENV_TOKEN,
   ENV_URL,
   NetworkError,
   UsageError,
   deniedMessage,
+  requestJson,
   resolveBaseUrl,
   resolveToken,
   serverDownMessage,
@@ -57,7 +60,7 @@ subcommands:
                          optionally, skills/ to check).
   export <class>         writes the current version of the class to a file, in
                          the same format import accepts back.
-  status                 reports the server and the registered projects.
+  status                 reports the server, the registered classes and the projects.
 
   the D4 skill-import gate, in three steps:
 
@@ -81,6 +84,8 @@ options:
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
   --job <id>             (register-skill) job the approval was opened on
+  --project <id|name>    project to work in (import, export, status); default 1.
+                         A name is resolved against GET /v1/projects
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text
 
@@ -184,6 +189,7 @@ async function runApiClient(
 ): Promise<number> {
   const fromUrl = extractValue(args, '--url');
   const fromToken = extractValue(fromUrl.rest, '--token');
+  const fromProject = extractValue(fromToken.rest, '--project');
   const url = resolveBaseUrl(fromUrl.value, env);
 
   // One place, before any subcommand runs: from here on every request this
@@ -191,24 +197,33 @@ async function runApiClient(
   useToken(resolveToken(fromToken.value, env));
 
   if (subcommand === 'import') {
-    requireNothingElse(fromToken.rest, 1, 'import');
-    const inputPath = fromToken.rest[0];
+    requireNothingElse(fromProject.rest, 1, 'import');
+    const inputPath = fromProject.rest[0];
     if (inputPath === undefined) {
       throw new UsageError('import needs a path: a graph file or a bundle directory');
     }
-    return await runImport({ path: inputPath, url });
+    return await runImport({
+      path: inputPath,
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+    });
   }
 
   if (subcommand === 'export') {
-    const fromOutput = extractValue(fromToken.rest, '--out');
+    const fromOutput = extractValue(fromProject.rest, '--out');
     requireNothingElse(fromOutput.rest, 1, 'export');
     const className = fromOutput.rest[0];
     if (className === undefined) throw new UsageError('export needs the graph class');
-    return await runExport({ className, url, output: fromOutput.value });
+    return await runExport({
+      className,
+      url,
+      output: fromOutput.value,
+      projectId: await resolveProjectId(fromProject.value, url),
+    });
   }
 
   if (subcommand === 'scan-skill') {
-    const fromRepo = extractValue(fromToken.rest, '--repo');
+    const fromRepo = extractValue(fromProject.rest, '--repo');
     const fromRef = extractValue(fromRepo.rest, '--ref');
     const fromRole = extractValue(fromRef.rest, '--role');
     const fromBy = extractValue(fromRole.rest, '--by');
@@ -239,8 +254,8 @@ async function runApiClient(
   }
 
   if (subcommand === 'propose-skill') {
-    requireNothingElse(fromToken.rest, 1, 'propose-skill');
-    const manifestPath = fromToken.rest[0];
+    requireNothingElse(fromProject.rest, 1, 'propose-skill');
+    const manifestPath = fromProject.rest[0];
     if (manifestPath === undefined) {
       throw new UsageError('propose-skill needs the path of a completed manifest file');
     }
@@ -248,7 +263,7 @@ async function runApiClient(
   }
 
   if (subcommand === 'register-skill') {
-    const fromJob = extractValue(fromToken.rest, '--job');
+    const fromJob = extractValue(fromProject.rest, '--job');
     requireNothingElse(fromJob.rest, 0, 'register-skill');
     if (fromJob.value === undefined) throw new UsageError('register-skill needs --job');
     const jobId = Number(fromJob.value);
@@ -258,9 +273,48 @@ async function runApiClient(
     return await runRegisterSkill({ jobId, url });
   }
 
-  const fromFlag = extractFlag(fromToken.rest, '--json');
+  const fromFlag = extractFlag(fromProject.rest, '--json');
   requireNothingElse(fromFlag.rest, 0, 'status');
-  return await runStatus({ url, json: fromFlag.present });
+  return await runStatus({
+    url,
+    json: fromFlag.present,
+    projectId: await resolveProjectId(fromProject.value, url),
+  });
+}
+
+/**
+ * Turns `--project <id|name>` into the id every request carries (t354, FR6).
+ *
+ * Resolved ONCE, here, and then threaded into the subcommand: the wire only
+ * speaks ids (`routes/common.ts` says why), so a name has to become one before
+ * any other call goes out, and doing it per call would mean asking the control
+ * plane the same question three times in one command.
+ *
+ * A run of digits is an id and anything else is a name — told apart by shape,
+ * never by trying one and falling back to the other, or a project somebody
+ * named `2` would be reachable by accident from a caller that meant the id.
+ *
+ * @param declared What `--project` said, if it was given.
+ * @param url Base URL of the control plane.
+ * @returns The numeric id; `DEFAULT_PROJECT_ID` when the flag was absent.
+ * @throws {UsageError} When a name answers to no project — a scope nobody
+ *   declared is a wrong command line, not a server that said no.
+ */
+async function resolveProjectId(declared: string | undefined, url: string): Promise<number> {
+  if (declared === undefined) return DEFAULT_PROJECT_ID;
+  if (/^[0-9]+$/.test(declared)) return Number(declared);
+
+  const response = await requestJson(`${url}/v1/projects`);
+  const body = isObject(response.body) ? response.body : {};
+  const projects = Array.isArray(body.projects) ? body.projects : [];
+  const match = projects
+    .filter(isObject)
+    .find((project) => project.name === declared);
+
+  if (match === undefined || typeof match.id !== 'number') {
+    throw new UsageError(`--project: no project named "${declared}" at ${url}`);
+  }
+  return match.id;
 }
 
 /**

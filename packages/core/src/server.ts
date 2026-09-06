@@ -25,6 +25,7 @@ import { registerHookSecrets } from './routes/hook-secrets.ts';
 import { registerIntake } from './routes/intake.ts';
 import { registerLeases, type LeaseCeilings } from './routes/leases.ts';
 import { registerInputRequests } from './routes/input-requests.ts';
+import { registerProjects } from './routes/projects.ts';
 import { registerProposals } from './routes/proposals.ts';
 import { registerRunners } from './routes/runners.ts';
 import { registerSessions } from './routes/sessions.ts';
@@ -270,6 +271,7 @@ export function createApp(options: AppOptions): FastifyInstance {
     async (scope) => {
       registerAuth(scope, options.db);
 
+      scope.register(async (inner) => registerProjects(inner, options.db));
       scope.register(async (inner) => registerGraphs(inner, options.db));
       scope.register(async (inner) => registerProposals(inner, options.db));
       scope.register(async (inner) => registerJobs(inner, options.db));

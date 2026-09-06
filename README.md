@@ -109,12 +109,23 @@ CARTOGRAFO_TOKEN=<the token from step 2> \
   npx cartografo import factory-graphs/software-development   # 3 (another terminal)
 ```
 
-Step 2 is the whole control plane: it creates `.cartografo/cartografo.db`,
-applies the migrations, serves HTTP on `127.0.0.1:4317` and prints
-`cartografo.ready`. On the **first** start against a new database that line also
-carries a `bootstrapToken` — the operator credential, shown once and never
-again, since only its hash is stored. Lost it? Delete `.cartografo/` and start
-again for a fresh one.
+Step 2 is the product, not just the server. It creates
+`.cartografo/cartografo.db`, applies the migrations, serves HTTP on
+`127.0.0.1:4317` and prints `cartografo.ready` — and then starts the screen on
+`127.0.0.1:4318` and one local runner, both as child processes of its own, and
+opens your browser on the screen. It asks nothing and blocks on nothing;
+`Ctrl-C` takes all three down together. On the **first** start against a new
+database the readiness line also carries a `bootstrapToken` — the operator
+credential, shown once and never again, since only its hash is stored. Lost it?
+Delete `.cartografo/` and start again for a fresh one.
+
+That local runner works in `~/.cartografo/workspace`, which step 2 creates as an
+empty git repository the first time, cutting each session's worktree into
+`~/.cartografo/worktrees`. Both paths are settings, not constants: `PATCH
+/v1/settings` points them anywhere you like, and a `workspace_root` you changed
+is never written to. Want fewer than all three processes? `--no-browser`,
+`--no-runner` and `--no-screen` each subtract exactly their own part, and all
+three together is the control plane on its own.
 
 Step 3 registers the bundled graph, checking each pinned skill hash first, and
 prints the recorded `graph_version.id`. `GET /v1/classes` then lists
@@ -122,19 +133,22 @@ prints the recorded `graph_version.id`. `GET /v1/classes` then lists
 
 **The checkout in step 1 is not optional yet.** `cartografo` is a single
 publishable package carrying all six commands (D23), so
-`npm install -g cartografo` really does put every one of them on `PATH`, and
-step 2 works from any empty directory. Step 3 does not: `factory-graphs/` is a
-directory of this repository and is not shipped inside the package, so `import`
-has nothing to point at without a clone. Making the whole sequence work from a
-bare install — deciding whether the example graphs ship, are fetched, or are
-generated — is its own ticket.
+`npm install -g cartografo` really does put every one of them on `PATH` — which
+is also how step 2 finds the screen and the runner it starts — and step 2 works
+from any empty directory. Step 3 does not: `factory-graphs/` is a directory of
+this repository and is not shipped inside the package, so `import` has nothing
+to point at without a clone. Making the whole sequence work from a bare install
+— deciding whether the example graphs ship, are fetched, or are generated — is
+its own ticket.
 
-And a fourth command puts a runner behind it:
+A runner configured differently — another repository, another engine, another
+project — is still its own command, started by hand beside a `cartografo` that
+was told not to start one:
 
 ```bash
 CARTOGRAFO_TOKEN=<the token from step 2> \
   npx cartografo-runner --project 1 \
-    --working-dir ~/proj --worktrees-root ~/proj-worktrees    # 4 (another terminal)
+    --working-dir ~/proj --worktrees-root ~/proj-worktrees    # with `npx cartografo --no-runner`
 ```
 
 For the slower way round — the same commands, plus putting real work on the graph
@@ -143,13 +157,24 @@ and reading the system when that work stops moving —
 
 ## The commands
 
-**`cartografo`** — the control plane, plus `status` and `export`.
+**`cartografo`** — the one command that brings the product up, plus `status`
+and `export`.
 
 ```bash
+npx cartografo                                 # control plane + screen + runner, browser opens
+npx cartografo --no-browser --no-runner --no-screen  # the control plane on its own
 npx cartografo status                          # server and registered projects
 npx cartografo status --json                   # the same, for a script
 npx cartografo export software-development     # writes ./software-development.graph.json
 ```
+
+With no subcommand it is `up`, and the three `--no-*` options belong to it
+whether the word is typed or not. The screen and the runner it starts are
+ordinary processes with no privilege of their own — the same two binaries you
+would have run in two more terminals, resolved off `PATH` by name and handed a
+credential of that startup's own, which is revoked when they stop. A `SIGINT`
+or `SIGTERM` goes to both children first and waits for them; a second one stops
+waiting.
 
 What `export` writes is what `import` takes back: importing it elsewhere
 produces the same `graph_version.id`.
@@ -246,7 +271,7 @@ database.
 | `CARTOGRAFO_TOKEN` | — | The credential the subcommands and the runner present (or `--token`). |
 | `CARTOGRAFO_LEASE_CAP_RUNNER` | `50` | Cap on simultaneous leases per runner. The runner declares what it wants and the **smaller** of the two wins: concurrency is the control plane's call. |
 | `CARTOGRAFO_LEASE_CAP_PROJECT` | `50` | The same, per project. |
-| `CARTOGRAFO_SCREEN_PORT` | `4318` | The screen's port. |
+| `CARTOGRAFO_SCREEN_PORT` | `4318` | The screen's port. `npx cartografo` reads it too, so the screen it starts and the browser it opens land on the same one. |
 | `CARTOGRAFO_SCREEN_TOKEN` | `CARTOGRAFO_TOKEN` | A credential of the screen's own. It presents this to the control plane and asks the browser for none, which is why it listens on loopback. |
 | `CARTOGRAFO_MCP_TOKEN` | `CARTOGRAFO_TOKEN` | The same for the MCP server. There is deliberately no `--token` flag on that command. |
 

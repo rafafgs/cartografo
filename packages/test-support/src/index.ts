@@ -56,6 +56,23 @@ export const CORE_BIN = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartogr
 export const READY_EVENT = 'cartografo.ready';
 
 /**
+ * What asks the command for the control plane and nothing else (t405).
+ *
+ * Since t405 `cartografo` with no flag brings up three processes — the control
+ * plane, the screen and a local runner — and opens a browser on the screen.
+ * That is the right default for a person and the wrong one for a suite: twelve
+ * files boot a control plane here to test something else entirely, and none of
+ * them wants a browser window, a second and third process, or the git
+ * repository the runner's workspace is provisioned as in the home directory of
+ * whoever is running the tests.
+ *
+ * Spelled out rather than imported from `packages/core/src/cli/up.ts`, for the
+ * same reason {@link READY_EVENT} is: this package imports nothing from the
+ * core (D1, D11).
+ */
+export const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+
+/**
  * Deadline for a startup. Wide slack, on purpose.
  *
  * It is a ceiling and never a wait: the readiness loop below returns the instant
@@ -229,7 +246,7 @@ export async function bootCore(
   const owned = options.cwd === undefined;
   const base = options.cwd ?? mkdtempSync(path.join(tmpdir(), 'cartografo-core-'));
 
-  const watched = spawnWatched(t, [CORE_BIN], {
+  const watched = spawnWatched(t, [CORE_BIN, ...CONTROL_PLANE_ONLY], {
     cwd: base,
     env: {
       ...process.env,

@@ -281,14 +281,31 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const stream = await openStream(`${url}/v1/events/stream?project_id=42`);
+  // Both projects are DECLARED since t417: `POST /v1/jobs` refuses a scope that
+  // answers to no project, so the two partitions this case needs are asked for
+  // rather than invented as integers. Which numbers they get is incidental —
+  // what the case is about is that a stream scoped to one never carries the
+  // other.
+  const declare = async (name: string): Promise<number> => {
+    const response = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    return response.body.id;
+  };
+  const stranger = await declare('the project nobody is watching');
+  const watched = await declare('the project the stream is scoped to');
+
+  const stream = await openStream(`${url}/v1/events/stream?project_id=${watched}`);
   t.after(() => stream.abort());
 
-  await createJob(ctx, { title: 'from another project', entry_node_id: 'entrada', project_id: 7 });
-  const mine = await createJob(ctx, {
-    title: 'from project 42',
+  await createJob(ctx, {
+    title: 'from another project',
     entry_node_id: 'entrada',
-    project_id: 42,
+    project_id: stranger,
+  });
+  const mine = await createJob(ctx, {
+    title: 'from the watched project',
+    entry_node_id: 'entrada',
+    project_id: watched,
   });
 
   await waitFor(() => stream.messages.length >= 1, "project 42's job to reach the stream");
@@ -296,7 +313,7 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
 
   assert.equal(stream.messages.length, 1, "the other project's event must not be delivered");
   const delivered = JSON.parse(stream.messages[0].data) as Event;
-  assert.equal(delivered.project_id, 42);
+  assert.equal(delivered.project_id, watched);
   assert.equal(delivered.entity.id, mine.id);
 });
 

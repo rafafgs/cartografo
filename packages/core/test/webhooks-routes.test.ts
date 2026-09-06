@@ -29,7 +29,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { request, requireArtifacts, startControlPlane } from './support.ts';
+import { request, requireArtifacts, startControlPlane, type TestContext } from './support.ts';
 
 /** Artifacts this ticket creates; every test requires the ones it exercises. */
 const T142_ARTIFACTS = Object.freeze({
@@ -138,10 +138,16 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
     secret: SECRET,
     filter_types: ['job.created'],
   });
+  // The second project is DECLARED since t417: `POST /v1/webhooks` refuses a
+  // scope that answers to no project, so the partition this case filters on is
+  // asked for instead of named as an integer. The case itself is unchanged —
+  // one subscription in the default project, one outside it, and the listing
+  // telling them apart.
+  const second = await declareProject(ctx, 'segundo');
   const other = await create({
     url: 'https://example.invalid/projeto-9',
     secret: SECRET,
-    project_id: 9,
+    project_id: second,
   });
 
   const all = await request<{ webhooks: Subscription[] }>(ctx, 'GET', '/v1/webhooks');
@@ -159,7 +165,7 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
   const filtered = await request<{ webhooks: Subscription[] }>(
     ctx,
     'GET',
-    '/v1/webhooks?project_id=9',
+    `/v1/webhooks?project_id=${second}`,
   );
   assert.equal(filtered.status, 200);
   assert.deepEqual(
@@ -203,4 +209,83 @@ test('AT4 — DELETE deactivates, is idempotent, and 404s on an unknown id', asy
   const unknown = await request<ErrorBody>(ctx, 'DELETE', '/v1/webhooks/9999');
   assert.equal(unknown.status, 404);
   assert.equal(unknown.body.error, 'not_found');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t417 — a subscription is never registered under a project nobody declared. */
+/*                                                                            */
+/* `readProject` checked integer-ness and stopped there, so `POST /v1/webhooks`*/
+/* happily wrote a row into a partition that does not exist — one the scoped   */
+/* listing has no way to hand back. Same refusal as every other scope, same    */
+/* code, same words.                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** The scope refusal, in the slice these two cases assert on. */
+interface ScopeRefusal {
+  error: string;
+  message?: string;
+  project_id?: number;
+}
+
+/** Declares a project and returns its id (t354, FR1). */
+async function declareProject(ctx: TestContext, name: string): Promise<number> {
+  const response = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  return response.body.id;
+}
+
+test('t417 AT6 — POST /v1/webhooks refuses a project nobody declared', async (t) => {
+  requireArtifacts(T142_ARTIFACTS.migration, T142_ARTIFACTS.routes, T142_ARTIFACTS.server);
+  const ctx = await startControlPlane(t);
+
+  const refused = await request<ScopeRefusal>(ctx, 'POST', '/v1/webhooks', {
+    url: 'https://example.invalid/phantom',
+    secret: SECRET,
+    project_id: 99,
+  });
+
+  assert.equal(refused.status, 404, JSON.stringify(refused.body));
+  assert.equal(refused.body.error, 'unknown_project');
+  assert.equal(refused.body.message, 'no project answers to this scope');
+  assert.equal(refused.body.project_id, 99, 'the scope rides as a sibling field');
+
+  const listed = await request<{ webhooks: Subscription[] }>(ctx, 'GET', '/v1/webhooks');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.webhooks, [], 'nothing was written anywhere');
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM webhook_subscription').get() as {
+    total: number;
+  };
+  assert.equal(rows.total, 0, 'and no row of the table either');
+});
+
+test('t417 AT7 — the default project and a declared one still register unchanged', async (t) => {
+  requireArtifacts(T142_ARTIFACTS.migration, T142_ARTIFACTS.routes, T142_ARTIFACTS.server);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const implicit = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
+    url: 'https://example.invalid/default',
+    secret: SECRET,
+  });
+  assert.equal(implicit.status, 201, JSON.stringify(implicit.body));
+  assert.equal(implicit.body.project_id, 1, 'no project_id is still the default one');
+
+  const explicit = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
+    url: 'https://example.invalid/second',
+    secret: SECRET,
+    project_id: 2,
+  });
+  assert.equal(explicit.status, 201, JSON.stringify(explicit.body));
+  assert.equal(explicit.body.project_id, 2);
+
+  const scoped = await request<{ webhooks: Subscription[] }>(
+    ctx,
+    'GET',
+    '/v1/webhooks?project_id=2',
+  );
+  assert.deepEqual(
+    scoped.body.webhooks.map((subscription) => subscription.id),
+    [explicit.body.id],
+    'a subscription that was created is a subscription that reads back',
+  );
 });

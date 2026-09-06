@@ -195,7 +195,24 @@ export interface EventFilter {
    */
   sinceId?: number;
 
-  /** The events of one project — the `project_id` column, exactly (t123, FR3). */
+  /**
+   * The events of one project — the `project_id` column, exactly (t123, FR3).
+   *
+   * Optional in the TYPE and mandatory in PRACTICE, and the asymmetry is the
+   * point (t414, FR4). Every route that reads this log on somebody's behalf —
+   * `GET /v1/events/stream` and `GET /v1/executions/:id/events` — resolves a
+   * real project with `requireProject` and always passes it, so a client can no
+   * longer receive another partition's facts by leaving `?project_id=` off.
+   *
+   * What stays optional is the INTERNAL caller that keys on an id which is
+   * already scoped by the row it came from: `repositories/job.ts`'s
+   * `jobTimeline` (downstream of a scoped read of the job), and the two
+   * dispatchers' `eventById` (`hooks/dispatcher.ts`, `webhooks/dispatcher.ts`),
+   * which fetch one event by `sinceId: id - 1, limit: 1`. None of the three has
+   * a project to pass, and requiring the field would force each of them to
+   * invent one — see `test/partition-guard.test.ts`'s `SAFE_BY_CORRELATION`
+   * and `GLOBAL_ID_LOOKUP` classes, which is where that argument is checked.
+   */
   projetoId?: number;
 
   /**

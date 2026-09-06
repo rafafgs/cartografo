@@ -220,10 +220,12 @@ test(
       // `0030_artifacts.sql` — the reference to a file a session produced —
       // taking the number the raw ticket asked for rather than the next free
       // one, because `ticket-359` already claims `0029`.
+      // ...and `0031_transcript_artifact.sql` — the reference the session row
+      // keeps to a transcript that overflowed the cap (t424).
       assert.equal(
         first.readiness.migrationsApplied,
-        29,
-        'a brand-new database applies the twenty-nine migrations the package ships',
+        30,
+        'a brand-new database applies the thirty migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

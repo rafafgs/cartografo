@@ -305,7 +305,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerGraphs(inner, options.db));
       scope.register(async (inner) => registerProposals(inner, options.db));
       scope.register(async (inner) => registerJobs(inner, options.db));
-      scope.register(async (inner) => registerSessions(inner, options.db));
+      scope.register(async (inner) => registerSessions(inner, options.db, artifactStore));
       scope.register(async (inner) => registerInputRequests(inner, options.db));
       scope.register(async (inner) => registerExecutions(inner, options.db));
       scope.register(async (inner) => registerRunners(inner, options.db));

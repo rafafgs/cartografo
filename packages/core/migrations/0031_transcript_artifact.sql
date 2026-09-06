@@ -1,0 +1,32 @@
+-- 0031_transcript_artifact — the transcript over the cap gets a reference
+-- (t424, FR1; RF-40).
+--
+-- `TRANSCRIPT_CAP_BYTES` (`src/repositories/session.ts`) has always cut an
+-- over-sized transcript down to its last mebibyte and thrown the rest away: the
+-- row kept the TAIL, plus the flag and the size the text had before the cut, and
+-- the head was gone for good. RF-40 says an artifact above the ceiling is stored
+-- WHOLE by the storage interface and the database keeps a reference — so the
+-- column below is that reference, and `0030_artifacts.sql` is the table it
+-- points into.
+--
+-- **Nullable, with no backfill**, the same shape every other column measured
+-- only from its own ticket forward has in this table (`silence_seconds`,
+-- `models`, `output`): NULL is "this transcript never overflowed", which is also
+-- the honest reading of every row written before today — the head those sessions
+-- lost is not recoverable, and inventing an artifact id for them would claim
+-- otherwise.
+--
+-- What this migration does NOT touch is what the ROW keeps. `transcript`,
+-- `transcricao_truncada` and `transcricao_tamanho_original` go on holding the
+-- tail, the flag and the pre-cut size exactly as before; the two residual
+-- Portuguese names stay unrenamed (moving them is a migration of the wire
+-- glossary, not of this ticket — see `src/repositories/session.ts`'s header).
+--
+-- Runs after 0030 because it references the table 0030 creates; `src/db/
+-- migrate.ts` applies them in numeric order, which is what makes that a fact
+-- rather than a hope.
+--
+-- English top to bottom (2026-08-18 language mandate). No migration opens a
+-- transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE session ADD COLUMN transcript_artifact_id INTEGER REFERENCES artifact(id);

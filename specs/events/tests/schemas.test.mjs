@@ -211,6 +211,16 @@ export const TABLE = {
     required: [],
     optional: [],
   },
+  // The 21st type came in with the project becoming a row (D25, t354). One
+  // field, and it is required: the envelope's `project_id` and `entity.id`
+  // already say which project was declared, and `occurred_at` already says
+  // when — what a person calls it is the only thing about the row the envelope
+  // cannot carry.
+  'project.created': {
+    entity: 'project',
+    required: ['name'],
+    optional: [],
+  },
 };
 
 const ENVELOPE = 'envelope.schema.json';
@@ -256,9 +266,11 @@ test('the envelope declares the fields common to every event', () => {
   // event, and its `entity.id` is the `execution_id` itself — an integer, like
   // almost everyone else's here. Migration 0003 and `routes/executions.ts` said
   // the opposite ("there is no execution entity"), and both predate the decision.
+  // `project` came in with D25 (t354): the partition every other entity lives
+  // in became a row, and its own birth is a fact the log records.
   assert.deepEqual(
     [...entity.properties.type.enum].sort(),
-    ['execution', 'graph_version', 'input_request', 'job', 'lease', 'session'],
+    ['execution', 'graph_version', 'input_request', 'job', 'lease', 'project', 'session'],
   );
   assert.deepEqual([...entity.properties.id.type].sort(), ['integer', 'string']);
 

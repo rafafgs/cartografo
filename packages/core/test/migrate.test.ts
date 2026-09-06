@@ -297,6 +297,9 @@ const TABLES = Object.freeze([
   'engine_model',
   'hook_delivery',
   'hook_secret',
+  // t354: the project stops being a loose integer in an envelope and becomes a
+  // row every partitioned table references (D25).
+  'project',
 ]);
 
 test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAULT', async (t) => {
@@ -311,8 +314,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    25,
-    'a fresh database applies the twenty-five migrations of the package and nothing else',
+    26,
+    'a fresh database applies the twenty-six migrations of the package and nothing else',
   );
 
   const objects = db
@@ -760,8 +763,12 @@ test('t279 AT10 — a checksum that matches is silent on every startup after the
   );
 });
 
-/** A `SELECT count(*) AS n` row, which this file asks for a dozen times. */
-function counted(db: { prepare: (sql: string) => { get: (...args: unknown[]) => unknown } }, sql: string, ...args: unknown[]): number {
+/** A `SELECT count(*) AS n` row, which the test below asks for a dozen times. */
+function counted(
+  db: import('../src/db/connection.ts').Database,
+  sql: string,
+  ...args: string[]
+): number {
   return (db.prepare(sql).get(...args) as { n: number }).n;
 }
 

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project.created.schema.json",
+  "title": "project.created",
+  "description": "A project was declared. It is the partition every other entity of the log lives in (D25): the class of a graph, the registry of skills and the keys of a hook are unique inside one project, never across the database.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "project.created"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "project"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "What a person calls this project, and what the screen's switcher and `cartografo --project <name>` address it by. Unique across the database. The envelope's project_id and entity.id already carry which project this is, so the name is the one field of the row the envelope cannot say."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

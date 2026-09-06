@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 20 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 21 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -269,6 +269,10 @@ test('t196 AT9 — the catalogue is the 20 type names of the taxonomy, in its or
       // round over (D21, t245). It is last here because it is last in the
       // taxonomy's own catalogue, which is what this assertion mirrors.
       'execution.finished',
+      // The seventh group, and the twenty-first type: a project was declared
+      // (D25, t354). Last for the same reason `execution.finished` was — the
+      // taxonomy appends a group, it does not reshuffle the ones before it.
+      'project.created',
     ],
   );
 });

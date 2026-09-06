@@ -64,9 +64,13 @@ test('t124 AT — --token and CARTOGRAFO_TOKEN both authenticate, with --token w
   // brand new, so the honest answer is "queried, and empty". What this test is
   // about is the credential, and the whole report is compared only because an
   // authenticated `status` has to come back complete.
+  // `classes` is the graph classes and `projects` is the projects since t354:
+  // the field used to be called `projects` and held the classes, which stopped
+  // being merely loose the moment D25 made a project a real row.
   assert.deepEqual(JSON.parse(withFlag.stdout.trim()), {
     server: 'ok',
-    projects: [],
+    classes: [],
+    projects: [{ id: 1, name: 'default' }],
     jobs: 0,
     pendingInputRequests: 0,
   });

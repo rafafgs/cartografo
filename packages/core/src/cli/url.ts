@@ -30,6 +30,17 @@ export const ENV_URL = 'CARTOGRAFO_URL';
 /** Environment variable that carries the credential of the control plane. */
 export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 
+/**
+ * The project a subcommand works in when `--project` is not given (t354).
+ *
+ * The same `1` the API defaults to (`repositories/common.ts`'s
+ * `DEFAULT_PROJECT`) and the same one the migration writes as `default`. It is
+ * declared here rather than imported from the repository layer because the CLI
+ * is an HTTP client and imports nothing from `src/db/**` or the repositories
+ * (D1, D11) — this module is all the control plane these commands know.
+ */
+export const DEFAULT_PROJECT_ID = 1;
+
 /** Failure to REACH the control plane — distinct from an error response from it. */
 export class NetworkError extends Error {
   readonly url: string;

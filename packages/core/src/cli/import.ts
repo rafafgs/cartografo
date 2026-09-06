@@ -56,7 +56,7 @@ import {
   manifestHash,
 } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
-import { UsageError, requestJson } from './url.ts';
+import { DEFAULT_PROJECT_ID, UsageError, requestJson } from './url.ts';
 
 /** A problem found in the local check, already carrying the scope that produced it. */
 export interface BundleProblem {
@@ -70,6 +70,12 @@ export interface ImportOptions {
   path: string;
   /** Base URL of the control plane. */
   url: string;
+  /**
+   * Project the bundle lands in, already resolved to an id by the router
+   * (t354). Absent means the default project, which is what every import
+   * written before this ticket meant.
+   */
+  projectId?: number;
 }
 
 function readJson(filePath: string): unknown {
@@ -295,11 +301,18 @@ function readBundleSkills(directory: string): { file: string; manifest: unknown 
 async function registerBundleSkills(
   directory: string,
   url: string,
+  projectId: number,
 ): Promise<RegistryOutcome | null> {
   const outcome: RegistryOutcome = { created: 0, known: 0 };
 
   for (const { file, manifest } of readBundleSkills(directory)) {
-    const response = await requestJson(`${url}/v1/skills`, { method: 'POST', body: manifest });
+    // The scope rides on the QUERY STRING and never inside the manifest: the
+    // body is the document the registry hashes, and a field this command added
+    // would change the pin it is trying to preserve (t354).
+    const response = await requestJson(`${url}/v1/skills?project_id=${projectId}`, {
+      method: 'POST',
+      body: manifest,
+    });
     if (response.status === 201) {
       outcome.created += 1;
       continue;
@@ -340,6 +353,7 @@ function line(label: string, value: string): string {
  */
 export async function runImport(options: ImportOptions): Promise<number> {
   const target = path.resolve(options.path);
+  const projectId = options.projectId ?? DEFAULT_PROJECT_ID;
 
   let isDirectory: boolean;
   try {
@@ -372,11 +386,14 @@ export async function runImport(options: ImportOptions): Promise<number> {
       return 1;
     }
 
-    registry = await registerBundleSkills(target, options.url);
+    registry = await registerBundleSkills(target, options.url, projectId);
     if (registry === null) return 1;
   }
 
-  const response = await requestJson(`${options.url}/v1/graphs`, { method: 'POST', body: document });
+  const response = await requestJson(`${options.url}/v1/graphs?project_id=${projectId}`, {
+    method: 'POST',
+    body: document,
+  });
   const body = isObject(response.body) ? response.body : {};
 
   if (response.status === 201) {

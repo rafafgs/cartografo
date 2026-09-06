@@ -78,9 +78,17 @@ export type ProposalStatus = 'pending' | 'approved' | 'applied' | 'reverted' | '
  *
  * `operations` is the same story for a different reason: the operation
  * vocabulary is D20's THIRD child, and it travels through here untouched.
+ *
+ * `project_id` is the partition the proposal and its whole subject live in
+ * (D25, t354). A proposal's `graph_id` and `target_version` only identify a row
+ * TOGETHER with it — the schema says so with composite foreign keys — so the
+ * two state transitions below read it off the proposal rather than taking it as
+ * a parameter: an applied version could never belong to a different project
+ * than the proposal that produced it.
  */
 export interface Proposal {
   id: number;
+  project_id: number;
   graph_id: string;
   target_version: string;
   operations: Operation[];
@@ -99,6 +107,7 @@ export interface Proposal {
 /** The row as SQLite returns it: the column names, with the JSON still in TEXT. */
 interface RawRow {
   id: number;
+  project_id: number;
   graph_id: string;
   target_version: string;
   operations: string;
@@ -123,7 +132,7 @@ interface RawRow {
  * later the server's own key would be riding out to `/v1` on every proposal
  * (`test/proposal-routes.test.ts` pins that it does not).
  */
-const COLUMNS = `id, graph_id, target_version, operations, evidence, expected_metric,
+const COLUMNS = `id, project_id, graph_id, target_version, operations, evidence, expected_metric,
                  status, applied_version_id, revert_reason, rejection_reason, result,
                  created_at, updated_at`;
 
@@ -197,6 +206,8 @@ export function getProposal(db: Database, id: number): Proposal | undefined {
 export function createProposal(
   db: Database,
   data: {
+    /** Partition the target lineage lives in; the default project when unstated. */
+    project_id?: number;
     graph_id: string;
     target_version: string;
     operations: Operation[];
@@ -208,11 +219,12 @@ export function createProposal(
   const createdAt = now();
   const result = db
     .prepare(
-      `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
-                             status, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      `INSERT INTO proposal (project_id, graph_id, target_version, operations, evidence,
+                             expected_metric, status, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
     )
     .run(
+      data.project_id ?? DEFAULT_PROJECT,
       data.graph_id,
       data.target_version,
       JSON.stringify(data.operations),
@@ -424,6 +436,7 @@ export function applyProposal(
 
   db.transaction(() => {
     insertVersion(db, {
+      project_id: proposal.project_id,
       id: versionId,
       graph_id: proposal.graph_id,
       parent_version: proposal.target_version,
@@ -434,12 +447,13 @@ export function applyProposal(
       contracts,
     });
 
-    movePointer(db, proposal.graph_id, versionId);
+    movePointer(db, proposal.graph_id, versionId, proposal.project_id);
 
     // The same pair the two bootstrap paths record, this time with the proposal
     // that produced the snapshot: a version born of a hypothesis is exactly what
     // the surveyor will later cross with the telemetry of the round that ran it.
     recordVersionBirth(db, {
+      projectId: proposal.project_id,
       graphId: proposal.graph_id,
       versionId,
       parentVersion: proposal.target_version,
@@ -466,7 +480,7 @@ export function applyProposal(
   const updated = getProposal(db, proposal.id);
   if (updated === undefined) throw new Error(`proposal ${proposal.id} is gone`);
 
-  const version = getVersionSummary(db, versionId);
+  const version = getVersionSummary(db, versionId, proposal.project_id);
   if (version === undefined) throw new Error(`version ${versionId} was not written`);
 
   return { proposal: updated, version };
@@ -501,7 +515,7 @@ export function revertProposal(
   }
 
   db.transaction(() => {
-    movePointer(db, proposal.graph_id, proposal.target_version);
+    movePointer(db, proposal.graph_id, proposal.target_version, proposal.project_id);
 
     const effect = db
       .prepare(
@@ -518,7 +532,7 @@ export function revertProposal(
     // moves a pointer back over history that stays intact (D15).
     recordEvent(db, {
       type: 'graph_version.reverted',
-      project_id: DEFAULT_PROJECT,
+      project_id: proposal.project_id,
       execution_id: null,
       entity: { type: 'graph_version', id: abandoned },
       actor: API_ACTOR,

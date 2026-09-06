@@ -89,9 +89,9 @@ function messagesOf(problems: BundleProblem[], scope: BundleProblem['scope']): s
 }
 
 /** A control plane that accepts every skill and every graph. */
-function accepting(): (request: { path: string }) => FakeAnswer {
+function accepting(): (request: { route: string }) => FakeAnswer {
   return (request) =>
-    request.path === '/v1/skills'
+    request.route === '/v1/skills'
       ? { status: 201, body: { id: 'uma-skill' } }
       : {
           status: 201,
@@ -326,7 +326,7 @@ test('a graph file goes straight to the control plane, with no registry step', a
   assert.match(run.stdout, /graph_version\.id\s+sha256:abc/);
   assert.deepEqual(
     plane.requests.map((request) => `${request.method} ${request.path}`),
-    ['POST /v1/graphs'],
+    ['POST /v1/graphs?project_id=1'],
     'a bare file has no manifest to offer, so the registry is never called',
   );
 });
@@ -343,7 +343,7 @@ test('a directory with no skills/ is imported as a plain graph', async (t) => {
   assert.equal(run.code, 0);
   assert.deepEqual(
     plane.requests.map((request) => request.path),
-    ['/v1/graphs'],
+    ['/v1/graphs?project_id=1'],
   );
 });
 
@@ -357,7 +357,14 @@ test('a bundle offers every manifest to the registry before the graph', async (t
   assert.match(run.stdout, /skills\s+5 registered, 0 already in the registry/);
   assert.deepEqual(
     plane.requests.map((request) => request.path),
-    ['/v1/skills', '/v1/skills', '/v1/skills', '/v1/skills', '/v1/skills', '/v1/graphs'],
+    [
+      '/v1/skills?project_id=1',
+      '/v1/skills?project_id=1',
+      '/v1/skills?project_id=1',
+      '/v1/skills?project_id=1',
+      '/v1/skills?project_id=1',
+      '/v1/graphs?project_id=1',
+    ],
     'the manifests go up first: a lineage pinning a skill the registry lacks is undispatchable',
   );
 });
@@ -381,7 +388,7 @@ test('a bundle offers every manifest to the registry before the graph', async (t
 /** A registry that already holds every manifest of the bundle, unchanged. */
 function knownRegistry(): (request: { path: string; body?: unknown }) => FakeAnswer {
   return (request) =>
-    request.path === '/v1/skills' ? { status: 200, body: request.body } : accepting()(request);
+    request.route === '/v1/skills' ? { status: 200, body: request.body } : accepting()(request);
 }
 
 test('a manifest the registry already has at that version is a reimport, not a failure', async (t) => {
@@ -399,7 +406,7 @@ test('a bundle where one skill bumped its version registers exactly that version
   // for the four it already holds — which is the shape of a bundle whose author
   // improved one skill and bumped it.
   const plane = await startFakeControlPlane(t, (request) => {
-    if (request.path !== '/v1/skills') return accepting()(request);
+    if (request.route !== '/v1/skills') return accepting()(request);
     const manifest = request.body as { version?: string } | undefined;
     return { status: manifest?.version === '1.1.0' ? 201 : 200, body: request.body };
   });
@@ -428,7 +435,7 @@ test('a skill whose content moved under an unchanged version stops the import', 
   // `409` is no longer "this id is taken": it is "this version already names
   // different content", and it aborts like every other refusal (t135).
   const plane = await startFakeControlPlane(t, (request) => {
-    if (request.path !== '/v1/skills') return accepting()(request);
+    if (request.route !== '/v1/skills') return accepting()(request);
     const manifest = request.body as { id?: string } | undefined;
     return manifest?.id === 'integrate-branch'
       ? {
@@ -451,14 +458,14 @@ test('a skill whose content moved under an unchanged version stops the import', 
   assert.match(run.stderr, /the graph was not sent to the control plane/);
   assert.deepEqual(
     plane.requests.map((request) => request.path),
-    ['/v1/skills', '/v1/skills', '/v1/skills'],
+    ['/v1/skills?project_id=1', '/v1/skills?project_id=1', '/v1/skills?project_id=1'],
     'it stops at the refusal: the two manifests after it were never offered, and neither was the graph',
   );
 });
 
 test('a manifest the registry refuses stops the import, and the graph is never sent', async (t) => {
   const plane = await startFakeControlPlane(t, (request) =>
-    request.path === '/v1/skills'
+    request.route === '/v1/skills'
       ? { status: 422, body: { error: 'manifesto_invalido', details: ['checks: at least one'] } }
       : accepting()(request),
   );
@@ -473,14 +480,14 @@ test('a manifest the registry refuses stops the import, and the graph is never s
   assert.match(run.stderr, /the graph was not sent to the control plane/);
   assert.deepEqual(
     plane.requests.map((request) => request.path),
-    ['/v1/skills'],
+    ['/v1/skills?project_id=1'],
     'it stops at the first refusal instead of offering the rest',
   );
 });
 
 test('a refusal with nothing in the body is still a refusal', async (t) => {
   const plane = await startFakeControlPlane(t, (request) =>
-    request.path === '/v1/skills' ? { status: 500, text: 'upstream exploded' } : accepting()(request),
+    request.route === '/v1/skills' ? { status: 500, text: 'upstream exploded' } : accepting()(request),
   );
   const directory = bundleCopy(t);
 

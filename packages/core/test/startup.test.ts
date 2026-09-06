@@ -193,11 +193,13 @@ test(
       // running against a version nobody ever contract-checked — and t332 once
       // again with `0025_skill_command.sql`, the column a shell skill's argv is
       // kept in, without which the registry would accept a manifest and hand the
-      // runner a node with nothing to run.
+      // runner a node with nothing to run. t354 moved it a last time with
+      // `0026_project_partition.sql`, which turns `project_id` from a label into
+      // a key: a class of graph is unique per project, not per database (D25).
       assert.equal(
         first.readiness.migrationsApplied,
-        25,
-        'a brand-new database applies the twenty-five migrations the package ships',
+        26,
+        'a brand-new database applies the twenty-six migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

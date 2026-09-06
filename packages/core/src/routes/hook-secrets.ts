@@ -31,6 +31,12 @@
  * a Portuguese-spelled row into those names; the COLUMNS have been English since
  * D20's fourth child (t229), so the row spells them itself now and the wrapper
  * had nothing left to rename.
+ *
+ * Since t354 all three take `project_id` — in the body on the write, on the
+ * query string on the two reads — defaulting to project 1 (D25). The `PUT` is
+ * the one where it is load-bearing rather than tidy: registering a name revokes
+ * whatever was live under it, and without the project in that `WHERE` a second
+ * project taking a name would silently kill the first project's key.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -42,7 +48,7 @@ import {
   revokeHookSecret,
   setHookSecret,
 } from '../repositories/hook-secrets.ts';
-import { notFound, withValidation } from './common.ts';
+import { notFound, requireProject, withValidation } from './common.ts';
 
 /** Route parameters of the two routes addressed by name. */
 interface NameParam {
@@ -95,15 +101,25 @@ export function registerHookSecrets(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const name = readName(request.params);
       const value = readValue(request.body);
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
 
-      const { secret, rotated } = setHookSecret(db, { name, value });
+      const { secret, rotated } = setHookSecret(db, {
+        name,
+        value,
+        projectId: scope.project.id,
+      });
       reply.code(rotated ? 200 : 201);
       return { name: secret.name, created_at: secret.created_at };
     }),
   );
 
-  app.get('/hook-secrets', async (_request, reply) =>
-    withValidation(reply, () => ({ secrets: listHookSecretNames(db) })),
+  app.get('/hook-secrets', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+      return { secrets: listHookSecretNames(db, scope.project.id) };
+    }),
   );
 
   // `DELETE` and not `POST /hook-secrets/:name/revocations`: this is the end of
@@ -111,7 +127,10 @@ export function registerHookSecrets(app: FastifyInstance, db: Database): void {
   // verb does NOT mean is a row leaving the database (D15/D2).
   app.delete<NameParam>('/hook-secrets/:name', async (request, reply) =>
     withValidation(reply, () => {
-      const revoked = revokeHookSecret(db, readName(request.params));
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const revoked = revokeHookSecret(db, readName(request.params), {}, scope.project.id);
       return revoked ?? notFound(reply, 'hook secret');
     }),
   );

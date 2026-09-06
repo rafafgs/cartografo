@@ -41,7 +41,7 @@
  */
 
 import type { Database } from '../db/connection.ts';
-import { now } from './common.ts';
+import { DEFAULT_PROJECT, now } from './common.ts';
 
 /** Injectable clock; without it, the real one. */
 export interface ClockOptions {
@@ -60,6 +60,8 @@ export interface ClockOptions {
  * nobody outside this file could see.
  */
 export interface HookSecret {
+  /** The project this registration belongs to (D25, t354). */
+  project_id: number;
   /** The name a hook's `destination.secret_ref` points at. */
   name: string;
   created_at: string;
@@ -73,6 +75,15 @@ export interface NewHookSecret {
   name: string;
   /** The raw HMAC key. Supplied by the caller; the server never generates one. */
   value: string;
+  /**
+   * The project the name belongs to (D25, t354).
+   *
+   * Optional and defaulting to the single-project reading, like every other
+   * scope in this package. It is not decoration: the revoke below is keyed by
+   * it, and without that a second project registering a name would silently
+   * revoke the first project's live key of the same name.
+   */
+  projectId?: number;
 }
 
 /** The registration that was just written, and whether the name is new. */
@@ -91,7 +102,7 @@ export interface RegisteredHookSecret {
 }
 
 /** Every column of the registration EXCEPT the value. */
-const COLUMNS = 'name, created_at, revoked_at';
+const COLUMNS = 'project_id, name, created_at, revoked_at';
 
 /**
  * Registers a secret under `name`, revoking whatever was live there.
@@ -100,6 +111,13 @@ const COLUMNS = 'name, created_at, revoked_at';
  * something else from now on". Doing them apart would leave a window with two
  * live rows — which the partial unique index refuses outright — or with none,
  * during which every hook pointing at the name would silently stop firing.
+ *
+ * Every one of the three statements is keyed by `(project_id, name)` since t354,
+ * and the REVOKE is the one that had to be: `hook_secret` gained `project_id` in
+ * the same migration, and a revoke that did not carry it would have made project
+ * 2 registering `review-hook` kill project 1's live key — the day the column was
+ * born, and silently. The schema agrees from its side: the partial unique index
+ * is on `(project_id, name) WHERE revoked_at IS NULL`.
  *
  * @param db Open database.
  * @param data Name and raw value, already validated.
@@ -112,31 +130,31 @@ export function setHookSecret(
   options: ClockOptions = {},
 ): RegisteredHookSecret {
   const clock = options.now ?? now;
+  const projectId = data.projectId ?? DEFAULT_PROJECT;
 
   return db.transaction((): RegisteredHookSecret => {
     // The column is unnamed on purpose: the only question here is whether a row
     // came back at all, and naming a constant nobody reads would be the one
     // alias this file still wrote.
     const existing: unknown = db
-      .prepare('SELECT 1 FROM hook_secret WHERE name = ? LIMIT 1')
-      .get(data.name);
+      .prepare('SELECT 1 FROM hook_secret WHERE project_id = ? AND name = ? LIMIT 1')
+      .get(projectId, data.name);
 
     const moment = clock();
     db.prepare(
-      'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
-    ).run(moment, data.name);
-    db.prepare('INSERT INTO hook_secret (name, value, created_at) VALUES (?, ?, ?)').run(
-      data.name,
-      data.value,
-      moment,
-    );
+      `UPDATE hook_secret SET revoked_at = ?
+        WHERE project_id = ? AND name = ? AND revoked_at IS NULL`,
+    ).run(moment, projectId, data.name);
+    db.prepare(
+      'INSERT INTO hook_secret (project_id, name, value, created_at) VALUES (?, ?, ?, ?)',
+    ).run(projectId, data.name, data.value, moment);
 
     const written = db
       .prepare(
         `SELECT ${COLUMNS} FROM hook_secret
-          WHERE name = ? AND revoked_at IS NULL`,
+          WHERE project_id = ? AND name = ? AND revoked_at IS NULL`,
       )
-      .get(data.name) as HookSecret | undefined;
+      .get(projectId, data.name) as HookSecret | undefined;
     if (written === undefined) throw new Error('the hook secret was not written');
 
     return { secret: written, rotated: existing !== undefined };
@@ -156,12 +174,19 @@ export function setHookSecret(
  *
  * @param db Open database.
  * @param name Name the document referenced.
+ * @param projectId Project the hook belongs to; the default when unstated.
  * @returns The raw key, or `undefined` when the name is unknown or revoked.
  */
-export function resolveHookSecret(db: Database, name: string): string | undefined {
+export function resolveHookSecret(
+  db: Database,
+  name: string,
+  projectId: number = DEFAULT_PROJECT,
+): string | undefined {
   const row = db
-    .prepare('SELECT value FROM hook_secret WHERE name = ? AND revoked_at IS NULL')
-    .get(name) as { value: string } | undefined;
+    .prepare(
+      'SELECT value FROM hook_secret WHERE project_id = ? AND name = ? AND revoked_at IS NULL',
+    )
+    .get(projectId, name) as { value: string } | undefined;
   return row?.value;
 }
 
@@ -174,10 +199,16 @@ export function resolveHookSecret(db: Database, name: string): string | undefine
  * the table exists to keep.
  *
  * @param db Open database.
+ * @param projectId Project to list; the default when unstated.
  * @returns The registrations, without their values.
  */
-export function listHookSecretNames(db: Database): HookSecret[] {
-  return db.prepare(`SELECT ${COLUMNS} FROM hook_secret ORDER BY id`).all() as HookSecret[];
+export function listHookSecretNames(
+  db: Database,
+  projectId: number = DEFAULT_PROJECT,
+): HookSecret[] {
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM hook_secret WHERE project_id = ? ORDER BY id`)
+    .all(projectId) as HookSecret[];
 }
 
 /**
@@ -195,26 +226,32 @@ export function listHookSecretNames(db: Database): HookSecret[] {
  * @param db Open database.
  * @param name Name to revoke.
  * @param options Injectable clock.
+ * @param projectId Project the name belongs to; the default when unstated.
  * @returns The latest registration under that name, or `undefined`.
  */
 export function revokeHookSecret(
   db: Database,
   name: string,
   options: ClockOptions = {},
+  projectId: number = DEFAULT_PROJECT,
 ): HookSecret | undefined {
   const clock = options.now ?? now;
 
   return db.transaction((): HookSecret | undefined => {
     const latest = db
-      .prepare(`SELECT ${COLUMNS} FROM hook_secret WHERE name = ? ORDER BY id DESC LIMIT 1`)
-      .get(name) as HookSecret | undefined;
+      .prepare(
+        `SELECT ${COLUMNS} FROM hook_secret
+          WHERE project_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(projectId, name) as HookSecret | undefined;
     if (latest === undefined) return undefined;
     if (latest.revoked_at !== null) return latest;
 
     const moment = clock();
     db.prepare(
-      'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
-    ).run(moment, name);
+      `UPDATE hook_secret SET revoked_at = ?
+        WHERE project_id = ? AND name = ? AND revoked_at IS NULL`,
+    ).run(moment, projectId, name);
 
     return { ...latest, revoked_at: moment };
   })();

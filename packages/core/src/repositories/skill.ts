@@ -95,11 +95,13 @@ import {
   manifestHash,
 } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
-import { now } from './common.ts';
+import { DEFAULT_PROJECT, now } from './common.ts';
 import { recheckContracts } from './graphs.ts';
 
 /** A registered skill, as the API returns it. */
 export interface Skill {
+  /** The registry this version belongs to — one per project (D25, t354). */
+  project_id: number;
   id: string;
   version: string;
   hash: string;
@@ -155,6 +157,7 @@ export interface Skill {
  * difference behind the same mechanism t289 exists to delete.
  */
 interface SkillRow {
+  project_id: number;
   id: string;
   version: string;
   hash: string;
@@ -213,7 +216,7 @@ const CHECK_TYPES = ['deterministic', 'agentic'];
  */
 
 const COLUMNS = `
-  id, version, hash, role, description, input, output, preconditions,
+  project_id, id, version, hash, role, description, input, output, preconditions,
   checks, permissions, instructions, command, source, registered_at, deprecated_at
 `;
 
@@ -548,13 +551,23 @@ export interface Registration {
  *   every graph pinned to that version would silently start running content
  *   nobody approved. The way through is a new version, and the message says so.
  *
+ * Since t354 the key is `(project_id, id, version)`, and the three bullets above
+ * read INSIDE one project: two projects importing the same factory bundle both
+ * register `refine-ticket@1.0.0`, because a registry belongs to a project and
+ * D4's "one version never names two bodies" is a rule about a registry (D25).
+ *
  * @param db Open handle.
  * @param manifest The submitted manifest.
+ * @param projectId Registry to write into; the default project when unstated.
  * @returns The stored version, and whether this call is what stored it.
  * @throws {SkillRejected} 422 for an unverifiable manifest, 409 for content that
  *   moved under an unchanged version.
  */
-export function registerSkill(db: Database, manifest: unknown): Registration {
+export function registerSkill(
+  db: Database,
+  manifest: unknown,
+  projectId: number = DEFAULT_PROJECT,
+): Registration {
   const problems = findProblems(manifest);
   if (problems.length > 0) throw new SkillRejected(422, 'manifest_rejected', problems);
 
@@ -563,7 +576,7 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
   const version = verified.version as string;
   const hash = verified.hash as string;
 
-  const existing = getSkill(db, id, { version });
+  const existing = getSkill(db, id, { version }, projectId);
   if (existing !== null) {
     if (existing.hash === hash) return { skill: existing, created: false };
     throw new SkillRejected(409, 'skill_version_conflict', [
@@ -584,10 +597,11 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
   db.transaction(() => {
     db.prepare(
       `INSERT INTO skill (
-         id, version, hash, role, description, input, output, preconditions,
+         project_id, id, version, hash, role, description, input, output, preconditions,
          checks, permissions, instructions, command, source, registered_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
+      projectId,
       id,
       version,
       hash,
@@ -612,13 +626,19 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
     // changed, so no version's answer could have changed either, and re-checking
     // would be a stack of `graph_version.contracts_checked` events saying the
     // same thing on every rerun of `cartografo import`.
-    recheckContracts(db, { id, version }, (ref) => {
-      const skill = getSkill(db, ref.id, { version: ref.version });
-      return skill === null ? undefined : { input: skill.input, output: skill.output };
-    }, timestamp);
+    recheckContracts(
+      db,
+      { id, version },
+      (ref) => {
+        const skill = getSkill(db, ref.id, { version: ref.version }, projectId);
+        return skill === null ? undefined : { input: skill.input, output: skill.output };
+      },
+      timestamp,
+      projectId,
+    );
   })();
 
-  return { skill: getSkill(db, id, { version }) as Skill, created: true };
+  return { skill: getSkill(db, id, { version }, projectId) as Skill, created: true };
 }
 
 /** Which version of a lineage a read is asking for (t215, FR3). */
@@ -652,19 +672,25 @@ export interface SkillSelector {
  * @param db Open handle.
  * @param id Skill id (the manifest's own kebab-case identifier).
  * @param selector Which version; absent selects the newest live one.
+ * @param projectId Registry to read; the default project when unstated.
  * @returns The version, or `null` when the lineage does not carry it.
  */
-export function getSkill(db: Database, id: string, selector: SkillSelector = {}): Skill | null {
+export function getSkill(
+  db: Database,
+  id: string,
+  selector: SkillSelector = {},
+  projectId: number = DEFAULT_PROJECT,
+): Skill | null {
   if (selector.version !== undefined) {
     const row = db
-      .prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ? AND version = ?`)
-      .get(id, selector.version) as SkillRow | undefined;
+      .prepare(`SELECT ${COLUMNS} FROM skill WHERE project_id = ? AND id = ? AND version = ?`)
+      .get(projectId, id, selector.version) as SkillRow | undefined;
     return row === undefined ? null : hydrate(row);
   }
 
   // Ordered in JS and not in SQL, and it has to be: `version` is TEXT, and
   // SQLite would sort `1.10.0` before `1.9.0`.
-  const versions = lineage(db, id);
+  const versions = lineage(db, id, projectId);
   if (versions.length === 0) return null;
 
   if (selector.hash !== undefined) {
@@ -677,9 +703,11 @@ export function getSkill(db: Database, id: string, selector: SkillSelector = {})
   return candidates[candidates.length - 1];
 }
 
-/** Every version of one lineage, oldest first. */
-function lineage(db: Database, id: string): Skill[] {
-  const rows = db.prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ?`).all(id) as SkillRow[];
+/** Every version of one lineage, inside one project, oldest first. */
+function lineage(db: Database, id: string, projectId: number): Skill[] {
+  const rows = db
+    .prepare(`SELECT ${COLUMNS} FROM skill WHERE project_id = ? AND id = ?`)
+    .all(projectId, id) as SkillRow[];
   return rows.map(hydrate).sort((a, b) => compareVersions(a.version, b.version));
 }
 
@@ -693,19 +721,23 @@ function lineage(db: Database, id: string): Skill[] {
  * @param db Open handle.
  * @param id Skill id.
  * @param version The exact version to retire.
+ * @param projectId Registry the version lives in.
  * @returns The version, retired; `null` when the lineage does not carry it.
  */
-export function deprecateSkill(db: Database, id: string, version: string): Skill | null {
-  const existing = getSkill(db, id, { version });
+export function deprecateSkill(
+  db: Database,
+  id: string,
+  version: string,
+  projectId: number = DEFAULT_PROJECT,
+): Skill | null {
+  const existing = getSkill(db, id, { version }, projectId);
   if (existing === null) return null;
   if (existing.deprecated_at !== null) return existing;
 
-  db.prepare('UPDATE skill SET deprecated_at = ? WHERE id = ? AND version = ?').run(
-    now(),
-    id,
-    version,
-  );
-  return getSkill(db, id, { version });
+  db.prepare(
+    'UPDATE skill SET deprecated_at = ? WHERE project_id = ? AND id = ? AND version = ?',
+  ).run(now(), projectId, id, version);
+  return getSkill(db, id, { version }, projectId);
 }
 
 /**
@@ -719,12 +751,19 @@ export function deprecateSkill(db: Database, id: string, version: string): Skill
  *
  * @param db Open handle.
  * @param filter `id` narrows the answer to one lineage.
+ * @param projectId Registry to list; the default project when unstated.
  * @returns Registered versions.
  */
-export function listSkills(db: Database, filter: { id?: string } = {}): Skill[] {
-  if (filter.id !== undefined) return lineage(db, filter.id);
+export function listSkills(
+  db: Database,
+  filter: { id?: string } = {},
+  projectId: number = DEFAULT_PROJECT,
+): Skill[] {
+  if (filter.id !== undefined) return lineage(db, filter.id, projectId);
 
-  const rows = db.prepare(`SELECT ${COLUMNS} FROM skill ORDER BY id`).all() as SkillRow[];
+  const rows = db
+    .prepare(`SELECT ${COLUMNS} FROM skill WHERE project_id = ? ORDER BY id`)
+    .all(projectId) as SkillRow[];
   return rows
     .map(hydrate)
     .sort((a, b) => (a.id === b.id ? compareVersions(a.version, b.version) : a.id < b.id ? -1 : 1));

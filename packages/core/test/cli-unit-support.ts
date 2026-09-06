@@ -35,6 +35,15 @@ export interface RecordedRequest {
   method: string;
   /** Path and query, as it came on the wire. */
   path: string;
+  /**
+   * The path WITHOUT the query string (t354).
+   *
+   * The subcommands started stating their scope on every call — `?project_id=1`
+   * even for the default — so `path` alone stopped being a route name. The tests
+   * that only want to know WHICH route was called read this; the ones that pin
+   * the whole address, query included, keep reading `path`.
+   */
+  route: string;
   /** Parsed when the body is JSON, the raw text otherwise, `undefined` when empty. */
   body: unknown;
   /** The credential the subcommand presented, if it presented one (t124). */
@@ -85,9 +94,11 @@ export async function startFakeControlPlane(
         }
       }
 
+      const target = incoming.url ?? '';
       const recorded: RecordedRequest = {
         method: incoming.method ?? '',
-        path: incoming.url ?? '',
+        path: target,
+        route: target.split('?')[0],
         body,
         authorization: incoming.headers.authorization,
       };

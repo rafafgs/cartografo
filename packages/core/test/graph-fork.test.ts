@@ -424,9 +424,9 @@ test('t118 AT14 — a base with no current version is a 409, not a crash', async
   // because the invariant is defensive and has to hold anyway.
   ctx.db
     .prepare(
-      `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id,
+      `INSERT INTO graph (project_id, id, class, lineage_type, base_class, origin_proposal_id,
                           current_version_id, created_at)
-       VALUES ('nota-orfa', 'nota-orfa', 'base', NULL, NULL, NULL, '2026-08-14T00:00:00.000Z')`,
+       VALUES (1, 'nota-orfa', 'nota-orfa', 'base', NULL, NULL, NULL, '2026-08-14T00:00:00.000Z')`,
     )
     .run();
 

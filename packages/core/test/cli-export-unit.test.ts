@@ -163,7 +163,10 @@ test('the export writes the snapshot and nothing around it', async (t) => {
   assert.match(run.stdout, new RegExp(output.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.deepEqual(
     plane.requests.map((request) => request.path),
-    ['/v1/graphs/desenvolvimento', `/v1/graph-versions/${encodeURIComponent(VERSION_ID)}`],
+    [
+      '/v1/graphs/desenvolvimento?project_id=1',
+      `/v1/graph-versions/${encodeURIComponent(VERSION_ID)}?project_id=1`,
+    ],
     'the class and the version id travel encoded',
   );
 });

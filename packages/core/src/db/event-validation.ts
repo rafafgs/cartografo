@@ -49,7 +49,16 @@ export type EntityType =
    * subject. `entity.id` is the `execution_id`, an integer like everybody
    * else's but `graph_version`'s.
    */
-  | 'execution';
+  | 'execution'
+  /**
+   * The project itself (D25, t354).
+   *
+   * The seventh, and the second one whose subject is not a traveller through a
+   * graph: a project is the PARTITION every other entity lives in, and its own
+   * birth is the one fact about it the control plane records. `entity.id` is
+   * the row's integer id.
+   */
+  | 'project';
 
 /** Who caused the event. Parity with flowpilot's `ActorType`. */
 export type ActorType = 'user' | 'agent' | 'system';
@@ -58,8 +67,8 @@ export type ActorType = 'user' | 'agent' | 'system';
 export interface Entity {
   type: EntityType;
   /**
-   * Integer for `job`/`session`/`input_request`/`lease`/`execution` — on the
-   * last one it is the `execution_id` itself (t245); string (hash) for
+   * Integer for `job`/`session`/`input_request`/`lease`/`execution`/`project` —
+   * on `execution` it is the `execution_id` itself (t245); string (hash) for
    * `graph_version` (D15).
    */
   id: number | string;
@@ -116,6 +125,7 @@ const ENTITY_TYPES: readonly EntityType[] = [
   'lease',
   'graph_version',
   'execution',
+  'project',
 ];
 
 const ACTOR_TYPES: readonly ActorType[] = ['user', 'agent', 'system'];
@@ -468,6 +478,17 @@ const RULES: Record<string, TypeRule> = {
   'execution.finished': {
     entity: 'execution',
     fields: {},
+  },
+  // The 21st type came in with the project becoming a row (D25, t354). `name`
+  // and nothing else: the envelope's `project_id` and `entity.id` already say
+  // WHICH project was declared, and `created_at` is `occurred_at` under another
+  // name. What a project has that the envelope cannot carry is what a person
+  // calls it, which is also the only field the row has beyond its own key.
+  'project.created': {
+    entity: 'project',
+    fields: {
+      name: required('string'),
+    },
   },
 };
 

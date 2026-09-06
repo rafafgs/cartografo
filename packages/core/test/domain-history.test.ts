@@ -152,6 +152,12 @@ test('t372 FR3 — the six events of a job become four lines, in strictly increa
 
   const questionLine = lines[3];
   assert.equal(questionLine.input_request_id, 21);
+  assert.equal(
+    questionLine.kind,
+    'input_request',
+    "the line's kind is the line's, and the projection's own kind never wins it",
+  );
+  assert.equal(questionLine.input_request_kind, 'question', 'which is why it moves, not vanishes');
   assert.equal(questionLine.question, 'Renumber the migration?');
   assert.equal(questionLine.answer, 'Keep');
   assert.equal(questionLine.answered_by, 'rafael');

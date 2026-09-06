@@ -37,6 +37,7 @@
 import { LockHeldError } from '../db/lock.ts';
 import { DEFAULT_PORT } from '../index.ts';
 import { runExport } from './export.ts';
+import { historyScope, runExportHistory } from './export-history.ts';
 import { runImport } from './import.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
@@ -72,6 +73,10 @@ subcommands:
                          optionally, skills/ to check).
   export <class>         writes the current version of the class to a file, in
                          the same format import accepts back.
+  export-history         writes a job's or a round's whole history to a file, as
+                         JSON Lines: a header with the map version, then every
+                         event in id order. Export only — there is no import
+                         back.
   status                 reports the server, the registered classes and the projects.
 
   the D4 skill-import gate, in three steps:
@@ -93,13 +98,19 @@ options:
   --token <token>        credential of the control plane (env ${ENV_TOKEN});
                          it is printed when the control plane first starts
   --out <path>           (export) output file; default ./<class>.graph.json
+                         (export-history) output file; default
+                         ./job-<id>.history.jsonl or ./execution-<id>.history.jsonl
                          (scan-skill) draft file; default ./<id>.manifest.json
   --repo <repo>          (scan-skill) source repository, for origin.repo
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
   --job <id>             (register-skill) job the approval was opened on
-  --project <id|name>    project to work in (import, export, status); default 1.
+                         (export-history) job whose history to export
+  --execution <id>       (export-history) round whose history to export; exactly
+                         one of --job/--execution
+  --project <id|name>    project to work in (import, export, export-history,
+                         status); default 1.
                          A name is resolved against GET /v1/projects
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text
@@ -111,6 +122,7 @@ CARTOGRAFO_SCREEN_PORT.`;
 const API_SUBCOMMANDS = [
   'import',
   'export',
+  'export-history',
   'status',
   'scan-skill',
   'propose-skill',
@@ -259,6 +271,27 @@ async function runApiClient(
     if (className === undefined) throw new UsageError('export needs the graph class');
     return await runExport({
       className,
+      url,
+      output: fromOutput.value,
+      projectId: await resolveProjectId(fromProject.value, url),
+    });
+  }
+
+  if (subcommand === 'export-history') {
+    const fromJob = extractValue(fromProject.rest, '--job');
+    const fromExecution = extractValue(fromJob.rest, '--execution');
+    const fromOutput = extractValue(fromExecution.rest, '--out');
+    requireNothingElse(fromOutput.rest, 0, 'export-history');
+
+    // Read once here and once inside the subcommand, on purpose: the scope is
+    // refused BEFORE `--project` is resolved, and resolving a project name is
+    // itself a request (t372, FR1). The subcommand still owns its own contract,
+    // and the function is pure, so the second reading costs nothing.
+    historyScope({ job: fromJob.value, execution: fromExecution.value });
+
+    return await runExportHistory({
+      job: fromJob.value,
+      execution: fromExecution.value,
       url,
       output: fromOutput.value,
       projectId: await resolveProjectId(fromProject.value, url),

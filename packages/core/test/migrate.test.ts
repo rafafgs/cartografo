@@ -297,6 +297,7 @@ const TABLES = Object.freeze([
   'engine_model',
   'hook_delivery',
   'hook_secret',
+  'setting',
   // t354: the project stops being a loose integer in an envelope and becomes a
   // row every partitioned table references (D25).
   'project',
@@ -314,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    26,
-    'a fresh database applies the twenty-six migrations of the package and nothing else',
+    27,
+    'a fresh database applies the twenty-seven migrations of the package and nothing else',
   );
 
   const objects = db

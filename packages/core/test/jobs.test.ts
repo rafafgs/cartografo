@@ -2438,6 +2438,7 @@ test('t415 AT9 — a pending question is awaiting_you, since the question was as
     job_id: job.id,
     kind: 'question',
     question: 'Which of the two numberings stays?',
+    auto_approvable: false,
   });
   assert.equal(asked.status, 201, JSON.stringify(asked.body));
 
@@ -2611,6 +2612,7 @@ test('t415 AT16 — GET /v1/jobs reports the six states in one request, across t
     job_id: asking,
     kind: 'question',
     question: 'Does the second paragraph answer the theme?',
+    auto_approvable: false,
   });
 
   const stopped = await born('stopped', pinned);
@@ -2708,6 +2710,7 @@ test('t415 AT17 — the board costs the same number of statements whatever the j
     job_id: jobs[0],
     kind: 'question',
     question: 'Is the theme still the theme?',
+    auto_approvable: false,
   });
   await request(large, 'POST', `/v1/jobs/${jobs[1]}/blocks`, { reason: 'the theme moved' });
   await leaseJob(large, 'runner-a', jobs[2]);

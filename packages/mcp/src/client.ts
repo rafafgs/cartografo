@@ -128,6 +128,20 @@ export interface Job {
    * never recomputed here.
    */
   completed: boolean;
+  /**
+   * What the job is doing right now, in the control plane's own six words
+   * (t415): `awaiting_you`, `blocked_unasked`, `running`, `unowned`,
+   * `completed` or `queued`.
+   *
+   * Derived over there, out of the log, the lease table and the job's version —
+   * data this package has no way to reach, which is exactly why it is read and
+   * never recomputed here.
+   *
+   * Typed as `string` and not as a union of the six: this interface describes
+   * what the API sends, and a client that refused to compile against a seventh
+   * state would be claiming a say in a vocabulary that is not its own.
+   */
+  state: string;
   created_at: string;
   updated_at: string;
 }

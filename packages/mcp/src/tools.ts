@@ -208,6 +208,10 @@ export function jobDigest(job: Job): Record<string, unknown> {
     blocked: job.blocked,
     block_reason: job.block_reason,
     completed: job.completed,
+    // The word the control plane derived, passed through untouched (t415): a
+    // model reading the board through this server and a person reading it
+    // through `/v1/jobs` have to be looking at the same six states.
+    state: job.state,
     graph_version_id: job.graph_version_id,
     tier: job.tier,
     created_at: job.created_at,

@@ -24,6 +24,17 @@
  * since migration `0003` and nothing read it back until then, which is why the
  * board of every project showed on one screen.
  *
+ * ## What the two job GETs publish, without doing anything (t415)
+ *
+ * `GET /jobs` and `GET /jobs/:id` carry two more fields since RF-30 —
+ * `state`, one of six words for what the job is doing right now, and
+ * `state_since`, the instant it started doing it. Neither is a column and
+ * neither is assembled here: `repositories/job.ts` derives both while it builds
+ * the projection, off the log, the lease table and the job's graph version, and
+ * these handlers return the object as they always have. The cost of the board
+ * did not change shape either — the resolution is batched for the whole list,
+ * and `test/jobs.test.ts`'s AT17 counts the statements to prove it.
+ *
  * The four WRITES below are deliberately left alone. Scoping a mutation is a
  * different risk — a wrong scope there refuses or misdirects a live transition
  * instead of merely widening a read — and it is the write-side slice of the
@@ -94,7 +105,7 @@ const CREATE_JOB_SCHEMA = {
  * - the job itself, for `input.job` and for the class's own field values;
  * - the version's snapshot, for the class's `project` object and for each
  *   node's `contract.produces`. A version that no longer resolves is read as no
- *   graph at all — the same posture `isAtFinalNode` and `requireFieldsOfNode`
+ *   graph at all — the same posture `hasArrived` and `requireFieldsOfNode`
  *   already take in `repositories/job.ts`;
  * - the job's COMPLETED sessions of this round. Only `completed`, because an
  *   incomplete session's report is not a fact about the graph, and only this

@@ -8,7 +8,7 @@
  * every earlier split of this directory moved something — `escalation-protocol`,
  * `result-protocol`, `interpolate-input`, `render-input-values`, and the two
  * t272 took: the file is at its 600-line budget
- * (`test/dispatch/file-size-budget.test.ts`), and what the ficha adding to it
+ * (`test/dispatch/file-size-budget.test.ts`), and what the ticket adding to it
  * needs room for is SEQUENCE. This is not sequence. It is one `POST` with one
  * argument to make, and the argument travels with it.
  *

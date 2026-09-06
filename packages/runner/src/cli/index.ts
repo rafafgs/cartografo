@@ -46,6 +46,7 @@ import type { PruneSeams } from './prune.ts';
 import {
   DEFAULT_ENGINE_NAME,
   ENGINE_NAMES,
+  SettingsFallbackError,
   runRunner,
   type EngineName,
   type RunnerOptions,
@@ -134,13 +135,20 @@ options:
                             (default: this host and this pid)
   --engine <${ENGINE_NAMES.join('|')}>
                             engine every session of this runner opens on
-                            (default ${DEFAULT_ENGINE_NAME}); one per process
+                            (default ${DEFAULT_ENGINE_NAME}); one per process.
+                            With no path flag at all, an engine left out comes
+                            from the project's settings instead
   --working-dir <path>      the git repository the sessions' worktrees are cut
                             from (default: the current directory)
-  --worktrees-root <path>   REQUIRED: directory those worktrees are created
-                            under. A SIBLING of --working-dir, never inside it
-                            — e.g. --working-dir ~/proj
-                            --worktrees-root ~/proj-worktrees
+  --worktrees-root <path>   directory those worktrees are created under. A
+                            SIBLING of --working-dir, never inside it — e.g.
+                            --working-dir ~/proj --worktrees-root
+                            ~/proj-worktrees. Required WITH --working-dir:
+                            there is no safe default for where a session may
+                            write. With NEITHER of the two, this runner asks
+                            the control plane for the project's workspace_root
+                            and worktrees_root instead, and refuses to start
+                            if it holds none
   --test-bench-path <path>  the integrated checkout the gate nodes OBSERVE,
                             published to the session as
                             \`input.banco_de_testes.caminho\` (default: the same
@@ -423,15 +431,39 @@ function defaultRunnerId(): string {
 export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): RunnerOptions {
   const given = readOptions(args);
 
-  const engine = given.get('--engine') ?? DEFAULT_ENGINE_NAME;
-  if (!(ENGINE_NAMES as readonly string[]).includes(engine)) {
-    throw new UsageError(`--engine has to be one of ${ENGINE_NAMES.join(', ')} (got: "${engine}")`);
-  }
+  const workingDir = given.get('--working-dir');
+  const worktreesRootFlag = given.get('--worktrees-root');
 
-  const { repoRoot, worktreesRoot } = resolveWorktreePaths(
-    given.get('--working-dir'),
-    given.get('--worktrees-root'),
-  );
+  /**
+   * Neither path flag: the two paths are the control plane's to answer (t404).
+   *
+   * The mode is read off the command line and is not a flag of its own, because
+   * there is nothing for an operator to choose here: somebody who named a path
+   * meant that path, and somebody who named none has said nothing this command
+   * could resolve without asking. Note it is NEITHER and not "not both" —
+   * `--working-dir` on its own is still the same usage error t179 wrote, since
+   * half a layout is a command line somebody got wrong rather than one they
+   * deliberately left blank.
+   */
+  const fromSettings = workingDir === undefined && worktreesRootFlag === undefined;
+
+  // Validated whenever it was given, in either mode, and BEFORE any network
+  // call: an engine name nothing answers to is knowable at argument zero, and
+  // discovering it after a pairing would spend a round trip to say so.
+  const givenEngine = given.get('--engine');
+  if (givenEngine !== undefined && !(ENGINE_NAMES as readonly string[]).includes(givenEngine)) {
+    throw new UsageError(
+      `--engine has to be one of ${ENGINE_NAMES.join(', ')} (got: "${givenEngine}")`,
+    );
+  }
+  // ...and the default is applied HERE only when a path flag was given. In
+  // settings-fallback mode it is left undefined so that `runRunner` can let the
+  // project's own `engine` speak before falling back on it.
+  const engine = givenEngine ?? (fromSettings ? undefined : DEFAULT_ENGINE_NAME);
+
+  const { repoRoot, worktreesRoot } = fromSettings
+    ? { repoRoot: undefined, worktreesRoot: undefined }
+    : resolveWorktreePaths(workingDir, worktreesRootFlag);
   const runnerId = given.get('--runner-id');
 
   // The mode is the manifest's enum and not free text: a typo here would only
@@ -460,9 +492,11 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     token: resolveToken(given.get('--token'), env),
     projectId: positiveInteger('--project', given.get('--project'), DEFAULT_PROJECT),
     runnerId: runnerId === undefined ? defaultRunnerId() : runnerId,
-    engine: engine as EngineName,
+    engine: engine as EngineName | undefined,
     repoRoot,
     worktreesRoot,
+    // Left undefined along with the repository it falls back onto: the fallback
+    // is `runRunner`'s to apply, over the value the settings resolved (t404).
     testBenchPath: testBenchPath === undefined ? repoRoot : path.resolve(testBenchPath),
     ...(benchInstallCommand === undefined ? {} : { benchInstallCommand }),
     referenceMode: referenceMode as ReferenceMode,
@@ -523,6 +557,12 @@ function describeError(error: unknown): string {
  * @returns One line for stderr.
  */
 export function failureMessage(error: unknown, url: string): string {
+  // Verbatim, and it is the same rule the branch below follows: this one was
+  // written for a terminal — it names the setting that was missing and both
+  // ways of supplying it — and rewrapping it in "could not talk to the control
+  // plane" would blame the connection for a configuration that answered fine.
+  if (error instanceof SettingsFallbackError) return error.message;
+
   if (error instanceof ControlPlaneClientError) {
     return error.status === 401 || error.status === 403
       ? `the control plane at ${url} refused the credential (${error.status}) — set ${TOKEN_ENV} or pass --token with the token printed when the control plane started`
@@ -661,16 +701,20 @@ export async function runRunnerCli(
       onSessionEnded: () => {
         liveCancel = null;
       },
-      onReady: () => {
+      // The three path-and-engine fields come from the ARGUMENT and not from
+      // `options` (t404): in settings-fallback mode the options carry
+      // `undefined` for all three, and a ready line that announced those would
+      // be unreadable on exactly the startup this fallback exists for.
+      onReady: (resolved) => {
         process.stdout.write(
           `${JSON.stringify({
             event: READY_EVENT,
             url: options.url,
             runnerId: options.runnerId,
             projectId: options.projectId,
-            engine: options.engine,
-            repoRoot: options.repoRoot,
-            worktreesRoot: options.worktreesRoot,
+            engine: resolved.engine,
+            repoRoot: resolved.repoRoot,
+            worktreesRoot: resolved.worktreesRoot,
           })}\n`,
         );
       },

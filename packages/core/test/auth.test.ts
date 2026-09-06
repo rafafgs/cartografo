@@ -254,9 +254,12 @@ test('t180 — the 403 of a runner outside its surface names the surface in Engl
   // The message spells the whole surface, so it moves whenever the allowlist
   // does — which is the point of writing it out: widening the runner's reach
   // shows up here, in a diff somebody reads. `POST /v1/engines/:name/models`
-  // joined it in t166.
+  // joined it in t166, and `POST /v1/runners/:id/probes` +
+  // `GET /v1/runners/:id/rechecks` in t401 — the two through which a machine
+  // reports what it is and picks up a request to report again. The third route
+  // of that pair, `POST /v1/runners/:id/rechecks`, is deliberately absent.
   assert.equal(
     denied.body.message,
-    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models — "POST /v1/jobs" requires a user credential',
+    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models, POST /v1/runners/:id/probes, GET /v1/runners/:id/rechecks — "POST /v1/jobs" requires a user credential',
   );
 });

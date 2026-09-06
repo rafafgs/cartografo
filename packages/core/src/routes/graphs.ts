@@ -75,6 +75,7 @@ import {
   type ContractProblem,
   type ContractReport,
   type GraphDocument,
+  type SoundnessReport,
   type StructureReport,
 } from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
@@ -90,6 +91,7 @@ import {
   listVersions,
   registerBaseGraph,
   type Graph,
+  type GraphVersion,
 } from '../repositories/graphs.ts';
 import { createProposal, getProposal } from '../repositories/proposals.ts';
 import { getSkill } from '../repositories/skill.ts';
@@ -278,22 +280,68 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
   );
 }
 
-/** `POST /graphs` — a graph document becomes a lineage plus its first version. */
-async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
-  const scope = requireProject(db, request, reply);
-  if (scope.project === undefined) return scope.refusal;
-  const project = scope.project;
+/**
+ * What {@link registerGraphDocument} answered — the whole verdict of `POST
+ * /graphs`, before anything decides what HTTP makes of it (t408).
+ *
+ * A discriminated union and not a thrown error, because none of these is
+ * exceptional: four of the five are the ordinary refusals this route has
+ * answered since t101, and a caller that is not a route — the examples run,
+ * which registers a bundle in-process — has to be able to read them without
+ * catching anything or parsing a body it would then have to rebuild.
+ *
+ * Each variant carries exactly what its own answer publishes, and nothing more:
+ * that is what lets {@link create} stay a mapper with no second judgement of its
+ * own, which is the whole proof that the extraction changed no behaviour.
+ */
+export type RegisterGraphOutcome =
+  | {
+      status: 'created';
+      graph: Graph;
+      version: GraphVersion;
+      contracts: ContractsOutcome;
+    }
+  | {
+      status: 'invalid_graph';
+      structure: StructureReport;
+      soundness: SoundnessReport;
+    }
+  | { status: 'lineage_not_base'; lineageType: unknown }
+  | {
+      status: 'contracts_failed';
+      structure: StructureReport;
+      soundness: SoundnessReport;
+      contracts: ContractsOutcome;
+    }
+  | { status: 'class_already_registered'; class: string };
 
-  // The scope comes OFF the body before anything reads it. The version id is
-  // the hash of the whole document, so a `project_id` left inside would give
-  // the same graph a different id in every project — and `cartografo export`
-  // would stop round-tripping (`docs/spec/entities-versioning.md` §2).
-  const document = withoutProject(request.body);
-
+/**
+ * Turns a graph document into a lineage plus its first version, or says why not.
+ *
+ * This is `POST /graphs`'s handler minus the HTTP: it was inlined in
+ * {@link create} until t408, when the examples run needed the same gate without
+ * a network hop. Calling the route over loopback would have been the first time
+ * any component of this project spoke to its own API, and every other route
+ * reuses a repository function directly — so the body moved here and the route
+ * became the mapper below.
+ *
+ * The scope is a parameter and no longer resolved inside: a project is a
+ * property of the REQUEST, and a function that reads one is a function only a
+ * request can call.
+ *
+ * @param db Open database.
+ * @param document Graph document, already stripped of any `project_id`.
+ * @param projectId Partition the lineage is born in (D25).
+ * @returns What happened, in the caller's own vocabulary.
+ */
+export function registerGraphDocument(
+  db: Database,
+  document: unknown,
+  projectId: number,
+): RegisterGraphOutcome {
   const report = validateGraph(document);
   if (!report.valid) {
-    reply.code(422);
-    return { error: 'invalid_graph', ...report };
+    return { status: 'invalid_graph', structure: report.structure, soundness: report.soundness };
   }
 
   // The document passed the gate, so it is an object with the seven keys; all
@@ -302,7 +350,6 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   const raw = document as Record<string, unknown>;
   const className = raw.problem_class;
   if (typeof className !== 'string' || className.trim() === '') {
-    reply.code(422);
     const structure: StructureReport = {
       valid: false,
       errors: [
@@ -313,7 +360,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
         },
       ],
     };
-    return { error: 'invalid_graph', valid: false, structure, soundness: report.soundness };
+    return { status: 'invalid_graph', structure, soundness: report.soundness };
   }
 
   const lineage = isObject(raw.lineage) ? raw.lineage : {};
@@ -321,13 +368,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     // `lineage.type` is the DOCUMENT's field (`schema/graph.schema.json`), so
     // what it carries is echoed back untranslated — it is what the caller sent,
     // and a mapper here would report a value nobody wrote.
-    return refusal(
-      reply,
-      400,
-      'lineage_not_base',
-      'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
-      { lineage_type: lineage.type ?? null },
-    );
+    return { status: 'lineage_not_base', lineageType: lineage.type ?? null };
   }
 
   // The third gate (t278): every required input of every node's PINNED SKILL has
@@ -337,7 +378,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // is held to is the skill's, resolved by `(id, version)` off the pin, the same
   // read `repositories/session.ts` does when a report comes back.
   const contracts = validateContracts(document, (ref) => {
-    const skill = getSkill(db, ref.id, { version: ref.version }, project.id);
+    const skill = getSkill(db, ref.id, { version: ref.version }, projectId);
     return skill === null ? undefined : { input: skill.input, output: skill.output };
   });
 
@@ -369,27 +410,19 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   const outcome = contractsOutcome(contracts);
   const state = classifyContracts(contracts);
   if (state === 'failed') {
-    reply.code(422);
     // The same envelope as the structure/soundness refusal, with the two of them
     // marked as what they are — they passed — so a reader of the 422 can tell
     // which gate refused without diffing three reports.
     return {
-      error: 'invalid_graph',
-      valid: false,
+      status: 'contracts_failed',
       structure: report.structure,
       soundness: report.soundness,
       contracts: outcome,
     };
   }
 
-  if (getClassBase(db, className, project.id) !== undefined) {
-    return refusal(
-      reply,
-      409,
-      'class_already_registered',
-      `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
-      { class: className, project_id: project.id },
-    );
+  if (getClassBase(db, className, projectId) !== undefined) {
+    return { status: 'class_already_registered', class: className };
   }
 
   // Stored, not merely reported (t283). `state` is `checked` or `unchecked`
@@ -401,18 +434,82 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     db,
     document as GraphDocument,
     { state, problems: contracts.problems },
-    project.id,
+    projectId,
   );
-  reply.code(201);
-  // The report rides on the SUCCESS too (t284). A skip that says nothing is
-  // indistinguishable from a clean pass on the wire, and the two mean opposite
-  // things to whoever reads the 201: one graph is known to hold together, the
-  // other has simply not been judged yet.
-  return {
-    graph,
-    graph_version: version,
-    contracts: outcome,
-  };
+
+  return { status: 'created', graph, version, contracts: outcome };
+}
+
+/**
+ * `POST /graphs` — a graph document becomes a lineage plus its first version.
+ *
+ * A mapper since t408, and deliberately nothing else: the scope, the status
+ * code and the body's shape are HTTP, and everything above them is
+ * {@link registerGraphDocument}. `test/graph-routes.test.ts` passes unmodified
+ * across that move, which is the proof there is no sixth answer hiding in here.
+ */
+async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  const scope = requireProject(db, request, reply);
+  if (scope.project === undefined) return scope.refusal;
+  const project = scope.project;
+
+  // The scope comes OFF the body before anything reads it. The version id is
+  // the hash of the whole document, so a `project_id` left inside would give
+  // the same graph a different id in every project — and `cartografo export`
+  // would stop round-tripping (`docs/spec/entities-versioning.md` §2).
+  const document = withoutProject(request.body);
+
+  const outcome = registerGraphDocument(db, document, project.id);
+  switch (outcome.status) {
+    case 'invalid_graph':
+      reply.code(422);
+      return {
+        error: 'invalid_graph',
+        valid: false,
+        structure: outcome.structure,
+        soundness: outcome.soundness,
+      };
+
+    case 'lineage_not_base':
+      return refusal(
+        reply,
+        400,
+        'lineage_not_base',
+        'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
+        { lineage_type: outcome.lineageType },
+      );
+
+    case 'contracts_failed':
+      reply.code(422);
+      return {
+        error: 'invalid_graph',
+        valid: false,
+        structure: outcome.structure,
+        soundness: outcome.soundness,
+        contracts: outcome.contracts,
+      };
+
+    case 'class_already_registered':
+      return refusal(
+        reply,
+        409,
+        'class_already_registered',
+        `class "${outcome.class}" already has a base graph; a new version over an existing lineage is the proposal flow`,
+        { class: outcome.class, project_id: project.id },
+      );
+
+    default:
+      reply.code(201);
+      // The report rides on the SUCCESS too (t284). A skip that says nothing is
+      // indistinguishable from a clean pass on the wire, and the two mean opposite
+      // things to whoever reads the 201: one graph is known to hold together, the
+      // other has simply not been judged yet.
+      return {
+        graph: outcome.graph,
+        graph_version: outcome.version,
+        contracts: outcome.contracts,
+      };
+  }
 }
 
 /**

@@ -1628,3 +1628,37 @@ export function getExecution(db: Database, id: number): ExecutionSummary {
 
   return { execution_id: id, ...row };
 }
+
+/**
+ * An execution id nobody has used yet, in this project (t408, FR4).
+ *
+ * The first allocator this repository has ever had, and it exists because the
+ * one-click demo has nobody to ask: every other caller is HANDED an
+ * `execution_id` — `POST /v1/jobs` reads it off the body, the intake copies the
+ * one its confirmation carried — because a round is a grouping the operator
+ * decides, not a row this database owns (there is no `execution` table, D1's
+ * log groups by the column alone).
+ *
+ * Best effort by design, and named as such in the ficha's Out of Scope: `MAX +
+ * 1` is not reserved, so two clicks landing in the same millisecond would be
+ * handed the same number. That is a PoC-tier, single-operator trade — the cost
+ * of the alternative is a lock or a sequence table, and the damage of the race
+ * is two demo jobs sharing a round, which the board renders perfectly well. A
+ * genuinely concurrent allocator is its own ticket the day it matters.
+ *
+ * @param db Open handle.
+ * @param projectId Partition to count within; a round is scoped like everything
+ *   else since D25.
+ * @returns `1` for a project with no job at all, else one past its highest.
+ */
+export function nextExecutionId(db: Database, projectId: number = DEFAULT_PROJECT): number {
+  // `MAX` over an empty set, and over a set that is all NULLs, both answer
+  // `NULL` — which is why the coalescing is here and not a `WHERE execution_id
+  // IS NOT NULL`: a project whose only jobs were created without a round is the
+  // same case as a project with no jobs, and it deserves the same `1`.
+  const row = db
+    .prepare(`SELECT MAX(execution_id) AS highest FROM job WHERE project_id = ?`)
+    .get(projectId) as { highest: number | null };
+
+  return (row.highest ?? 0) + 1;
+}

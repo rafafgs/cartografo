@@ -767,3 +767,74 @@ test('t404 AT1 — a credential the settings routes refuse is a ControlPlaneClie
     },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t401 — reporting what this machine is, and picking up a re-check request     */
+/* -------------------------------------------------------------------------- */
+
+/** A report, as `POST /v1/runners/:id/probes` receives it. */
+const PROBE_REPORT = {
+  cli: { available: true, version: '2.1.263', authenticated: true },
+  mcp: {
+    supported: true as const,
+    servers: [{ name: 'cartografo' }],
+    origin: 'cli' as const,
+    resolved_at: '2026-09-06T12:00:00.000Z',
+  },
+  workspace: {
+    working_dir: '/home/op/cartografo',
+    working_dir_resolved: '/home/op/cartografo',
+    is_git_repo: true,
+    worktrees_root: '/home/op/worktrees',
+    worktrees_root_resolved: '/home/op/worktrees',
+    worktrees_root_exists: false,
+    worktrees_root_writable: true,
+  },
+};
+
+test('t401 AT15 — reportProbe posts the body to the runner\'s own probes route', async () => {
+  const { ControlPlaneClient } = await loadClient();
+
+  const stored = { runner_id: 'runner-a', ...PROBE_REPORT, reported_at: '2026-09-06T12:00:01.000Z' };
+  const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { probe: stored } }));
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
+
+  const answered = await client.reportProbe('runner-a', PROBE_REPORT);
+
+  assert.deepEqual(calls, [
+    {
+      url: `${BASE_URL}/v1/runners/runner-a/probes`,
+      method: 'POST',
+      body: PROBE_REPORT,
+    },
+  ]);
+  assert.deepEqual(answered, stored, 'the probe comes out of `{probe}`, unwrapped');
+});
+
+test('t401 AT16 — getPendingRecheck reads the route and unwraps `recheck`', async () => {
+  const { ControlPlaneClient } = await loadClient();
+
+  const quiet = fakeFetch(() => ({ status: 200, body: { recheck: null } }));
+  const nothing = await new ControlPlaneClient({
+    urlBase: BASE_URL,
+    fetchImpl: quiet.fetchImpl,
+  }).getPendingRecheck('runner-a');
+
+  assert.deepEqual(quiet.calls, [
+    { url: `${BASE_URL}/v1/runners/runner-a/rechecks`, method: 'GET', body: undefined },
+  ]);
+  assert.equal(nothing, null, 'nothing pending is `null`, and the caller has one thing to check');
+
+  const recheck = {
+    id: 7,
+    runner_id: 'runner-a',
+    requested_at: '2026-09-06T12:00:00.000Z',
+    served_at: null,
+  };
+  const pending = await new ControlPlaneClient({
+    urlBase: BASE_URL,
+    fetchImpl: fakeFetch(() => ({ status: 200, body: { recheck } })).fetchImpl,
+  }).getPendingRecheck('runner-a');
+
+  assert.deepEqual(pending, recheck);
+});

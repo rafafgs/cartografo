@@ -101,6 +101,14 @@ does `GET /v1/classes`. The graph is five nodes — `refine`, `develop`,
 `integrate`, `test`, `deploy` — and it begins at `refine`. That is the one fact
 from this step you need for the next one.
 
+**The zero-`curl` way round.** Everything in this step and the next is one
+click on the screen's **examples** page (`http://127.0.0.1:4318/examples`): it
+lists every bundle that ships a `demo/job.json`, registers the one you pick if
+this project has never seen it, opens its demo job in a round of its own and
+takes you straight to the board. The commands below are what that click does,
+said out loud — read them if you want to know what happened, skip them if you
+only want it to run.
+
 ## 4. Put a piece of work on it
 
 A **job** is one piece of work crossing one graph. Creating one is a `POST`, and

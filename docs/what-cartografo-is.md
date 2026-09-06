@@ -24,7 +24,9 @@ public API any tool can consume.
 **Start from ready-made maps.** Factory graphs come in the box: three of them —
 the software development one, the investment thesis one and the B3 flow radar,
 which brings three real trading days along as fixtures so it runs offline.
-Import one with a single command and you already have a governed process.
+Import one with a single command and you already have a governed process — or
+open the screen's examples page and run one with a single click, which registers
+the bundle and starts its demo job for you.
 
 **Keep more than one project in the same installation, and switch between them
 on the screen.** A project is a name you give — `default` is the one that is

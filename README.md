@@ -268,6 +268,12 @@ command rather than a session, and its red team attacks with the day's own
 records because no node here is allowed to research. It models a market-data
 workflow as an example of graph structure, and is not a trading signal.
 
+Two of the three ship a `demo/job.json`, which is what makes them runnable
+without writing anything: the screen's **examples** page
+(`http://127.0.0.1:4318/examples`) lists them, and one click registers the
+bundle and opens its demo job on a round of its own. Same effect as `cartografo
+import` followed by a `POST /v1/jobs`, minus both.
+
 ## Take the patterns
 
 The licence grants the right to copy; this paragraph is the invitation, which is

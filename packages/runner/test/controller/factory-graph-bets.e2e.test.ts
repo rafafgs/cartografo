@@ -73,6 +73,8 @@ const MANIFESTS = Object.freeze([
 
 interface Work {
   id: number;
+  /** The round the job was born in; the examples run allocates one (t408). */
+  execution_id: number | null;
   title: string;
   current_node_id: string;
   blocked: boolean;
@@ -739,6 +741,25 @@ interface Crossing {
   context: () => Promise<Record<string, unknown>>;
   /** Every call the DISPATCH made — never the ones this test makes itself. */
   calls: string[];
+  /** The round this crossing's job was born in (t408 allocates its own). */
+  executionId: number | null;
+  /** Whether the entry point REGISTERED the bundle on the way in (t408). */
+  registered: boolean;
+}
+
+/** What a crossing may be asked to do differently on its way in (t408). */
+interface CrossingOptions {
+  /**
+   * Enter through `POST /v1/examples/asymmetric-bets/run` instead of the three
+   * manual calls below.
+   *
+   * It is the ONE click RF-13 asks for, and what it replaces is exactly the
+   * setup this helper otherwise performs by hand: seven `POST /v1/skills`, one
+   * `POST /v1/graphs`, one `POST /v1/jobs` with an execution id the caller had
+   * to invent. Everything downstream of "a job exists" is unchanged, which is
+   * why the crossing itself is shared with the tests that do it the long way.
+   */
+  viaExample?: boolean;
 }
 
 /**
@@ -753,46 +774,73 @@ async function startCrossing(
   t: TestContext,
   executionId: number,
   runnerId: string,
+  options: CrossingOptions = {},
 ): Promise<Crossing> {
-  const { url: baseUrl, token } = await bootCore(t);
+  // The examples root is the repository's own `factory-graphs/`, named rather
+  // than inherited from the cwd: `bootCore` starts the control plane in a
+  // throwaway directory, which is where its database has to live.
+  const { url: baseUrl, token } = await bootCore(
+    t,
+    options.viaExample
+      ? { env: { CARTOGRAFO_EXAMPLES_ROOT: path.join(REPO_ROOT, 'factory-graphs') } }
+      : {},
+  );
 
   const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t276-factory-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  for (const file of MANIFESTS) {
-    await api(baseUrl, token, 'POST', '/v1/skills', bundleFile('skills', file), 201);
-  }
+  let job: Work;
+  let registered = false;
+  let round: number | null = executionId;
 
-  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
-    baseUrl,
-    token,
-    'POST',
-    '/v1/graphs',
-    bundleFile('graph.json'),
-    201,
-  );
+  if (options.viaExample) {
+    const ran = await api<{ job: Work; execution_id: number; registered: boolean }>(
+      baseUrl,
+      token,
+      'POST',
+      '/v1/examples/asymmetric-bets/run',
+      undefined,
+      201,
+    );
+    job = ran.job;
+    registered = ran.registered;
+    round = ran.execution_id;
+  } else {
+    for (const file of MANIFESTS) {
+      await api(baseUrl, token, 'POST', '/v1/skills', bundleFile('skills', file), 201);
+    }
 
-  const job = await api<Work>(
-    baseUrl,
-    token,
-    'POST',
-    '/v1/jobs',
-    {
-      title: TITLE,
-      body: BODY,
-      entry_node_id: 'triage',
-      execution_id: executionId,
-      graph_version_id: version.id,
-      fields: {
-        asset: ASSET,
-        premise_source: PREMISE_SOURCE,
-        intended_size: INTENDED_SIZE,
+    const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+      baseUrl,
+      token,
+      'POST',
+      '/v1/graphs',
+      bundleFile('graph.json'),
+      201,
+    );
+
+    job = await api<Work>(
+      baseUrl,
+      token,
+      'POST',
+      '/v1/jobs',
+      {
+        title: TITLE,
+        body: BODY,
+        entry_node_id: 'triage',
+        execution_id: executionId,
+        graph_version_id: version.id,
+        fields: {
+          asset: ASSET,
+          premise_source: PREMISE_SOURCE,
+          intended_size: INTENDED_SIZE,
+        },
       },
-    },
-    201,
-  );
+      201,
+    );
+  }
 
   const client = new ControlPlaneClient({ urlBase: baseUrl, token });
   await client.registerRunner(runnerId, 'the one that crosses the whole bets bundle');
@@ -842,6 +890,8 @@ async function startCrossing(
     baseUrl,
     token,
     calls,
+    executionId: round,
+    registered,
     run: async (nodeId, lines) => {
       currentLines = lines;
       currentRecord = path.join(root, `${nodeId}.json`);
@@ -1046,4 +1096,93 @@ test('t276 — the red team kills the thesis, and the `dead` edge closes the tra
   const closed = await crossing.job();
   assert.equal(closed.blocked, false, closed.block_reason ?? '');
   assert.equal(closed.completed, true, 'the death path ends on the same final node as every other');
+});
+
+test('t408 — one click on the Examples route crosses the whole bundle to the human gate', async (t) => {
+  // RF-13: the traversal starts from the examples list with no configuration at
+  // all — no skill registration, no graph registration, no execution id chosen
+  // by hand. The control plane found the bundle on disk, registered it and
+  // opened the job, in one request.
+  const crossing = await startCrossing(t, 0, 'runner-t408-example', { viaExample: true });
+  const { baseUrl, token } = crossing;
+
+  assert.equal(crossing.registered, true, 'the fresh database had never seen asymmetric-bets');
+  assert.ok(
+    crossing.executionId !== null && crossing.executionId > 0,
+    `the run allocated no execution: ${String(crossing.executionId)}`,
+  );
+
+  const born = await crossing.job();
+  assert.equal(born.current_node_id, 'triage', 'the demo job starts where its `entry_node_id` says');
+
+  // The crossing itself is the t276 sequence, unchanged: what this test replaces
+  // is the way in, and nothing else.
+  await crossing.run('triage', reports(TRIAGED));
+  await crossing.run('collect-fundamentals', reports(COLLECTED));
+  await crossing.run('analyze-asymmetry', reports(MEASURED));
+  await crossing.run('red-team', reports(SURVIVED));
+  await crossing.run('size-risk', reports(SIZED));
+  assert.equal((await crossing.job()).current_node_id, 'decide');
+
+  // RF-29: a human gate is reached BEFORE the end, and it is answered through
+  // the very route the screen's own answer form calls.
+  await crossing.run('decide', ASKS);
+  const asked = await crossing.job();
+  assert.equal(asked.blocked, true, 'the mandatory human gate stops the traversal (D14)');
+
+  const { input_requests: pending } = await api<{ input_requests: { id: number }[] }>(
+    baseUrl,
+    token,
+    'GET',
+    '/v1/input-requests?status=pending',
+  );
+  assert.equal(pending.length, 1, 'exactly one question is waiting on the founder');
+
+  await api(baseUrl, token, 'PATCH', `/v1/input-requests/${pending[0].id}/answer`, {
+    answer: FOUNDER_ANSWER,
+    answered_by: 'rafael',
+  });
+  assert.equal((await crossing.job()).blocked, false, 'answering unblocked it');
+
+  const questionId = String(pending[0].id);
+  await crossing.run('decide', reports(transcribed(questionId)));
+  assert.equal((await crossing.job()).current_node_id, 'record-monitoring');
+
+  // RF-27: the demo job reaches the end of the graph, having written to nothing
+  // but this control plane and the fake engine's own sidecar files (RF-28).
+  await crossing.run(
+    'record-monitoring',
+    reports({
+      process_metrics: {
+        red_team_ran: true,
+        sourced_assumptions_fraction: 1,
+        human_decision_id: questionId,
+        final_outcome: 'monitoring',
+        unanswered_high_objections: 0,
+        nodes_executed: [
+          'triage',
+          'collect-fundamentals',
+          'analyze-asymmetry',
+          'red-team',
+          'size-risk',
+          'decide',
+        ],
+      },
+      record: {
+        thesis_id: TRIAGED_THESIS.id,
+        summary: 'The demo crossing closed: seven nodes, one human gate, no configuration.',
+        monitoring: [{ trigger: 'port contract renewal', deadline: 'Q3 2027' }],
+      },
+      note: 'A crossing that began with one click on the examples list.',
+    }),
+  );
+
+  const closed = await crossing.job();
+  assert.equal(closed.blocked, false, closed.block_reason ?? '');
+  assert.equal(closed.completed, true, 'the demo traversal is over: the final node reported');
+  assert.equal(
+    closed.execution_id,
+    crossing.executionId,
+    'the whole crossing stayed inside the round the run allocated',
+  );
 });

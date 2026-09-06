@@ -229,7 +229,12 @@ npx cost-surveyor evaluate --url http://127.0.0.1:4317 \
 npx cartografo-screen                          # http://127.0.0.1:4318
 ```
 
-At `/`, the **proposal inbox**: the semantic diff, the evidence, the decision
+At `/`, the **check**: per paired runner, whether its engine CLI is there, whether
+it has a model credential, whether the `cartografo` MCP server is registered with
+it and whether its workspace can be worked in — either all four met, with a way
+into the board, or exactly what is missing and one command to fix each. It asks
+for nothing it can read off a runner's own report. At `/inbox`, the **proposal
+inbox**: the semantic diff, the evidence, the decision
 ([`docs/spec/screen-proposal-inbox.md`](docs/spec/screen-proposal-inbox.md)). At
 `/board`, **observability**: jobs grouped by node, executions, sessions, the
 queue of pending questions with an inline answer, and any job's timeline split

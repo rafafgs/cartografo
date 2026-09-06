@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import type { Readable } from 'node:stream';
 import test from 'node:test';
 import path from 'node:path';
@@ -193,11 +193,13 @@ test(
       // running against a version nobody ever contract-checked — and t332 once
       // again with `0025_skill_command.sql`, the column a shell skill's argv is
       // kept in, without which the registry would accept a manifest and hand the
-      // runner a node with nothing to run.
+      // runner a node with nothing to run. t403 added
+      // `0026_settings.sql`, the project-scoped key/value table the local
+      // runner's defaults live in, and moved this count once more.
       assert.equal(
         first.readiness.migrationsApplied,
-        25,
-        'a brand-new database applies the twenty-five migrations the package ships',
+        26,
+        'a brand-new database applies the twenty-six migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(
@@ -597,6 +599,79 @@ test(
       assert.equal((await fetch(`http://localhost:${port}/health`)).status, 200);
     } finally {
       await startup.shutdown();
+    }
+  },
+);
+
+test(
+  't403 AC9 — a fresh startup seeds the three settings defaults, and a PATCH survives a restart',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t403-settings-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+
+    const first = await start({ cwd: base, databasePath, port });
+    let token: string;
+    try {
+      token = first.readiness.bootstrapToken ?? '';
+      assert.ok(token.length > 0);
+
+      const response = await fetch(`${first.readiness.url}/v1/settings?project_id=1`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        project_id: number;
+        workspace_root: string;
+        worktrees_root: string;
+        engine: string;
+      };
+
+      // The started PROCESS's own home, not this test's: the child inherits
+      // `process.env` (including HOME) from `start()`, so the two agree unless
+      // the environment override map above is what diverges them.
+      assert.equal(body.workspace_root, path.join(homedir(), '.cartografo', 'workspace'));
+      assert.equal(body.worktrees_root, path.join(homedir(), '.cartografo', 'worktrees'));
+      assert.equal(body.engine, 'claude-code');
+
+      const patched = await fetch(`${first.readiness.url}/v1/settings`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ engine: 'codex' }),
+      });
+      assert.equal(patched.status, 200);
+      assert.equal(((await patched.json()) as { engine: string }).engine, 'codex');
+    } finally {
+      await first.shutdown();
+    }
+
+    // Same database file, a second startup: AC2's end-to-end shape — a change
+    // recorded through the API is still there once the process that wrote it is
+    // gone and a new one takes over.
+    const second = await start({ cwd: base, databasePath, port });
+    try {
+      assert.equal(
+        second.readiness.migrationsApplied,
+        0,
+        'the second startup finds the schema already migrated',
+      );
+
+      const response = await fetch(`${second.readiness.url}/v1/settings?project_id=1`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 200);
+      assert.equal(
+        ((await response.json()) as { engine: string }).engine,
+        'codex',
+        'the patched value survived the restart — it lives in the database, not in the process',
+      );
+    } finally {
+      await second.shutdown();
     }
   },
 );

@@ -297,6 +297,7 @@ const TABLES = Object.freeze([
   'engine_model',
   'hook_delivery',
   'hook_secret',
+  'setting',
 ]);
 
 test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAULT', async (t) => {
@@ -311,8 +312,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    25,
-    'a fresh database applies the twenty-five migrations of the package and nothing else',
+    26,
+    'a fresh database applies the twenty-six migrations of the package and nothing else',
   );
 
   const objects = db

@@ -79,7 +79,7 @@ test('AT1 — every node of the real software-development graph gets a data-step
   const refineNeeds = fieldBlock(stepBlock(html, 'refine'), 'needs');
   assert.ok(refineNeeds.includes('ticket_id'), `refine's needs does not name ticket_id:\n${refineNeeds}`);
   assert.ok(refineNeeds.includes('request'), `refine's needs does not name request:\n${refineNeeds}`);
-  assert.match(refineNeeds, /ticket_id[^<]*<\/li>/, 'ticket_id has no rendered list item');
+  assert.match(refineNeeds, /<li>ticket_id[\s\S]*?<\/li>/, 'ticket_id has no rendered list item');
   assert.ok(
     (refineNeeds.match(/required/g) ?? []).length >= 2,
     `refine's needs does not mark both ticket_id and request as required:\n${refineNeeds}`,

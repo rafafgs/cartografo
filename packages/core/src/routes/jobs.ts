@@ -23,6 +23,7 @@ import { integerFromQuery } from '../repositories/common.ts';
 import { getVersion } from '../repositories/graphs.ts';
 import { listInputRequests } from '../repositories/input-request.ts';
 import {
+  CrossProjectVersionReferenceError,
   GraphVersionNotReadyError,
   blockJob,
   getJob,
@@ -40,6 +41,7 @@ import { listSessions } from '../repositories/session.ts';
 import {
   withValidation,
   refusal,
+  requireProject,
   routeId,
   notFound,
   ERROR_RESPONSE_SCHEMA,
@@ -92,16 +94,33 @@ const CREATE_JOB_SCHEMA = {
  * total function is cheaper to reason about than one more invariant nobody can
  * see fail.
  *
+ * ## Which of the five take the scope (t410, FR9)
+ *
+ * Three of them: the seed, the version and the traversal. `listSessions` and
+ * `listInputRequests` do not, and it is not an omission — both are called with
+ * a `job_id` the SEED has already confirmed belongs to the resolved project,
+ * and neither table carries a `project_id` of its own (they inherit the
+ * partition through that foreign key, `docs/spec/entities-versioning.md` §1).
+ * A scope parameter there would be a second copy of a judgement already made.
+ *
  * @param db Open database.
  * @param id Job id.
- * @returns The assembled `input`, or `null` when the job does not exist.
+ * @param projectId Project the request resolved to.
+ * @returns The assembled `input`, or `null` when the job does not exist in that
+ *   project.
  */
-function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
-  const seed = jobContextSeed(db, id);
+function nodeInputOf(
+  db: Database,
+  id: number,
+  projectId: number,
+): Record<string, unknown> | null {
+  const seed = jobContextSeed(db, id, projectId);
   if (seed === null) return null;
 
   const version =
-    seed.graph_version_id === null ? undefined : getVersion(db, seed.graph_version_id);
+    seed.graph_version_id === null
+      ? undefined
+      : getVersion(db, seed.graph_version_id, projectId);
 
   const sessions = listSessions(db, {
     job_id: id,
@@ -127,7 +146,10 @@ function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
       pergunta: request.question,
       resposta: request.answer ?? '',
     })),
-    traversal: jobTraversal(db, id) ?? { nodes_visited: [], entered_at: seed.created_at },
+    traversal: jobTraversal(db, id, projectId) ?? {
+      nodes_visited: [],
+      entered_at: seed.created_at,
+    },
   });
 }
 
@@ -147,9 +169,22 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       });
     } catch (error) {
       // `withValidation` re-throws anything that is not a `ValidationError`, and
-      // correctly so — this one is not a verdict about the body (t283). The
-      // report rides along as sibling context, because "why is it not checked"
-      // is the actionable half of the refusal: it names the pins to register.
+      // correctly so — neither of these is a verdict about the body. Both are
+      // the same 409 in the same envelope, with their context as SIBLING
+      // fields, so a client that reads one of the three codes reads all of them.
+      //
+      // The version resolves, but in another project (t410, FR7): the request
+      // is reaching across a partition, which is a conflict and never a silent
+      // accept. A hash that resolves in NO project is untouched by this branch
+      // and stays the ungated free-text case of t283.
+      if (error instanceof CrossProjectVersionReferenceError) {
+        return refusal(reply, 409, error.code, error.message, {
+          graph_version_id: error.graphVersionId,
+          project_id: error.projectId,
+        });
+      }
+      // The state refusal of t283: the report rides along because "why is it not
+      // checked" is the actionable half — it names the pins to register.
       if (!(error instanceof GraphVersionNotReadyError)) throw error;
       return refusal(reply, 409, error.code, error.message, {
         graph_version_id: error.graphVersionId,
@@ -160,18 +195,27 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
 
   app.get('/jobs', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       const executionId = integerFromQuery(
         'execution_id',
         (request.query as { execution_id?: string }).execution_id,
       );
-      const found = listJobs(db, { execution_id: executionId });
+      const found = listJobs(db, { execution_id: executionId }, scope.project.id);
       return { jobs: found };
     }),
   );
 
   app.get('/jobs/:id', async (request, reply) =>
     withValidation(reply, () => {
-      const job = getJob(db, routeId(request.params));
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      // A job of another project answers the SAME `404` a nonexistent id gets
+      // (t410, FR2): a boundary a client can tell apart from an absence is a
+      // boundary that reports which ids are taken elsewhere.
+      const job = getJob(db, routeId(request.params), scope.project.id);
       return job === null ? notFound(reply, 'job') : job;
     }),
   );
@@ -193,16 +237,22 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
    */
   app.get('/jobs/:id/context', async (request, reply) =>
     withValidation(reply, () => {
-      const input = nodeInputOf(db, routeId(request.params));
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const input = nodeInputOf(db, routeId(request.params), scope.project.id);
       return input === null ? notFound(reply, 'job') : { input };
     }),
   );
 
   app.get('/jobs/:id/events', async (request, reply) =>
     withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
       // The envelope key is English; each event inside keeps its own shape, which
       // is the taxonomy's and therefore D20's second child.
-      const events = jobTimeline(db, routeId(request.params));
+      const events = jobTimeline(db, routeId(request.params), scope.project.id);
       return events === null ? notFound(reply, 'job') : { events };
     }),
   );

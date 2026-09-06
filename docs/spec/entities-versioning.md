@@ -654,10 +654,36 @@ document's §1 declares. `POST /v1/jobs` answers `409` when the
 |---|---|---|
 | The named version was never contract-checked (a skill pin resolves to nothing) | `409` | `graph_version_unchecked` |
 | The named version ran the check and failed it | `409` | `graph_version_contracts_failed` |
+| The named version does not resolve in the job's own project, and does resolve in another one | `409` | `cross_project_reference` |
 
-Both carry `graph_version_id` and `contracts` (`{state, problems}`) as sibling
-context. A job with no `graph_version_id`, or with one that resolves to nothing,
+The first two carry `graph_version_id` and `contracts` (`{state, problems}`) as
+sibling context; the third carries `graph_version_id` and `project_id` the same
+way. A job with no `graph_version_id`, or with one that resolves in NO project,
 is not gated: there is no version to read a state off.
+
+**Where that check looks is the job's own project (D25).** The version id is a
+content hash, so the same one may exist once per project, and a job may not run
+against another project's copy of it — which is why "does not resolve" splits in
+two: a hash nobody registered is still free text, and a hash somebody else
+registered is a reference crossing a partition. The refusal is loud here, unlike
+the cross-project `origem_proposta_id` above, which answers the same code a
+nonexistent proposal gets: a proposal id is a sequence and saying "it exists
+elsewhere" would leak which numbers are taken, while a version id is content the
+caller is already holding.
+
+**Job and execution reads are scoped by project too.** `GET /v1/jobs`,
+`GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/jobs/:id/context`,
+`GET /v1/executions`, `GET /v1/executions/:id` and
+`GET /v1/executions/:id/metrics-by-version` resolve `project_id` the way every
+route of this family does (default project 1, `404 unknown_project` for one
+nobody declared), a job of another project answers the same `404 not_found` a
+nonexistent id gets, and every count of a round — `jobs`, `blocked_jobs`,
+`pending_input_requests`, `finished_at` and the per-version/per-node
+breakdowns — is computed over one project's jobs alone, because `execution_id`
+is a number an operator chooses and two projects collide on it as a matter of
+course. `input_requests_by_node` on the metrics route is the one figure not yet
+scoped: it is counted in `repositories/input-request.ts`, which is another
+ticket's slice.
 
 The error body always carries `erro` — a stable, machine-readable code — and,
 when there is something to explain, a `mensagem` for people. In `grafo_invalido`

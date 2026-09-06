@@ -34,6 +34,7 @@ import Fastify from 'fastify';
 import type * as ConnectionModule from '../src/db/connection.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as LeaseRoutesModule from '../src/routes/leases.ts';
+import type * as LeasesModule from '../src/repositories/leases.ts';
 import type * as RunnersModule from '../src/repositories/runners.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
@@ -1156,4 +1157,130 @@ test('t264 AT2 — releasing a lease of an unfinished round is a no-op', async (
   );
   assert.deepEqual(await finishedEvents(address, 2641), [], 'and nothing was written about it');
   assert.equal(midGraph.current_node_id, 'redigir');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t412 — a lease claim may not name a job of another project (D25).            */
+/*                                                                            */
+/* `job_id` is an opaque integer on this route by design, and it stays one: the */
+/* controller decides eligibility, and three of the four verbs never look the   */
+/* job up. What is NOT a design choice is a grant that names one project and a   */
+/* job that belongs to another — `grantLease` says in its own doc that it does   */
+/* not read the `job` table, so until this ficha nothing refused it. The check   */
+/* runs where both sides are already known, and only when the job EXISTS: a      */
+/* `job_id` naming no row is still opaque, exactly as it was.                    */
+/* -------------------------------------------------------------------------- */
+
+/** Declares a project and returns its id. */
+async function declareProject(address: string, name: string): Promise<number> {
+  const response = await fetch(`${address}/v1/projects`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const body = (await response.json()) as { id: number };
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return body.id;
+}
+
+/** A job of the given project, born with a title and an entry node and nothing else. */
+async function jobInProject(
+  address: string,
+  projectId: number,
+  title: string,
+): Promise<{ id: number; project_id: number }> {
+  return await postJson<{ id: number; project_id: number }>(
+    address,
+    '/v1/jobs',
+    { title, entry_node_id: 'redigir', project_id: projectId },
+    201,
+  );
+}
+
+test('t412 AT13 — a lease claim naming a job of another project is refused, and grants nothing', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-t412');
+  assert.equal(await declareProject(address, 'second'), 2);
+
+  const foreign = await jobInProject(address, 2, 'a job that belongs to project 2');
+  assert.equal(foreign.project_id, 2);
+
+  const response = await requestLease(address, {
+    runner_id: 'runner-t412',
+    project_id: 1,
+    job_id: foreign.id,
+  });
+  const body = (await response.json()) as {
+    error: string;
+    job_id: number;
+    project_id: number;
+    job_project_id: number;
+  };
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.error, 'cross_project_reference');
+  assert.equal(body.job_id, foreign.id);
+  assert.equal(body.project_id, 1, 'the scope the claim declared');
+  assert.equal(body.job_project_id, 2, 'and the one the job really lives in');
+
+  assert.deepEqual(await listLeasesHttp(address), [], 'a refused claim writes no lease');
+
+  // The same job claimed from its own project is an ordinary grant, so the
+  // refusal above is about the boundary and not about the job being unleasable.
+  const owned = await requestLease(address, {
+    runner_id: 'runner-t412',
+    project_id: 2,
+    job_id: foreign.id,
+  });
+  assert.equal(owned.status, 201, JSON.stringify(await owned.clone().json()));
+});
+
+test('t412 AT14 — a job_id naming no row at all is as opaque as it ever was', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-t412');
+
+  // Nothing was ever created under this id: the new check looks the job up and
+  // finds nothing, which is not a refusal — the controller is what decides
+  // eligibility, and a lease may be held over a job this database never saw.
+  const response = await requestLease(address, {
+    runner_id: 'runner-t412',
+    project_id: 1,
+    job_id: 987654,
+  });
+  const body = (await response.json()) as GrantResponse;
+
+  assert.equal(response.status, 201, JSON.stringify(body));
+  assert.ok(body.lease !== null);
+  assert.equal(body.lease.job_id, 987654);
+  assert.equal(body.lease.project_id, 1);
+  assert.equal(body.lease.status, 'active');
+});
+
+test('t412 AT15 — getLease filters by project when it is given one, and not when it is not', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-t412');
+
+  const granted = await requestLease(address, {
+    runner_id: 'runner-t412',
+    project_id: 1,
+    job_id: 41201,
+  });
+  assert.equal(granted.status, 201);
+  const { lease } = (await granted.json()) as { lease: LeaseRow };
+
+  const { getLease } = (await import(
+    new URL('../src/repositories/leases.ts', import.meta.url).href
+  )) as typeof LeasesModule;
+
+  assert.equal(
+    getLease(db, lease.id, 2),
+    undefined,
+    'from inside project 2 this lease is a lease that does not exist',
+  );
+  assert.equal(getLease(db, lease.id, 1)?.id, lease.id, 'and from its own project it is there');
+  assert.equal(
+    getLease(db, lease.id)?.id,
+    lease.id,
+    'the callers that trust the id they already hold keep reading it with no project',
+  );
 });

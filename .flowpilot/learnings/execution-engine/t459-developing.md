@@ -1,0 +1,3 @@
+### t459 (developing, unverified)
+
+- seedFinishedInterview's own FR8 fix is NOT a pure rename as the ticket's Refinement Log assumed: current_node_id starts at entry_node_id and only ever moves via POST /jobs/:id/transitions — a session finishing on a node never moves the job there by itself. With entry_node_id corrected from 'deliver' to 'interview', the fixture had to actually call /transitions to walk the graph's one edge before hasArrived could read true, or AT10/AT11/AT13/AT14 of t433 (all pre-existing, passing tests) break. Also load-bearing: buildConversation picks 'draft' off the LAST completed session by CREATION order (session id), not finish order — so the deliver session still has to open+finish before the interview one, or the map column goes back to null.

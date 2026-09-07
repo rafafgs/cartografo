@@ -73,6 +73,63 @@ function fakeBoardClient(ApiClient: typeof ClientModule.ApiClient, jobs: ClientM
   });
 }
 
+/** Five plain nodes, `node-1` swapped for whatever the caller wants to test the step label against. */
+function fiveNodeSnapshot(nodeOne: Record<string, unknown> = {}): { nodes: unknown[] } {
+  return {
+    nodes: [
+      { id: 'node-0' },
+      { id: 'node-1', ...nodeOne },
+      { id: 'node-2' },
+      { id: 'node-3' },
+      { id: 'node-4' },
+    ],
+  };
+}
+
+/**
+ * A client whose `GET /v1/jobs` answers with `jobs`, and whose
+ * `GET /v1/graph-versions/:id` answers out of `versions` (keyed by id) — an id
+ * absent from `versions` 404s, exactly the "nothing usable" case FR5 asks for.
+ * `calls`, when given, is incremented per id on every graph-version fetch, so
+ * a test can assert on it after the render (AT6).
+ */
+function fakeBoardClientWithVersions(
+  ApiClient: typeof ClientModule.ApiClient,
+  jobs: ClientModule.Job[],
+  versions: Record<string, { nodes: unknown[] }>,
+  calls: Record<string, number> = {},
+): ClientModule.ApiClient {
+  return new ApiClient({
+    baseUrl: 'http://127.0.0.1:4317',
+    doFetch: async (input) => {
+      const url = new URL(typeof input === 'string' ? input : String(input));
+      const match = /^\/v1\/graph-versions\/([^/]+)$/.exec(url.pathname);
+      if (match !== null) {
+        const id = decodeURIComponent(match[1]);
+        calls[id] = (calls[id] ?? 0) + 1;
+        const snapshot = versions[id];
+        if (snapshot === undefined) return new Response('not found', { status: 404 });
+        return new Response(
+          JSON.stringify({
+            graph_version: {
+              id,
+              graph_id: 'g',
+              parent_version: null,
+              created_at: '2026-09-06T00:00:00.000Z',
+              snapshot,
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({ jobs }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+}
+
 test('t416 AT1 — GET /board renders the six state bands, in attention order, each carrying its own jobs', async () => {
   const { boardPage, ApiClient } = await loadPagesAndClient();
 
@@ -431,4 +488,159 @@ test('t230 — the Portuguese paths D20 renamed are gone, with no redirect behin
     const page = await openPage(screen, gone);
     assert.equal(page.status, 404, `${gone} still answers; D20 §5.1 renamed it`);
   }
+});
+
+test('t463 AT1 — card mode shows the step line', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Traveling', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const versions = { v1: fiveNodeSnapshot({ role: 'Draft the proposal' }) };
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, versions);
+
+  const page = await boardPage(client);
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(
+    card.excerpt.includes('step 2/5 · Draft the proposal'),
+    `expected the step line in:\n${card.excerpt}`,
+  );
+});
+
+test('t463 AT2 — row mode shows the step line, and keeps the raw node id', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = Array.from({ length: 13 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      title: `Job ${String(index + 1).padStart(2, '0')}`,
+      current_node_id: 'node-1',
+      graph_version_id: 'v1',
+      state: 'running',
+      state_since: `2026-09-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }),
+  );
+  const versions = { v1: fiveNodeSnapshot({ role: 'Draft the proposal' }) };
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, versions);
+
+  const page = await boardPage(client);
+
+  assert.ok(page.html.includes('<table>'), 'thirteen jobs must render in row mode');
+  const row = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(row !== undefined);
+  assert.ok(row.excerpt.includes('node-1'), 'the raw node id must survive, verbatim');
+  assert.ok(
+    row.excerpt.includes('step 2/5 · Draft the proposal'),
+    `expected the step line in:\n${row.excerpt}`,
+  );
+});
+
+test('t463 AT3 — graph_version_id: null renders no step line', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [fakeJob({ id: 1, title: 'No map pinned', state: 'running' })];
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(!card.excerpt.includes('step '), `expected no step line in:\n${card.excerpt}`);
+});
+
+test('t463 AT4 — a resolvable version whose snapshot has no matching node renders no step line', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Off the map', current_node_id: 'ghost-node', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const versions = { v1: fiveNodeSnapshot() };
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, versions);
+
+  const page = await boardPage(client);
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(!card.excerpt.includes('step '), `expected no step line in:\n${card.excerpt}`);
+  assert.ok(card.excerpt.includes('Off the map'), 'the rest of the card must render unchanged');
+});
+
+test('t463 AT5 — a graph_version_id that fails to resolve renders no step line', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Dangling pin', current_node_id: 'node-1', graph_version_id: 'gone', state: 'running' }),
+  ];
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, {});
+
+  const page = await boardPage(client);
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(!card.excerpt.includes('step '), `expected no step line in:\n${card.excerpt}`);
+  assert.ok(card.excerpt.includes('Dangling pin'), 'the rest of the card must render unchanged');
+});
+
+test('t463 AT6 — one fetch per distinct version, not per job', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'First', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+    fakeJob({ id: 2, title: 'Second', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const versions = { v1: fiveNodeSnapshot({ role: 'Draft the proposal' }) };
+  const calls: Record<string, number> = {};
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, versions, calls);
+
+  await boardPage(client);
+
+  assert.equal(calls.v1, 1, `expected exactly one fetch of "v1", got ${calls.v1 ?? 0}`);
+});
+
+test('t463 AT7 — the §7.1 fallback rule matches exactly', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const roleOnlyJobs = [
+    fakeJob({ id: 1, title: 'Role only', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const roleOnlyClient = fakeBoardClientWithVersions(ApiClient, roleOnlyJobs, {
+    v1: fiveNodeSnapshot({ role: 'Draft the proposal' }),
+  });
+  const roleOnlyPage = await boardPage(roleOnlyClient);
+  const roleOnlyCard = blocks(roleOnlyPage.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(roleOnlyCard !== undefined);
+  assert.ok(
+    roleOnlyCard.excerpt.includes('step 2/5 · Draft the proposal'),
+    `expected no dangling separator in:\n${roleOnlyCard.excerpt}`,
+  );
+
+  const bareIdJobs = [
+    fakeJob({ id: 1, title: 'Bare id', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const bareIdClient = fakeBoardClientWithVersions(ApiClient, bareIdJobs, { v1: fiveNodeSnapshot() });
+  const bareIdPage = await boardPage(bareIdClient);
+  const bareIdCard = blocks(bareIdPage.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(bareIdCard !== undefined);
+  assert.ok(
+    bareIdCard.excerpt.includes('step 2/5 · node-1'),
+    `expected the bare node id, never "to be defined", in:\n${bareIdCard.excerpt}`,
+  );
+});
+
+test('t463 AT8 — no double-escaping of the role/description label', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'Escaped role', current_node_id: 'node-1', graph_version_id: 'v1', state: 'running' }),
+  ];
+  const versions = { v1: fiveNodeSnapshot({ role: 'Draft <the> proposal & ship it' }) };
+  const client = fakeBoardClientWithVersions(ApiClient, jobs, versions);
+
+  const page = await boardPage(client);
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  const escaped = 'Draft &lt;the&gt; proposal &amp; ship it';
+  assert.ok(card.excerpt.includes(`step 2/5 · ${escaped}`), `expected exactly-once escaping in:\n${card.excerpt}`);
+  assert.ok(!card.excerpt.includes('&amp;amp;'), 'the ampersand must not be escaped twice');
 });

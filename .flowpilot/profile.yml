@@ -18,10 +18,11 @@ commands:
   build: npm run build
   lint: npm run lint
   migration_heads: null
-  run: null
+  run: CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner
   setup: npm install --no-audit --no-fund
   test: npm test
   typecheck: npm run typecheck
+app_url: http://127.0.0.1:4518/
 conventions:
 - 'LANGUAGE — ENGLISH ONLY, EVERYWHERE (Rafael, 2026-08-18; supersedes the D18 exemptions):
   every new or edited artifact is in English — code, identifiers, comments, tests, commit

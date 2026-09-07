@@ -19,8 +19,8 @@
       "escalation_policy": "always",
       "skill_ref": {
         "id": "interview",
-        "version": "1.1.0",
-        "hash": "sha256:282c8205edb350d6d45bfe6781852b0aaa237dd0a183748ae84ddf4c6a290d61"
+        "version": "1.2.0",
+        "hash": "sha256:d7c49c4ea06ac48ed5a1a230a43bafe39077b102d402abce5f8071539b4dd7c4"
       },
       "contract": {
         "input_schema": {
@@ -42,7 +42,7 @@
             },
             "environment": {
               "type": "object",
-              "description": "the MCP servers this engine reaches, and the registered classes that read like this request",
+              "description": "the MCP servers this engine reaches, the registered classes that read like this request, and the drafts derived from the skills this person already has",
               "properties": {
                 "mcp_servers": {
                   "type": [
@@ -58,8 +58,26 @@
                   "items": {
                     "type": "object"
                   }
+                },
+                "skill_drafts": {
+                  "type": "array",
+                  "description": "one draft manifest per `SKILL.md` found at the source this person named; empty when they named none",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "skill_drafts_error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "why that source could not be read; the interview relays it and moves on"
                 }
               }
+            },
+            "interview": {
+              "type": "object",
+              "description": "this node's own bucket: the draft as the last turn left it, and the skill source an earlier turn named"
             }
           }
         },
@@ -92,6 +110,26 @@
                   }
                 }
               }
+            },
+            "skill_source": {
+              "type": "object",
+              "description": "where this person's existing skills are, reported once by the turn that asked; a later turn that omits it does not lose it",
+              "required": [
+                "kind",
+                "location"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "path",
+                    "git"
+                  ]
+                },
+                "location": {
+                  "type": "string"
+                }
+              }
             }
           }
         },
@@ -108,6 +146,12 @@
             "instruction": "Compare the turn's question against the servers this dispatch was given in `environment.mcp_servers`. When the step reaches an external system that none of them covers — and a `null` list covers none — the question's `context` has to carry a line of its own reading `NEEDS_MCP_SERVER: <capability>`; when one of them does cover it, that line must not be there at all. Quote the context and the server list.",
             "required_evidence": true,
             "description": "The screen turns that one line into up to three suggestions from the public MCP registry, so a missing line costs a person the help and a spurious one sends them looking for a server they already have."
+          },
+          {
+            "type": "agentic",
+            "instruction": "Read the `environment.skill_drafts` this turn was dispatched with and the skill manifests in the draft it reported, and answer both, quoting the exact text that supports each answer. 1. For every reported manifest that clearly started from one of those drafts, do its `input`, `output` and `checks` reflect an answer somebody gave in this interview — rather than the draft's own placeholders (`revisor humano escreve o JSON Schema aqui`) or its derived commands, carried over verbatim? Name any field that is still the draft's. 2. Are that manifest`s `permissions` at or under the safe default the draft arrived with — `filesystem.read` only, `filesystem.write` empty, `network.allowed` false? Quote them.",
+            "required_evidence": true,
+            "description": "A draft derived from somebody else's `SKILL.md` is a starting point, not an answer. Copied through unchanged it produces a step nobody was asked about — and a permission set nobody approved."
           }
         ]
       }

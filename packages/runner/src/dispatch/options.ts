@@ -344,10 +344,21 @@ export interface ClaudeCodeDispatchOptions {
    *
    * Absent contributes `{}` and changes nothing, which is the ordinary case: a
    * bets runner has no bench, and neither does a deployment that has not set one
-   * up. Same signature as {@link resolveInput}, so whoever wires a dispatch
-   * writes both the same way.
+   * up.
+   *
+   * **The third parameter is what the projection answered** (t440). The two
+   * seams stopped being blind to each other the moment the machine half had to
+   * read a fact only a previous TURN knows: `input.interview.skill_source`, the
+   * folder or repository of skills the person named, which becomes
+   * `input.environment.skill_drafts`. `createMergedInputResolver` fetches the
+   * projection once and hands it over, rather than letting this half fetch the
+   * same route a second time — one read of one fact, and no race with itself.
    */
-  executorEnvironment?: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>;
+  executorEnvironment?: (
+    job: Job,
+    resolved: ResolvedNode,
+    projection: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
   /**
    * What KEEPS that bench true, after an integration (t273).
    *

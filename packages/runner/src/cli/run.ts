@@ -75,6 +75,11 @@ import {
 } from '../dispatch/resolve-executor-environment.ts';
 import { createClassPrecedentsResolver } from '../dispatch/resolve-input.ts';
 import {
+  createSkillSourceResolver,
+  type SkillSource,
+  type SkillSourceResult,
+} from '../dispatch/resolve-skill-source.ts';
+import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
   decodeShellSessionText,
@@ -861,6 +866,68 @@ async function resolveRunnerPaths(
 }
 
 /**
+ * Builds the hook that reads the skills a person already has (t440, FR7).
+ *
+ * Two things it owns, and they are the two this file is the only place for: the
+ * `allow_git_clone` setting, which has no command-line flag of its own, and the
+ * scratch directory the clones land in — `<worktreesRoot>/.skill-sources`,
+ * beside the worktrees and never inside one, because the input is resolved
+ * before a worktree exists (`dispatch.ts:271` vs `:303`).
+ *
+ * **The settings are read on FIRST USE and not at startup**, which is the one
+ * departure this ficha takes from its own wording, and it is forced by a test
+ * that already existed: t404 AT8 pins that a runner given both `--working-dir`
+ * and `--worktrees-root` never calls `GET /v1/settings` at all — "an operator
+ * who said where the worktrees go is not asked to confirm it over HTTP". A
+ * second unconditional read at boot would have broken that promise for every
+ * runner, in exchange for reading a switch most dispatches never need. Read
+ * lazily, the route is touched only by an installation that actually interviews
+ * somebody, and once per process after that.
+ *
+ * A settings read that fails is not a refusal and not a crash: it comes back as
+ * this hook's `error`, which the interview relays to the person, and the memo is
+ * dropped so the next turn tries again.
+ *
+ * @param client Control plane client, already paired.
+ * @param projectId Project whose `allow_git_clone` governs this runner (D25).
+ * @param worktreesRoot Where the worktrees go; the scratch root is its sibling.
+ * @returns The `resolveSkillSource` hook of the executor environment.
+ */
+function createConfiguredSkillSourceResolver(
+  client: ControlPlaneClient,
+  projectId: number,
+  worktreesRoot: string,
+): (source: SkillSource) => Promise<SkillSourceResult> {
+  const scratchRoot = path.join(worktreesRoot, '.skill-sources');
+  let configured: Promise<(source: SkillSource) => Promise<SkillSourceResult>> | null = null;
+
+  const build = async (): Promise<(source: SkillSource) => Promise<SkillSourceResult>> => {
+    const settings = await client.getSettings(projectId);
+    // Seeded `'true'` (t439), so an unconfigured project clones: anything but
+    // the literal `'false'` is yes, which is the same reading every other
+    // string setting of this table gets.
+    return createSkillSourceResolver({
+      allowGitClone: settings.allow_git_clone !== 'false',
+      scratchRoot,
+    });
+  };
+
+  return async (source: SkillSource): Promise<SkillSourceResult> => {
+    try {
+      return await (await (configured ??= build()))(source);
+    } catch (error) {
+      configured = null;
+      return {
+        drafts: [],
+        error:
+          `this runner could not read project ${String(projectId)}'s settings, so it does not ` +
+          `know whether it may clone: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  };
+}
+
+/**
  * Runs a runner until it is asked to stop.
  *
  * @param options Control plane, identity, engine and the loop's numbers.
@@ -986,6 +1053,16 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
         // for the one that is a fact about each job (t360, FR4).
         mcpDiscovery: mcpDiscoveryOf(probe),
         classPrecedents: createClassPrecedentsResolver(precedentsClient, options.projectId),
+        // ...and a function of the SOURCE for the third: what a person answered
+        // when the interview asked where their existing skills are (t440, FR7).
+        // It reads a folder, or clones a repository shallow and throws it away;
+        // nothing it finds is executed, and nothing enters the registry without
+        // somebody registering it (D4).
+        resolveSkillSource: createConfiguredSkillSourceResolver(
+          client,
+          options.projectId,
+          resolved.worktreesRoot,
+        ),
       }),
       // ...and the half that WRITES to that same bench (t273). Built once too,
       // out of the same two paths: the bench to advance, and the repository the

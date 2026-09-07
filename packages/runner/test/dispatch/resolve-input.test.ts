@@ -62,7 +62,11 @@ test('t440 AT — the executor environment is handed the projection the merge ju
         projectionCalls += 1;
         return Promise.resolve(projected);
       },
-      executorEnvironment: (_job, _resolved, projection) => {
+      executorEnvironment: (
+        _job: Job,
+        _resolved: ResolvedNode,
+        projection: Record<string, unknown>,
+      ) => {
         seen.push(projection);
         return Promise.resolve({ environment: { skill_drafts: [{ id: 'code-review' }] } });
       },

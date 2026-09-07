@@ -152,6 +152,64 @@ the *recommendation* — never as a decision. Every question carries a
 `recommendation`, which is the value a person accepts in one click (RF-16), and
 another answer is always possible.
 
+### The skills they already have (the RF-14 extension, t440)
+
+Right after the class name, and before the walk of the steps, the interview asks
+one more thing: **do you already have skills or prompts you use for this kind of
+work, and where?** A folder on this machine, or a git URL. Most people do — the
+prompt they have been carrying between projects is the map they have already
+half-drawn — and starting from it beats starting from nothing.
+
+A "no" changes nothing at all: `skill_source` goes unreported and the interview
+walks on. A "yes" is reported **beside** `done`/`draft`, never inside the draft:
+
+```json
+{"done": false, "draft": {…},
+ "skill_source": {"kind": "path", "location": "/Users/somebody/skills"}}
+```
+
+`kind` is `path` for a folder and `git` for a URL. It is reported **once**: the
+bucket merge of §2 is shallow and last-writer-wins *per key*, so a key no later
+turn repeats keeps its value — which is exactly why the draft, whose whole
+content is one key, has to be reported whole every time and this does not.
+
+What the runner does with it is
+[`resolve-skill-source.ts`](../../packages/runner/src/dispatch/resolve-skill-source.ts):
+a folder is walked, a repository is cloned `--depth 1` into a scratch directory
+beside the worktrees, read, and deleted. Every `SKILL.md` it finds goes through
+the same derivation `cartografo scan-skill` uses (`deriveSkillDraft`, t439) and
+comes back to the next turn at `input.environment.skill_drafts`, one draft
+manifest each, with the format's placeholders where a human decision belongs.
+
+Four rules, and each one is a decision:
+
+- **Nothing at the source is ever executed**, and nothing from it is registered.
+  A draft is a proposal a session adapts; it becomes a skill when a person runs
+  Register (t432/t433), which is [D4](../../DECISIONS.md)'s gate and the only one
+  anything imported crosses.
+- **Adaptation is not a shortcut.** The instructions ask the session to start
+  each step's manifest from the closest draft *and still ask every contract
+  question* — what it needs, what it produces, how you know it went well, what
+  usually goes wrong, which server. A manifest that carries the draft's own
+  schema placeholder or its derived commands verbatim is a step nobody was asked
+  about, and the new agentic check `skill-draft-adaptation-not-a-shortcut` is
+  what reads the turn and says so.
+- **`permissions` are never widened** past the safe default an imported skill is
+  born with — read the workspace, write nothing, no network
+  ([`skill-manifest.md`](../../specs/formats/skill-manifest.md)). Widening is a
+  human decision at the import gate, and a draft is not that gate.
+- **A source that will not read is relayed, not retried.**
+  `environment.skill_drafts_error` carries the message — a folder that is not
+  there, a workspace whose `allow_git_clone` is off (t439), a repository nobody
+  could reach — and the interview puts it verbatim into its next question's
+  `context` and moves on. Nothing loops on it.
+
+Cloning is governed by the project's `allow_git_clone` setting, seeded `'true'`;
+a runner reads it once, at the first source it is asked to resolve. The clone
+uses whatever credential helper the machine already has — nothing is added for
+authentication, so a private repository with none configured simply refuses like
+any other unreachable URL.
+
 **One manifest per step.** The draft carries a skill manifest for every node —
 instructions, contract, permissions — so a map for a new domain has something to
 pin. They are emitted **without `hash`**: computing the pin belongs to whoever
@@ -172,6 +230,21 @@ runner. So they arrive through the executor-environment seam
   "I found none" are different facts (t400 FR7).
 - `environment.similar_classes` — the registered classes whose current version
   reads like this job's own title and body, best first, scored per dispatch.
+- `environment.skill_drafts` / `environment.skill_drafts_error` — the drafts
+  derived from the folder or repository this person named, and the reason there
+  are none (t440). Resolved **once per job and per source**, for the reason the
+  MCP list is resolved once per process: an interview is twenty dispatches, and
+  re-cloning the same repository twenty times would be twenty reads of an answer
+  that did not change.
+
+The third of them is the reason this seam grew a parameter. `mcp_servers` and
+`similar_classes` are facts about the machine and about the job's own words;
+`skill_drafts` is derived from a fact a previous TURN reported, which lives
+inside the control plane's projection at `input.interview.skill_source` and
+nowhere else. So `createMergedInputResolver` computes the projection first and
+passes it to the executor half as a third argument, rather than letting that half
+fetch the same context route a second time — one read of one fact, and no race
+with itself.
 
 ---
 
@@ -251,7 +324,8 @@ unchanged by that page: it was written for it.
 | Compute the pins | `hash` belongs to whoever registers; a draft that pinned itself would pin content nobody approved (D4). |
 | Resume a session | There is none to resume: redispatching with the history in the prompt is the mechanism (§10.2). |
 | Change the input-request grammar | It asks through the grammar every other node already asks through. |
-| Suggest existing SKILLS | `similar_classes` is about the CLASS (D8). Composing a map out of the registry's capabilities is its own ticket. |
+| Suggest skills from the REGISTRY | `similar_classes` is about the CLASS (D8). Composing a map out of the registry's own capabilities is still its own ticket — what t440 added reads a folder or a repository the person named, and touches the registry not at all. |
+| Register what it derived | A draft derived from somebody's `SKILL.md` is a proposal in one session's report, exactly like every other draft here. D4's human gate is unchanged by it. |
 
 ---
 

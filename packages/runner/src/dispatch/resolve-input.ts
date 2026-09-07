@@ -179,6 +179,12 @@ export function createClassPrecedentsResolver(
  * {@link ClaudeCodeDispatchOptions.executorEnvironment}
  * (`resolve-executor-environment.ts`), and this is where the two meet.
  *
+ * **The projection is computed FIRST, and travels into the second half** (t440).
+ * Not an ordering of convenience: the machine half reads
+ * `input.interview.skill_source` out of it — the skills the person already has
+ * and pointed the interview at — and that fact is on no `Job` row and in no
+ * other route.
+ *
  * **The executor's keys go in LAST, and win.** Not a tie-break by convenience:
  * they are local ground truth about a filesystem and a `HEAD` that the
  * projection does not have, so a projection carrying the same key would be
@@ -200,8 +206,16 @@ export function createMergedInputResolver(
   const projection = options.resolveInput ?? createNodeInputResolver(call, options.projectId);
   const executorEnvironment = options.executorEnvironment ?? NO_EXECUTOR_ENVIRONMENT;
 
-  return async (job, resolved) => ({
-    ...(await projection(job, resolved)),
-    ...(await executorEnvironment(job, resolved)),
-  });
+  return async (job, resolved) => {
+    // Sequential, and the order is the whole point since t440: the executor
+    // half READS this answer. `input.interview.skill_source` — the folder or
+    // repository the person named for their existing skills — exists only
+    // inside the projection, because a previous turn of the interview reported
+    // it there, and it is what becomes `input.environment.skill_drafts`.
+    // Handing over the object already fetched is one read of one fact; a second
+    // `GET /v1/jobs/:id/context` from inside that half would be two reads that
+    // can disagree.
+    const projected = await projection(job, resolved);
+    return { ...projected, ...(await executorEnvironment(job, resolved, projected)) };
+  };
 }

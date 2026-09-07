@@ -308,6 +308,15 @@ export interface Settings {
   worktrees_root?: string;
   /** The engine a runner of this project opens its sessions on. */
   engine?: string;
+  /**
+   * Whether this workspace may clone a repository — `'true'` / `'false'` (t439).
+   *
+   * A string like every other setting, and read as "anything but `'false'` is
+   * yes": the key is seeded `'true'`, so a project nobody configured allows the
+   * one thing that reads it — the interview cloning the repository of skills a
+   * person pointed it at (t440, `resolve-skill-source.ts`).
+   */
+  allow_git_clone?: string;
 }
 
 export interface Lease {

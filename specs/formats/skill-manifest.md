@@ -568,6 +568,28 @@ field of the schema's `required`:
 | `instructions` | the body of the SKILL.md | The body, **reviewed as an injection vector**: remove any reference to a file resident in the target repository (the manifest does not depend on `CLAUDE.md`), to an external document the origin controls, and any instruction that asks for a credential, an exfiltration or the execution of downloaded content. Paths and commands specific to the origin become `{{input.<field>}}` placeholders, or go. |
 | `origin` | the URL it came from | `type: "imported"` plus `repo`, `ref` (a commit or a tag, not a branch — a branch moves), `imported_by`, `imported_at`, `reviewed_by`. The schema makes all five required when the type is `imported`. |
 
+### The second caller of the derivation: the interview (t440)
+
+`cartografo scan-skill` is not the only thing that derives a draft from a
+`SKILL.md` any more. The interview
+([`docs/spec/interview.md`](../../docs/spec/interview.md)) asks the person whether
+they already have skills or prompts for this kind of work and where — a folder or
+a git URL — and the runner walks or shallow-clones that source and runs the very
+same derivation over every `SKILL.md` it finds
+(`packages/runner/src/dispatch/resolve-skill-source.ts`, over the port of
+`deriveSkillDraft` t439 made).
+
+What comes back surfaces at `input.environment.skill_drafts`, and it is a
+**proposal for a session to adapt** — nothing more. It is not a registration, not
+a pin, and not a review: no `graph` row, no `skill` row, no hash. The drafts
+carry `origin.type: "imported"` with `repo` set to the source and `ref` set to
+`HEAD` (a clone) or `local` (a folder), the placeholders above where a human
+decision belongs, and the safe permission default below — which the interview's
+own instructions forbid it to widen. Anything derived this way enters the
+registry only when a person runs Register on the finished bundle (t432/t433), so
+D4's gate is exactly where it was: one human, reading, before anything imported
+is pinned.
+
 ### The safe permission default for `origin.type: "imported"`
 
 Every imported skill is born with:

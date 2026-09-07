@@ -67,6 +67,7 @@ import { execFile } from 'node:child_process';
 
 import type { Job } from './options.ts';
 import type { ResolvedNode } from './resolve-node.ts';
+import type { SkillSource, SkillSourceResult } from './resolve-skill-source.ts';
 
 /**
  * The reference could not be read off the bench.
@@ -197,6 +198,25 @@ export interface ExecutorEnvironmentConfig {
    * has a class listing, even an empty one.
    */
   classPrecedents?: (job: Job) => Promise<SimilarClass[]>;
+  /**
+   * What the person's own folder or repository of skills derived to —
+   * `input.environment.skill_drafts` (t440, FR5; the RF-14 extension).
+   *
+   * A function of the SOURCE and not of the job, which is the third shape this
+   * configuration carries and the only one that reads something a turn
+   * REPORTED: the path or the URL lives in the projection's own
+   * `input.interview.skill_source`, put there by an earlier session, which is
+   * why the resolver below takes the projection as a third argument. What it
+   * does with it is `resolve-skill-source.ts`'s subject — read a folder, or
+   * clone a repository shallow and throw it away — and this module only decides
+   * WHEN to ask and what an absent answer means.
+   *
+   * Absent means an empty list and a `null` error, the same real answer
+   * {@link classPrecedents} has: a person who pointed at nothing is shown
+   * nothing. It is never called for a job whose interview named no source, so a
+   * runner wired with it reads and clones nothing until somebody asks for it.
+   */
+  resolveSkillSource?: (source: SkillSource) => Promise<SkillSourceResult>;
 }
 
 /** What `git rev-parse` answered. */
@@ -268,8 +288,15 @@ async function readCommit(repoRoot: string, revision: string): Promise<string> {
 /**
  * Builds the dispatch's `executorEnvironment` out of one runner's configuration.
  *
- * The returned function takes the work and the resolved node, and since t360 it
- * READS the first of them: `environment.similar_classes` is scored against this
+ * The returned function takes the work, the resolved node and — since t440 —
+ * the control plane's own projection of this node's input, which the merge
+ * (`resolve-input.ts`) has just fetched. That third argument is what lets
+ * `environment.skill_drafts` exist at all: the folder or URL it derives from is
+ * a fact only a previous TURN knows, reported into `input.interview.skill_source`
+ * and nowhere on the `Job` row. Fetching the same context route a second time
+ * from in here would read one fact twice, and the two reads could disagree.
+ *
+ * Since t360 it also READS the job: `environment.similar_classes` is scored against this
  * job's own words, so it cannot be a fact about the process the way the bench
  * and the reference are. `environment.mcp_servers` still is one — it is
  * discovered once per runner and handed in as a value, not a resolver — and the
@@ -285,7 +312,11 @@ async function readCommit(repoRoot: string, revision: string): Promise<string> {
  */
 export function createExecutorEnvironmentResolver(
   config: ExecutorEnvironmentConfig,
-): (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>> {
+): (
+  job: Job,
+  resolved: ResolvedNode,
+  projection: Record<string, unknown>,
+) => Promise<Record<string, unknown>> {
   const referenceRepo = config.referenceRepo ?? config.testBenchPath;
   const mainBranch = config.mainBranch ?? 'main';
 
@@ -311,13 +342,83 @@ export function createExecutorEnvironmentResolver(
   });
 
   /**
+   * What each job's named source derived to, resolved ONCE per source.
+   *
+   * `instalacao_em_uso`'s reasoning, applied to a different kind of fact: an
+   * interview is twenty questions and twenty dispatches, and re-walking the
+   * same folder — or re-cloning the same repository — on every one of them is
+   * twenty reads of an answer that did not change. The promise is what is
+   * cached, not its value, so two dispatches of the same job racing each other
+   * still clone once.
+   *
+   * Keyed by job AND by the source itself: a person who corrects their answer
+   * halfway through the interview names a different location, and a cache keyed
+   * by job alone would keep showing them the folder they already said was the
+   * wrong one. In the ordinary case — a source reported once and never changed —
+   * this is exactly "memoized per job".
+   *
+   * In the closure and never module-level, for {@link installed}'s reason: two
+   * of these functions are two runners, and a shared cache would answer one
+   * runner's question with another runner's disk.
+   */
+  const derived = new Map<string, Promise<SkillSourceResult>>();
+
+  /**
+   * `skill_drafts` / `skill_drafts_error`, for whatever this turn's input says.
+   *
+   * The source is read out of the PROJECTION and not out of the job, because
+   * that is the only place it exists: the interview reported it as a sibling of
+   * its `done`/`draft`, and `contract.produces` merged it into the
+   * `input.interview` bucket. A turn that named nothing — or a runner with no
+   * hook wired — is an empty list and a `null` error, which is a real answer and
+   * not a degraded one.
+   */
+  const skillDraftsOf = async (
+    job: Job,
+    projection: Record<string, unknown>,
+  ): Promise<{ skill_drafts: Record<string, unknown>[]; skill_drafts_error: string | null }> => {
+    const empty = { skill_drafts: [], skill_drafts_error: null };
+    if (config.resolveSkillSource === undefined) return empty;
+
+    const interview = projection.interview;
+    if (typeof interview !== 'object' || interview === null) return empty;
+    const reported = (interview as Record<string, unknown>).skill_source;
+    if (typeof reported !== 'object' || reported === null) return empty;
+
+    const { kind, location } = reported as Partial<SkillSource>;
+    if ((kind !== 'path' && kind !== 'git') || typeof location !== 'string' || location === '') {
+      // A report that named a source this module cannot read is the person's
+      // own answer coming back to them, not a silent nothing: `additionalProperties`
+      // let it through, so somebody has to say what is wrong with it.
+      return {
+        skill_drafts: [],
+        skill_drafts_error: `the reported skill source is not a {kind, location}: ${JSON.stringify(reported)}`,
+      };
+    }
+
+    const key = `${String(job.id)}:${kind}:${location}`;
+    let answer = derived.get(key);
+    if (answer === undefined) {
+      answer = config.resolveSkillSource({ kind, location });
+      derived.set(key, answer);
+    }
+
+    const { drafts, error } = await answer;
+    return { skill_drafts: drafts, skill_drafts_error: error };
+  };
+
+  /**
    * The two machine facts the interview reads, in the shape it declares.
    *
    * `null` for `mcp_servers` is load-bearing and is argued at
    * {@link McpDiscoveryResult}: it means "this engine implements no discovery",
    * which a session has to be able to tell apart from "it found none".
    */
-  const environmentOf = async (job: Job): Promise<Record<string, unknown>> => ({
+  const environmentOf = async (
+    job: Job,
+    projection: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> => ({
+    ...(await skillDraftsOf(job, projection)),
     mcp_servers:
       config.mcpDiscovery?.supported === true ? [...config.mcpDiscovery.servers] : null,
     // Sorted HERE and not only in whoever computed it: "best first" is what the
@@ -331,7 +432,11 @@ export function createExecutorEnvironmentResolver(
         : [...(await config.classPrecedents(job))].sort((a, b) => b.score - a.score),
   });
 
-  return async (job: Job): Promise<Record<string, unknown>> => {
+  return async (
+    job: Job,
+    _resolved: ResolvedNode,
+    projection: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> => {
     const reference =
       config.referenceMode === 'instalacao_em_uso'
         ? (installed ??= await read('HEAD'))
@@ -341,7 +446,7 @@ export function createExecutorEnvironmentResolver(
       // The one key of this seam that is not the bench's, and the one that is
       // English: `banco_de_testes`/`referencia` are the software bundle's frozen
       // manifest vocabulary, while `environment` is born after D24 (t360).
-      environment: await environmentOf(job),
+      environment: await environmentOf(job, projection),
       banco_de_testes: {
         caminho: config.testBenchPath,
         // Declared, and empty, because `testar-alpha`'s body interpolates it:

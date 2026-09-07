@@ -5,7 +5,7 @@
  * `<meta refresh>` is the one exception `docs/spec/screen.md` §7 names. This is
  * the second, and it is narrower on purpose: it is loaded only by
  * `/interview/:id`, only while that interview is still running, and all it does
- * is swap the inner HTML of two elements every three seconds.
+ * is swap the inner HTML of three elements every three seconds.
  *
  * **It is pure progressive enhancement.** Without this file — blocked, failed
  * to load, scripting off — the whole page still works: the start form, the
@@ -55,6 +55,9 @@ export const POLL_INTERVAL_MS = 3000;
 export function mount(doc, request, interviewId, schedule) {
   const chat = doc.getElementById('chat');
   const map = doc.getElementById('map');
+  // Read once here, like the other two, which is why the page renders the
+  // element even when it has nothing to say yet (t460).
+  const progress = doc.getElementById('map-progress');
   const later = schedule === undefined ? (fn, ms) => void setTimeout(fn, ms) : schedule;
   const url = '/interview/' + interviewId + '/fragment';
 
@@ -97,6 +100,9 @@ export function mount(doc, request, interviewId, schedule) {
 
     if (chat !== null && typeof payload.chat === 'string') chat.innerHTML = payload.chat;
     if (map !== null && typeof payload.map === 'string') map.innerHTML = payload.map;
+    if (progress !== null && typeof payload.progress === 'string') {
+      progress.innerHTML = payload.progress;
+    }
 
     if (stillThere) {
       const restored = doc.getElementById(carrying);

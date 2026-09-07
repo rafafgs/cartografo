@@ -456,6 +456,29 @@ tr.attention td:first-child {
   margin: .5rem .5rem 0 0;
 }
 
+/*
+ * The draft's remaining problems, beside the map it is drawing (t460).
+ *
+ * No new class and no new token: `.problems` / `.problem` are the list the
+ * graph editor already draws for the IDENTICAL report, and reusing them is what
+ * keeps one shape for one piece of information. What this rule adds is only
+ * the box that separates the panel from the map under it — `var(--line)` like
+ * every other border on this screen, `var(--radius)` like every other corner,
+ * spacing in multiples of four (§5).
+ *
+ * Deliberately not `.problem.error`, which is the other half of what the editor
+ * uses: there, the report is a REFUSAL of something somebody pressed. Here it
+ * is the state of a map still being drawn, and a draft that is not finished yet
+ * is not a failure — colour is reserved for state (§2), and "incomplete on
+ * purpose" is not one.
+ */
+.interview .problems {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .5rem .75rem;
+  margin: 0 0 1rem;
+}
+
 .mcp-suggestions {
   margin: .6rem 0;
   padding: .5rem .6rem;

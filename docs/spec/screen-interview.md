@@ -130,7 +130,9 @@ runner picks it up. To the person waiting, that reads as "working on it", so
 **The right column** is `renderMapDocument(draft.graph, draft.skills)` — the
 same [map document](../../packages/screen/src/map-document.ts) `/graphs/:class`
 draws, with no second renderer anywhere. A `draft` that is `null`, or that
-carries no graph, renders "nothing to draw yet".
+carries no graph, renders "nothing to draw yet". Above it, since t460, sits the
+progress panel of §3.1: what registering this draft right now would still fail
+on. Both are drawn from the same `draft`, and neither of them blocks anything.
 
 One consequence worth naming, because it looks like a bug and is not:
 **RF-20's external-I/O line never appears mid-interview.** That line is drawn
@@ -153,14 +155,14 @@ describes for the three forbidden words.
 `GET /interview/:id/fragment` answers:
 
 ```json
-{"chat": "<article …>…", "map": "<ol>…</ol>", "done": false}
+{"chat": "<article …>…", "map": "<ol>…</ol>", "progress": "<div …>…</div>", "done": false}
 ```
 
-`chat` and `map` are **the exact inner-HTML strings the full page rendered into
-its two columns**, computed by the same two functions
-([`interview.ts`](../../packages/screen/src/interview.ts)) — which is why the
-page and the poll cannot come to say different things. It is asked for by that
-page's own script and linked from nowhere.
+`chat`, `map` and `progress` are **the exact inner-HTML strings the full page
+rendered into `#chat`, `#map` and `#map-progress`**, computed by the same three
+functions ([`interview.ts`](../../packages/screen/src/interview.ts)) — which is
+why the page and the poll cannot come to say different things. It is asked for
+by that page's own script and linked from nowhere.
 
 **Pre-escaped HTML and not the raw conversation.** The island assigns what comes
 back to `innerHTML`, so `escapeHtml` has to stay on the server's side of the
@@ -199,7 +201,47 @@ answer form and both closing buttons are plain HTML — and reloading is the
 update, exactly as on every other view of this screen. Its only effect is that
 nobody has to. It is the second of the two self-refreshing pages `screen.md` §1
 names, and the narrower one: one script, one page, only while the interview is
-running, swapping the inner HTML of two elements and nothing else.
+running, swapping the inner HTML of three elements and nothing else.
+
+### 3.1 The progress panel: what registering it now would still fail on
+
+The right column carries a second element, **`#map-progress`**, above the map
+(t460). It answers one question, live: *if this map were registered right now,
+what would the soundness gate still refuse it for?*
+
+| The panel | |
+|---|---|
+| DOM id | `#map-progress` |
+| fragment field | `progress` |
+| where it comes from | `POST /v1/graphs/validate`, called by the screen for `draft.graph` |
+| rendered by | `renderMapProgress` ([`interview.ts`](../../packages/screen/src/interview.ts)), over `renderReport` ([`graph-soundness.js`](../../packages/screen/src/public/graph-soundness.js)) |
+| with no draft yet | the empty string — the element is rendered, its content is not |
+| with nothing wrong | `graph-soundness.js`'s own `no problem` line |
+
+**Why the check exists at all.** The draft of one real interview reached the
+register button carrying `condition: null` on four of its six edges, and nothing
+said so until the button was pressed — sixteen answers and fifty-eight minutes
+in. The gate that would refuse it (`edge_with_condition`,
+[`graph.md`](graph.md)) had been available the whole time; nobody had asked it.
+
+**It reports and it never blocks.** A draft is *expected* to be incomplete for
+most of an interview — that is the same posture `map-document.ts` takes with
+"to be defined" — so the panel disables no form, hides no action and refuses
+nothing. Answering, registering and exporting behave exactly as §4 describes,
+whatever the panel says.
+
+**One renderer, three call sites.** The prose is
+[`graph-soundness.js`](../../packages/screen/src/public/graph-soundness.js)'s,
+which the graph editor already uses for the identical report inside a
+`422 invalid_graph`. The report itself is the identical shape too, which
+`packages/core/test/graph-validate-routes.test.ts` pins field for field against
+what `POST /v1/proposals/:id/apply` refuses with. A second wording of the four
+rules would be a second thing to keep in step with the control plane.
+
+**The route writes nothing and answers 200 always.** "This document is not
+sound" is the answer to the question asked, not a failure of the call — unlike
+`POST /v1/graphs` and `POST /v1/proposals/:id/apply`, whose `422` reports that a
+write did not happen.
 
 ---
 

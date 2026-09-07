@@ -1584,3 +1584,229 @@ test('t465 AT19 — the arriving text is ink and upright inside the muted placeh
   assert.ok(!/border-left/.test(body), 'the left-edge bar belongs to "waiting on you" alone (§8)');
   assert.ok(!/monospace/.test(body), 'this is prose, never something copied or typed (§4)');
 });
+
+/* ===========================================================================
+ * t460 — the map in progress validates itself.
+ *
+ * The right column gains a second panel: what registering this draft right now
+ * would still fail on, read live off `POST /v1/graphs/validate` and written by
+ * the prose renderer the graph editor already uses for the identical report
+ * (`public/graph-soundness.js`). The panel reports and never blocks — the
+ * answer form, the register action and the export action are untouched by it,
+ * which is what AT10 checks by rendering a draft full of problems and finding
+ * the page still whole.
+ *
+ * Three of the six cases below are pure (the renderer, fed hand-written
+ * reports), two are end to end against a real control plane, and the last one
+ * drives the island against `fake-dom.ts` — the same split t433 already made
+ * for the same three surfaces.
+ * ======================================================================== */
+
+async function loadClient(): Promise<typeof ClientModule> {
+  requireArtifacts('src/client.ts');
+  return (await import(new URL('../src/client.ts', import.meta.url).href)) as typeof ClientModule;
+}
+
+interface SoundnessModule {
+  NO_PROBLEMS_LINE: string;
+  renderReport: (report: unknown) => string[];
+}
+
+async function loadSoundness(): Promise<SoundnessModule> {
+  requireArtifacts('src/public/graph-soundness.js');
+  return (await import(
+    new URL('../src/public/graph-soundness.js', import.meta.url).href
+  )) as SoundnessModule;
+}
+
+/** A report the control plane would answer for a draft with nothing wrong. */
+const CLEAN_REPORT = {
+  valid: true,
+  structure: { valid: true, errors: [] },
+  soundness: { valid: true, violations: [] },
+};
+
+/**
+ * The draft of job 5, in miniature: a step whose single exit never got a label.
+ *
+ * `condition: null` and not `""` — that is the shape an interview leaves behind
+ * when it never asks, and the one this whole ticket exists for.
+ */
+function draftWithUnlabelledEdge(): RegisterMapModule.MapDraft {
+  const draft = closingDraft();
+  const edges = draft.graph.edges as Array<Record<string, unknown>>;
+  edges[0].condition = null;
+  return draft;
+}
+
+/** How many times one needle appears — the panel's line count, by its class. */
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+/* ================================================================= AT6 */
+
+test('t460 AT6 — a report with violations renders one escaped line per problem', async () => {
+  const { renderMapProgress } = await loadInterview();
+  const { renderReport, NO_PROBLEMS_LINE } = await loadSoundness();
+  const { escapeHtml } = await loadPages();
+
+  const report = {
+    valid: false,
+    structure: { valid: true, errors: [] },
+    soundness: {
+      valid: false,
+      violations: [
+        { rule: 'edge_with_condition', target: { from: 'triage', to: 'review' } },
+        // A step id nobody would type, and exactly the reason every line is
+        // escaped: the ids in a report came out of an agent's draft.
+        { rule: 'reachable', target: '<script>alert(1)</script>' },
+      ],
+    },
+  };
+
+  const lines = renderReport(report);
+  assert.equal(lines.length, 2, 'the renderer writes one line per violation');
+
+  const html = renderMapProgress(report);
+  for (const line of lines) {
+    assert.notEqual(line, NO_PROBLEMS_LINE, 'a report with violations is not the empty line');
+    assert.ok(
+      !line.startsWith('unknown soundness rule'),
+      `the renderer fell back instead of naming the rule: ${line}`,
+    );
+    assert.ok(html.includes(escapeHtml(line)), `the panel is missing "${line}":\n${html}`);
+  }
+
+  assert.equal(occurrences(html, 'class="problem"'), 2, `one element per problem:\n${html}`);
+  assert.ok(!html.includes('<script>'), `the target arrives as text, never as markup:\n${html}`);
+});
+
+/* ================================================================= AT7 */
+
+test('t460 AT7 — a report with nothing wrong renders the renderer\'s own empty line', async () => {
+  const { renderMapProgress } = await loadInterview();
+  const { NO_PROBLEMS_LINE } = await loadSoundness();
+  const { escapeHtml } = await loadPages();
+
+  const html = renderMapProgress(CLEAN_REPORT);
+
+  assert.ok(html.includes(escapeHtml(NO_PROBLEMS_LINE)), `the panel says so:\n${html}`);
+  assert.equal(occurrences(html, 'class="problem"'), 1, `and says it once:\n${html}`);
+});
+
+/* ================================================================= AT8 */
+
+test('t460 AT8 — with no draft to judge, the panel renders nothing at all', async () => {
+  const { renderMapProgress } = await loadInterview();
+
+  assert.equal(renderMapProgress(undefined), '');
+});
+
+/* ================================================================= AT9 */
+
+test('t460 AT9 — the fragment carries the panel the validation route answers for the draft', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const { renderMapProgress } = await loadInterview();
+  const { ApiClient } = await loadClient();
+
+  const draft = draftWithUnlabelledEdge();
+  const jobId = await seedOpenInterview(cp);
+  await reportFrom(cp, jobId, 'interview', { done: false, ...draft });
+
+  const fragment = await fetch(`${screen.url}/interview/${jobId}/fragment`);
+  assert.equal(fragment.status, 200);
+  const body = (await fragment.json()) as { progress: string };
+
+  // The same question the screen asked, asked again from the test's own client:
+  // whatever the route answers for this draft is what the panel has to be.
+  const report = await new ApiClient({ baseUrl: cp.url, token: cp.token }).validateGraphDocument(
+    draft.graph,
+  );
+  assert.equal(body.progress, renderMapProgress(report));
+  assert.ok(
+    body.progress.includes('has no condition'),
+    `the unlabelled exit is named:\n${body.progress}`,
+  );
+});
+
+/* ================================================================ AT10 */
+
+test('t460 AT10 — the page and the poll draw the same panel, behind the same id', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const jobId = await seedOpenInterview(cp);
+  await createQuestion(cp, { job_id: jobId, question: 'What do you call it?' });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...draftWithUnlabelledEdge() });
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+  const fragment = await fetch(`${screen.url}/interview/${jobId}/fragment`);
+  const body = (await fragment.json()) as { chat: string; map: string; progress: string };
+
+  const panel = columnOf(page.html, 'map-progress');
+  assert.notEqual(panel.trim(), '', 'a draft with a problem draws a panel');
+  assert.equal(body.progress, panel, 'the page and the poll cannot come to say different things');
+  assert.equal(body.map, columnOf(page.html, 'map'), 'and the map column still agrees too');
+
+  // It reports and never blocks: everything a person can still do is still there.
+  const chat = columnOf(page.html, 'chat');
+  assert.ok(chat.includes(`action="/interview/${jobId}/answer"`), 'the answer form is untouched');
+  assertSaysNothingForbidden(page.html, 'an interview whose draft is still incomplete');
+});
+
+/* ================================================================ AT11 */
+
+test('t460 AT11 — the island swaps the panel from the payload on every poll', async () => {
+  requireArtifacts('src/public/interview.js');
+  const { mount } = (await import(
+    new URL('../src/public/interview.js', import.meta.url).href
+  )) as {
+    mount: (
+      doc: FakeDocument,
+      request: (url: string) => Promise<Response>,
+      jobId: number,
+      schedule?: (fn: () => void, ms: number) => void,
+    ) => { tick: () => Promise<void> };
+  };
+
+  const doc = new FakeDocument(['chat', 'map', 'map-progress']);
+  const schedule = (): void => {};
+
+  const answers = [
+    {
+      chat: '<p>asking</p>',
+      map: '<ol></ol>',
+      progress: '<div class="problems"><p class="problem">first</p></div>',
+      done: false,
+    },
+    {
+      chat: '<p>asking</p>',
+      map: '<ol></ol>',
+      progress: '<div class="problems"><p class="problem">second</p></div>',
+      done: false,
+    },
+  ];
+  let calls = 0;
+  const request = async (): Promise<Response> => {
+    const answer = answers[Math.min(calls, answers.length - 1)];
+    calls += 1;
+    return new Response(JSON.stringify(answer), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  const island = mount(doc, request, 42, schedule);
+
+  await island.tick();
+  assert.equal(doc.require('map-progress').innerHTML, answers[0].progress, 'the first poll swapped it');
+
+  await island.tick();
+  assert.equal(
+    doc.require('map-progress').innerHTML,
+    answers[1].progress,
+    'and so does every poll after it',
+  );
+});

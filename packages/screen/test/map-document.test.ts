@@ -218,3 +218,134 @@ test('the returned fragment is an ordered list, with no <html>/<head> wrapper', 
   assert.ok(!/<html[ >]/i.test(html));
   assert.ok(!/<head[ >]/i.test(html));
 });
+
+/* =============================================================== t462 */
+
+test('t462 AT1 — a property with a filled title renders the display name ahead of the demoted key', async () => {
+  const { renderMapDocument } = await loadMapDocument();
+
+  const graph: MapDocumentModule.MapDocumentGraph = {
+    nodes: [
+      {
+        id: 'named-property',
+        node_type: 'work',
+        contract: {
+          input_schema: {
+            type: 'object',
+            required: ['ticket_id'],
+            properties: {
+              ticket_id: { type: 'string', title: 'Ticket number' },
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  const html = renderMapDocument(graph);
+  const needs = fieldBlock(stepBlock(html, 'named-property'), 'needs');
+
+  assert.ok(
+    needs.includes('<span class="display-name">Ticket number</span> <code class="secondary-token">ticket_id</code>'),
+    `expected the display name ahead of the demoted key:\n${needs}`,
+  );
+  assert.ok(needs.includes('<span class="required">required</span>'), `required badge missing:\n${needs}`);
+  assert.ok(needs.includes('<code>string</code>'), `type missing:\n${needs}`);
+});
+
+test('t462 AT2 — a property with no title renders the exact pre-existing markup', async () => {
+  const { renderMapDocument } = await loadMapDocument();
+  const graph = readGraph(GRAPH_PATH);
+
+  const html = renderMapDocument(graph);
+  const refineNeeds = fieldBlock(stepBlock(html, 'refine'), 'needs');
+
+  assert.match(refineNeeds, /<li>ticket_id[\s\S]*?<\/li>/, 'ticket_id has no rendered list item');
+  assert.ok(!refineNeeds.includes('display-name'), `no property in the registered graph declares a title:\n${refineNeeds}`);
+});
+
+test('t462 AT3 — an edge with a filled description renders the sentence ahead of the demoted condition', async () => {
+  const { renderMapDocument } = await loadMapDocument();
+  const graph = readGraph(GRAPH_PATH);
+
+  const html = renderMapDocument(graph);
+  const testExits = fieldBlock(stepBlock(html, 'test'), 'exits');
+
+  assert.ok(
+    testExits.includes(
+      '<span class="exit-sentence">flowpilot: testing -&gt; to_deploy -&gt; deploying.</span> <code class="secondary-token">approved</code>',
+    ),
+    `expected the exit sentence ahead of the demoted condition:\n${testExits}`,
+  );
+});
+
+test('t462 AT4 — an edge with no description renders the exact pre-existing markup', async () => {
+  const { renderMapDocument } = await loadMapDocument();
+
+  const graph: MapDocumentModule.MapDocumentGraph = {
+    nodes: [
+      { id: 'from-node', node_type: 'gate' },
+      { id: 'to-node', node_type: 'work' },
+    ],
+    edges: [{ from: 'from-node', to: 'to-node', condition: 'go' }],
+  };
+
+  const html = renderMapDocument(graph);
+  const exits = fieldBlock(stepBlock(html, 'from-node'), 'exits');
+
+  assert.ok(exits.includes('<li>go → to-node</li>'), `expected the pre-existing markup, unchanged:\n${exits}`);
+  assert.ok(!exits.includes('exit-sentence'), `no description was declared:\n${exits}`);
+  assert.ok(!exits.includes('secondary-token'), `no description was declared:\n${exits}`);
+});
+
+test('t462 AT5 — renderStepProgress on a draft with no ends settled counts steps seen so far', async () => {
+  const { renderStepProgress } = await loadMapDocument();
+  const graph = readGraph(DRAFT_FIXTURE_PATH);
+
+  assert.equal(renderStepProgress(graph), '<p class="map-progress" data-panel="step-progress">4 steps so far</p>');
+});
+
+test('t462 AT6 — renderStepProgress on an enumerated, incomplete graph reports how many are defined', async () => {
+  const { renderStepProgress } = await loadMapDocument();
+
+  const definedContract: MapDocumentModule.MapDocumentContract = {
+    input_schema: { type: 'object', required: ['x'], properties: { x: { type: 'string' } } },
+    output_schema: { type: 'object', required: ['y'], properties: { y: { type: 'string' } } },
+    checks: [{ type: 'deterministic', command: 'npm test' }],
+  };
+
+  const graph: MapDocumentModule.MapDocumentGraph = {
+    nodes: [
+      { id: 'one', node_type: 'work', contract: definedContract },
+      { id: 'two', node_type: 'work' },
+      { id: 'three', node_type: 'work' },
+    ],
+    initial_node: 'one',
+    final_nodes: ['three'],
+  };
+
+  assert.equal(
+    renderStepProgress(graph),
+    '<p class="map-progress" data-panel="step-progress">step 1 of 3 · 2 still to define</p>',
+  );
+});
+
+test('t462 AT7 — renderStepProgress on the complete registered graph reports every step defined', async () => {
+  const { renderStepProgress } = await loadMapDocument();
+  const graph = readGraph(GRAPH_PATH);
+
+  assert.equal(renderStepProgress(graph), '<p class="map-progress" data-panel="step-progress">5 of 5 defined</p>');
+});
+
+test('t462 AT8 — renderStepProgress never throws on an empty or missing nodes array', async () => {
+  const { renderStepProgress } = await loadMapDocument();
+
+  assert.equal(
+    renderStepProgress({ nodes: [] }),
+    '<p class="map-progress" data-panel="step-progress">0 steps so far</p>',
+  );
+  assert.equal(
+    renderStepProgress({} as MapDocumentModule.MapDocumentGraph),
+    '<p class="map-progress" data-panel="step-progress">0 steps so far</p>',
+  );
+});

@@ -672,10 +672,10 @@ test('t433 AT7 — every write of this page refuses a submit that started elsewh
 
 /* ================================================================= AT8 */
 
-test('t433 AT8 — the map column is exactly what renderMapDocument draws for the draft', async (t) => {
+test('t433 AT8 — the map column is exactly what renderStepProgress + renderMapDocument draw for the draft', async (t) => {
   const cp = await startControlPlane(t);
   const screen = await startScreen(t, cp);
-  const { renderMapDocument } = await loadMapDocument();
+  const { renderMapDocument, renderStepProgress } = await loadMapDocument();
 
   const draft = closingDraft();
   const jobId = await seedOpenInterview(cp);
@@ -685,10 +685,11 @@ test('t433 AT8 — the map column is exactly what renderMapDocument draws for th
   assert.equal(page.status, 200);
   assert.equal(
     columnOf(page.html, 'map'),
-    renderMapDocument(
-      draft.graph as MapDocumentModule.MapDocumentGraph,
-      draft.skills as MapDocumentModule.MapDocumentManifest[],
-    ),
+    renderStepProgress(draft.graph as MapDocumentModule.MapDocumentGraph) +
+      renderMapDocument(
+        draft.graph as MapDocumentModule.MapDocumentGraph,
+        draft.skills as MapDocumentModule.MapDocumentManifest[],
+      ),
   );
 });
 

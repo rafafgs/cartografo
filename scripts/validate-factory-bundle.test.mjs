@@ -33,10 +33,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { validateBundle } from './validate-factory-bundle.mjs';
+import { manifestHash, validateBundle } from './validate-factory-bundle.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE_BUNDLE = path.join(ROOT, 'factory-graphs', 'software-development');
+const INTERVIEW_MANIFEST_PATH = path.join(ROOT, 'factory-graphs', 'map-design', 'skills', 'interview.json');
 
 /** A throwaway copy of the real bundle, ready to be mutated. */
 function bundleCopy() {
@@ -130,6 +131,12 @@ test('AT3b — the same items in another order fail the bundle', () => {
     report.pins.find((candidate) => candidate.node === 'develop')?.ok === false,
     `the pin of the affected node has to carry the problem:\n${explain(report)}`,
   );
+});
+
+test('t462 AT10 — the map-design interview skill\'s declared hash matches its own content', () => {
+  const manifest = JSON.parse(readFileSync(INTERVIEW_MANIFEST_PATH, 'utf8'));
+
+  assert.equal(manifestHash(manifest), manifest.hash, "the manifest's declared hash is stale — recompute it with manifestHash");
 });
 
 test('AT3c — the prose of an agentic item is free to differ from the check', () => {

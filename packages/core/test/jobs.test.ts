@@ -3226,25 +3226,30 @@ const CONVERSATION_ARTIFACTS = ['src/domain/conversation.ts', T102_ARTIFACTS.job
  *
  * The session closes with its report FIRST and the question is posted after it
  * (`dispatch.ts`: `finishSession` then `postSessionQuestion`), which is what
- * makes the draft of a turn readable while its question is still open.
+ * makes the map of a turn readable while its question is still open.
+ *
+ * `report` is the turn's own report BESIDE `done` — since t464 that is `graph`
+ * and, when the turn changed one, `skills`: two independent top-level keys and
+ * no `draft` wrapper (`docs/spec/interview.md` §2). A turn is free to omit
+ * `skills`, which is exactly what the accumulation below has to survive.
  *
  * @param ctx Control plane running.
  * @param jobId The interview.
  * @param question What this turn asks.
- * @param draft The draft as it stood at the end of this turn.
+ * @param report What this turn reported beside `done`.
  * @returns Id of the input request that is now pending.
  */
 async function interviewTurn(
   ctx: TestContext,
   jobId: number,
   question: string,
-  draft: Record<string, unknown>,
+  report: Record<string, unknown>,
 ): Promise<number> {
   const sessionId = await openSessionOn(ctx, jobId, 'redigir');
   const finished = await request(ctx, 'PATCH', `/v1/sessions/${sessionId}/finish`, {
     status: 'completed',
     exit_code: 0,
-    output: { done: false, draft },
+    output: { done: false, ...report },
   });
   assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
 
@@ -3297,7 +3302,11 @@ test('t360 AT2 — the conversation lists the answered turns and the question st
     'yes',
     'the wire key is `default`, the word the fenced block itself uses',
   );
-  assert.deepEqual(asking.draft, firstDraft, 'the draft is the last completed session`s own output');
+  assert.deepEqual(
+    asking.draft,
+    firstDraft,
+    'the map is `graph` and `skills` accumulated over every completed session (t464)',
+  );
   assert.equal(asking.done, false);
 
   await request(ctx, 'PATCH', `/v1/input-requests/${first}/answer`, {
@@ -3322,7 +3331,7 @@ test('t360 AT2 — the conversation lists the answered turns and the question st
     },
     skills: [{ id: 'triage-ticket', version: '1.0.0' }],
   };
-  await interviewTurn(ctx, job.id, 'What usually goes wrong at `triage`?', thirdDraft);
+  const third = await interviewTurn(ctx, job.id, 'What usually goes wrong at `triage`?', thirdDraft);
 
   const after = await conversation(ctx, job.id);
   assert.equal(after.turns.length, 2, 'two questions were answered, and the third is still open');
@@ -3342,8 +3351,88 @@ test('t360 AT2 — the conversation lists the answered turns and the question st
 
   assert.ok(after.pending !== null, 'the third question is waiting');
   assert.equal(after.pending.question, 'What usually goes wrong at `triage`?');
-  assert.deepEqual(after.draft, thirdDraft, 'the draft is the LAST completed session`s output');
+  assert.deepEqual(
+    after.draft,
+    thirdDraft,
+    'every key the walk ever set, with the LATEST value each one was given (t464)',
+  );
   assert.equal(after.done, false, 'an interview that has not delivered is not done');
+
+  // --- t464 AT1. a turn that changed no manifest reports no `skills` --------
+  //
+  // The whole point of the flattening: `graph` and `skills` are two independent
+  // merge keys, so a turn that only moved the graph forward keeps the manifests
+  // the turn before it settled, instead of erasing them by omission.
+  await request(ctx, 'PATCH', `/v1/input-requests/${third}/answer`, {
+    answer: 'it misses the customer history',
+    answered_by: 'rafael',
+  });
+
+  const fourthGraph = {
+    problem_class: 'support-escalation',
+    nodes: [
+      {
+        id: 'triage',
+        contract: { input_schema: { required: ['ticket'] }, checks: [{ id: 'the-history' }] },
+      },
+    ],
+  };
+  await interviewTurn(ctx, job.id, 'Which step finishes the work?', { graph: fourthGraph });
+
+  const accumulated = await conversation(ctx, job.id);
+  assert.deepEqual(
+    accumulated.draft,
+    { graph: fourthGraph, skills: thirdDraft.skills },
+    'a turn that omitted `skills` kept the manifests an earlier turn settled (t464 FR9)',
+  );
+});
+
+test('t464 AT2/AT3 — the map accumulates per key, and a report with neither key is inert', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+  const job = await createJob(ctx, {
+    title: 'design a map for handling widget returns',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  // AT2. Nothing completed is no map — never an empty one, and never a `{}`
+  // conjured out of an accumulator that started as an object.
+  const untouched = await conversation(ctx, job.id);
+  assert.equal(untouched.draft, null, 'no completed session is no map at all');
+
+  const graph = { problem_class: 'widget-return', nodes: [{ id: 'inspect' }] };
+  const skills = [{ id: 'inspect-widget', version: '1.0.0' }];
+  const asked = await interviewTurn(ctx, job.id, 'What does `inspect` need?', { graph, skills });
+  await request(ctx, 'PATCH', `/v1/input-requests/${asked}/answer`, {
+    answer: 'the widget and the order',
+    answered_by: 'rafael',
+  });
+
+  const settled = await conversation(ctx, job.id);
+  assert.deepEqual(settled.draft, { graph, skills }, 'one turn set both keys');
+
+  // AT3. The delivering node's own report shares the job and shares nothing
+  // else: it names neither key, so it moves neither.
+  const delivering = await openSessionOn(ctx, job.id, 'revisar');
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${delivering}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    output: {
+      bundle: { graph, skills },
+      checked: { structure: true, soundness: true, problems: [] },
+      note: 'the map covers inspection and the return itself',
+    },
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+
+  const afterDelivery = await conversation(ctx, job.id);
+  assert.deepEqual(
+    afterDelivery.draft,
+    { graph, skills },
+    'a completed session naming neither key changes neither (t464 FR9)',
+  );
 });
 
 test('t360 AT2 — while a session is running the projection reports thinking, with nothing pending', async (t) => {

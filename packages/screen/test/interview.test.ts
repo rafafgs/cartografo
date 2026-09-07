@@ -17,10 +17,13 @@
  * **A finished interview.** `conversation.done` is `job.completed`, which the
  * control plane derives from the traveller standing on a final node it has run
  * — so a session that merely reported `{done: true}` does not make it true.
- * The fixture therefore seeds what a real traversal seeds: a completed session
- * ON `deliver`, which is what `hasArrived` looks for, and after it the
- * interview session carrying the draft, which is where the conversation
- * projection reads `draft` from (the LAST completed session's output).
+ * The fixture therefore seeds what a real traversal seeds, in the order a real
+ * traversal writes it: the interview's last session reports the map and asks
+ * nothing, the job walks its one edge, and a session ON `deliver` — which is
+ * what `hasArrived` looks for — closes the crossing. Since t464 the order is
+ * only the real one and no longer a trick: `conversation.draft` accumulates
+ * `graph` and `skills` per key over every completed session, so `deliver`'s own
+ * report, which names neither, is inert wherever it sits.
  *
  * **The forbidden vocabulary.** FR10 asks that nothing THIS TICKET writes says
  * "job", "runner" or "input request". The shared navigation `layout()` draws on
@@ -242,27 +245,23 @@ async function seedFinishedInterview(
     entry_node_id: 'interview',
     graph_version_id: await mapDesignVersion(cp),
   });
+  // The last interview turn: it reports the whole map, flattened as two
+  // top-level keys since t464, and asks nothing — which is what makes it the
+  // turn that finishes interviewing.
+  await reportFrom(cp, created.id, 'interview', { done: true, ...draft });
   // `current_node_id` starts at `entry_node_id` and moves only through
   // `/transitions` — never through a session merely finishing (t459). With
   // `entry_node_id` corrected to `interview` above, the job has to actually
-  // walk the graph's one edge to `deliver` for `hasArrived` to read true; a
-  // real traversal does this the moment the interview's last session reports
-  // `done`, before the deliver node's own session ever opens.
+  // walk the graph's one edge to `deliver` for `hasArrived` to read true.
   const walked = await api(cp, 'POST', `/v1/jobs/${created.id}/transitions`, {
     to_node_id: 'deliver',
   });
   assert.equal(walked.status, 200, 'the interview walks its one edge to deliver');
-  // Order matters beyond arrival: `buildConversation` reads `draft` off the
-  // LAST completed session BY CREATION ORDER (`domain/conversation.ts`), so
-  // `deliver`'s session — carrying no `draft` key — has to open and finish
-  // FIRST, leaving the `interview` session (which does) the one the page
-  // actually reads from.
   await reportFrom(cp, created.id, 'deliver', {
     bundle: { graph: draft.graph, skills: draft.skills },
     checked: { structure: true, soundness: true },
     note: 'the map covers triage and review',
   });
-  await reportFrom(cp, created.id, 'interview', { done: true, draft });
   return created.id;
 }
 
@@ -679,7 +678,7 @@ test('t433 AT8 — the map column is exactly what renderMapDocument draws for th
 
   const draft = closingDraft();
   const jobId = await seedOpenInterview(cp);
-  await reportFrom(cp, jobId, 'interview', { done: false, draft });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...draft });
 
   const page = await openPage(screen, `/interview/${jobId}`);
   assert.equal(page.status, 200);
@@ -699,7 +698,7 @@ test('t433 AT9 — the fragment is the same two columns the page rendered', asyn
   const screen = await startScreen(t, cp);
   const jobId = await seedOpenInterview(cp);
   await createQuestion(cp, { job_id: jobId, question: 'What do you call it?' });
-  await reportFrom(cp, jobId, 'interview', { done: false, draft: closingDraft() });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...closingDraft() });
 
   const page = await openPage(screen, `/interview/${jobId}`);
   const fragment = await fetch(`${screen.url}/interview/${jobId}/fragment`);
@@ -756,7 +755,7 @@ test('t433 AT12 — registering before the interview closes is refused, and writ
   const cp = await startControlPlane(t);
   const screen = await startScreen(t, cp);
   const jobId = await seedOpenInterview(cp);
-  await reportFrom(cp, jobId, 'interview', { done: false, draft: closingDraft() });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...closingDraft() });
 
   const before = await api<{ skills: unknown[] }>(cp, 'GET', '/v1/skills');
   const refused = await post(screen, `/interview/${jobId}/register`);
@@ -835,6 +834,74 @@ test('t433 AT14 — exporting answers the bundle bytes as a download', async (t)
   }
   assert.ok(got.has('graph.json'), 'the bundle carries the graph');
   assert.ok([...got.keys()].some((name) => name.startsWith('skills/')), 'and its manifests');
+});
+
+/* ============================================================ t464 AT5 */
+
+test('t464 AT5 — a last turn that reports only `graph` still registers and exports every manifest', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const { buildBundleZip } = await loadExportBundle();
+
+  const draft = closingDraft();
+  const created = await createJob(cp, {
+    title: 'how I triage a widget',
+    body: 'Every week I look at the widgets that came in.',
+    entry_node_id: 'interview',
+    graph_version_id: await mapDesignVersion(cp),
+  });
+
+  // An earlier turn settled the manifests...
+  await reportFrom(cp, created.id, 'interview', {
+    done: false,
+    graph: draft.graph,
+    skills: draft.skills,
+  });
+  // ...and the last one changed none of them, so it reports none. Under the old
+  // last-session-only rule this is the turn that lost every manifest the
+  // interview had written.
+  await reportFrom(cp, created.id, 'interview', { done: true, graph: draft.graph });
+
+  const walked = await api(cp, 'POST', `/v1/jobs/${created.id}/transitions`, {
+    to_node_id: 'deliver',
+  });
+  assert.equal(walked.status, 200, 'the interview walks its one edge to deliver');
+  await reportFrom(cp, created.id, 'deliver', {
+    bundle: { graph: draft.graph, skills: draft.skills },
+    checked: { structure: true, soundness: true },
+    note: 'the map covers triage and review',
+  });
+
+  const submission = await post(screen, `/interview/${created.id}/register`);
+  assert.equal(submission.status, 303, await submission.text());
+  assert.equal(submission.headers.get('location'), `/graphs/${DRAFT_CLASS}`);
+
+  const registered = await api<{ skills: { id: string }[] }>(cp, 'GET', '/v1/skills');
+  const ids = registered.body.skills.map((skill) => skill.id);
+  for (const manifest of draft.skills) {
+    assert.ok(
+      ids.includes(manifest.id),
+      `${manifest.id} was registered from the accumulated map: ${JSON.stringify(ids)}`,
+    );
+  }
+
+  const download = await post(screen, `/interview/${created.id}/export`);
+  assert.equal(download.status, 200, 'the export answers the bundle bytes');
+  const built = buildBundleZip(draft);
+  assert.ok(built.ok, 'the fixture builds');
+  const got = new Map(
+    readZip(new Uint8Array(await download.arrayBuffer())).map((entry) => [
+      entry.name,
+      entry.data.toString('utf8'),
+    ]),
+  );
+  assert.deepEqual(
+    [...got.keys()].sort(),
+    readZip(built.bytes)
+      .map((entry) => entry.name)
+      .sort(),
+    'the exported bundle carries every manifest, not only what the last turn reported',
+  );
 });
 
 /* ================================================================ AT15 */

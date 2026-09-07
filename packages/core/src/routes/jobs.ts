@@ -48,6 +48,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { buildConversation, type Conversation } from '../domain/conversation.ts';
 import { buildNodeInput } from '../domain/context.ts';
+import { listArtifactsForJob } from '../repositories/artifacts.ts';
 import { integerFromQuery } from '../repositories/common.ts';
 import {
   ALREADY_COMPLETED,
@@ -495,6 +496,23 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       // is the taxonomy's and therefore D20's second child.
       const events = jobTimeline(db, routeId(request.params), scope.project.id);
       return events === null ? notFound(reply, 'job') : { events };
+    }),
+  );
+
+  /**
+   * Every artifact of every session of this job, newest first (t368, RF-39).
+   *
+   * The same scoping shape as the other three GETs above it: the job's own
+   * project is resolved first, and a job of another project answers the same
+   * `404` an unknown id gets (`listArtifactsForJob`, t410's convention).
+   */
+  app.get('/jobs/:id/artifacts', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const artifacts = listArtifactsForJob(db, routeId(request.params), scope.project.id);
+      return artifacts === null ? notFound(reply, 'job') : { artifacts };
     }),
   );
 

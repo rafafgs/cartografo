@@ -26,6 +26,7 @@ import {
   openSession,
   finishSession,
   getSession,
+  getSessionLog,
   getSessionTranscript,
   listSessions,
   recordPermissionDenial,
@@ -158,6 +159,22 @@ export function registerSessions(
         scope.project.id,
       );
       return transcript === null ? notFound(reply, 'session') : transcript;
+    }),
+  );
+
+  // The decoded log (t368, RF-39/RF-40): what the session's OWN transcript
+  // column holds, turned back from frames into the text a model said. It reads
+  // the row alone — never the whole artifact `transcript_artifact_id` may name
+  // — so a session with no transcript recorded answers 200 with `text: null`,
+  // the same honest reading `/transcript` gives, and only an unknown or
+  // foreign id is a 404 (t411's scoping, unchanged).
+  app.get('/sessions/:id/log', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const log = getSessionLog(db, routeId(request.params), scope.project.id);
+      return log === null ? notFound(reply, 'session') : log;
     }),
   );
 

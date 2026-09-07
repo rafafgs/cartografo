@@ -722,6 +722,15 @@ test('t409 AT7 — the demo bundle provisions its workspace and crosses it from 
   // The commit a real `develop` session would have left on its branch. On a
   // branch of the workspace, and never on `main`: what this case is about is
   // that something else moves the main line.
+  //
+  // `provisionDemoWorkspace` gives the workspace's FIRST commit its own
+  // identity (`-c user.name=cartografo ...`, `examples.ts:220-238`), but that
+  // is scoped to that one command line and does not carry over to a commit
+  // this test makes directly — mirrors `benchRepository()` (lines 300-302),
+  // the only other fixture in this file that commits without going through
+  // `provisionDemoWorkspace`.
+  git(workspace, 'config', 'user.email', 'fixture@cartografo.local');
+  git(workspace, 'config', 'user.name', 'Fixture t409');
   git(workspace, 'checkout', '--quiet', '-b', 'demo-integration');
   writeFileSync(path.join(workspace, INTEGRATED_FILE), INTEGRATED_TEXT);
   git(workspace, 'add', '-A');

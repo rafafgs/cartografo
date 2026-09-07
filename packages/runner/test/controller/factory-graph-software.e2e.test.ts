@@ -259,9 +259,43 @@ const IMPLANTADO = (commit: string): Record<string, unknown> => ({
   note: 'The merge commit is contained in the reference: the executor advanced the bench.',
 });
 
-/** One git command in one checkout, run to completion, with its output trimmed. */
+/**
+ * One git command in one checkout, run to completion, with its output trimmed.
+ *
+ * `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` point at `/dev/null` so every call
+ * through this helper is blind to whatever global or system git config the
+ * machine running it happens to have — the same blindness a GitHub-hosted
+ * runner has by default (t409 AT7's CI failure, run 34065958966: `git commit`
+ * throws `Author identity unknown` there because there is no ambient identity
+ * to fall back on). Without this, a fixture that forgets to set its own local
+ * identity can pass on any machine with a `~/.gitconfig` and still fail in CI.
+ *
+ * That is not, on its own, enough to reproduce the failure on every machine:
+ * with no config at all git still guesses an identity from the OS account —
+ * `getpwuid`'s GECOS full name plus `user@hostname` — and a developer laptop
+ * whose account carries a real name (macOS asks for one at setup) commits
+ * successfully under nothing but `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`,
+ * proving nothing about CI, where the runner account has no such name. Passing
+ * `user.useConfigOnly=true` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/
+ * `GIT_CONFIG_VALUE_0` (the same env-only mechanism, not a written config
+ * file) turns that OS guess off, so a fixture with no identity of its own
+ * fails here exactly as it fails on a GitHub-hosted runner, regardless of
+ * whose name is on the laptop account.
+ */
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
+  return execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'user.useConfigOnly',
+      GIT_CONFIG_VALUE_0: 'true',
+    },
+  }).trim();
 }
 
 /** What the integrated commit brings with it, so the install step can read it. */

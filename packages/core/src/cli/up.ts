@@ -13,10 +13,11 @@
  * are PROCESS boundaries, not package ones, and `packages/core/package.json`
  * already ships all six binaries in one tarball. So the screen and the runner
  * this file starts are still separate processes with no privilege over the
- * control plane, reached the same way any operator reaches them — by name, off
- * `PATH`, with a credential in their environment. Nothing below imports
- * `@cartografo/screen` or `@cartografo/runner`, and nothing below knows where
- * on disk either of them lives.
+ * control plane, started as their own commands with a credential in their
+ * environment. Nothing below imports `@cartografo/screen` or
+ * `@cartografo/runner`: what it starts are the two delegator scripts D23 puts
+ * in this package's own `bin/`, found at their fixed offset from this file
+ * ({@link resolveSibling}) and never off `PATH`.
  *
  * Four decisions worth stating, because each has a plausible opposite:
  *
@@ -81,11 +82,37 @@ export const URL_ENV = 'CARTOGRAFO_URL';
 /** Environment variable that carries a child's credential. */
 export const TOKEN_ENV = 'CARTOGRAFO_TOKEN';
 
-/** The screen's binary, resolved off `PATH` and never by a path of ours. */
+/** The screen's binary, as {@link resolveSibling} knows it by name. */
 export const SCREEN_BINARY = 'cartografo-screen';
 
 /** The runner's binary, likewise. */
 export const RUNNER_BINARY = 'cartografo-runner';
+
+/**
+ * What each of those two names is, as a file, inside this package's `bin/`.
+ *
+ * Since D23 neither name is a package of its own: both are thin delegator
+ * scripts that ship as literal siblings of `cartografo.mjs`
+ * (`packages/core/bin/`), and `package.json`'s `"files": ["bin", …]` is what
+ * guarantees they are still there in the tarball.
+ */
+const SIBLING_SCRIPTS: Readonly<Record<string, string | undefined>> = Object.freeze({
+  [SCREEN_BINARY]: 'cartografo-screen.mjs',
+  [RUNNER_BINARY]: 'cartografo-runner.mjs',
+});
+
+/**
+ * This package's `bin/`, from `src/cli/up.ts` — two directories up.
+ *
+ * The same relative-offset trick {@link mapDesignBundle} plays one level
+ * further out, and legal for the same reason: `bin/` and `src/` are both in
+ * `package.json`'s `files`, so the offset between this module and its own
+ * siblings is the one thing that is identical in a checkout and in a tarball.
+ */
+const SHIPPED_BIN = path.resolve(import.meta.dirname, '..', '..', 'bin');
+
+/** The reason a child was never spawned at all: nothing was at the path. */
+export const MISSING_SIBLING = 'no such file';
 
 /** The two signals that ask this command to stop. */
 const STOP_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
@@ -375,7 +402,7 @@ export interface ChildHandle {
   exited: Promise<void>;
 }
 
-/** Starts one of the sibling binaries, by name. */
+/** Starts one of the sibling binaries, named as {@link SCREEN_BINARY} is. */
 export type SpawnChild = (
   command: string,
   args: string[],
@@ -401,7 +428,7 @@ export interface UpSeams {
   env?: NodeJS.ProcessEnv;
   /** What brings the control plane up. Default: `start` of `src/index.ts`. */
   start?: (env: NodeJS.ProcessEnv) => Promise<UpControlPlane>;
-  /** What starts a child. Default: `child_process.spawn`, by name, off `PATH`. */
+  /** What starts a child. Default: {@link spawnByName}, off this install's `bin/`. */
   spawnChild?: SpawnChild;
   /** What opens the browser. Default: the platform's own opener. */
   openBrowser?: OpenBrowser;
@@ -410,17 +437,73 @@ export interface UpSeams {
 }
 
 /**
- * Starts a sibling binary by name, inheriting this process's stdio.
+ * Where one of this command's two children lives on this installation's disk
+ * (t449, FR1).
  *
- * By NAME, resolved off `PATH` by the operating system, and never by a path
- * relative to this package's `bin/`: the same line has to work out of this
- * monorepo, where the binaries are workspace links under `node_modules/.bin`,
- * and out of an installed tarball, where `bundledDependencies` put them
- * somewhere else entirely (t248, D23). Neither case knows about the other.
+ * Computed from this module's own location and NOTHING else — not `PATH`, not
+ * `process.cwd()`. `up` used to hand `spawn` a bare `cartografo-screen` and let
+ * the operating system walk the child's `PATH`, on the theory that a sibling
+ * sits somewhere different in a checkout than in a tarball. Since D23 that is
+ * simply not true of these two: both are delegator scripts in this package's
+ * own `bin/`, at a fixed offset from this file in both worlds. What the old
+ * theory did cost was real — `./node_modules/.bin/cartografo up`, from a shell
+ * with no `node_modules/.bin` on `PATH`, started the control plane and then
+ * failed both children with `ENOENT`.
  *
- * A binary that is not on `PATH` at all is reported by name and nothing more
- * (FR10): the parent must not die of it, and — since `exited` resolves anyway —
- * the shutdown must not end up waiting for a process that never existed.
+ * So `npx`, a global install and a bare path into a development checkout are
+ * not three cases here: none of them moves `bin/` relative to `src/`.
+ *
+ * @param command {@link SCREEN_BINARY} or {@link RUNNER_BINARY}.
+ * @param binDirectory Directory to look in. Default: this package's `bin/`.
+ * @returns Absolute path of the delegator script, existing or not.
+ * @throws If `command` is not one of the two this command starts.
+ */
+export function resolveSibling(command: string, binDirectory: string = SHIPPED_BIN): string {
+  const script = SIBLING_SCRIPTS[command];
+  if (script === undefined) {
+    throw new Error(`cartografo: ${command} is not one of this command's children`);
+  }
+  return path.join(binDirectory, script);
+}
+
+/**
+ * The one line a child that never ran is reported with (t449, FR3/FR4).
+ *
+ * One formatter for both failures on purpose: a path with nothing at it and a
+ * path `spawn` refused read identically to whoever is staring at the terminal
+ * unless the line itself says which happened, and either way the first question
+ * they have is WHERE it looked — the name alone is what made the original bug
+ * take a debugging session instead of a glance.
+ *
+ * @param command Binary name, as the operator knows it.
+ * @param resolvedPath Exactly what {@link resolveSibling} answered.
+ * @param reason {@link MISSING_SIBLING}, or the `spawn` error's own message.
+ * @returns The line, newline included.
+ */
+export function spawnFailureLine(command: string, resolvedPath: string, reason: string): string {
+  return `cartografo: could not start ${command} (${resolvedPath}) — ${reason}\n`;
+}
+
+/**
+ * Starts a sibling binary from this installation's own `bin/`, inheriting this
+ * process's stdio.
+ *
+ * Two decisions on top of {@link resolveSibling}:
+ *
+ * - **`process.execPath <script>`, not the script itself.** The delegator has a
+ *   shebang and an executable bit today, but both are properties of how the
+ *   package happened to be checked out or unpacked; the Node that is running
+ *   this line is a fact. It is also the same Node the child gets, which is what
+ *   an operator with two of them installed would expect.
+ * - **`existsSync` before `spawn`.** `spawn`'s own `ENOENT` names the
+ *   executable it was given and, for a resolved path, that would already be
+ *   more than the old bare name said — but the guard is what keeps the two
+ *   failures distinguishable in one place (FR3/FR4), and a missing sibling is a
+ *   broken installation rather than a race.
+ *
+ * A child that never started is one line and nothing more (FR10): the parent
+ * must not die of it, and — since `exited` resolves anyway — the shutdown must
+ * not end up waiting for a process that never existed.
  *
  * @param command Binary name.
  * @param args Its command line.
@@ -428,7 +511,13 @@ export interface UpSeams {
  * @returns The handle the teardown uses.
  */
 function spawnByName(command: string, args: string[], env: NodeJS.ProcessEnv): ChildHandle {
-  const child = spawn(command, args, { env, stdio: 'inherit' });
+  const resolved = resolveSibling(command);
+  if (!existsSync(resolved)) {
+    process.stderr.write(spawnFailureLine(command, resolved, MISSING_SIBLING));
+    return { kill: () => undefined, exited: Promise.resolve() };
+  }
+
+  const child = spawn(process.execPath, [resolved, ...args], { env, stdio: 'inherit' });
 
   let settle: () => void = () => undefined;
   const exited = new Promise<void>((resolve) => {
@@ -437,7 +526,7 @@ function spawnByName(command: string, args: string[], env: NodeJS.ProcessEnv): C
 
   child.on('exit', () => settle());
   child.on('error', (error: Error) => {
-    process.stderr.write(`cartografo: could not start ${command} — ${error.message}\n`);
+    process.stderr.write(spawnFailureLine(command, resolved, error.message));
     settle();
   });
 

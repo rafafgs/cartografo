@@ -175,7 +175,8 @@ npx cartografo export-history --job 41         # writes ./job-41.history.jsonl
 With no subcommand it is `up`, and the three `--no-*` options belong to it
 whether the word is typed or not. The screen and the runner it starts are
 ordinary processes with no privilege of their own — the same two binaries you
-would have run in two more terminals, resolved off `PATH` by name and handed a
+would have run in two more terminals, found next to `cartografo` itself in the
+installation it was started from rather than off your `PATH`, and handed a
 credential of that startup's own, which is revoked when they stop. A `SIGINT`
 or `SIGTERM` goes to both children first and waits for them; a second one stops
 waiting.

@@ -1,5 +1,10 @@
--- 0031_transcript_artifact — the transcript over the cap gets a reference
+-- 0032_transcript_artifact — the transcript over the cap gets a reference
 -- (t424, FR1; RF-40).
+--
+-- Numbered 0032 at the merge with main, not 0031 as the ticket asked: t417's
+-- `0031_reassign_orphan_projects.sql` had already landed on that number, and
+-- `src/db/migrate.ts` fails loudly on a repeated one. The same renumbering note
+-- the headers of 0003, 0005, 0017, 0019, 0022, 0026, 0027, 0028 and 0031 carry.
 --
 -- `TRANSCRIPT_CAP_BYTES` (`src/repositories/session.ts`) has always cut an
 -- over-sized transcript down to its last mebibyte and thrown the rest away: the

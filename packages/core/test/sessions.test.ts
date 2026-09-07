@@ -586,10 +586,21 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
 
+  // Declared rather than named as a bare integer: since t417 `POST /v1/jobs`
+  // refuses a `project_id` that answers to no project, and a job is what this
+  // case needs. What the case is ABOUT does not move — the id below is still
+  // not `DEFAULT_PROJECT`, which is the only property `OTHER_PROJECT` carried.
+  const declared = await request<{ id: number }>(ctx, 'POST', '/v1/projects', {
+    name: 'the job\'s own project',
+  });
+  assert.equal(declared.status, 201, JSON.stringify(declared.body));
+  const owner = declared.body.id;
+  assert.notEqual(owner, 1, 'the job has to be born outside the default project');
+
   const job = await createJob(ctx, {
     title: 'from another project',
     entry_node_id: 'entrada',
-    project_id: OTHER_PROJECT,
+    project_id: owner,
     execution_id: 9,
   });
 
@@ -615,7 +626,7 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
   const events = getEventsByEntity(ctx.db, 'session', opened.body.id);
   assert.deepEqual(
     events.map((event: Event) => event.project_id),
-    [OTHER_PROJECT, OTHER_PROJECT],
+    [owner, owner],
     'the job owns the project, and the end says the same thing the opening said',
   );
 });
@@ -2345,7 +2356,7 @@ test('t411 — the transcript refuses a session of another project, and answers 
 /* -------------------------------------------------------------------------- */
 
 /** The migration that gives the row its reference to the stored transcript. */
-const T424_MIGRATION = 'migrations/0031_transcript_artifact.sql';
+const T424_MIGRATION = 'migrations/0032_transcript_artifact.sql';
 
 /**
  * Everything t424 crosses, on top of {@link ARTIFACTS}.

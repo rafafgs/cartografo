@@ -240,7 +240,16 @@ const RULES: Record<string, TypeRule> = {
   },
   'job.unblocked': {
     entity: 'job',
-    fields: {},
+    fields: {
+      // Why the flag came down, when a PERSON is the one who lowered it (t339).
+      // Optional, and deliberately not required like `job.blocked.reason` is:
+      // the control plane's own unblock-on-answer has no reason to state — the
+      // answer IS the fact — and demanding one there would force it to invent
+      // text nobody said. Absent normalizes to `null`, the same way
+      // `job.blocked.consecutive_failures` is `null` for every block the
+      // failure cap did not raise.
+      reason: optional('string'),
+    },
   },
   'job.amended': {
     entity: 'job',
@@ -471,10 +480,12 @@ const RULES: Record<string, TypeRule> = {
     },
   },
   // The round is over (D21, t245): every job of it arrived and no lease is
-  // still holding one. Empty payload for the same reason `job.unblocked` has
-  // one — the envelope's `execution_id`, `entity.id` and `occurred_at` already
-  // say which round ended and when, and repeating that inside `data` would be
-  // the same fact twice in one event.
+  // still holding one. Empty payload because the envelope's `execution_id`,
+  // `entity.id` and `occurred_at` already say which round ended and when, and
+  // repeating that inside `data` would be the same fact twice in one event.
+  // `job.unblocked` used to be cited here as the precedent; it stopped being
+  // payload-free in t339, when a human unblock gained a reason to state. The
+  // reasoning is the one that outlived the example.
   'execution.finished': {
     entity: 'execution',
     fields: {},

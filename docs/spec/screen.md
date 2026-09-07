@@ -26,12 +26,12 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The thirteen routes
+## 1. The fifteen routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
 | `GET /` | The check: whether this machine is ready to run anything, per paired runner — engine, model credential, the `cartografo` MCP server, workspace — or the single "everything is ready" panel with a way into the board. | `GET /v1/runners` (probe embedded), `GET /v1/settings` |
-| `GET /board` | The board: every job, grouped by `no_atual`, with the blocking reason where there is one. | `GET /v1/jobs` |
+| `GET /board` | The board: every job, banded into the six states t415 derives, in attention order (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`), each band sorted by how long the job has been in it — oldest wait first — and grouped by `no_atual` inside the band while the board holds 12 jobs or fewer; past that it collapses to one flat, time-sorted table per band. Every job still shows the blocking reason where there is one. This is the one page that auto-refreshes every 30 seconds (§7). | `GET /v1/jobs` |
 | `GET /examples` | The bundles the control plane can demonstrate: one card each, with the demo's title, whether the class is already registered, and a form that runs it. | `GET /v1/examples` |
 | `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
 | `GET /executions/:id` | One round's slice: the board, the sessions and the pending questions on the same page. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
@@ -39,6 +39,8 @@ runs in `npm run lint`, and locked down by
 | `GET /runners` | The fleet: one runner per line, with active leases, the last heartbeat and the last lease it lost to the TTL. | `GET /v1/runners` |
 | `POST /examples/:id/run` | Nothing: it runs the example and redirects (303) to `/executions/<the round it allocated>`. The `:id` here is the example's problem class, not an integer. | `POST /v1/examples/:class/run` |
 | `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
+| `POST /jobs/:id/unblock` | Nothing: it lowers the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/board`. | `POST /v1/jobs/:id/unblocks` |
+| `POST /jobs/:id/block` | Nothing: it raises the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/jobs/:id`. | `POST /v1/jobs/:id/blocks` |
 | `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
 | `POST /runners/:id/rechecks` | Nothing: it asks one runner to report about its machine again and redirects (303) to `/`. The runner serves the request on its next loop tick; reloading is what shows the new probe. | `POST /v1/runners/:id/rechecks` |
@@ -46,7 +48,10 @@ runs in `npm run lint`, and locked down by
 
 Every view renders **on the request**. There is no polling, no websocket and no
 auto-refresh: reloading the page is the update, and the screen's state is always
-the state the API has just reported.
+the state the API has just reported. **`/board` alone is the exception** (t416):
+it carries `<meta http-equiv="refresh" content="30">`, so it is never more than
+30 seconds stale without anyone reloading it — which is also what makes the
+relative durations it shows honest (§7).
 
 **Which project a view shows** comes from the `cartografo_project` cookie, and
 from nowhere else (D25, t354). Every GET above reads it — defaulting to project
@@ -80,7 +85,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/inbox`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The thirteen routes of this specification, rendered on the server. |
+| Anything else | The fifteen routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
@@ -149,8 +154,9 @@ It reads **fetch metadata**, and nothing else: `Sec-Fetch-Site` and `Origin` are
 written by the browser's network stack and forbidden to the page's script — not
 even in `no-cors` can a hostile page forge them. Writes are refused (`/v1/*` with
 a method other than `GET`/`HEAD`, and every `POST` of this specification —
-`/input-requests/:id/answer`, `/project`, `/examples/:class/run`,
-`/runners/:id/rechecks` and `/settings`) when:
+`/input-requests/:id/answer`, `/jobs/:id/unblock`, `/jobs/:id/block`,
+`/project`, `/examples/:class/run`, `/runners/:id/rechecks` and `/settings`)
+when:
 
 1. **`Sec-Fetch-Site` came and is neither `same-origin` nor `none`** — the
    browser itself is saying the request was born somewhere else;
@@ -289,6 +295,58 @@ the fact and nothing else; the cycle happens on the other side of the HTTP. It
 was written before that wiring existed and did not change a line when it arrived —
 which was exactly the bet.
 
+### Blocking and unblocking are real writes too
+
+The board used to show a held job and its reason and offer no way out of it: the
+flag could only come down from a terminal. Two new writes close that, and they
+are the same act seen from either side — a reason, a person, and one call to a
+route the control plane already published:
+
+| The screen's route | What it calls | Where it lands |
+|---|---|---|
+| `POST /jobs/:id/unblock` | `POST /v1/jobs/:id/unblocks` | **303** to `/board` |
+| `POST /jobs/:id/block` | `POST /v1/jobs/:id/blocks` | **303** to `/jobs/:id` |
+
+**One surface per action, and never both on one page.** Unblock is offered on
+`/board`'s held jobs — on the card in card mode and in the note column of the
+row in row mode (§1), because a board past a dozen jobs is exactly the one whose
+held column most needs walking — since releasing is done to a QUEUE: the
+standing consumer files every rule promotion as a job born blocked, and the
+human gate is walking the held column. Block is offered on `/jobs/:id`, because stopping a healthy job
+is deliberate and one at a time, and a form on every card of the grid would cost
+more than it buys. Each form is mutually exclusive with the state it changes: a
+blocked card offers unblock and nothing else, a healthy job page offers block and
+nothing else. Offering an action the API would refuse is the failure the inbox's
+own state table exists to prevent
+([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3).
+
+Two boundary choices, the same pair §3 draws for the answer form:
+
+- **A blank reason is refused by the screen** (400), before the network.
+  `job.blocked` already requires one, so the control plane would refuse that
+  half anyway — but `job.unblocked.reason` is deliberately **optional**
+  ([`specs/events/taxonomy.md`](../../specs/events/taxonomy.md)), because the
+  control plane's own unblock-on-answer has no reason to state. Optional
+  upstream and mandatory at this door is the whole point: a person who clicks
+  says why, and the automatic path is not made to invent a sentence.
+- **The actor is always sent, and never defaulted.** `resolveActor` in the
+  control plane turns an absent `actor` into the API's own identity — "the
+  control plane", not a person. A board action that left it out would record the
+  system as having released what a human released, which is exactly the
+  distinction
+  [`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts)
+  keeps for the answer-driven unblock. `actor_ref` falls back to `"tela"` when
+  the field comes in empty, for the same honesty reason `respondido_por` does:
+  the screen holds one service credential and asks the browser for none.
+
+**`/board`'s 30-second refresh reloads the unblock form with it** (§1). That is
+the one place on this screen where the no-auto-refresh-where-there-is-a-form
+rule and a write share a page, and it is recorded here rather than hidden: a
+half-typed reason can be discarded by a reload nobody asked for. It is judged
+affordable because the field is one sentence and the act is deliberate — but if
+it stops being affordable, the fix is a narrower refresh scope on `/board`, not
+a quieter form.
+
 ---
 
 ## 4. The five API gaps this layer closed
@@ -303,7 +361,7 @@ existed:
 | `GET /v1/sessions?trabalho_id=` | There was only a filter by execution; without this one, "this job's sessions" cannot be asked for — and without them there is no session end on the timeline. |
 | `GET /v1/input-requests?trabalho_id=` | Symmetric to the previous one, for the same reason: the end of the waits. |
 | `GET /v1/examples` | There was no way to **discover** which bundles are ready to be demonstrated. The screen opens no directory and knows no path (D11), so listing `factory-graphs/` on this side would have been the very shortcut this layer exists without. It scans an examples root — `CARTOGRAFO_EXAMPLES_ROOT`, `factory-graphs/` by default — for every subdirectory carrying a `demo/job.json`, and answers `{examples: [{class, bundle, demo_title, registered}]}` (t408). |
-| `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). |
+| `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). Since t409 a bundle may also ship a `demo/repo/`, and when it does the route copies it into the project's `workspace_root` as a git repository BEFORE anything is written — the demo of `software-development` needs a real checkout to cut worktrees from. That step adds two refusals to the `409` this row already answered, both of which write nothing at all: `workspace_root_unset` (the setting points nowhere) and `workspace_not_empty` (the workspace already holds work, including the work a previous demo run put there). Neither is signalled ahead of the click: they reach the operator through the same generic failure page as any other write this route refuses. |
 
 The filters add up as an **AND** with the ones that already existed, and an
 invalid filter is a **400**, never a filter ignored in silence.
@@ -352,7 +410,7 @@ that copy a clicked option into the answer field; without them, typing the answe
 still works.
 
 It is a choice of scale, not of taste: the screen is a reading HTTP client with
-one form, and a front-end pipeline would cost more maintenance than the whole
+a few forms, and a front-end pipeline would cost more maintenance than the whole
 thing it would serve. It is also reversible — the boundary D11 freezes is the
 HTTP contract between the screen and the core, not what the screen uses inside.
 
@@ -366,6 +424,7 @@ one of them is changing the contract; changing a CSS class is not.
 |---|---|---|
 | `data-no-atual` | a board group | the node's id |
 | `data-trabalho` | a job card | the job's id |
+| `data-state` | a state band on `/board` | one of `awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued` (t416) |
 | `data-execucao` | a line of the execution list | the id, or empty in the `null` group |
 | `data-campo` | a count cell, a derived-field cell, or a line of the check | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao`, and on `/`: `runner`, `engine`, `credential`, `mcp`, `workspace` |
 | `data-estado` | a line of the check, beside its `data-campo` | `met` or `unmet` |
@@ -415,12 +474,20 @@ Every item is another ticket's declared scope, not an oversight:
   escalation cycle (§3); the screen only writes the fact.
 - **A node label with the `papel`/`descricao` of the graph's snapshot** — the
   board shows the raw `no_atual`; fetching the graph to label it is additive.
+- **"step NN/MM" beside a job's node** (RF-30 Part 2 component 4) — no route of
+  the API exposes a node's ordinal position inside its graph version, and
+  inventing that surface is not `/board`'s ticket to do (t416).
 - **Pagination** — no route of the API paginates today, and it is not this ticket
   that invents what the API does not have.
-- **Live updates** (polling/websocket) — every view renders on the request.
+- **Live updates by any mechanism other than `/board`'s own refresh** (polling,
+  websocket, SSE) — every other view renders on the request alone.
 - **Relative time** ("3 minutes ago") on `/runners` or on any other date: the
   screen shows the raw instant the API recorded. A relative label computed at
   render time, on a page with no auto-refresh, starts lying the next second.
+  **`/board` is the one narrow exception** (t416): it pairs the relative
+  duration with the raw instant it was computed against (`for … as of …`), and
+  it may only do so because the 30-second auto-refresh above is what keeps
+  that instant from going stale unnoticed.
 - **Knowing whether an idle runner is alive.** `/runners` shows what the control
   plane actually records, and what it records is leases: `ultimo_heartbeat` and
   `ultima_expiracao` are derived from the `lease` table

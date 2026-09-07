@@ -1,0 +1,93 @@
+{
+  "problem_class": "map-design-draft",
+  "metadata": {
+    "name": "An interview draft, mid-way (t431 fixture)",
+    "description": "A realistic snapshot of a graph document while an interview (t360) is still filling it in: one node with a complete contract, one whose contract exists but is still empty, one the interview has not reached at all, and a gate with a declared exit."
+  },
+  "nodes": [
+    {
+      "id": "collect-context",
+      "role": "interviewer",
+      "node_type": "work",
+      "description": "Asks the founder what problem class this graph should solve and records the answer.",
+      "skill_ref": {
+        "id": "collect-context",
+        "version": "1.0.0",
+        "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["problem_class"],
+          "properties": {
+            "problem_class": { "type": "string" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["summary"],
+          "properties": {
+            "summary": { "type": "string" }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "npm test",
+            "description": "The interview's own fixture suite passes."
+          }
+        ]
+      }
+    },
+    {
+      "id": "draft-steps",
+      "role": "interviewer",
+      "node_type": "work",
+      "description": "Drafts the steps of the graph before their contracts are known.",
+      "contract": {
+        "input_schema": {},
+        "output_schema": {},
+        "checks": []
+      }
+    },
+    {
+      "id": "name-gates",
+      "node_type": "work"
+    },
+    {
+      "id": "review-soundness",
+      "role": "reviewer",
+      "node_type": "gate",
+      "description": "Checks the draft graph so far for soundness and decides whether the interview can continue.",
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "draft": { "type": "object" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "outcome": { "type": "string" }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Confirm the draft graph so far has no dangling edge.",
+            "required_evidence": ["draft graph document"]
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "review-soundness",
+      "to": "draft-steps",
+      "condition": "needs_rework",
+      "description": "The soundness check found a problem the draft still has to fix."
+    }
+  ]
+}

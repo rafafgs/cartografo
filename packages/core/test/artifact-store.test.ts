@@ -640,23 +640,34 @@ test('t422 AT16 — listing a session out of scope is a 404, not an empty list',
 /* The credential surface (AT17)                                               */
 /* -------------------------------------------------------------------------- */
 
-test('t422 AT17 — the upload route is not on the runner allowlist', async (t) => {
+test('t422 AT17 — the write is on the runner allowlist and the reads are not', async (t) => {
   requireArtifacts(...ROUTE_ARTIFACTS);
 
   // Read first: `RUNNER_SURFACE` is a literal list, and FR11 is about what is
   // written in it — a runner that needs to upload gets that decision taken on
   // purpose, in child 2, and not inherited from this ticket.
+  //
+  // Child 2 is t423, and it has taken it: a runner uploads the file a session's
+  // own contract declared as its output, so `POST /v1/sessions/:id/artifacts`
+  // is on the list BECAUSE somebody put it there, with the reason written next
+  // to it. What FR11 asked for is still exactly what this case checks — that
+  // the list moved by a decision and not by inheritance, and that it moved by
+  // one route. The three READS of the store stay off: reading back what any
+  // session produced is the operator's, on the same reasoning `GET /v1/engines`
+  // carries in `auth.ts`.
   const auth = readFileSync(path.join(PACKAGE_ROOT, T422_ARTIFACTS.auth), 'utf8');
   const surface = auth.slice(auth.indexOf('RUNNER_SURFACE'), auth.indexOf('declare module'));
   assert.ok(surface.length > 0, 'RUNNER_SURFACE is not where this assertion expects it');
-  assert.ok(
-    !surface.includes('/artifacts'),
-    'no artifact route belongs on RUNNER_SURFACE until the ticket that wires the caller says so (FR11)',
+  assert.deepEqual(
+    [...surface.matchAll(/'[A-Z]+ [^']*\/artifacts[^']*'/g)].map((match) => match[0]),
+    ["'POST /v1/sessions/:id/artifacts'"],
+    'the upload is on RUNNER_SURFACE by t423 decision; no read route joined it (FR11)',
   );
 
-  // ...and the gate really does refuse one. The credential comes from pairing,
-  // the way a real runner gets one: `credential.runner_id` is a foreign key, so
-  // there is no such thing as a token for a machine nobody paired.
+  // ...and the gate is real on both sides of that line. The credential comes
+  // from pairing, the way a real runner gets one: `credential.runner_id` is a
+  // foreign key, so there is no such thing as a token for a machine nobody
+  // paired.
   const plane = await startArtifactPlane(t);
   const session = await openSession(plane);
   const paired = await request<{ token: string | null }>(plane, 'POST', '/v1/runners', {
@@ -666,13 +677,24 @@ test('t422 AT17 — the upload route is not on the runner allowlist', async (t) 
   const token = paired.body.token ?? '';
   assert.notEqual(token, '', 'pairing is where a runner credential comes from');
 
-  const refused = await upload(
+  // The write the allowlist names goes through, with the runner's own token and
+  // nothing else — this is the act t423 granted, exercised end to end.
+  const uploaded = await upload(
     plane,
     session.id,
-    Buffer.from('a runner trying to upload'),
+    Buffer.from('a runner uploading what its session declared'),
     uploadHeaders('runner.txt', 'text/plain'),
     token,
   );
-  assert.equal(refused.status, 403, JSON.stringify(refused.body));
-  assert.equal(refused.body.error, 'out_of_scope_credential');
+  assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body));
+  assert.equal(typeof uploaded.body.id, 'number');
+
+  // The read of the very artifact it just wrote does not: the same gate, the
+  // same code, on a route the list deliberately still omits.
+  const refused = await fetch(`${plane.url}/v1/sessions/${session.id}/artifacts`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const refusedBody = (await refused.json()) as { error: string };
+  assert.equal(refused.status, 403, JSON.stringify(refusedBody));
+  assert.equal(refusedBody.error, 'out_of_scope_credential');
 });

@@ -54,7 +54,7 @@ import type { ExternalOutputWriter } from '../mcp/write-external-outputs.ts';
 import { advanceMainLineForReport, type MainLineAdvancer } from './advance-main-line.ts';
 import { RUNNER_ACTOR_REF, type JobRef } from './blocks.ts';
 import type { ControlPlaneCall } from './control-plane-client.ts';
-import type { InputRequest } from './parse-input-request.ts';
+import type { Field, InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
 import type { PermissionDenial } from './parse-permission-denial.ts';
 import type { ResolvedNode } from './resolve-node.ts';
@@ -471,6 +471,35 @@ export async function finishSession(
 }
 
 /**
+ * The default a batched question carries, derived from what it asked (t480, FR4).
+ *
+ * For one decision `default_answer` is one label the session wrote beside one
+ * question, and that stays exactly as it is. A step that asks six things at once
+ * has a default that is a whole document — and a model asked to hand-write one
+ * consistent with the six controls it has just declared is a model doing
+ * bookkeeping. So it is not asked for: each field states its own `recommended`,
+ * and the default is the map of them.
+ *
+ * `null` when no field states one, never `"{}"`: auto-approval applies this
+ * value as the human's answer, and an empty document is an answer that says
+ * nothing while looking like one.
+ */
+function deriveDefaultAnswer(request: InputRequest): string | null {
+  const options = request.options;
+  if (options === undefined || options.every((item) => typeof item === 'string')) {
+    return request.default ?? null;
+  }
+
+  const recommended: Record<string, string | string[]> = {};
+  for (const field of options as Field[]) {
+    if (field.recommended !== undefined) recommended[field.id] = field.recommended;
+  }
+  // `request.default` is ignored here even when the model wrote one: it was
+  // written without any obligation to agree with the fields beside it.
+  return Object.keys(recommended).length === 0 ? null : JSON.stringify(recommended);
+}
+
+/**
  * Posts the question the SESSION itself wrote (t106, FR1).
  *
  * This POST is what blocks the work, inside the control plane and in the same
@@ -500,7 +529,7 @@ export async function postSessionQuestion(
     context: request.context ?? null,
     options: request.options ?? null,
     recommendation: request.recommendation ?? null,
-    default_answer: request.default ?? null,
+    default_answer: deriveDefaultAnswer(request),
     // The field exists since t102; nothing reads it to answer on its own —
     // the auto-answer policy is still outside the PoC.
     auto_approvable: true,

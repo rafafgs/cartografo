@@ -148,6 +148,16 @@ interface FieldRule {
     | 'integer'
     | 'boolean'
     | 'string-list'
+    /**
+     * The two shapes `input_request.created.options` may carry (t480).
+     *
+     * Per ITEM, not per array: a short label for one decision, or a Field
+     * object when a whole step is asked at once. Homogeneity is something the
+     * two producers uphold by construction — one session's block declares one
+     * or the other — and not something this mirror has any way to know, so it
+     * is not asserted here.
+     */
+    | 'input-request-options'
     | 'usage'
     | 'scalar-map'
     | 'open-object';
@@ -385,7 +395,9 @@ const RULES: Record<string, TypeRule> = {
       kind: required('string', { values: ['question', 'approval'] }),
       question: required('string'),
       context: optional('string'),
-      options: optional('string-list'),
+      // Both shapes, permanently (t480): a flat list of labels for one
+      // decision, or a list of fields for a whole step at once.
+      options: optional('input-request-options'),
       recommendation: optional('string'),
       default_answer: optional('string'),
       auto_approvable: required('boolean'),
@@ -545,6 +557,72 @@ function validateUsage(fieldPath: string, value: unknown, errors: string[]): voi
   }
 }
 
+/** The three controls a batched question may ask for (t480). */
+const FIELD_KINDS: readonly string[] = ['choice', 'multi', 'free_text'];
+
+/** The keys a Field object may carry, and nothing else. */
+const FIELD_KEYS: readonly string[] = ['id', 'label', 'kind', 'options', 'recommended'];
+
+/** Reads a list of non-empty strings, the same rule `'string-list'` applies. */
+function isStringList(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
+}
+
+/**
+ * Validates one item of `input_request.created.options` (t480, FR2).
+ *
+ * A string is the shape this list was born with and keeps forever: one short
+ * label for one decision. An object is a Field — one control of a question that
+ * asks a whole step at once and is answered as a single JSON document keyed by
+ * each field's `id`.
+ *
+ * Nothing here cross-checks `kind` against `options`/`recommended`. It is
+ * tempting — a `multi` with no list to pick from is not much of a control — and
+ * it is the same temptation this file already refused for
+ * `timeout_reason`/`failure_kind`: a rule between two sibling fields is a rule
+ * the schema document does not state, so the log and the mirror would disagree
+ * about what a valid payload is.
+ */
+function validateInputRequestOption(itemPath: string, item: unknown, errors: string[]): void {
+  if (typeof item === 'string') {
+    if (item.length === 0) errors.push(`${itemPath} cannot be an empty string`);
+    return;
+  }
+
+  if (!isObject(item)) {
+    errors.push(`${itemPath} has to be a short label or a field {id, label, kind}`);
+    return;
+  }
+
+  for (const key of ['id', 'label'] as const) {
+    if (typeof item[key] !== 'string' || item[key].length === 0) {
+      errors.push(`${itemPath}.${key} has to be a non-empty string`);
+    }
+  }
+
+  if (typeof item.kind !== 'string' || !FIELD_KINDS.includes(item.kind)) {
+    errors.push(`${itemPath}.kind has to be one of: ${FIELD_KINDS.join(', ')}`);
+  }
+
+  if (item.options !== undefined && !isStringList(item.options)) {
+    errors.push(`${itemPath}.options has to be a list of non-empty strings`);
+  }
+
+  if (
+    item.recommended !== undefined &&
+    !(typeof item.recommended === 'string') &&
+    !isStringList(item.recommended)
+  ) {
+    errors.push(`${itemPath}.recommended has to be a string or a list of strings`);
+  }
+
+  for (const key of Object.keys(item)) {
+    if (!FIELD_KEYS.includes(key)) {
+      errors.push(`${itemPath}.${key} does not exist in the contract of a field`);
+    }
+  }
+}
+
 /** Validates a field of `data` against its rule. */
 function validateField(fieldPath: string, rule: FieldRule, value: unknown, errors: string[]): void {
   switch (rule.shape) {
@@ -590,6 +668,21 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
       if (rule.unique === true && new Set(value).size !== value.length) {
         errors.push(`${fieldPath} cannot repeat items`);
       }
+      return;
+    }
+
+    case 'input-request-options': {
+      // All-or-nothing, on purpose, and deliberately unlike the runner's own
+      // parser — which drops a malformed FIELD and keeps the question. The two
+      // boundaries pay different prices for being strict: a rejected API call
+      // is resubmitted, a rejected session output is a session re-run.
+      if (!Array.isArray(value)) {
+        errors.push(`${fieldPath} has to be a list of labels or of fields`);
+        return;
+      }
+      value.forEach((item, index) =>
+        validateInputRequestOption(`${fieldPath}[${index}]`, item, errors),
+      );
       return;
     }
 

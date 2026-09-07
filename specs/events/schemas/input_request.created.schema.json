@@ -72,9 +72,62 @@
             "null"
           ],
           "items": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "One short label for one decision \u2014 the shape this list has always had, and the shape a single-decision escalation keeps forever."
+              },
+              {
+                "type": "object",
+                "description": "One control of a batched question: a whole step's worth of decisions asked at once, answered as one JSON document keyed by each field's id.",
+                "required": [
+                  "id",
+                  "label",
+                  "kind"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The key this field's value carries in the answer document."
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What the person reads beside the control."
+                  },
+                  "kind": {
+                    "enum": [
+                      "choice",
+                      "multi",
+                      "free_text"
+                    ],
+                    "description": "choice: pick one. multi: pick any number. free_text: type it."
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "What there is to pick from, for a choice or a multi."
+                  },
+                  "recommended": {
+                    "type": [
+                      "string",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "What the agent would pick for this field. The union of these, across the fields that state one, is what default_answer carries \u2014 derived, never hand-written."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
           },
-          "description": "Short labels for the possible decisions."
+          "description": "The decisions being asked for: short labels for one decision, or an ordered list of fields when a whole step is asked at once."
         },
         "recommendation": {
           "type": [

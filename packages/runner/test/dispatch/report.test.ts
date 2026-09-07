@@ -26,6 +26,7 @@ import test from 'node:test';
 
 import type { ControlPlaneCall } from '../../src/dispatch/control-plane-client.ts';
 import type { GraphEdge, ResolvedNode } from '../../src/dispatch/resolve-node.ts';
+import type * as ParseModule from '../../src/dispatch/parse-input-request.ts';
 import type * as ReportModule from '../../src/dispatch/report.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -900,4 +901,110 @@ test('t371 AT-R5 — a dispatch wired without the write step behaves exactly as 
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/transitions');
+});
+
+/* -- t480: a batched question carries its own default, field by field ------- */
+
+/**
+ * `default_answer` stops being something a model hand-writes (t480, FR4).
+ *
+ * For a single decision it never was one: `default` is one short label beside
+ * one question, and the session that wrote the question wrote it in the same
+ * breath. A step that asks six things at once is a different animal — the
+ * default is a whole document, and a model asked to keep a hand-written one
+ * consistent with the six controls it just declared is a model being trusted
+ * with bookkeeping. So it is derived instead: each field states its own
+ * `recommended`, and the default is the map of them.
+ *
+ * When no field states one there is no default at all — `null`, never `"{}"`,
+ * which auto-approval would happily apply as an answer that says nothing.
+ */
+const FIELDS: ParseModule.Field[] = [
+  { id: 'scope', label: 'Which scope?', kind: 'choice', options: ['a', 'b'], recommended: 'a' },
+  { id: 'areas', label: 'Which areas?', kind: 'multi', recommended: ['api', 'screen'] },
+];
+
+test('t480 AT9 — `default_answer` is the JSON map of every field that recommends', async () => {
+  const { postSessionQuestion } = await loadReport();
+  const { sent, call } = recorder();
+
+  await postSessionQuestion(call, JOB, 31, { question: 'Step 4 of 7', options: FIELDS });
+
+  const posted = body(sent[0]);
+  assert.deepEqual(posted.options, FIELDS, 'the fields travel as they were asked');
+  assert.equal(posted.default_answer, JSON.stringify({ scope: 'a', areas: ['api', 'screen'] }));
+});
+
+test('t480 AT9 — a field with no `recommended` is simply absent from the map', async () => {
+  const { postSessionQuestion } = await loadReport();
+  const { sent, call } = recorder();
+
+  await postSessionQuestion(call, JOB, 31, {
+    question: 'Step 4 of 7',
+    options: [...FIELDS, { id: 'depth', label: 'How deep?', kind: 'free_text' }],
+  });
+
+  assert.equal(
+    body(sent[0]).default_answer,
+    JSON.stringify({ scope: 'a', areas: ['api', 'screen'] }),
+  );
+});
+
+test('t480 AT10 — no field recommends anything, so there is no default at all', async () => {
+  const { postSessionQuestion } = await loadReport();
+  const { sent, call } = recorder();
+
+  await postSessionQuestion(call, JOB, 31, {
+    question: 'Step 4 of 7',
+    options: [
+      { id: 'scope', label: 'Which scope?', kind: 'choice', options: ['a', 'b'] },
+      { id: 'depth', label: 'How deep?', kind: 'free_text' },
+    ],
+  });
+
+  assert.equal(
+    body(sent[0]).default_answer,
+    null,
+    'an empty document is not a default: auto-approval would apply it as an answer',
+  );
+});
+
+test('t480 AT11 — a hand-written `default` beside fields is ignored', async () => {
+  const { postSessionQuestion } = await loadReport();
+  const { sent, call } = recorder();
+
+  await postSessionQuestion(call, JOB, 31, {
+    question: 'Step 4 of 7',
+    options: FIELDS,
+    default: 'whatever the model happened to type',
+  });
+
+  assert.equal(
+    body(sent[0]).default_answer,
+    JSON.stringify({ scope: 'a', areas: ['api', 'screen'] }),
+  );
+});
+
+test('t480 AT12 — a legacy flat `options` still posts the hand-written default', async () => {
+  const { postSessionQuestion } = await loadReport();
+  const { sent, call } = recorder();
+
+  await postSessionQuestion(call, JOB, 31, {
+    question: 'Renumber the migration to 0003?',
+    options: ['Renumber', 'Keep'],
+    default: 'Keep 0002',
+  });
+
+  const posted = body(sent[0]);
+  assert.deepEqual(posted.options, ['Renumber', 'Keep']);
+  assert.equal(posted.default_answer, 'Keep 0002');
+
+  // And so does the empty array, which is a flat list and not "no fields".
+  const second = recorder();
+  await postSessionQuestion(second.call, JOB, 31, {
+    question: 'Which one?',
+    options: [],
+    default: 'Keep 0002',
+  });
+  assert.equal(body(second.sent[0]).default_answer, 'Keep 0002');
 });

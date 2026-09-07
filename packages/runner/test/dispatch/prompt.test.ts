@@ -82,6 +82,10 @@ function question(overrides: Partial<PromptModule.Question> = {}): PromptModule.
     answer: 'Keep 0002',
     answered_by: 'rafael',
     source: 'user',
+    // The shape the question was ASKED in (t480). `null` is every question
+    // recorded before there was anything else to be, and it is what the
+    // one-line rendering below keys off.
+    options: null,
     ...overrides,
   };
 }
@@ -187,4 +191,119 @@ test('AT6 — an event that is not `input_request.created` renders nothing', asy
   );
 
   assert.ok(!prompt.includes(ANSWERED_HEADING));
+});
+
+/* -- t480: an answer that is a whole document, rendered field by field ------ */
+
+/**
+ * A batched question comes back as one JSON document (t480, FR5).
+ *
+ * The answer column is, and stays, a plain string — a document answer is a
+ * JSON-stringified one. So the prompt cannot read the ANSWER to decide how to
+ * render it: sniffing would turn a person who typed `{"ok":1}` into a form.
+ * What it reads is the QUESTION's own `options`, which is the only place that
+ * knows whether a form was ever asked for, and which supplies the labels and
+ * the order the bullets are drawn in.
+ *
+ * Everything else — a legacy flat list, no options at all, a document that
+ * does not parse — renders exactly as it did before, and nothing here throws.
+ */
+const FIELDS: PromptModule.Question['options'] = [
+  { id: 'scope', label: 'Which scope?', kind: 'choice' },
+  { id: 'areas', label: 'Which areas?', kind: 'multi' },
+];
+
+test('t480 AT13 — a document answer renders one bullet per field, in declared order', async () => {
+  const { buildPrompt } = await loadPrompt();
+
+  const prompt = buildPrompt(
+    JOB,
+    [asked(1)],
+    [
+      question({
+        id: 1,
+        question: 'Step 4 of 7',
+        options: FIELDS,
+        answer: JSON.stringify({ areas: ['api', 'screen'], scope: 'one package' }),
+      }),
+    ],
+  );
+
+  assert.ok(prompt.includes('- **You asked:** Step 4 of 7'));
+  assert.ok(prompt.includes('  **rafael replied:**'));
+  assert.ok(prompt.includes('  - **Which scope?:** one package'));
+  assert.ok(prompt.includes('  - **Which areas?:** api, screen'));
+  // The order is the one the question DECLARED, never the document's key order.
+  assert.ok(prompt.indexOf('Which scope?') < prompt.indexOf('Which areas?'));
+  // The raw document is not also dumped on the opener line.
+  assert.ok(!prompt.includes('{"areas"'));
+});
+
+test('t480 AT14 — a field with no key in the document is skipped, not drawn blank', async () => {
+  const { buildPrompt } = await loadPrompt();
+
+  const prompt = buildPrompt(
+    JOB,
+    [asked(1)],
+    [question({ id: 1, options: FIELDS, answer: JSON.stringify({ scope: 'one package' }) })],
+  );
+
+  assert.ok(prompt.includes('  - **Which scope?:** one package'));
+  assert.ok(!prompt.includes('Which areas?'));
+});
+
+test('t480 AT15 — a key naming no declared field renders after them, by its raw name', async () => {
+  const { buildPrompt } = await loadPrompt();
+
+  const prompt = buildPrompt(
+    JOB,
+    [asked(1)],
+    [
+      question({
+        id: 1,
+        options: FIELDS,
+        answer: JSON.stringify({ notes: 'and one more thing', scope: 'one package' }),
+      }),
+    ],
+  );
+
+  assert.ok(prompt.includes('  - **Which scope?:** one package'));
+  assert.ok(prompt.includes('  - **notes:** and one more thing'));
+  assert.ok(
+    prompt.indexOf('Which scope?') < prompt.indexOf('notes'),
+    'what was asked comes first; what was volunteered follows',
+  );
+});
+
+test('t480 AT16 — an answer that is not a JSON object falls back to the one line', async () => {
+  const { buildPrompt } = await loadPrompt();
+
+  for (const answer of ['Keep 0002', '{"unterminated', '["a","list"]', '7', 'null', '']) {
+    const prompt = buildPrompt(JOB, [asked(1)], [question({ id: 1, options: FIELDS, answer })]);
+
+    assert.ok(prompt.includes(`  **rafael replied:** ${answer}`), `raw answer for ${answer}`);
+    assert.ok(!prompt.includes('  - **Which scope?:**'), `no bullets for ${answer}`);
+  }
+});
+
+test('t480 AT17 — a legacy or absent `options` never renders bullets, whatever the answer is', async () => {
+  const { buildPrompt } = await loadPrompt();
+
+  const document = JSON.stringify({ scope: 'one package' });
+
+  for (const options of [
+    null,
+    ['Renumber', 'Keep'],
+    [],
+    // Mixed: not every item is Field-shaped, so it is not a form.
+    [{ id: 'scope', label: 'Which scope?', kind: 'choice' }, 'Keep'],
+  ] as PromptModule.Question['options'][]) {
+    const prompt = buildPrompt(JOB, [asked(1)], [question({ id: 1, options, answer: document })]);
+
+    assert.ok(
+      prompt.includes(`  **rafael replied:** ${document}`),
+      `the raw answer is the whole rendering for ${JSON.stringify(options)}`,
+    );
+    assert.ok(!prompt.includes('- **Which scope?:**'));
+  }
 });

@@ -35,6 +35,7 @@
  */
 
 import type { Job } from './options.ts';
+import type { Field } from './parse-input-request.ts';
 
 /**
  * One envelope of the work's timeline.
@@ -72,6 +73,89 @@ export interface Question {
    * never seen is a person's answer, not a crash.
    */
   source: string | null;
+  /**
+   * The shape the question was ASKED in (t480).
+   *
+   * Read here, and not the answer, because only the question knows whether a
+   * form was ever drawn: the answer column is a plain string either way, and a
+   * document answer is a JSON-stringified one. Sniffing the answer would turn a
+   * person who happened to type `{"ok": 1}` into a form nobody asked for.
+   *
+   * `null` for every question recorded before there was anything else to be,
+   * and a flat `string[]` for every single-decision escalation from here on.
+   */
+  options: string[] | Field[] | null;
+}
+
+/** Is this the ordered list of fields of a batched question, and not labels? */
+function isFieldList(options: Question['options']): options is Field[] {
+  return (
+    Array.isArray(options) &&
+    options.length > 0 &&
+    options.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as Field).id === 'string' &&
+        typeof (item as Field).label === 'string' &&
+        typeof (item as Field).kind === 'string',
+    )
+  );
+}
+
+/** Reads a document answer, or `null` when it is not one. Never throws. */
+function parseDocument(answer: string | null): Record<string, unknown> | null {
+  if (answer === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(answer);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
+}
+
+/** One value of the document, as a line of prose. */
+function renderValue(value: unknown): string {
+  return Array.isArray(value) ? value.map((item) => String(item)).join(', ') : String(value);
+}
+
+/**
+ * What came back, as the question's own shape says to read it (t480, FR5).
+ *
+ * A batched question was several decisions asked at once, and the document it
+ * came back as is unreadable to a model that has to re-derive which value
+ * belonged to which control. So the labels are put back: one bullet per field,
+ * in the order the question declared them, which is also the order it was
+ * answered in even though a JSON object's keys carry no order at all.
+ *
+ * Everything the pair does not fit — a legacy list of labels, no options at
+ * all, an answer that is not a document — falls back to the one line this
+ * function has always rendered, unchanged.
+ */
+function renderAnswer(question: Question, who: string): string[] {
+  const document = isFieldList(question.options) ? parseDocument(question.answer) : null;
+  if (document === null) return [`  **${who} replied:** ${question.answer ?? ''}`];
+
+  const fields = question.options as Field[];
+  const declared = new Set(fields.map((field) => field.id));
+  const lines = [`  **${who} replied:**`];
+
+  // A field with no key in the document was not answered, and an empty bullet
+  // claims otherwise.
+  for (const field of fields) {
+    if (field.id in document) {
+      lines.push(`  - **${field.label}:** ${renderValue(document[field.id])}`);
+    }
+  }
+  // Anything volunteered on top of what was asked is kept, under its own raw
+  // name — there is no label for it, and dropping it would lose an answer.
+  for (const [key, value] of Object.entries(document)) {
+    if (!declared.has(key)) lines.push(`  - **${key}:** ${renderValue(value)}`);
+  }
+
+  return lines;
 }
 
 /**
@@ -119,11 +203,7 @@ export function buildPrompt(
     for (const question of alreadyClosed) {
       const who =
         question.source === 'auto' ? 'the automatic answer' : (question.answered_by ?? 'the person');
-      parts.push(
-        '',
-        `- **You asked:** ${question.question}`,
-        `  **${who} replied:** ${question.answer ?? ''}`,
-      );
+      parts.push('', `- **You asked:** ${question.question}`, ...renderAnswer(question, who));
     }
   }
 

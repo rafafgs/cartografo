@@ -785,3 +785,100 @@ test('t339 — job.unblocked accepts an optional reason, and still nothing else'
   refuses('job.unblocked', { reason: '' }, 'reason');
   refuses('job.unblocked', { reason: 'ok', consecutive_failures: 3 }, 'consecutive_failures');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t480 — `input_request.created.options` learns the batched Field shape.      */
+/* -------------------------------------------------------------------------- */
+
+/** The payload every case below decorates with an `options` of its own. */
+const BATCHED = { job_id: 1, kind: 'question', question: 'Step 4 of 7', auto_approvable: false };
+
+test('t480 AT1 — a Field-shaped option is accepted and stored as it arrived', () => {
+  const options = [
+    { id: 'scope', label: 'Which scope?', kind: 'choice', options: ['a', 'b'], recommended: 'a' },
+  ];
+
+  const normalized = requireValidData('input_request.created', { ...BATCHED, options });
+
+  assert.deepEqual(normalized.options, options);
+});
+
+test('t480 AT2 — a Field missing `label` refuses the whole write, naming the item', () => {
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: 'scope', kind: 'choice' }] },
+    'data.options[0].label',
+  );
+});
+
+test('t480 AT3 — a `kind` outside the closed set refuses the write, naming the item', () => {
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: 'scope', label: 'Which scope?', kind: 'yesno' }] },
+    'data.options[0].kind',
+  );
+});
+
+test('t480 AT4 — the legacy flat list of labels still validates, unchanged', () => {
+  assert.deepEqual(
+    requireValidData('input_request.created', { ...BATCHED, options: ['a', 'b'] }).options,
+    ['a', 'b'],
+  );
+  // And the rules that list already carried are the same ones: an empty label
+  // is still not a label, and a non-string that is not a Field is still refused.
+  refuses('input_request.created', { ...BATCHED, options: ['a', ''] }, 'data.options');
+  refuses('input_request.created', { ...BATCHED, options: 'not a list' }, 'data.options');
+});
+
+test('t480 FR2 — the three kinds pass, and a Field is closed to unknown keys', () => {
+  for (const kind of ['choice', 'multi', 'free_text']) {
+    const options = [{ id: 'f', label: 'Which?', kind }];
+    assert.deepEqual(requireValidData('input_request.created', { ...BATCHED, options }).options, [
+      { id: 'f', label: 'Which?', kind },
+    ]);
+  }
+
+  // `recommended` is a string OR a list of strings; `options` is a list of
+  // strings; anything else on the object is not part of the contract.
+  assert.deepEqual(
+    requireValidData('input_request.created', {
+      ...BATCHED,
+      options: [{ id: 'f', label: 'Which?', kind: 'multi', recommended: ['a', 'b'] }],
+    }).options,
+    [{ id: 'f', label: 'Which?', kind: 'multi', recommended: ['a', 'b'] }],
+  );
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: '', label: 'Which?', kind: 'choice' }] },
+    'data.options[0].id',
+  );
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: 'f', label: 'Which?', kind: 'choice', options: [1] }] },
+    'data.options[0].options',
+  );
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: 'f', label: 'Which?', kind: 'choice', recommended: 3 }] },
+    'data.options[0].recommended',
+  );
+  refuses(
+    'input_request.created',
+    { ...BATCHED, options: [{ id: 'f', label: 'Which?', kind: 'choice', placeholder: 'x' }] },
+    'data.options[0].placeholder',
+  );
+});
+
+test('t480 FR2 — the offending index is the one named, not the first', () => {
+  refuses(
+    'input_request.created',
+    {
+      ...BATCHED,
+      options: [
+        { id: 'scope', label: 'Which scope?', kind: 'choice' },
+        { id: 'depth', kind: 'choice' },
+      ],
+    },
+    'data.options[1].label',
+  );
+});

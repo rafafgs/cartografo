@@ -175,3 +175,109 @@ test('options that are not a list of strings are dropped, not fatal', async () =
 
   assert.deepEqual(parsed, { question: 'Which one?' });
 });
+
+/* -- t480: `options` may carry a whole step's worth of decisions ------------ */
+
+/**
+ * The batched shape (t480, FR3).
+ *
+ * `options` was a list of one-click labels for ONE decision. A step of the
+ * interview asks several at once, so an item may instead be a Field — a named,
+ * labelled control the human fills in — and the whole step comes back as one
+ * JSON document. Both shapes travel on the same key, permanently: a single
+ * decision is still a flat list of strings and nothing about it changes.
+ *
+ * The posture on a malformed item is the one the flat list already had, moved
+ * down one level: an unusable FIELD is dropped and the question still stands,
+ * because losing a control is cheaper than losing the escalation.
+ */
+const SCOPE = Object.freeze({
+  id: 'scope',
+  label: 'Which scope?',
+  kind: 'choice',
+  options: ['the whole repo', 'one package'],
+  recommended: 'one package',
+});
+
+const DEPTH = Object.freeze({
+  id: 'depth',
+  label: 'How deep should it go?',
+  kind: 'free_text',
+});
+
+test('t480 AT5 — two well-formed fields parse as fields', async () => {
+  const { parseInputRequest } = await loadParser();
+
+  const parsed = parseInputRequest(
+    block(JSON.stringify({ question: 'Step 4 of 7', options: [SCOPE, DEPTH] })),
+  );
+
+  assert.deepEqual(parsed, { question: 'Step 4 of 7', options: [SCOPE, DEPTH] });
+});
+
+test('t480 AT6 — a malformed item is dropped, the well-formed field survives', async () => {
+  const { parseInputRequest } = await loadParser();
+
+  for (const broken of [
+    { id: 'depth', kind: 'choice' },
+    { id: 'depth', label: 'How deep?' },
+    { id: '', label: 'How deep?', kind: 'choice' },
+    { id: 'depth', label: 'How deep?', kind: 'yesno' },
+    'a stray string sitting among field objects',
+    null,
+    ['nested'],
+  ]) {
+    assert.deepEqual(
+      parseInputRequest(
+        block(JSON.stringify({ question: 'Step 4 of 7', options: [SCOPE, broken] })),
+      ),
+      { question: 'Step 4 of 7', options: [SCOPE] },
+      `a well-formed field must survive beside ${JSON.stringify(broken)}`,
+    );
+  }
+});
+
+test('t480 AT6 — a bad `options`/`recommended` costs the field only those keys', async () => {
+  const { parseInputRequest } = await loadParser();
+
+  const parsed = parseInputRequest(
+    block(
+      JSON.stringify({
+        question: 'Step 4 of 7',
+        options: [{ ...SCOPE, options: 'not a list', recommended: 7 }],
+      }),
+    ),
+  );
+
+  assert.deepEqual(parsed, {
+    question: 'Step 4 of 7',
+    options: [{ id: 'scope', label: 'Which scope?', kind: 'choice' }],
+  });
+});
+
+test('t480 AT7 — an array with nothing well-formed in it drops `options` entirely', async () => {
+  const { parseInputRequest } = await loadParser();
+
+  assert.deepEqual(
+    parseInputRequest(
+      block(JSON.stringify({ question: 'Which one?', options: [{ id: 'depth' }, 7, null] })),
+    ),
+    { question: 'Which one?' },
+    'parity with the flat list: a wholly malformed `options` is dropped, not fatal',
+  );
+});
+
+test('t480 AT8 — an all-strings array is still a flat list of labels', async () => {
+  const { parseInputRequest } = await loadParser();
+
+  assert.deepEqual(
+    parseInputRequest(block(JSON.stringify({ question: 'Which one?', options: ['Keep', 'Drop'] }))),
+    { question: 'Which one?', options: ['Keep', 'Drop'] },
+  );
+  // The empty array is an all-strings array, and it stays one: it has always
+  // been kept rather than dropped, and nothing here reads it as "no fields".
+  assert.deepEqual(
+    parseInputRequest(block(JSON.stringify({ question: 'Which one?', options: [] }))),
+    { question: 'Which one?', options: [] },
+  );
+});

@@ -290,5 +290,5 @@ is the only file to adjust.
 | Forking a variant | It is born of a proposal with evidence (D13), not of synthesis. |
 | Importing an external skill | That is D4's gate, with human review and contract derivation. Here the native registry is only read. |
 | Session telemetry (`sessao`/`evento`) | There is no `trabalho` and no execution to hang the session on. It arrives when there is a second consumer of the synthesis flow — the rule of two consumers. |
-| A multi-turn conversation with the copilot | One session only: resuming is outside `EngineAdapter` v0 ([`engine-adapter.md`](../formats/engine-adapter.md)). Editing the draft is the next turn, and it belongs to the person. |
+| A multi-turn conversation with the copilot | Not here, and no longer a gap: the multi-turn path is the **interview** ([`interview.md`](interview.md)), which is a job on the `map-design` class rather than a second mode of this command. It needs no session resume either — asking blocks the job on its node, and answering redispatches it with the whole exchange in the prompt. This command stays one session, and editing its draft belongs to the person. |
 | A screen | CLI only, like the runner's other commands. |

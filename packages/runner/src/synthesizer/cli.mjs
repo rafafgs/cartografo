@@ -64,7 +64,10 @@ async function main() {
   return await runSynthesis({
     declaration: parsed.options.declaration,
     className: parsed.options.className,
-    client: createControlPlaneReader(parsed.options.url, { token: parsed.options.token }),
+    client: createControlPlaneReader(parsed.options.url, {
+      token: parsed.options.token,
+      projectId: parsed.options.projectId,
+    }),
     adapter,
     workingDir,
     outputPath: parsed.options.outputPath,

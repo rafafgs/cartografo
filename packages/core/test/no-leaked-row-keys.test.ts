@@ -101,6 +101,10 @@ const JOB_KEYS = Object.freeze([
   'block_reason',
   'graph_version_id',
   'completed',
+  // Derived at read time and stored nowhere, like `completed` above it (t415):
+  // the six states of RF-30 and the instant the current one started.
+  'state',
+  'state_since',
   'created_at',
   'updated_at',
 ]);

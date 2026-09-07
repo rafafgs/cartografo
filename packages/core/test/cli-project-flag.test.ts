@@ -22,9 +22,11 @@ import test from 'node:test';
 
 import {
   FACTORY_BUNDLE,
+  importedClasses,
   temporaryArea,
   looksLikeStackTrace,
   runCli,
+  SHIPPED_CLASS,
   startControlPlane,
   type RunningControlPlane,
 } from './cli-support.ts';
@@ -58,17 +60,14 @@ test(
     assert.equal(imported.code, 0, `stdout:\n${imported.stdout}\nstderr:\n${imported.stderr}`);
 
     // The default project saw none of it: the scope is a partition, not a label.
-    const inDefault = (await (await fetch(`${cp.url}/v1/classes`)).json()) as {
-      classes: { class: string }[];
-    };
-    assert.deepEqual(inDefault.classes, [], 'nothing was imported into project 1');
-
-    const inSecond = (await (await fetch(`${cp.url}/v1/classes?project_id=2`)).json()) as {
-      classes: { class: string }[];
-    };
+    // Minus the interview `up` registers into project 1 on its own (t360) —
+    // which is itself the sharper form of the claim, since it did NOT reach
+    // project 2 either.
+    assert.deepEqual(await importedClasses(cp.url), [], 'nothing was imported into project 1');
     assert.deepEqual(
-      inSecond.classes.map((entry) => entry.class),
+      await importedClasses(cp.url, 2),
       [FACTORY_CLASS],
+      'and the interview of project 1 did not cross into project 2',
     );
 
     const exportedFile = path.join(base, 'exported.graph.json');
@@ -106,13 +105,7 @@ test('t354 — --project takes a NAME and resolves it once', { timeout: 300_000 
   );
   assert.equal(imported.code, 0, `stdout:\n${imported.stdout}\nstderr:\n${imported.stderr}`);
 
-  const inSecond = (await (await fetch(`${cp.url}/v1/classes?project_id=2`)).json()) as {
-    classes: { class: string }[];
-  };
-  assert.deepEqual(
-    inSecond.classes.map((entry) => entry.class),
-    [FACTORY_CLASS],
-  );
+  assert.deepEqual(await importedClasses(cp.url, 2), [FACTORY_CLASS]);
 });
 
 test('t354 — a --project nobody declared fails with a message, not a stack', { timeout: 180_000 }, async (t) => {
@@ -135,19 +128,38 @@ test('t354 — status --json reports classes and projects apart', { timeout: 180
   const result = await runCli(['status', '--json', '--url', cp.url], { token: cp.token });
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
 
-  // Byte for byte, like `cli-status.test.ts`'s pin: this is machine output, and
-  // a field that silently appears or disappears breaks its consumers. The
-  // project list carries `id` and `name` only — `created_at` is a clock, and a
-  // pinned shape cannot hold one.
-  assert.equal(
-    result.stdout.trim(),
-    '{"server":"ok","classes":[],"projects":[{"id":1,"name":"default"},{"id":2,"name":"second"}],' +
-      '"jobs":0,"pendingInputRequests":0}',
-  );
+  // Key for key, like `cli-status.test.ts`'s pin: this is machine output, and a
+  // field that silently appears or disappears breaks its consumers. The project
+  // list carries `id` and `name` only — `created_at` is a clock, and a pinned
+  // shape cannot hold one. The class list is read by NAME rather than pinned
+  // byte for byte, because since t360 it holds the interview `up` registers on
+  // its own, whose current version is a hash no fixture can spell.
+  const report = JSON.parse(result.stdout.trim()) as {
+    server: string;
+    classes: { class: string }[];
+    projects: { id: number; name: string }[];
+    jobs: number;
+    pendingInputRequests: number;
+  };
+  assert.deepEqual(Object.keys(report), [
+    'server',
+    'classes',
+    'projects',
+    'jobs',
+    'pendingInputRequests',
+  ]);
+  assert.equal(report.server, 'ok');
+  assert.deepEqual(report.classes.map((entry) => entry.class), [SHIPPED_CLASS]);
+  assert.deepEqual(report.projects, [
+    { id: 1, name: 'default' },
+    { id: 2, name: 'second' },
+  ]);
+  assert.equal(report.jobs, 0);
+  assert.equal(report.pendingInputRequests, 0);
 
   const table = await runCli(['status', '--url', cp.url], { token: cp.token });
   assert.equal(table.code, 0, `stderr:\n${table.stderr}`);
-  assert.match(table.stdout, /^classes: 0$/m, 'the graph classes are called classes now');
+  assert.match(table.stdout, /^classes: 1$/m, 'the graph classes are called classes now');
   assert.match(table.stdout, /^projects: 2$/m);
   assert.match(table.stdout, /second/);
 });

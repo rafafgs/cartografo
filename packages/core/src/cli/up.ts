@@ -59,8 +59,11 @@ import type { Database } from '../db/connection.ts';
 import { READY_EVENT, start } from '../index.ts';
 import { DEFAULT_PROJECT } from '../repositories/common.ts';
 import { issueCredential, revokeCredential } from '../repositories/credentials.ts';
+import { getGraph } from '../repositories/graphs.ts';
 import { getSettings } from '../repositories/settings.ts';
-import { UsageError } from './url.ts';
+import { EXAMPLES_ROOT_ENV } from '../routes/examples.ts';
+import { runImport } from './import.ts';
+import { UsageError, useToken } from './url.ts';
 
 /**
  * The screen's default port, restated (`packages/screen/src/router.ts:143`).
@@ -86,6 +89,48 @@ export const RUNNER_BINARY = 'cartografo-runner';
 
 /** The two signals that ask this command to stop. */
 const STOP_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+
+/** The class the interview travels on (t360). */
+export const MAP_DESIGN_CLASS = 'map-design';
+
+/**
+ * The environment variable that says where the shipped bundles are, restated.
+ *
+ * Re-exported rather than redeclared: `routes/examples.ts` already owns the
+ * question "where does this installation keep its factory bundles?", and two
+ * names for one directory is how a test points at a fixture the product does
+ * not read.
+ */
+export { EXAMPLES_ROOT_ENV };
+
+/**
+ * Where `map-design` lives on this installation's disk (t360, FR1).
+ *
+ * The operator's `CARTOGRAFO_EXAMPLES_ROOT` first, so that whoever repointed
+ * the examples root repointed this too — it is the same directory of bundles.
+ * Otherwise the repository's own `factory-graphs/`, resolved **relative to this
+ * module** and not to `process.cwd()`: `up` is a foreground command somebody
+ * runs from wherever they happen to be standing, and a cwd-relative default
+ * would make the interview appear or not depending on which directory the
+ * terminal was in.
+ *
+ * A packaged install has no `factory-graphs/` at all — it is not in
+ * `package.json`'s `files` — so this path simply does not exist there, and the
+ * import that follows says so on stderr and starts the product anyway. That is
+ * the honest behaviour for a release that shipped without the bundle; shipping
+ * it is a packaging change, not this command's.
+ *
+ * @param env Environment to read the override from.
+ * @returns Absolute path of the bundle directory, existing or not.
+ */
+export function mapDesignBundle(env: NodeJS.ProcessEnv = process.env): string {
+  const declared = env[EXAMPLES_ROOT_ENV]?.trim();
+  const root =
+    declared === undefined || declared === ''
+      ? path.resolve(import.meta.dirname, '..', '..', '..', '..', 'factory-graphs')
+      : path.resolve(declared);
+  return path.join(root, MAP_DESIGN_CLASS);
+}
 
 /**
  * Identity the provisioning commit carries, on its own command line.
@@ -222,6 +267,72 @@ export function ensureDefaultWorkspace(
   );
 
   return true;
+}
+
+/**
+ * Puts the interview in the box, once (t360, FR1).
+ *
+ * The product's own answer to "I have a problem and no map for it" is a job on
+ * the `map-design` class, and a class that is not registered cannot carry a
+ * job. Nobody is going to type `cartografo import factory-graphs/map-design`
+ * before their first interview — they do not know the bundle exists — so the
+ * first startup that finds the class missing imports it.
+ *
+ * **Over HTTP, through `runImport`, and not through a repository call.** The
+ * registration path a bundle goes through is the one every other bundle goes
+ * through: the local bundle check, then the manifests, then the graph, each
+ * re-verified by the registry on the way in (D4). A second registration path
+ * here would be a second thing to keep in step with the first, and it would
+ * skip the pin check that is the whole reason the first one exists.
+ *
+ * **`getGraph` and not a `try`/`ignore` on a 409.** The check is a read of the
+ * lineage, straight off the open handle — this process IS the single writer
+ * (D1), and asking itself over the network for a row it is holding would be
+ * ceremony, the same posture `ensureDefaultWorkspace` already takes. It also
+ * makes the second startup silent instead of noisy: a re-import of an identical
+ * bundle is harmless, but it prints a paragraph nobody asked for.
+ *
+ * **Never fatal.** A bundle that does not parse, a registry that refuses one of
+ * its manifests, a `factory-graphs/` that a packaged install does not carry:
+ * each is one line on stderr and a product that still comes up. A broken bundle
+ * in some future release must not be the reason somebody's control plane will
+ * not start.
+ *
+ * @param db The open database — read only, and only to decide whether to act.
+ * @param url Base URL of the control plane that just came up.
+ * @param token Credential the import presents, for the life of this call.
+ * @param env Environment the bundle path is resolved from.
+ * @returns `true` when THIS call imported it; `false` when there was nothing to
+ *   do or the attempt failed.
+ */
+export async function ensureInterviewBundle(
+  db: Database,
+  url: string,
+  token: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  if (getGraph(db, MAP_DESIGN_CLASS, DEFAULT_PROJECT) !== undefined) return false;
+
+  const bundle = mapDesignBundle(env);
+  try {
+    useToken(token);
+    const code = await runImport({ path: bundle, url, projectId: DEFAULT_PROJECT });
+    if (code === 0) return true;
+    process.stderr.write(
+      `cartografo: could not import the ${MAP_DESIGN_CLASS} bundle from ${bundle} — the control plane refused it\n`,
+    );
+  } catch (error) {
+    process.stderr.write(
+      `cartografo: could not import the ${MAP_DESIGN_CLASS} bundle from ${bundle} — ${(error as Error).message}\n`,
+    );
+  } finally {
+    // `cli/url.ts` holds the credential in a module-level variable, for the
+    // whole process. Ours belongs to this call and to nothing else, so it is
+    // put back: a token left behind is one a later command would present after
+    // the shutdown revoked it.
+    useToken(undefined);
+  }
+  return false;
 }
 
 /**
@@ -409,6 +520,36 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
 
   const controlPlane = await startControlPlane(env);
 
+  /**
+   * The credential of this startup, minted before anything announces itself.
+   *
+   * Since t360 it is minted whether or not there are children to hand it to:
+   * the auto-import below is a client of this control plane like any other
+   * (D1), and a client needs a credential. Until this ficha the rule was
+   * "nobody to hand it to is nobody to mint it for", and `--no-runner
+   * --no-screen` left the table empty. What has not changed is the part that
+   * mattered: it is never printed, and it is always revoked on the way out.
+   */
+  let credential: { id: number; token: string } | null = null;
+
+  try {
+    credential = issueCredential(controlPlane.db, { type: 'user' });
+
+    // BEFORE the readiness line, and that placement is the whole point: a
+    // supervisor — or the test harness — reads that line and starts using the
+    // control plane at once, and a class that arrives a beat later is a class
+    // the first request does not find. The import is one local HTTP round trip
+    // against a server that is already listening, and it happens at most once
+    // per database (t360, FR1).
+    await ensureInterviewBundle(controlPlane.db, controlPlane.url, credential.token, env);
+  } catch (error) {
+    // Nothing has been announced and nothing has been spawned: the only things
+    // to undo are the credential and the lock.
+    if (credential !== null) revokeCredential(controlPlane.db, credential.id);
+    await controlPlane.shutdown();
+    throw error;
+  }
+
   // The same five keys `main()` prints, and deliberately the same five: a
   // supervisor, or `startup.test.ts`, reads this line to know the control plane
   // is up, and the command growing two children is not a reason for it to
@@ -443,14 +584,10 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
   });
 
   const children: ChildHandle[] = [];
-  let credential: { id: number; token: string } | null = null;
+  const token = credential.token;
 
   try {
-    // Nobody to hand it to is nobody to mint it for: `--no-runner --no-screen`
-    // is the control plane on its own, and it needs no credential of ours.
     if (flags.screen || flags.runner) {
-      credential = issueCredential(controlPlane.db, { type: 'user' });
-
       // Straight off the open handle, with no HTTP round trip: this process IS
       // the single writer (D1), and asking itself over the network for a row it
       // is holding would be ceremony.
@@ -461,7 +598,7 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
       const childEnv: NodeJS.ProcessEnv = {
         ...env,
         [URL_ENV]: controlPlane.url,
-        [TOKEN_ENV]: credential.token,
+        [TOKEN_ENV]: token,
       };
 
       // No arguments for either, and that is the whole of FR6: the runner takes

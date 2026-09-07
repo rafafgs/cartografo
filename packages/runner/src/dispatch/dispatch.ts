@@ -84,11 +84,12 @@
  * compared.
  *
  * **And a failure BEFORE the session is a block, not a throw** (t252, t270,
- * t272). Seven of the ways the window below can fail reproduce identically on
- * every retry — a dangling `graph_version_id`, an engine with no route, an
+ * t272, t370). Eight of the ways the window below can fail reproduce identically
+ * on every retry — a dangling `graph_version_id`, an engine with no route, an
  * unregistered skill, a pin that stopped matching, a placeholder that does not
- * resolve, a test bench `git` cannot read, and a permission policy the adapter
- * refuses to open a session under. Thrown, each of
+ * resolve, a test bench `git` cannot read, a permission policy the adapter
+ * refuses to open a session under, and an external input no MCP server would
+ * hand over. Thrown, each of
  * them was a job retried every two seconds forever, invisibly, with the rest of
  * the project's queue stuck behind it. So they stop the work with a reason a
  * person can read and resolve `{blocked: true}`.
@@ -134,6 +135,10 @@
 
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import { SessionStartError } from '../engine/types.ts';
+// Straight from `blocks.ts` and not through `report.ts`'s re-export, the way
+// `advance-main-line.ts` already imports its own block: it keeps `report.ts`
+// untouched by this ficha, which is the surface a sibling one is editing.
+import { blockForArtifactRefusal } from './blocks.ts';
 import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
@@ -159,10 +164,12 @@ import {
 } from './report.ts';
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy } from './resolve-node.ts';
-import { resolveSessionPlan, type SessionPlan } from './resolve-session-plan.ts';
+import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
 import { createSessionCollector } from './session-collector.ts';
+import { openSession, type Session } from './open-session.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
+import { uploadArtifacts } from './upload-artifacts.ts';
 
 /**
  * The surface this module has always had, whole, from the file that lists it
@@ -174,11 +181,6 @@ import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
  * anybody edit an import.
  */
 export * from './surface.ts';
-
-/** A session, as `POST /v1/sessions` gives it back. */
-interface Session {
-  id: number;
-}
 
 /**
  * Builds the controller's `dispatch` callback (t103), with a real engine behind
@@ -234,10 +236,10 @@ export function createClaudeCodeDispatch(
     // The whole window before a worktree exists, under ONE catch (t252). What it
     // reads is `resolve-session-plan.ts`, which is a straight line of reads and
     // owns none of this decision; which of its failures blocks the work instead
-    // of throwing — and why exactly seven — is the paragraph at the top of this
+    // of throwing — and why exactly eight — is the paragraph at the top of this
     // file, and where the line is drawn is `pre-session-failure.ts`.
     try {
-      plan = await resolveSessionPlan(call, job, options.engines, resolveInput, options.projectId);
+      plan = await resolveSessionPlan(call, job, options, resolveInput);
     } catch (error) {
       // The first of the three sites that route through ONE decision (t272,
       // FR5), so the three cannot drift into three policies. `null` is "this one
@@ -283,6 +285,12 @@ export function createClaudeCodeDispatch(
     const tree = new WorktreeRelease(options.worktrees, worktree);
 
     try {
+      // The MCP window's disk half, at the first line where a directory exists
+      // and still before a session does (t370, FR4). Its failures are ordinary
+      // throws and not a ninth classified cause — the split, and why, is
+      // `src/mcp/resolve-external-inputs.ts`'s own header.
+      await writeExternalInputs(worktree.path, plan.pendingWrites);
+
       // The two reads the prompt needs, and the spec they get packed into
       // (`session-spec.ts`). Inside the `try` and after the worktree, where they
       // have always been: a read that fails here retains the tree and opens no
@@ -337,16 +345,13 @@ export function createClaudeCodeDispatch(
         // then. There is no endpoint to fill `engine_session_ref` in later (out
         // of scope), so `null` here means "the engine had not said it yet" and
         // never "this engine has no ref".
-        session = await call<Session>('/v1/sessions', 'POST', {
-          job_id: job.id,
-          node_id: job.current_node_id,
-          engine: route.adapter.engineName,
-          engine_session_ref: collected.engineRef(),
-          working_dir: spec.workingDir,
-          prompt: spec.prompt,
-          timeout_seconds: spec.timeoutSeconds,
-          silence_seconds: spec.silenceSeconds,
-        });
+        session = await openSession(
+          call,
+          job,
+          route.adapter.engineName,
+          collected.engineRef(),
+          spec,
+        );
 
         // The streak of failures BEFORE a session dies right here (t272, FR6).
         // Whatever this work had been failing on, it now has a session row: that
@@ -388,6 +393,41 @@ export function createClaudeCodeDispatch(
       // never called again (FR3): what is left is telemetry the runner owes, and
       // each write is attempted even when the one before it failed.
 
+      // Decoded ONCE and read four times: the escalation block, the routing
+      // block, the report that rides on the closure (t259) and — since t423 —
+      // the declared artifacts of that report. Decoding it again would let them
+      // disagree about what the session said.
+      //
+      // It happens HERE, above the release, and that position is the ficha: the
+      // release below DISCARDS a completed session's whole worktree, so the file
+      // an `x-artifact` property names exists on disk only until that line. The
+      // decode and the parse never depended on the tree; what now sits between
+      // them and the release does.
+      const output = route.decodeSessionText(lines);
+      const parsedResult = parseNodeResult(output) ?? undefined;
+
+      // A declared output that is a FILE leaves the worktree on its own (t423,
+      // FR2). Only for a session that COMPLETED: anything else reported nothing
+      // to move, and its tree is kept for diagnosis anyway. The report comes
+      // back with an artifact id where the session wrote a local path — or with
+      // the reasons it was refused, and then the control plane is handed no
+      // report at all.
+      const artifacts =
+        outcome.status === 'completed'
+          ? await uploadArtifacts(
+              {
+                urlBase: options.urlBase,
+                token: options.token,
+                doFetch: options.doFetch,
+                requestTimeoutMs: options.requestTimeoutMs,
+              },
+              session.id,
+              worktree.path,
+              resolved?.node.contract?.output_schema,
+              parsedResult,
+            )
+          : { output: parsedResult };
+
       // The tree goes back HERE, the moment the outcome is known and before a
       // single decision is taken on top of it (t207-B). It used to happen at the
       // very end, after the advance, and the order was not neutral: what the
@@ -417,12 +457,6 @@ export function createClaudeCodeDispatch(
       // incident may not cost the session its closure nor its question.
       await denials.drain();
 
-      // Decoded ONCE and read three times: the escalation block, the routing
-      // block and — since t259 — the report that rides on the closure. Decoding
-      // it again would let the three disagree about what the session said, and
-      // it happens BEFORE the closure now because the closure is one of them.
-      const output = route.decodeSessionText(lines);
-
       // Captured rather than thrown, exactly as the denials' failure already is:
       // a closure the control plane refused may not cancel the question that
       // comes after it. "Asking is not failing" is not a rule about happy paths
@@ -437,7 +471,11 @@ export function createClaudeCodeDispatch(
         // what the session reported INSIDE it (t259) — absent when it printed
         // no usable block. Both arguments are argued in `report.ts`.
         lines.join('\n'),
-        parseNodeResult(output) ?? undefined,
+        // Absent whenever the artifacts were refused (t423): the two keys are
+        // exclusive, so this is "no output argument at all", read by the control
+        // plane as "nothing structured was reported" — never a report carrying a
+        // bare path into a worktree that no longer exists.
+        artifacts.output,
       );
 
       const request: InputRequest | null = parseInputRequest(output);
@@ -470,8 +508,17 @@ export function createClaudeCodeDispatch(
       // fundamental fact — there is no result to have committed anything about —
       // and the same rule that forbids a second owner forbids posting both.
       // `blocks.ts` argues each write, next to the write itself.
+      //
+      // And the artifacts come FIRST of the three (t423), on the same argument
+      // the refusal already carries over the dirty check and one step stronger:
+      // the control plane was never even handed an output to accept or refuse,
+      // so `refusedReport` cannot independently be true for the same session —
+      // `outputAccepted` reads vacuously `true` when there is no `output`.
+      const refusedArtifacts = outcome.status === 'completed' && artifacts.problems !== undefined;
       const refusedReport = outcome.status === 'completed' && verdict.outputAccepted === false;
-      if (request === null && refusedReport) {
+      if (request === null && refusedArtifacts) {
+        await blockForArtifactRefusal(call, job, session.id, artifacts.problems ?? []);
+      } else if (request === null && refusedReport) {
         await blockForOutputSchemaRefusal(call, job, session.id, verdict.outputSchemaError ?? []);
       } else if (request === null && dirtyDespiteCompleted) {
         await blockForUncommittedWork(call, job, worktree.path);
@@ -502,7 +549,8 @@ export function createClaudeCodeDispatch(
         outcome.status === 'completed' &&
         request === null &&
         !dirtyDespiteCompleted &&
-        !refusedReport
+        !refusedReport &&
+        !refusedArtifacts
           ? await advance(call, job, resolved, session.id, output, options.advanceMainLine)
           : null;
 

@@ -95,6 +95,103 @@ const isObject = (value) => typeof value === 'object' && value !== null && !Arra
 const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
 
 /**
+ * Whether an `as` names a place inside the step's own working directory (t369).
+ *
+ * Relative, with no `..` SEGMENT and no leading `/` — which is the whole of what
+ * RF-32 promises about a fetched file: it lands in the step's worktree and
+ * nowhere else. `schema/graph.schema.json` carries a coarser regex beside this
+ * one (`^(?!/)(?!.*\.\.).+$`, which also refuses a `..` merely embedded in a
+ * name); the named, authoritative check is this one, because `POST /v1/graphs`
+ * compiles no ajv against that file — the same split `hook_raw_secret` lives
+ * with.
+ */
+const isWorktreeRelative = (value) =>
+  isFilledText(value) && !value.startsWith('/') && !value.split('/').includes('..');
+
+/** How a message names a node: by its id, or by its position when it has none. */
+const nodeLabel = (node, index) => (isFilledText(node.id) ? node.id : `#${index}`);
+
+/**
+ * Checks a node's external surface and its retry flag (t369).
+ *
+ * Two named rules, and each one is a mistake somebody makes by hand:
+ *
+ * - a `name` repeated within `inputs` (or within `outputs`) makes the
+ *   materialisation ambiguous — one entry wins and the document does not say
+ *   which, which is `duplicate_node_id`'s own reasoning;
+ * - an `as` that climbs out of the working directory is a fetch writing wherever
+ *   it likes on the runner's machine, which is exactly what RF-32 promises it
+ *   will not do.
+ *
+ * Everything else about the shape reuses `invalid_field`, the choice already
+ * made for `hooks`, `nodes` and `edges`: a wrong TYPE is not a rule of its own.
+ *
+ * Kept byte-for-byte with `packages/core/src/domain/graph.ts`, like every other
+ * rule here — `packages/core/test/domain-graph.test.ts` compares the two reports.
+ *
+ * @param {object} node The node being checked.
+ * @param {number} index Its position, for the message when it carries no id.
+ * @param {(code: string, message: string, target?: unknown) => void} annotate
+ */
+function checkExternalSurface(node, index, annotate) {
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+
+  if (node.unsafe_to_retry !== undefined && typeof node.unsafe_to_retry !== 'boolean') {
+    annotate('invalid_field', `"unsafe_to_retry" of node "${label}" has to be a boolean`, target);
+  }
+
+  const external = node.external;
+  if (external === undefined || external === null) return;
+  if (!isObject(external)) {
+    annotate('invalid_field', `"external" of node "${label}" has to be an object`, target);
+    return;
+  }
+
+  for (const side of ['inputs', 'outputs']) {
+    const declared = external[side];
+    if (declared === undefined || declared === null) continue;
+    if (!Array.isArray(declared)) {
+      annotate('invalid_field', `"external.${side}" of node "${label}" has to be a list`, target);
+      continue;
+    }
+
+    const knownNames = new Set();
+    const reportedNames = new Set();
+
+    for (const entry of declared) {
+      if (!isObject(entry)) continue;
+
+      const name = entry.name;
+      if (isFilledText(name)) {
+        if (knownNames.has(name)) {
+          if (!reportedNames.has(name)) {
+            annotate(
+              'duplicate_external_name',
+              `duplicate name in "external.${side}" of node "${label}": "${name}"`,
+              target,
+            );
+            reportedNames.add(name);
+          }
+        } else {
+          knownNames.add(name);
+        }
+      }
+
+      // Only an input carries an `as`: it is the name the fetched file takes in
+      // the worktree, and an output sends a value the session already produced.
+      if (side === 'inputs' && !isWorktreeRelative(entry.as)) {
+        annotate(
+          'invalid_external_as',
+          `node "${label}" declares in "external.inputs" an "as" that is not a path inside the step's working directory (relative, no ".." segment, no leading "/"): ${JSON.stringify(entry.as)}`,
+          target,
+        );
+      }
+    }
+  }
+}
+
+/**
  * Checks the document's shape and referential integrity.
  *
  * @param {unknown} doc Graph document, already parsed.
@@ -154,6 +251,11 @@ export function validarEstrutura(doc) {
         );
       }
     }
+    // What this node reaches for outside, and whether it may be run twice
+    // (t369). Checked whatever the id turns out to be, on the hooks loop's
+    // posture: the rules are about what the runner would DO with the
+    // declaration, and a node with a broken id carries a broken one all the same.
+    checkExternalSurface(node, index, annotate);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —

@@ -117,6 +117,21 @@ export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
 ]);
 
 /**
+ * Deadline of one `tools/call` to an MCP server, in milliseconds (t370, FR4).
+ *
+ * 30 seconds, which is `DEFAULT_REQUEST_TIMEOUT_MS`'s own number and chosen the
+ * same way: it is the deadline of a request this dispatch makes to something
+ * outside itself, and a second answer to "how long is too long" would only be a
+ * second place to keep it. A tool that reads a file answers in milliseconds; a
+ * tool that has not answered in half a minute has stopped answering.
+ *
+ * There is no CLI flag (Out of Scope), the posture `quotaBackoffMs` took before
+ * one ever arrived for it: a dispatch option and a sane default are what a
+ * wiring needs, and a flag is additive the day an operator has to turn it.
+ */
+export const DEFAULT_MCP_CALL_TIMEOUT_MS = 30_000;
+
+/**
  * What `GET /v1/jobs/:id` gives back, in the part the dispatch reads.
  *
  * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
@@ -126,6 +141,17 @@ export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
 export interface Job {
   id: number;
   title: string;
+  /**
+   * The request in the person's own words, when it carries one (t360).
+   *
+   * Optional and nullable because the column already is: a work born with a
+   * title and nothing else reads `null` (t122), and every dispatch written
+   * before this field ignored it. It is declared here because
+   * `createClassPrecedentsResolver` scores it — the problem as somebody
+   * described it is the richer half of the signal, and a resolver reading it
+   * off an untyped cast would be a resolver nobody can check.
+   */
+  body?: string | null;
   current_node_id: string;
   blocked: boolean;
   execution_id: number | null;
@@ -373,6 +399,21 @@ export interface ClaudeCodeDispatchOptions {
    * knows the answer to.
    */
   quotaBackoffMs?: readonly number[];
+  /**
+   * Deadline of each MCP `tools/call` this dispatch makes (t370, FR4).
+   * Default: {@link DEFAULT_MCP_CALL_TIMEOUT_MS}.
+   *
+   * An option and no flag of its own, the same standing `quotaBackoffMs` above
+   * has. It bounds ONE call: a node declaring three external inputs gets three
+   * deadlines, not a third of one each, because what this number is about is a
+   * server that stopped answering and not a budget for the node.
+   *
+   * It is a pre-session budget and deliberately not one of the session's own
+   * ({@link timeoutSeconds}, {@link silenceSeconds}): every MCP call has
+   * finished before `startSession` is reached, so a call that runs long costs a
+   * dispatch its latency and never an engine its quota.
+   */
+  mcpCallTimeoutMs?: number;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
   /**

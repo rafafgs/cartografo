@@ -46,6 +46,8 @@ interface NodeSpec {
   output?: Record<string, unknown>;
   /** When true the pin resolves to nothing: a skill nobody registered. */
   unregistered?: boolean;
+  /** What this node fetches from outside and hands over outside (t369). */
+  external?: Record<string, unknown>;
 }
 
 /** A JSON Schema object with a `required` list, which is all this check reads. */
@@ -88,6 +90,7 @@ function fixture(options: {
       role: 'fixture',
       node_type: 'work',
       skill_ref: skillRef(node.id),
+      ...(node.external === undefined ? {} : { external: node.external }),
       contract: {
         input_schema: { type: 'object' },
         output_schema: { type: 'object' },
@@ -358,6 +361,201 @@ test("the always-available constant does not drift from the projection's own key
     Object.keys(projected).sort(),
     'a key `buildNodeInput` stops publishing is a key this check must stop promising',
   );
+});
+
+/*
+ * t369 — an external input is a producer for ONE node, and for nobody else.
+ *
+ * `external.inputs` is resolved before the session opens and materialised in
+ * that step's working directory (RF-32). So it satisfies the node's OWN required
+ * key — the node really does have the data when it runs — and it publishes
+ * nothing into `input` for anyone downstream: nothing writes it to the board,
+ * and a descendant that required it would be counting on a file in somebody
+ * else's worktree. That is the whole reason it is unioned in at the point of
+ * comparison and never added to the propagating set.
+ */
+
+/** The entry the two cases below declare, spelled once. */
+function externalInput(name: string): Record<string, unknown> {
+  return {
+    inputs: [
+      {
+        name,
+        server: 'drive',
+        tool: 'download_file',
+        arguments: { path: `finance/${name}.xlsx` },
+        as: `${name}.xlsx`,
+      },
+    ],
+  };
+}
+
+test('t369 — a node key nobody produces is satisfied by that node own external input', () => {
+  const withExternal = problemsOf({
+    nodes: [
+      { id: 'A' },
+      { id: 'B', input: objectSchema(['prices']), external: externalInput('prices') },
+    ],
+  });
+
+  assert.deepEqual(
+    withExternal,
+    [],
+    'the runner fetches it before the session starts: the node has it when it runs',
+  );
+
+  // The same document with the declaration removed — the rule this ticket adds
+  // is the ONLY thing standing between the two reports.
+  const withoutExternal = problemsOf({
+    nodes: [{ id: 'A' }, { id: 'B', input: objectSchema(['prices']) }],
+  });
+
+  assert.deepEqual(
+    withoutExternal.map((problem) => [problem.code, 'key' in problem ? problem.key : null]),
+    [['unproduced_input', 'prices']],
+    'and without it the check goes on saying exactly what it said before this ticket',
+  );
+});
+
+test('t369 — an external input satisfies its own node and nothing downstream', () => {
+  const problems = problemsOf({
+    nodes: [
+      { id: 'A' },
+      { id: 'B', input: objectSchema(['prices']), external: externalInput('prices') },
+      { id: 'C', input: objectSchema(['prices']) },
+    ],
+  });
+
+  assert.deepEqual(
+    problems.map((problem) => [problem.code, problem.node_id, 'key' in problem ? problem.key : null]),
+    [['unproduced_input', 'C', 'prices']],
+    'materialisation is per node: it reaches C in no worktree and in no projection',
+  );
+  assert.deepEqual(
+    problems.map((problem) => ('produced_elsewhere_by' in problem ? problem.produced_elsewhere_by : null)),
+    [[]],
+    "and B is not listed as a producer either: it places the key in nobody's input",
+  );
+});
+
+/*
+ * t369 — what goes outside has to be something the node really produces.
+ *
+ * `outputs[].from` names a property of the PINNED SKILL's `output` — the same
+ * line §2 draws for everything else about output: `output_schema` documents, the
+ * skill is what validates. A `from` that names nothing is a delivery that would
+ * be discovered empty at the end of a session somebody already paid for, which
+ * is exactly the class of mistake this check exists to move earlier.
+ */
+
+/** An external delivery of the property `from`. */
+function externalOutput(from: string): Record<string, unknown> {
+  return {
+    outputs: [
+      {
+        name: 'delivered',
+        server: 'drive',
+        tool: 'upload_file',
+        arguments: { folder: 'clients' },
+        from,
+      },
+    ],
+  };
+}
+
+test('t369 — an external output whose "from" names no output property is reported', () => {
+  const problems = problemsOf({
+    nodes: [
+      {
+        id: 'A',
+        output: objectSchema(['proposal'], { proposal: { type: 'string' } }),
+        external: externalOutput('parecer'),
+      },
+    ],
+  });
+
+  assert.equal(problems.length, 1, JSON.stringify(problems));
+  const [problem] = problems;
+  assert.equal(problem.code, 'external_output_unknown_property');
+  assert.equal(problem.node_id, 'A');
+  assert.equal('from' in problem ? problem.from : null, 'parecer');
+  for (const quoted of ['A', 'parecer']) {
+    assert.ok(
+      problem.message.includes(quoted),
+      `the message has to name "${quoted}": ${problem.message}`,
+    );
+  }
+});
+
+test('t369 — a "from" naming a real property of the pinned skill output reports nothing', () => {
+  const problems = problemsOf({
+    nodes: [
+      {
+        id: 'A',
+        output: objectSchema(['proposal'], { proposal: { type: 'string' } }),
+        external: externalOutput('proposal'),
+      },
+    ],
+  });
+
+  assert.deepEqual(problems, []);
+
+  // An OPTIONAL property counts too: `required` is what a descendant may count
+  // on, and this is the node's own delivery of its own report — a different
+  // question from availability.
+  const optional = problemsOf({
+    nodes: [
+      {
+        id: 'A',
+        output: objectSchema(['proposal'], {
+          proposal: { type: 'string' },
+          appendix: { type: 'string' },
+        }),
+        external: externalOutput('appendix'),
+      },
+    ],
+  });
+
+  assert.deepEqual(optional, []);
+});
+
+test('t369 — an unresolved pin is not accused of an unknown external output', () => {
+  const problems = problemsOf({
+    nodes: [
+      {
+        id: 'A',
+        unregistered: true,
+        output: objectSchema(['proposal']),
+        external: externalOutput('parecer'),
+      },
+      { id: 'B' },
+    ],
+  });
+
+  assert.deepEqual(
+    problems.map((problem) => [problem.code, problem.node_id]),
+    [['skill_ref_unresolved', 'A']],
+    'with no contract to read, there is no output schema to hold the delivery against',
+  );
+});
+
+test('t369 — a report carrying only an unknown external output classifies as failed', () => {
+  const { doc, resolveSkill } = fixture({
+    nodes: [
+      {
+        id: 'A',
+        output: objectSchema(['proposal'], { proposal: { type: 'string' } }),
+        external: externalOutput('parecer'),
+      },
+    ],
+  });
+  const report = validateContracts(doc, resolveSkill);
+
+  assert.deepEqual(report.problems.map((problem) => problem.code), [
+    'external_output_unknown_property',
+  ]);
+  assert.equal(report.valid, false);
+  assert.equal(classifyContracts(report), 'failed', 'every pin resolved, and the check refused');
 });
 
 /*

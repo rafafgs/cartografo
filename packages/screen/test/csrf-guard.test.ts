@@ -37,6 +37,7 @@ import {
   createQuestion,
   startControlPlane,
   startScreen,
+  type Job,
   type Question,
   type RunningControlPlane,
 } from './support.ts';
@@ -318,4 +319,66 @@ test("t192 AT7 — the server-rendered form refuses a cross-site submit, and not
   const after = await readFromControlPlane(cp, job.id, question.id);
   assert.equal(after.status, 'pending', 'nothing was written');
   assert.equal(after.answer, null);
+});
+
+/** Reads the job straight from the control plane, bypassing the screen. */
+async function readJobFromControlPlane(cp: RunningControlPlane, jobId: number): Promise<Job> {
+  const response = await api<Job>(cp, 'GET', `/v1/jobs/${jobId}`);
+  assert.equal(response.status, 200);
+  return response.body;
+}
+
+test('t339 — a cross-site POST to /jobs/:id/unblock is refused, and nothing is released', async (t) => {
+  const cp = await startControlPlane(t);
+  const job = await createJob(cp, { title: 'held', entry_node_id: 'refinar' });
+  const blocked = await api<Job>(cp, 'POST', `/v1/jobs/${job.id}/blocks`, {
+    reason: 'a promotion is a proposal until a human releases it',
+  });
+  assert.equal(blocked.status, 200);
+
+  const screen = await startScreen(t, cp);
+  const submission = await fetch(`${screen.url}/jobs/${job.id}/unblock`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'sec-fetch-site': 'cross-site',
+    },
+    body: new URLSearchParams({ reason: 'let it go', actor_ref: 'rafael' }).toString(),
+    redirect: 'manual',
+  });
+
+  assert.equal(submission.status, 403);
+  assert.match(submission.headers.get('content-type') ?? '', /^text\/html/);
+  const refusal = await submission.text();
+  assert.ok(refusal.includes('<h2>untrusted origin</h2>'), `the 403 title is wrong:\n${refusal}`);
+
+  // The proof is the state, read back without going through the screen: a page
+  // on somebody else's tab does not get to release a job that is being held.
+  const after = await readJobFromControlPlane(cp, job.id);
+  assert.equal(after.blocked, true, 'the flag is still up');
+  assert.equal(after.block_reason, 'a promotion is a proposal until a human releases it');
+});
+
+test('t339 — a cross-site POST to /jobs/:id/block is refused, and nothing is held', async (t) => {
+  const cp = await startControlPlane(t);
+  const job = await createJob(cp, { title: 'running fine', entry_node_id: 'refinar' });
+
+  const screen = await startScreen(t, cp);
+  const submission = await fetch(`${screen.url}/jobs/${job.id}/block`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'sec-fetch-site': 'cross-site',
+    },
+    body: new URLSearchParams({ reason: 'stop it', actor_ref: 'rafael' }).toString(),
+    redirect: 'manual',
+  });
+
+  assert.equal(submission.status, 403);
+  const refusal = await submission.text();
+  assert.ok(refusal.includes('<h2>untrusted origin</h2>'), `the 403 title is wrong:\n${refusal}`);
+
+  const after = await readJobFromControlPlane(cp, job.id);
+  assert.equal(after.blocked, false, 'nothing was written');
+  assert.equal(after.block_reason, null);
 });

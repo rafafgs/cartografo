@@ -31,10 +31,7 @@
  */
 
 import { ControlPlaneClient } from '../controller/control-plane-client.ts';
-import {
-  createControlPlaneReader,
-  type ControlPlaneReader,
-} from '../synthesizer/control-plane-client.ts';
+import type { ClassReader } from './generate.ts';
 
 /** Control plane the command talks to when the invocation names none. */
 export const DEFAULT_URL = 'http://127.0.0.1:4317';
@@ -45,8 +42,20 @@ export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 /** Exit code for a command that was typed wrong, kept apart from a run that failed. */
 export const USAGE_EXIT_CODE = 2;
 
+/**
+ * Project this command scopes the class-exists check and the draft to, when
+ * `--project` is left out.
+ *
+ * The same `1` every other part of the system falls back to. Redeclared here
+ * rather than imported from `@cartografo/core`, the same reasoning
+ * `cli/run.ts`'s own `DEFAULT_PROJECT` records: the runner imports nothing
+ * from the control plane's package (D1), and the price of that boundary is a
+ * constant in two places.
+ */
+const DEFAULT_PROJECT = 1;
+
 /** Flags this command understands. Anything else is a typo, and is refused. */
-const KNOWN_FLAGS = ['class', 'url', 'dir', 'token'];
+const KNOWN_FLAGS = ['class', 'url', 'dir', 'token', 'project'];
 
 /** The whole flow, in the shape `--help` prints it. */
 export const HELP = [
@@ -65,6 +74,8 @@ export const HELP = [
   '',
   'Options:',
   `  --url <url>         control plane (default ${DEFAULT_URL}).`,
+  `  --project <id>      project to scope the class check and the draft to`,
+  `                      (default ${String(DEFAULT_PROJECT)}).`,
   '  --dir <path>        working directory of the session (default: a temporary',
   '                      one).',
   `  --token <token>     control plane credential (env ${ENV_TOKEN}); it is`,
@@ -99,6 +110,8 @@ export interface IntakeRunOptions {
   request: string;
   /** The registered class the batch will run over. */
   className: string;
+  /** Project to scope the class-exists check and the draft to. Always resolved. */
+  projectId: number;
   /** Base URL of the control plane. */
   url: string;
   /** Where the session runs; absent means "make a temporary one". */
@@ -175,6 +188,16 @@ export function parseArguments(
     return refuse('--class is required: intake breaks work down over a class already registered');
   }
 
+  const projectRaw = flags.get('project');
+  let projectId = DEFAULT_PROJECT;
+  if (projectRaw !== undefined) {
+    const parsed = Number(projectRaw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return refuse(`--project has to be a positive integer (got: "${projectRaw}")`);
+    }
+    projectId = parsed;
+  }
+
   const workingDir = flags.get('dir');
   const token = usableToken(flags.get('token')) ?? usableToken(env[ENV_TOKEN]);
 
@@ -183,6 +206,7 @@ export function parseArguments(
     options: {
       request,
       className: className.trim(),
+      projectId,
       url: flags.get('url') ?? DEFAULT_URL,
       ...(workingDir === undefined ? {} : { workingDir }),
       ...(token === undefined ? {} : { token }),
@@ -191,25 +215,26 @@ export function parseArguments(
 }
 
 /**
- * The read-only door of this run: which classes are registered.
+ * The read-only door of this run: which classes are registered, for the
+ * resolved project.
  *
- * The synthesizer's reader, reused rather than re-implemented. It is the same
- * question against the same route, it already presents the credential the way
- * t148 fixed, and a second `GET /v1/classes` in this package would be a second
- * place to fix the next time that route moves.
+ * Its own `ControlPlaneClient.getClasses` (t421), not the synthesizer's
+ * reader (`../synthesizer/control-plane-client.ts`): that one calls
+ * `GET /v1/classes` with no query at all, which the server silently resolves
+ * against project 1 regardless of `--project`. `createClient` already builds
+ * the client this run's write door needs; handing it the read too is simpler
+ * than keeping two clients open on the same credential.
  *
  * @param options What the command line resolved to.
  * @param doFetch `fetch` implementation. Default: the global one. Test seam.
- * @returns A reader, already carrying the credential when there is one.
+ * @returns A reader, scoped to `options.projectId` and already carrying the
+ *   credential when there is one.
  */
-export function createReader(
-  options: IntakeRunOptions,
-  doFetch?: typeof fetch,
-): ControlPlaneReader {
-  return createControlPlaneReader(options.url, {
-    ...(options.token === undefined ? {} : { token: options.token }),
-    ...(doFetch === undefined ? {} : { fetchImpl: doFetch }),
-  });
+export function createReader(options: IntakeRunOptions, doFetch?: typeof fetch): ClassReader {
+  const client = createClient(options, doFetch);
+  return {
+    fetchClasses: async () => await client.getClasses(options.projectId),
+  };
 }
 
 /**

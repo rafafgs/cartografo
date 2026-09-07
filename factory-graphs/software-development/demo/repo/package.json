@@ -1,0 +1,11 @@
+{
+  "name": "cartografo-demo-repo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The disposable project the software-development demo runs against.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

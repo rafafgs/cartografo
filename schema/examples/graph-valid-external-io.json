@@ -1,0 +1,120 @@
+{
+  "problem_class": "external-io-proof",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "What a step needs from outside, and what it hands over",
+    "description": "Two work nodes on one edge. The second one declares `external`: the price sheet it needs is fetched from a server before the session starts and materialised in the working directory under the name `as` gives it, and the proposal it writes is delivered to a folder outside only after the checks pass. That same node is marked `unsafe_to_retry`, because a delivery already made cannot be taken back. The smallest document that says what a step reaches for and what it leaves behind (t369).",
+    "schema_version": "1.0.0",
+    "created_at": "2026-09-06",
+    "source": "a manual port (t369's external-io proof)"
+  },
+  "nodes": [
+    {
+      "id": "brief",
+      "role": "analyst",
+      "node_type": "work",
+      "description": "Writes the brief the proposal answers. Declares no external I/O: everything it needs already travels with the job, and it hands nothing to anybody outside.",
+      "skill_ref": {
+        "id": "write-brief",
+        "version": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["job"],
+          "properties": {
+            "job": { "type": "object" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["brief"],
+          "properties": {
+            "brief": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s brief.md",
+            "description": "The brief exists and is not empty."
+          }
+        ]
+      }
+    },
+    {
+      "id": "propose",
+      "role": "writer",
+      "node_type": "work",
+      "description": "Writes the proposal from the brief and the price sheet, and delivers it. `prices` is required by its pinned skill and produced by no ancestor: what satisfies it is the external input below, materialised in this node's working directory and in nobody else's.",
+      "unsafe_to_retry": true,
+      "external": {
+        "inputs": [
+          {
+            "name": "prices",
+            "server": "drive",
+            "tool": "download_file",
+            "arguments": {
+              "path": "finance/prices.xlsx"
+            },
+            "as": "prices.xlsx"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "delivered_proposal",
+            "server": "drive",
+            "tool": "upload_file",
+            "arguments": {
+              "folder": "clients/{{input.job.id}}"
+            },
+            "from": "proposal"
+          }
+        ]
+      },
+      "skill_ref": {
+        "id": "write-proposal",
+        "version": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["brief", "prices"],
+          "properties": {
+            "brief": { "type": "string" },
+            "prices": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["proposal"],
+          "properties": {
+            "proposal": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s proposal.docx",
+            "description": "The proposal exists and is not empty — and it is checked BEFORE anything is delivered outside."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "brief",
+      "to": "propose",
+      "condition": "sempre",
+      "description": "A single exit: the brief always goes on to the proposal."
+    }
+  ],
+  "initial_node": "brief",
+  "final_nodes": ["propose"],
+  "custom_fields": []
+}

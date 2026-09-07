@@ -257,6 +257,7 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
     adapter: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
     request: REQUEST,
     className: CLASS_NAME,
+    projectId: 1,
     workingDir: scratch(t, 'workdir'),
     timeoutSeconds: 60,
   });

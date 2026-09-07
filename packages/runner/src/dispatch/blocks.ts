@@ -1,6 +1,6 @@
 /**
- * The six writes that STOP a work, on the runner's own account (t265, t268,
- * t273).
+ * The seven writes that STOP a work, on the runner's own account (t265, t268,
+ * t273, t423).
  *
  * They were four closures in `dispatch.ts` until t202, then four exports of
  * `report.ts` until this ficha, which added the fourth and pushed that module
@@ -20,6 +20,11 @@
  * The sixth arrived with t273, and its fact comes from neither: it is about a
  * directory on this machine — the shared test bench the next nodes observe —
  * that could not be advanced onto the commit an accepted report named.
+ *
+ * The seventh arrived with t423, and its fact is about a FILE: a session that
+ * finished cleanly and named, as the artifact its node's contract declares, a
+ * path that escapes its worktree or a file nobody ever wrote. Unlike the fifth,
+ * the control plane was never handed that report at all.
  *
  * `POST /v1/jobs/:id/blocks` is an unconditional, reason-carrying block that has
  * existed since t102, and every write here uses it unchanged. What the dispatch
@@ -353,6 +358,75 @@ export async function blockForMainLineAdvanceFailure(
     'the commit before this one and reporting on it as the work. Put the bench back on the ' +
     'main line, reconcile whatever diverged in it, or fix what the install command needs — ' +
     'and unblock.';
+
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+
+  return reason;
+}
+
+/**
+ * Stops the work because a declared artifact could not be taken out of the
+ * worktree (t423, FR3).
+ *
+ * The seventh block of this module, and the second whose fact is about a FILE
+ * rather than about a message. What it stops is a session that finished
+ * cleanly, reported a result, and named as its declared output a path that does
+ * not check out: one that resolves outside the directory the session was given,
+ * one nothing ever wrote, or a property carrying something that is not a path
+ * at all.
+ *
+ * **The control plane was never handed the report**, and that is the whole
+ * difference from {@link blockForOutputSchemaRefusal} above. There the report
+ * was stored as `null` because the pinned skill's own `output` schema rejected
+ * it; here the runner declined to send it, because sending it would have put a
+ * bare path from a machine's temporary directory into the value the next node
+ * reads. So `verdict.outputAccepted` reads vacuously `true` for this session,
+ * the schema refusal cannot fire for the same dispatch, and this write is the
+ * only owner of the flag.
+ *
+ * A block and not a throw, on the reasoning t265 and t268 already recorded: a
+ * second session told exactly what the first one was told names the same path
+ * again, so a retry buys the same refusal with nothing in anybody's inbox.
+ *
+ * The reason quotes EVERY problem and not only the first, for the reason the
+ * schema refusal quotes all of its own: whoever unblocks this work has to fix
+ * the contract or the session's behaviour, and a list cut short is a second
+ * round of the same conversation.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param job The work being dispatched.
+ * @param sessionId The session whose declaration was refused — what a reader
+ *   opens next, since the transcript is where the path was named.
+ * @param problems Every reason the upload declined, verbatim, one per property.
+ * @returns The reason that was posted, so the caller can hand it back as the
+ *   block's own — the runner may not tell the API one story and its caller
+ *   another.
+ */
+export async function blockForArtifactRefusal(
+  call: ControlPlaneCall,
+  job: JobRef,
+  sessionId: number,
+  problems: readonly string[],
+): Promise<string> {
+  // Built with concatenation and not with a nested template literal, for the
+  // reason `blockForEngineRefusal` above already records: the D18 sweep's
+  // masking scanner reads one backtick at a time.
+  const listed =
+    problems.length === 0
+      ? 'No detail was recorded for the refusal.'
+      : 'Problems: ' + problems.join('; ') + '.';
+
+  const reason =
+    `Session ${String(sessionId)} of node \`${job.current_node_id}\` ended, but what it ` +
+    'declared as the step\'s artifact could NOT be taken out of its worktree, so the ' +
+    `report was not stored at all. ${listed} ` +
+    'The work stops here instead of recording a result that names a path on a machine ' +
+    'whose session directory is already gone: the session has to write the file it ' +
+    'promises, inside the directory it was given, and name it by a relative path — or ' +
+    'the node\'s contract has to stop declaring it. Fix one of the two and unblock.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,

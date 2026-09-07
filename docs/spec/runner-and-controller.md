@@ -245,10 +245,10 @@ turns up concrete.
 
 ### A failure before the session blocks, it does not retry forever
 
-A dispatch makes five reads **before** taking a worktree and opening a session:
-the job, the graph version, the engine's route, the executor environment and the
-skill the node pinned. **Seven** failures on the path to the session reproduce
-**identically** on every retry:
+A dispatch makes six reads **before** taking a worktree and opening a session:
+the job, the graph version, the engine's route, the executor environment, the
+external inputs the node declared and the skill it pinned. **Eight** failures on
+the path to the session reproduce **identically** on every retry:
 
 | Cause | Where it comes from |
 |---|---|
@@ -259,9 +259,20 @@ skill the node pinned. **Seven** failures on the path to the session reproduce
 | a placeholder that does not resolve | `{{input.<path>}}` with no value in the node's input |
 | an unreadable test bench | `git` refused at the configured path |
 | a permission policy the engine cannot apply | `startSession` throws `SessionStartError` with the prefix `permission policy unsupported: `, before the spawn |
+| an external input no MCP server would hand over | `ExternalInputResolutionError`, in one of its five reasons ([mcp-client.md](mcp-client.md) §5) |
 
 The sixth arrived later, along with the read that produces it — the
 executor environment of the section just below.
+
+The eighth arrived with t370 and is the only one that reaches off this machine:
+a node declares `external.inputs`, the runner calls the named MCP server before
+anything opens, and the five ways that call can fail — a server this machine's
+engine does not name, a connection nobody can read, an argument the input does
+not carry, a tool the server does not publish, a server that went quiet — each
+answer identically on the next tick. The block reason names the node, the entry,
+the server, the tool and the reason, because those point at five different
+places to go and fix it. No `input_request` is created on this path and none
+could be: an escalation is raised by a **session**, and no session ever opened.
 
 The seventh is the only one that happens **after** the worktree, inside
 `startSession` — and it is the one a real run caught live: the
@@ -290,7 +301,7 @@ into the same error — forever, with no row in `pergunta`, no `bloqueado`, and
 nothing in anybody's inbox. And, because the `tick()` ends at the pass's first
 lease, no other job of the project was attempted while that one was in front.
 
-Now those seven **block the job** with a reason that names the cause —
+Now those eight **block the job** with a reason that names the cause —
 `POST /v1/jobs/:id/blocks`, actor `sistema/runner`, the same mechanism as the two
 blocks the dispatch already did on its own account. Nothing new is invented:
 since `GET /v1/jobs` filters `bloqueado === false`, a blocked job simply stops
@@ -300,7 +311,7 @@ being a candidate, and it is that filter — with no extra write — that turns
 
 Three limits that are part of the decision:
 
-**Only those seven.** Any other error of the same window — a 500, a 502, a 503, a
+**Only those eight.** Any other error of the same window — a 500, a 502, a 503, a
 network timeout, the 404 of reading the **job itself** — still blows up, and is
 still retried at the next interval (with a ceiling: see the
 subsection below). A control plane that is down passes on its own; blocking a job
@@ -317,7 +328,8 @@ the next candidate is attempted immediately, without waiting for the next
 interval. If every candidate blocks, the pass returns `null`, exactly like a pass
 that won no lease at all.
 
-**Nothing opens.** The block of the first six happens before
+**Nothing opens.** The block of the six pre-worktree causes — the eighth among
+them — happens before
 `worktrees.acquire`, so there is no tree to give back, no `POST /v1/sessions`, no
 engine process and no token spent. The seventh happens with the tree already in
 hand: it is given back (retained, as on every error exit) before the block is
@@ -377,6 +389,7 @@ them is this section's whole subject: who answers for each key.
 | `input.job`, `input.project`, the `produces` buckets, `input.perguntas_respondidas`, `input.traversal` | the **control plane**, through `GET /v1/jobs/:id/context` | All of it is a projection of tables only the single writer writes (D1). |
 | `input.project.aplicacao`, `input.project.arquivos_de_registro` | the graph's **`project`** | The class's **static** configuration: versioned with the document, proposable and reversible like any other part of it ([graph.md](graph.md)). |
 | `input.banco_de_testes.*`, `input.referencia.*` | the **runner**, through [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | A file-system path and a live commit. Neither of the two is graph data, and neither survives being stored. |
+| `input.environment.*` | the **runner**, through the same module | What this machine can reach, and what this installation already knows. Same argument one step further (t360). |
 
 The third row arrived last. `banco_de_testes.caminho` names a
 directory on **one** machine — written into a graph version, it would be wrong
@@ -414,6 +427,38 @@ Four flags configure all of that, none of them mandatory: `--test-bench-path`
 (default: the same `--working-dir`), `--reference-mode` (default
 `ponta_do_principal`), `--reference-repo` (default: the bench) and
 `--main-branch` (default `main`).
+
+**`input.environment` arrived last, with t360**, and it is the same argument
+applied to two values the [interview](interview.md) reads. Neither is
+configured by a flag: both are discovered by the runner itself.
+
+- **`environment.mcp_servers`** — the MCP servers this engine names (RF-20), so
+  that the interview can ask *which* server a step reaches outside through
+  instead of asking the person to remember. A `string[]`, or **`null`**. The
+  `null` is load-bearing and is not "empty": it means this engine's adapter
+  implements no discovery at all, which a session has to be able to tell apart
+  from an engine that looked and found none — the same distinction
+  [`engine/types.ts`](../../packages/runner/src/engine/types.ts) draws for
+  `discoverMcpServers?()` itself. It is discovered **once per runner process**,
+  by the very call `buildProbeReport` already makes for the operator page
+  ([`cli/run.ts`](../../packages/runner/src/cli/run.ts)): one CLI spawn, one
+  answer, and no way for the page and the session to describe the same machine
+  differently.
+- **`environment.similar_classes`** — the registered classes whose current
+  version's `metadata.name` + `metadata.description` read like THIS job's title
+  and body, best first, scored with
+  [`synthesizer/similarity.ts`](../../packages/runner/src/synthesizer/similarity.ts).
+  It is the one value of this seam computed **per dispatch** and not per
+  process, for the obvious reason: it is a fact about the job, not about the
+  machine. It is a suggestion and never a decision — [D8](../../DECISIONS.md)
+  puts the class name in the user's hands, and the interview offers the
+  precedent as its `recommendation`.
+
+  Nothing here refuses: a class with no current version, a version that will not
+  read, a `GET /v1/classes` that answers 500 — each is skipped, and a listing
+  that fails entirely is an empty list. An interview that could not open because
+  a suggestion could not be computed would have broken the thing the suggestion
+  was meant to help.
 
 **Reading, and only reading — from this layer.** Nothing in
 `resolve-executor-environment.ts` writes to the test bench, advances a branch or
@@ -692,11 +737,14 @@ transaction that writes the row. What is still without a trace is the ordinary
 The runner's credential is **its own**, issued at pairing, and the
 "who calls" column below is contract, not convention: whoever pairs, revokes and
 sees the whole fleet is the operator (a `usuario` credential), and the runner
-only reaches the four routes of its own dispatch, `GET /v1/jobs`, and the three
+only reaches the four routes of its own dispatch, `GET /v1/jobs`, the three
 through which it reports what its own machine is — the model catalogue
 (`POST /v1/engines/:name/models`, t166) and the probe pair
-(`POST /v1/runners/:id/probes` and `GET /v1/runners/:id/rechecks`, t401): eight
-routes in all. The
+(`POST /v1/runners/:id/probes` and `GET /v1/runners/:id/rechecks`, t401) — the
+one on which it records a call to an external MCP server
+(`POST /v1/jobs/:id/external-calls`, t370) and the one on which it uploads the
+file a session's contract declared as its output
+(`POST /v1/sessions/:id/artifacts`, t423): ten routes in all. The
 runner's route list is literal
 ([`auth.ts`](../../packages/core/src/auth.ts)): a new route is born outside it,
 and that is how `GET /v1/runners` is the operator's without anything having been
@@ -715,6 +763,8 @@ written to refuse it — through the same door `GET /v1/executions` and
 | `POST` | `/v1/runners/:id/probes` | runner or operator | Reports what that machine is: `{cli: {available, version, authenticated}, mcp: {supported: false} \| {supported: true, servers: [{name}], origin, resolved_at}, workspace: {working_dir, working_dir_resolved, is_git_repo, worktrees_root, worktrees_root_resolved, worktrees_root_exists, worktrees_root_writable}}`. Latest wins: one probe per runner, replaced whole. Storing it also stamps `served_at` on whatever re-check was pending for that runner, in the same transaction — which is why there is no route acknowledging one. |
 | `POST` | `/v1/runners/:id/rechecks` | operator | Asks that runner to report again on its next loop iteration. `201` the first time; `200` with the SAME row while it is still pending, so an operator asking twice never queues two. Operator-only by omission, on the reasoning `GET /v1/runners` above already states. |
 | `GET` | `/v1/runners/:id/rechecks` | runner or operator | `{recheck: null}`, or the pending `{id, runner_id, requested_at, served_at: null}`. The runner polls it on its own loop, at the dispatch interval: there is no second interval knob and no push channel. |
+| `POST` | `/v1/jobs/:id/external-calls` | runner or operator | Records one call to an external MCP server (t370, RF-37). ONE route for both phases, told apart by the body: no `call_id` opens the intent (`201`, with `finished_at`/`outcome`/`result_summary` all `null`), a `call_id` closes that row (`200`). `404 not_found` for a `call_id` that is unknown or belongs to another job, `409 external_call_already_completed` for one that already has an outcome. Both summaries are truncated to 1 KiB **by the server**. |
+| `GET` | `/v1/jobs/:id/external-calls` | operator | Lists what was called for one job, oldest first. Operator-only by omission, on the reasoning `GET /v1/runners` above already states: this dispatch never reads its own call history back. A row still carrying `outcome: null` well after `started_at` is a call nobody closed — "unknown" is the reader's conclusion and never a stored value. |
 
 ### The scope of the runner credential
 

@@ -2,12 +2,14 @@
  * Which pre-session failures are worth blocking a work over, and with what
  * reason (t252, FR1/FR2; t272, FR1).
  *
- * A dispatch does five reads before it acquires a worktree — the work, the graph
- * version, the engine route, the executor environment and the pinned skill — and
- * six of them can throw an error that will reproduce IDENTICALLY on every retry:
- * a placeholder the input does not carry, a skill nobody registered, a pin that
- * stopped matching, an engine with no route, a `graph_version_id` the control
- * plane no longer has, and — since t270 — a test bench `git` cannot read. Until this ficha every one of them travelled up through `tick()` into
+ * A dispatch does six reads before it acquires a worktree — the work, the graph
+ * version, the engine route, the executor environment, the node's declared
+ * external inputs and the pinned skill — and seven of the failures they raise
+ * reproduce IDENTICALLY on every retry: a placeholder the input does not carry,
+ * a skill nobody registered, a pin that stopped matching, an engine with no
+ * route, a `graph_version_id` the control plane no longer has, — since t270 — a
+ * test bench `git` cannot read, and — since t370 — an external input no MCP
+ * server would hand over. Until this ficha every one of them travelled up through `tick()` into
  * `cli/run.ts`, which logged one line and turned the loop again — and two
  * seconds later the same job was at the head of the same queue, being dispatched
  * into the same throw. Forever, with nothing a human could see, and with no
@@ -21,13 +23,23 @@
  * and for those the retry IS the right answer; blocking one would make a person
  * undo a hiccup by hand.
  *
- * So the seven are a CLOSED set, each matching a reproduction somebody actually
+ * So the eight are a CLOSED set, each matching a reproduction somebody actually
  * hit. Everything else classifies to `null`, including the two error families'
  * own siblings: a wider net here is a work blocked over something that would
  * have healed itself, which is the failure mode in the other direction. The set
  * grew twice, with t270 and t272, and both times it grew the way it is meant to
  * — a cause somebody reproduced arrived, its refusal reproduces on every retry,
  * and a cause nobody classifies is a loop nobody sees.
+ *
+ * **The eighth arrived with t370**, and it is the one that reaches off this
+ * machine: a node declares `external.inputs`, the runner calls the named MCP
+ * server before the session exists, and the five ways that call can fail —
+ * a server this machine's engine does not name, a connection nobody can read,
+ * an argument the input does not carry, a tool that is not on the server, a
+ * server that went quiet — each answer identically on the next tick. It is
+ * classified for the reason the sixth was: a new pre-session read appeared, and
+ * a cause nobody classifies is a loop nobody sees. The five reasons stay five
+ * in the block text, because they are fixed in five different places.
  *
  * **The seventh arrived with t272, and it is the first one from AFTER the
  * worktree.** The t109 game run put a real job through `desenvolvimento-de-
@@ -73,6 +85,7 @@
 import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
 import { SessionStartError } from '../engine/types.ts';
+import { ExternalInputResolutionError } from '../mcp/resolve-external-inputs.ts';
 import {
   SkillNotRegisteredError,
   SkillPinMismatchError,
@@ -202,6 +215,22 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       'configuration of THIS process, and a bench that does not answer answers the same ' +
       'way on every retry. Fix the bench configuration (`--test-bench-path`, ' +
       '`--reference-repo`, `--main-branch`) and unblock.'
+    );
+  }
+
+  // The eighth (t370). An external input a node declared and the runner could
+  // not fetch: five reasons, one class, and every one of them reproduces
+  // identically until a person changes something on the machine, in the graph
+  // or on the server. The reason names all four coordinates because they point
+  // at four different places to go and fix it.
+  if (error instanceof ExternalInputResolutionError) {
+    return (
+      `Node \`${error.nodeId}\` declares external input \`${error.inputName}\`, which the ` +
+      `runner could not fetch from MCP server \`${error.server}\` (tool \`${error.tool}\`): ` +
+      `${error.reason}${error.detail === '' ? '' : ` — ${error.detail}`}. No session was ` +
+      'opened: an input the node declared and did not get would open a session with a gap ' +
+      'in it, and the same declaration gets the same answer on every retry. Fix the server, ' +
+      'the tool, or the network, and unblock.'
     );
   }
 

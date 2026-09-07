@@ -42,6 +42,8 @@ import {
 import {
   mergeServerRefs,
   parseClaudeMcpListOutput,
+  mcpServerConnectionFromEntry,
+  readMcpServerConfigJsonFile,
   readMcpServersJsonFile,
 } from './mcp-discovery.ts';
 import { resolvePermissions } from './permission-policy.ts';
@@ -53,6 +55,7 @@ import {
   type EngineCapabilities,
   type EngineModel,
   type McpDiscovery,
+  type McpServerConnection,
   type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
@@ -900,6 +903,46 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       origin: 'file',
       resolvedAt,
     };
+  }
+
+  /**
+   * How to reach one of those servers, by name (t370, FR1).
+   *
+   * The SAME two files the discovery above falls back to, and no third source:
+   * this is the other half of one decision, and reading somewhere the listing
+   * never looks would let a server be reachable that nothing reports as
+   * present.
+   *
+   * **The project file first.** `.mcp.json` is the scope closest to the work —
+   * it travels with the repository the session runs against, and an operator
+   * who put a server there meant it for THIS project. The user scope answers
+   * for every name the project file does not declare, which is what keeps a
+   * machine-wide server usable from a repository that never heard of it. The
+   * discovery's own merge reads the two in the other order, and that is not a
+   * contradiction: it produces a LIST, where order is presentation, while this
+   * produces THE connection, where order is precedence.
+   *
+   * There is no CLI half here, unlike discovery. `claude mcp list` prints the
+   * transport as part of a human sentence nobody versions
+   * (`node packages/mcp/bin/mcp.mjs - ⏸ Pending approval`), and parsing a
+   * command line out of prose to then SPAWN it is not a risk this ticket takes.
+   * The discovery gate above is what still applies the CLI's own approval
+   * rules: `resolveExternalInputs` refuses a server the listing does not carry
+   * before it ever gets here.
+   *
+   * `null` for a name neither file declares; a REJECTION when a file declares
+   * it and an environment placeholder inside it has no value and no default.
+   */
+  async resolveMcpServerConnection(name: string): Promise<McpServerConnection | null> {
+    for (const path of [join(this.#mcpWorkingDir, '.mcp.json'), this.#credentialsPath]) {
+      const entry = readMcpServerConfigJsonFile(path, name);
+      if (entry === null) continue;
+
+      const connection = mcpServerConnectionFromEntry(entry, this.#probeEnvironment);
+      if (connection !== null) return connection;
+    }
+
+    return null;
   }
 
   /**

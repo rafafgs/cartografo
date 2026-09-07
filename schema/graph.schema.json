@@ -214,8 +214,104 @@
           "description": "Who should be called when this node escalates (t167). Free text with no imposed format, like resposta_padrao and respondido_por: there is no identity system and no role system in this repository to validate against. Stored in the graph and returned by the snapshot; nothing sends anything to it yet — delivering is a future ficha, once roles exist.",
           "examples": ["editor-de-plantao", "arquiteto"]
         },
+        "external": { "$ref": "#/$defs/external" },
+        "unsafe_to_retry": {
+          "type": "boolean",
+          "description": "Whether repeating this step is safe (t369, RF-36). Optional: absent means false, which is what every node did before the field existed — the same non-breaking posture as engine, model and escalation_policy. true says the step has an effect outside that cannot be deferred or taken back (a delivery already made, a message already sent), so re-running it is not a free retry. What COMPOSES it with escalation_policy and max_consecutive_failures is the runner, at the moment a session fails; here the format only lets the map say it.",
+          "examples": [true]
+        },
         "skill_ref": { "$ref": "#/$defs/skill_ref" },
         "contract": { "$ref": "#/$defs/contract" }
+      }
+    },
+    "external": {
+      "type": "object",
+      "description": "What this step needs from outside and what it hands over outside (t369, RF-32/RF-34). The premise is `nothing undeclared`, not `no reach`: what is written here is resolved by the runner BEFORE the session opens and materialised in the step's working directory, and what the step produced is sent only after the checks pass. The agent sees files, never a server and never a credential. Optional, and so is each of the two lists inside it: absent means `{inputs: [], outputs: []}`, and a graph written before this field goes on being valid untouched.",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "description": "What is fetched before the session starts, each entry satisfying one required input key of the pinned skill.",
+          "items": { "$ref": "#/$defs/external_input" }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "What is delivered outside after the checks pass, each entry sending one property of the pinned skill's output.",
+          "items": { "$ref": "#/$defs/external_output" }
+        }
+      }
+    },
+    "external_input": {
+      "type": "object",
+      "description": "One thing fetched from outside before the step runs. The refusal of an unknown server or tool is the RUNNER's, at dispatch, exactly as it is for engine (UnknownEngineError): free text here, and no closed enum to edit per server.",
+      "required": ["name", "server", "tool", "as"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The input path this entry satisfies on the pinned skill's input, in §6.1's own grammar (one level of nesting). Unique within inputs: two entries answering to one name make the materialisation ambiguous, and the document would not say which one won.",
+          "examples": ["prices"]
+        },
+        "server": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which server holds it. Free text, resolved at dispatch and never at validation.",
+          "examples": ["drive"]
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which tool of that server is called. Free text, for the same reason.",
+          "examples": ["download_file"]
+        },
+        "arguments": {
+          "type": "object",
+          "description": "What the call is given. String values may carry {{input.<path>}} placeholders, resolved by the runner against this node's own input with the existing fail-closed resolver (packages/runner/src/dispatch/interpolate-input.ts) — a path that does not resolve aborts the dispatch instead of reaching the server as text. A deliberately open drawer: the keys belong to the server's tool, not to this schema."
+        },
+        "as": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*\\.\\.).+$",
+          "description": "The worktree-relative file name the fetched result is written to. Relative, with no `..` segment and no leading `/`: what is fetched lands in the step's working directory and nowhere else (RF-32). The named, authoritative refusal is invalid_external_as in validateStructure/validarEstrutura — POST /v1/graphs compiles no ajv against this file, so the pattern here is a second line of defence, exactly as hook_raw_secret is.",
+          "examples": ["prices.xlsx"]
+        }
+      }
+    },
+    "external_output": {
+      "type": "object",
+      "description": "One thing delivered outside after the step's checks pass. Only after: a step whose verification failed has produced nothing worth sending, and the ordering is what makes the delivery reviewable at all.",
+      "required": ["name", "server", "tool", "from"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this delivery is called, unique within outputs. It is the name the log carries, so two deliveries answering to one name make the record ambiguous — the node id's own rule.",
+          "examples": ["delivered_proposal"]
+        },
+        "server": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which server receives it. Free text, resolved at dispatch.",
+          "examples": ["drive"]
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which tool of that server is called. Free text, for the same reason.",
+          "examples": ["upload_file"]
+        },
+        "arguments": {
+          "type": "object",
+          "description": "What the call is given, with the same {{input.<path>}} grammar the input side has."
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which property of the PINNED SKILL's output schema is sent — not of the node's own output_schema, for the reason §2 already gives for output in general: output_schema documents, the skill is what validates. A from that names nothing there is external_output_unknown_property, in validateContracts, which is the only one of the three checks that can resolve a pin.",
+          "examples": ["proposal"]
+        }
       }
     },
     "skill_ref": {

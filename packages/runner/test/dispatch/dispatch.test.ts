@@ -37,8 +37,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -66,6 +68,11 @@ import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 
 import { bootCore, resolvePins } from "@cartografo/test-support";
+
+import {
+  FIXED_BLOB as MCP_FIXED_BLOB,
+  readFileText as mcpReadFileText,
+} from "../fakes/mcp-server.mjs";
 
 import { authorizeGlobalFetch } from "../authorized-fetch.ts";
 
@@ -6985,6 +6992,1022 @@ test("t332 — a shell node advances, fails and is refused through the paths eve
       );
 
       assert.equal(session.status, "completed", "the command itself did not fail");
+    },
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t370 — the node's external inputs, fetched before dispatch (AT18–AT21).     */
+/*                                                                            */
+/* The ticket's whole claim, end to end and against a real control plane: a    */
+/* node declares `external.inputs`, the runner calls the named MCP server      */
+/* BEFORE the session exists, and what the session finds is FILES — never the  */
+/* server, never the transport, and never the credential that reached it       */
+/* (RF-31, RF-32, RF-34). The two ways it can fail block the job with a        */
+/* reason, on the same mechanism the other seven pre-session causes use.       */
+/*                                                                            */
+/* The MCP server is `test/fakes/mcp-server.mjs`, spawned for real over stdio; */
+/* the ENGINE is still the fake one, for the reason the conformance kit        */
+/* records. Discovery and connection resolution both go through the real       */
+/* `ClaudeCodeAdapter`, reading a real `.mcp.json` written for the case — with */
+/* `claude mcp list` pointed at a binary that does not exist, so the file      */
+/* fallback is what answers, deterministically and with no CLI installed.      */
+/* -------------------------------------------------------------------------- */
+
+/** The fake MCP server, as a path the stdio transport can spawn. */
+const FAKE_MCP_SERVER = fileURLToPath(
+  new URL("../fakes/mcp-server.mjs", import.meta.url),
+);
+
+/** A binary that does not exist, so MCP discovery falls back to the files. */
+const NO_SUCH_BINARY = path.join(
+  tmpdir(),
+  "cartografo-binary-that-does-not-exist-370",
+);
+
+/**
+ * The credential the fake MCP server is configured with.
+ *
+ * Distinctive on purpose: AT19 sweeps every file of the worktree and every
+ * string of the session spec for it, and a value that could plausibly occur
+ * anywhere else would make that sweep prove nothing.
+ */
+const MCP_SECRET = "t370-secret-nobody-else-would-write-c0ffee";
+
+test("t370 — external inputs are fetched before the session and land as files", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  interface Call {
+    method: string;
+    route: string;
+    body?: unknown;
+  }
+
+  function spy(): { doFetch: typeof fetch; calls: Call[] } {
+    const calls: Call[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** The skill this ticket's nodes pin: it NAMES its external inputs. */
+  function externalSkill(): Record<string, unknown> {
+    const content = {
+      instructions:
+        "# Use what was fetched for you\n\n" +
+        "The report is at {{input.external.report.path}} " +
+        "(sha256 {{input.external.report.sha256}}), and the fixture at " +
+        "{{input.external.fixture.path}}.\n\n" +
+        "Do what the step asks: {{input.pedido}}.",
+      input: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        required: ["pedido"],
+        properties: { pedido: { type: "string", minLength: 1 } },
+      },
+      output: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        required: ["nota"],
+        properties: { nota: { type: "string", minLength: 1 } },
+      },
+      checks: [],
+      permissions: {
+        filesystem: { read: ["**"], write: ["**"] },
+        // The session runs network-CLOSED and still gets the fetched bytes:
+        // every MCP call finished before `startSession` was reached (FR7).
+        network: { allowed: false },
+      },
+    };
+
+    // The hash is computed here rather than asked for, the same call the
+    // factory-bundle tests make: a fixture that asks the implementation what
+    // the right answer is proves only that it agrees with itself.
+    const digest = createHash("sha256")
+      .update(JSON.stringify(canonicalValue(content)), "utf8")
+      .digest("hex");
+
+    return {
+      id: "use-external-inputs",
+      version: "1.0.0",
+      hash: `sha256:${digest}`,
+      role: "work",
+      description: "Does one step with what an MCP server was asked for.",
+      preconditions: [],
+      origin: { type: "native" },
+      ...content,
+    };
+  }
+
+  const SKILL = externalSkill();
+  const registered = await api<{ hash: string }>(
+    baseUrl,
+    "POST",
+    "/v1/skills",
+    SKILL,
+    201,
+    token,
+  );
+  assert.equal(
+    registered.hash,
+    SKILL.hash,
+    "the registry has to agree with the hash computed here",
+  );
+
+  /** The traversal graph, with `implementar` pinning the skill above. */
+  function externalGraph(
+    className: string,
+    inputs: Record<string, unknown>[],
+  ): Record<string, unknown> {
+    const document = traversalGraph(className);
+    const nodes = document.nodes as Array<Record<string, unknown>>;
+    return {
+      ...document,
+      nodes: nodes.map((node) =>
+        node.id === "implementar"
+          ? {
+              ...node,
+              skill_ref: {
+                id: SKILL.id,
+                version: SKILL.version,
+                hash: SKILL.hash,
+              },
+              external: { inputs },
+            }
+          : node,
+      ),
+    };
+  }
+
+  /** Writes the `.mcp.json` an adapter will read, and returns its directory. */
+  function mcpConfig(root: string, mode = "normal"): string {
+    writeFileSync(
+      path.join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          reports: {
+            type: "stdio",
+            command: process.execPath,
+            args: [FAKE_MCP_SERVER],
+            env: {
+              CARTOGRAFO_FAKE_MCP_MODE: mode,
+              // The whole point of RNF-12/13: the credential lives beside the
+              // runner, in the engine's own configuration, and is expanded from
+              // the runner's environment. Nothing downstream may ever see it.
+              REPORTS_TOKEN: "${REPORTS_MCP_TOKEN}",
+            },
+          },
+        },
+      }),
+    );
+    return root;
+  }
+
+  /** What one dispatch's `startSession` was handed, if it was reached at all. */
+  interface Seen {
+    spec: SessionSpec | null;
+    /** Whether each declared `as` already existed when the session opened. */
+    present: Record<string, boolean>;
+  }
+
+  /**
+   * The engine route, with the MCP capabilities live and `startSession`
+   * watched.
+   *
+   * The watcher is what turns "before" into an assertion instead of a hope:
+   * the files are looked for in `spec.workingDir` at the instant the session is
+   * about to open, not after the dispatch has settled.
+   */
+  function route(
+    configDir: string,
+    seen: Seen,
+    declared: readonly string[],
+  ): Record<string, DispatchModule.EngineRoute> {
+    const adapter = new ClaudeCodeAdapter({
+      commandBuilder: (spec) => ({
+        command: process.execPath,
+        args: [FAKE_ENGINE, ...buildCommand(spec).args],
+      }),
+      graceMs: 300,
+      mcpWorkingDir: configDir,
+      credentialsPath: path.join(configDir, "no-user-scope-here.json"),
+      mcpListCommandBuilder: () => ({ command: NO_SUCH_BINARY, args: [] }),
+      probeEnvironment: { REPORTS_MCP_TOKEN: MCP_SECRET },
+    });
+
+    const watched: EngineAdapter = {
+      engineName: adapter.engineName,
+      startSession: async (spec, listener) => {
+        seen.spec = spec;
+        for (const as of declared) {
+          seen.present[as] = existsSync(path.join(spec.workingDir, as));
+        }
+        return await adapter.startSession(spec, listener);
+      },
+      getStatus: (id) => adapter.getStatus(id),
+      cancel: (id, status) => adapter.cancel(id, status),
+      capabilities: () => adapter.capabilities(),
+      verifyCli: () => adapter.verifyCli(),
+      discoverMcpServers: () => adapter.discoverMcpServers(),
+      resolveMcpServerConnection: (name) =>
+        adapter.resolveMcpServerConnection(name),
+    };
+
+    return {
+      "claude-code": {
+        adapter: watched,
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+    };
+  }
+
+  /** Every file under a directory, recursively, as absolute paths. */
+  function filesUnder(root: string): string[] {
+    return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(root, entry.name);
+      return entry.isDirectory() ? filesUnder(full) : [full];
+    });
+  }
+
+  const REPORT_AS = "external/report.md";
+  const FIXTURE_AS = "external/fixture.bin";
+
+  /** The two entries every case below declares, or a variation of them. */
+  function twoInputs(): Record<string, unknown>[] {
+    return [
+      {
+        name: "report",
+        server: "reports",
+        tool: "read_file",
+        arguments: { path: "notes/{{input.pedido}}.md" },
+        as: REPORT_AS,
+      },
+      {
+        name: "fixture",
+        server: "reports",
+        tool: "read_blob",
+        arguments: {},
+        as: FIXTURE_AS,
+      },
+    ];
+  }
+
+  const PEDIDO = "eqx";
+
+  await parent.test(
+    "AT18 — both files exist at their declared paths BEFORE startSession, with the fetched bytes",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const configDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-mcp-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-work-"));
+      t.after(() => {
+        rmSync(configDir, { recursive: true, force: true });
+        rmSync(workDir, { recursive: true, force: true });
+      });
+      mcpConfig(configDir);
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        externalGraph("external-inputs-t370-at18", twoInputs()),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "a ticket whose node declares external inputs",
+          entry_node_id: "implementar",
+          execution_id: 3701,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const seen: Seen = { spec: null, present: {} };
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: route(configDir, seen, [REPORT_AS, FIXTURE_AS]),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        resolveInput: () => Promise.resolve({ pedido: PEDIDO }),
+        envOverrides: {
+          FAKE_ENGINE_RECORD: path.join(configDir, "engine.json"),
+          FAKE_ENGINE_LINES: linesWithCrossingNote(),
+        },
+      })(job.id);
+
+      assert.equal(
+        outcome.blocked,
+        false,
+        `the dispatch had to run: ${JSON.stringify(outcome)}`,
+      );
+
+      // The ORDER is the property: the bytes are on disk at the instant the
+      // session is about to open, not merely by the time the dispatch ends.
+      assert.deepEqual(seen.present, { [REPORT_AS]: true, [FIXTURE_AS]: true });
+
+      assert.deepEqual(
+        readFileSync(path.join(workDir, REPORT_AS)),
+        Buffer.from(mcpReadFileText(`notes/${PEDIDO}.md`), "utf8"),
+        "the text tool's answer arrives byte for byte, argument interpolated",
+      );
+      assert.deepEqual(
+        readFileSync(path.join(workDir, FIXTURE_AS)),
+        MCP_FIXED_BLOB,
+        "and a resource's base64 blob is decoded, not re-encoded as text",
+      );
+
+      // What the session was TOLD: the paths and the digests, through the same
+      // `{{input.<path>}}` interpolation every other field goes through.
+      const instructions = seen.spec?.instructions ?? "";
+      const digest = createHash("sha256")
+        .update(Buffer.from(mcpReadFileText(`notes/${PEDIDO}.md`), "utf8"))
+        .digest("hex");
+      assert.ok(
+        instructions.includes(REPORT_AS),
+        `the instructions have to name the path: ${instructions}`,
+      );
+      assert.ok(
+        instructions.includes(digest),
+        `the instructions have to carry the digest: ${instructions}`,
+      );
+      assert.ok(instructions.includes(FIXTURE_AS), instructions);
+    },
+  );
+
+  await parent.test(
+    "AT19 — the MCP credential reaches nothing the session can read",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const configDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-mcp-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-work-"));
+      t.after(() => {
+        rmSync(configDir, { recursive: true, force: true });
+        rmSync(workDir, { recursive: true, force: true });
+      });
+      mcpConfig(configDir);
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        externalGraph("external-inputs-t370-at19", twoInputs()),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "a ticket whose server needs a credential",
+          entry_node_id: "implementar",
+          execution_id: 3702,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const seen: Seen = { spec: null, present: {} };
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: route(configDir, seen, [REPORT_AS, FIXTURE_AS]),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        resolveInput: () => Promise.resolve({ pedido: PEDIDO }),
+        envOverrides: {
+          FAKE_ENGINE_RECORD: path.join(configDir, "engine.json"),
+          FAKE_ENGINE_LINES: linesWithCrossingNote(),
+        },
+      })(job.id);
+
+      const spec = seen.spec;
+      assert.ok(spec !== null, "the session had to open for this to prove anything");
+
+      assert.ok(
+        !JSON.stringify(spec.envOverrides ?? {}).includes(MCP_SECRET),
+        "the credential is not an environment variable of the session",
+      );
+      assert.ok(!spec.instructions.includes(MCP_SECRET), "nor part of the instructions");
+      assert.ok(!spec.prompt.includes(MCP_SECRET), "nor of the prompt");
+
+      // Every file of the worktree, the two declared targets included: what was
+      // written there is the RESULT of the call, never the secret that allowed
+      // it (RF-34).
+      for (const file of filesUnder(workDir)) {
+        assert.ok(
+          !readFileSync(file, "utf8").includes(MCP_SECRET),
+          `${file} carries the MCP credential`,
+        );
+      }
+    },
+  );
+
+  await parent.test(
+    "AT20 — a server nobody's engine names blocks the job, and asks nobody anything",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const configDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-mcp-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-work-"));
+      t.after(() => {
+        rmSync(configDir, { recursive: true, force: true });
+        rmSync(workDir, { recursive: true, force: true });
+      });
+      mcpConfig(configDir);
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        externalGraph("external-inputs-t370-at20", [
+          {
+            name: "report",
+            server: "nobody-has-this",
+            tool: "read_file",
+            arguments: {},
+            as: REPORT_AS,
+          },
+        ]),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "a ticket naming a server this machine does not have",
+          entry_node_id: "implementar",
+          execution_id: 3703,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const seen: Seen = { spec: null, present: {} };
+      const { doFetch, calls } = spy();
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: route(configDir, seen, [REPORT_AS]),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        resolveInput: () => Promise.resolve({ pedido: PEDIDO }),
+      })(job.id);
+
+      if (!outcome.blocked) {
+        assert.fail("a server discovery does not name blocks the job, it never throws");
+      }
+      assert.ok(
+        outcome.reason.includes("nobody-has-this"),
+        `the reason has to name the server, and it reads: ${outcome.reason}`,
+      );
+
+      assert.equal(seen.spec, null, "startSession is never reached");
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route === "/v1/sessions",
+        ),
+        [],
+        "and no session row is written either",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
+
+      // No question is raised on this path, and that is structural rather than
+      // careful: an `input_request` is created only when a SESSION asks, and no
+      // session ever opened. `auto_approvable` does not apply because there is
+      // nothing here that could be auto-answered.
+      const pending = await api<{ input_requests: Question[] }>(
+        baseUrl,
+        "GET",
+        "/v1/input-requests?status=pending",
+        undefined,
+        200,
+        token,
+      );
+      assert.deepEqual(
+        pending.input_requests.filter((request) => request.job_id === job.id),
+        [],
+        "an environment fault blocks; it does not ask a person a question",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT21 — a call that never answers blocks, naming the server and the tool, once",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const configDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-mcp-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t370-work-"));
+      t.after(() => {
+        rmSync(configDir, { recursive: true, force: true });
+        rmSync(workDir, { recursive: true, force: true });
+      });
+      mcpConfig(configDir, "silent-call");
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        externalGraph("external-inputs-t370-at21", [
+          {
+            name: "report",
+            server: "reports",
+            tool: "read_file",
+            arguments: { path: "notes/report.md" },
+            as: REPORT_AS,
+          },
+        ]),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "a ticket whose server goes quiet",
+          entry_node_id: "implementar",
+          execution_id: 3704,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const seen: Seen = { spec: null, present: {} };
+      const { doFetch, calls } = spy();
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: route(configDir, seen, [REPORT_AS]),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        mcpCallTimeoutMs: 400,
+        resolveInput: () => Promise.resolve({ pedido: PEDIDO }),
+      })(job.id);
+
+      if (!outcome.blocked) {
+        assert.fail("a call that never answers blocks the job");
+      }
+      assert.ok(outcome.reason.includes("reports"), outcome.reason);
+      assert.ok(outcome.reason.includes("read_file"), outcome.reason);
+
+      assert.equal(seen.spec, null, "no session opens on this path");
+      assert.equal(
+        calls.filter(
+          (call) => call.method === "POST" && call.route.endsWith("/blocks"),
+        ).length,
+        1,
+        "one dispatch, one block: nothing retries inside the same tick",
+      );
+    },
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t423 — a declared artifact leaves the worktree before the worktree does     */
+/* -------------------------------------------------------------------------- */
+
+/** The skill of the artifact suite, and the file its sessions declare. */
+const ARTIFACT_SKILL_ID = "artifact-crossing";
+const ARTIFACT_FILE = "report.md";
+const ARTIFACT_ID = "artifact-42";
+const ARTIFACT_BYTES = "what the step was asked to produce";
+
+/**
+ * `do-crossing` with one property of its `output` marked as an artifact.
+ *
+ * The manifest is the fixture's, edited in the one place this ticket is about:
+ * `relatorio` is a string the session fills with a worktree-relative PATH, and
+ * `x-artifact: true` is what tells the runner to replace that path with an id
+ * before anybody stores the report. Everything else is left alone, so what the
+ * cases below measure is the upload and nothing else.
+ */
+function artifactSkillManifest(): Record<string, unknown> {
+  const base = manifest(WORK_SKILL);
+  const skill: Record<string, unknown> = {
+    ...base,
+    id: ARTIFACT_SKILL_ID,
+    description:
+      "Produces the artifact the step declares, as a file, and names it in the report.",
+    output: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      required: ["nota", "relatorio"],
+      properties: {
+        nota: { type: "string", minLength: 1 },
+        relatorio: { type: "string", minLength: 1, "x-artifact": true },
+      },
+    },
+  };
+  skill.hash = manifestContentHash(skill);
+  return skill;
+}
+
+/**
+ * The traversal graph with `implementar` pinned to the artifact skill.
+ *
+ * The node's own `contract.output_schema` carries the keyword too, because that
+ * is the document the RUNNER reads: `resolve-node.ts` hands it the pinned node's
+ * contract off the graph-version read the dispatch already makes, and no second
+ * round trip is spent finding out what a step declared.
+ */
+function artifactGraph(
+  className: string,
+  hash: string,
+): Record<string, unknown> {
+  const document = traversalGraph(className);
+  const nodes = (document.nodes as Array<Record<string, unknown>>).map((node) =>
+    node.id === "implementar"
+      ? {
+          ...node,
+          skill_ref: { id: ARTIFACT_SKILL_ID, version: "1.0.0", hash },
+          contract: {
+            ...(node.contract as Record<string, unknown>),
+            output_schema: {
+              type: "object",
+              required: ["nota"],
+              properties: {
+                nota: { type: "string", minLength: 1 },
+                relatorio: { type: "string", minLength: 1, "x-artifact": true },
+              },
+            },
+          },
+        }
+      : node,
+  );
+  return { ...document, nodes };
+}
+
+/** The lines a fake session prints when it declares an artifact by path. */
+function linesDeclaringArtifact(declared: unknown): string {
+  return JSON.stringify([
+    { stream: "stdout", text: "I produced what the step asked for." },
+    { stream: "stdout", text: "```resultado" },
+    {
+      stream: "stdout",
+      text: JSON.stringify({ nota: "the artifact is ready", relatorio: declared }),
+    },
+    { stream: "stdout", text: "```" },
+  ]);
+}
+
+/**
+ * The declared output of a step stops being a path and becomes an id (t423).
+ *
+ * Rafael's 2026-09-05 rule, end to end: an artifact is only what a step's
+ * contract declares as output, never everything a session touched. A session
+ * writes the file it promised, names it in its closing block, and the runner
+ * gets it out of the worktree — BEFORE `release()` discards that worktree, and
+ * off the disk afterwards, so the file does not then trip the uncommitted-work
+ * guard that same release feeds.
+ *
+ * **One route is stubbed, and only one.** `POST /v1/sessions/:id/artifacts` is
+ * the sibling ficha t422's to build, and it had not landed when this suite was
+ * written: the control plane below is the real one, booted the same way every
+ * other case here boots it, and the injected `doFetch` answers that ONE route
+ * and delegates every other call untouched. So what is proved is the whole of
+ * this ticket's own surface — when the upload happens, what it sends, what the
+ * report becomes, what the worktree keeps — with the store's own behaviour left
+ * to the ficha that owns it. Point the stub at the real route once t422 is in.
+ */
+test("t423 — a declared artifact is uploaded, the report carries its id, and the job moves on", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+  const artifactSkill = artifactSkillManifest();
+  await api(baseUrl, "POST", "/v1/skills", artifactSkill, 201, token);
+
+  /** One call the dispatch made, as the stub in front of `fetch` saw it. */
+  interface Traced {
+    method: string;
+    route: string;
+    headers: Record<string, string>;
+    body: unknown;
+  }
+
+  /**
+   * A `fetch` that answers the artifact route itself and delegates the rest.
+   *
+   * The upload's body is RAW bytes, not JSON, so it is kept as text rather than
+   * parsed: this is the one call of the dispatch that is not an envelope.
+   */
+  function stubArtifacts(): { doFetch: typeof fetch; calls: Traced[] } {
+    const calls: Traced[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      const route = String(input).slice(baseUrl.length);
+      const headers: Record<string, string> = {};
+      for (const [name, value] of new Headers(init?.headers)) headers[name] = value;
+      const raw = init?.body;
+      calls.push({
+        method: init?.method ?? "GET",
+        route,
+        headers,
+        body:
+          typeof raw === "string"
+            ? JSON.parse(raw)
+            : raw === undefined || raw === null
+              ? undefined
+              : Buffer.from(raw as Uint8Array).toString("utf8"),
+      });
+
+      if (/^\/v1\/sessions\/\d+\/artifacts$/.test(route)) {
+        return new Response(JSON.stringify({ id: ARTIFACT_ID }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return await fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** A job standing on the artifact-producing node, in a class of its own. */
+  async function jobOnImplementar(
+    className: string,
+    executionId: number,
+  ): Promise<Work> {
+    const versionId = await registerGraph(
+      baseUrl,
+      token,
+      artifactGraph(className, artifactSkill.hash as string),
+    );
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: `ticket whose step declares an artifact (${className})`,
+        entry_node_id: "implementar",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  /** The uploads the dispatch made, in order. */
+  function uploads(calls: Traced[]): Traced[] {
+    return calls.filter(
+      (call) => call.method === "POST" && call.route.endsWith("/artifacts"),
+    );
+  }
+
+  /** The blocks it posted for one job, as the reasons they carry. */
+  function blockReasons(calls: Traced[], jobId: number): string[] {
+    return calls
+      .filter(
+        (call) =>
+          call.method === "POST" && call.route === `/v1/jobs/${jobId}/blocks`,
+      )
+      .map((call) => String((call.body as { reason: unknown }).reason));
+  }
+
+  /** The transitions it posted, in order, as `to_node_id` values. */
+  function transitions(calls: Traced[]): string[] {
+    return calls
+      .filter(
+        (call) => call.method === "POST" && call.route.endsWith("/transitions"),
+      )
+      .map((call) => (call.body as { to_node_id: string }).to_node_id);
+  }
+
+  /** The sessions the job has, as the control plane projects them. */
+  async function sessionsOf(
+    jobId: number,
+  ): Promise<Array<{ id: number; output: unknown }>> {
+    const { sessions } = await api<{
+      sessions: Array<{ id: number; output: unknown }>;
+    }>(baseUrl, "GET", `/v1/sessions?job_id=${jobId}`, undefined, 200, token);
+    return sessions;
+  }
+
+  /** The dispatch every case below runs, with its own lines and its own dir. */
+  function runDispatch(
+    createClaudeCodeDispatch: typeof DispatchModule.createClaudeCodeDispatch,
+    workDir: string,
+    doFetch: typeof fetch,
+    lines: string,
+    writeFiles?: Record<string, string>,
+  ): (jobId: number) => Promise<DispatchModule.DispatchOutcome> {
+    return createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      resolveInput: () => Promise.resolve({ pedido: "produce the artifact" }),
+      timeoutSeconds: 60,
+      envOverrides: {
+        FAKE_ENGINE_LINES: lines,
+        ...(writeFiles === undefined
+          ? {}
+          : { FAKE_ENGINE_WRITE_FILES: JSON.stringify(writeFiles) }),
+      },
+    });
+  }
+
+  await parent.test(
+    "t423 AT — the file the session declared goes up once, and the report carries the id",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-ok-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-ok", 4231);
+      const { doFetch, calls } = stubArtifacts();
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact(ARTIFACT_FILE),
+        { [ARTIFACT_FILE]: ARTIFACT_BYTES },
+      )(job.id);
+
+      const sent = uploads(calls);
+      assert.equal(sent.length, 1, "one declared artifact is one upload");
+      const [session] = await sessionsOf(job.id);
+      assert.equal(sent[0].route, `/v1/sessions/${String(session.id)}/artifacts`);
+      assert.equal(sent[0].headers["content-type"], "application/octet-stream");
+      assert.equal(
+        sent[0].headers["x-artifact-name"],
+        "relatorio",
+        "the name is the contract's own property key",
+      );
+      assert.equal(sent[0].headers.authorization, `Bearer ${token}`);
+      assert.equal(
+        sent[0].body,
+        ARTIFACT_BYTES,
+        "the bytes of the file the session actually wrote",
+      );
+
+      assert.deepEqual(
+        session.output,
+        { nota: "the artifact is ready", relatorio: ARTIFACT_ID },
+        "the control plane accepted the report, and it names an artifact id, never a local path",
+      );
+      assert.ok(
+        !existsSync(path.join(workDir, ARTIFACT_FILE)),
+        "the uploaded file leaves the worktree, or it trips the uncommitted-work guard",
+      );
+
+      assert.deepEqual(blockReasons(calls, job.id), [], "nothing stopped this work");
+      assert.deepEqual(transitions(calls), ["conferir"], "and it moved off the node");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "conferir");
+      assert.equal(after.blocked, false);
+    },
+  );
+
+  await parent.test(
+    "t423 AT — a declared artifact the session never wrote blocks the work on its node",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-gone-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-gone", 4232);
+      const { doFetch, calls } = stubArtifacts();
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact("never-written.md"),
+      )(job.id);
+
+      assert.deepEqual(
+        uploads(calls),
+        [],
+        "a declaration that failed its checks never reaches the network",
+      );
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "and a report that was never stored may not move the work",
+      );
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1, "exactly one block, posted by exactly one owner");
+      assert.ok(
+        reasons[0].includes("never-written.md"),
+        `the file the session named has to be quoted: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("relatorio"),
+        `...and the property that declared it: ${reasons[0]}`,
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.equal(
+        session.output,
+        null,
+        "the control plane was never handed a report carrying a bare worktree path",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "implementar", "the work stays where it failed");
+      assert.equal(after.blocked, true);
+    },
+  );
+
+  await parent.test(
+    "t423 AT — a declared path that escapes the worktree blocks the work, naming the escape",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-escape-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-escape", 4233);
+      const { doFetch, calls } = stubArtifacts();
+      const escape = "../../etc/passwd";
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact(escape),
+        { [ARTIFACT_FILE]: ARTIFACT_BYTES },
+      )(job.id);
+
+      assert.deepEqual(uploads(calls), [], "nothing outside the worktree is ever read");
+      assert.deepEqual(transitions(calls), []);
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1);
+      assert.ok(
+        reasons[0].includes(escape),
+        `the path that escaped has to be quoted: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("relatorio"),
+        `...and the property that declared it: ${reasons[0]}`,
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "implementar");
+      assert.equal(after.blocked, true);
     },
   );
 });

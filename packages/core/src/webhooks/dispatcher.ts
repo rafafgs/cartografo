@@ -55,6 +55,7 @@ import { listEvents } from '../db/events.ts';
 import type { Event } from '../db/event-validation.ts';
 import { now } from '../repositories/common.ts';
 import {
+  claimDelivery,
   dueDeliveries,
   enqueueDeliveries,
   fanoutCursor,
@@ -196,7 +197,13 @@ export function registerWebhookDispatcher(
   };
 
   /** One attempt, which can only ever end as a recorded success or failure. */
-  const attempt = async (task: DeliveryTask): Promise<void> => {
+  const attempt = async (task: DeliveryTask, moment: string): Promise<void> => {
+    // Before anything else, and before anything leaves the process: the claim is
+    // what makes this delivery THIS routine's (t359, RF-06). A lost claim is not
+    // an error and not a failed attempt — another routine owns the row, so this
+    // one writes nothing at all.
+    if (!claimDelivery(db, 'webhook_delivery', task.id, moment, deliveryTimeoutMs, clock)) return;
+
     const event = eventById(db, task.event_id);
     if (event === undefined) {
       // Cannot happen while the foreign key holds; recorded as a failure anyway,
@@ -245,7 +252,7 @@ export function registerWebhookDispatcher(
 
       // `allSettled` and not `all`: one attempt that throws where it was not
       // expected to must not cancel the batch of the other subscribers (FR7).
-      await Promise.allSettled(batch.map(attempt));
+      await Promise.allSettled(batch.map((task) => attempt(task, moment)));
 
       // A full batch means there may be more behind it. Everything just handled
       // is either terminal or scheduled into the future, so the next read is

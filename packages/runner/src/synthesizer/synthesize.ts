@@ -63,6 +63,16 @@ export const DRAFT_SUFFIX = '.grafo.rascunho.json';
 /** Exit code for a command that was typed wrong, kept apart from a run that failed. */
 export const USAGE_EXIT_CODE = 2;
 
+/**
+ * Project the three reads are scoped to, when nobody says otherwise (D25).
+ *
+ * The same `1` every other part of the system falls back to, redeclared here
+ * rather than imported from `cli/index.ts`: the runner's four CLIs each keep
+ * their own command constants (`ENV_TOKEN`, `DEFAULT_URL`), and a shared
+ * `--project` default is not an exception to that.
+ */
+export const DEFAULT_PROJECT = 1;
+
 /** What one run needs. Everything injectable is injectable for the suite. */
 export interface SynthesisOptions {
   /** The problem, in the user's own words. */
@@ -103,6 +113,8 @@ export type ParsedCommand =
         timeoutSeconds: number;
         /** Credential to present; absent means no header at all (t148). */
         token?: string;
+        /** Project the three reads are scoped to (D25). Always resolved. */
+        projectId: number;
       };
     };
 
@@ -145,6 +157,7 @@ export const HELP = [
   '',
   'Options:',
   `  --url <url>         control plane (default ${DEFAULT_URL}).`,
+  `  --project <id>      project the three reads are scoped to (default ${DEFAULT_PROJECT}).`,
   '  --out <path>        where to write the draft (default',
   `                      <class>${DRAFT_SUFFIX} in the current directory).`,
   `  --timeout <sec>     limit of the session (default ${DEFAULT_TIMEOUT_SECONDS}).`,
@@ -243,6 +256,15 @@ export function parseArguments(
     return { kind: 'usage', message: `--timeout has to be a number of seconds: ${rawTimeout}` };
   }
 
+  // Same check and the same wording as `cli/index.ts`'s `positiveInteger`
+  // (D25): a person reads one message whichever of the runner's commands they
+  // typed `--project` into.
+  const rawProject = flags.get('project');
+  const projectId = rawProject === undefined ? DEFAULT_PROJECT : Number(rawProject);
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    return { kind: 'usage', message: `--project has to be a positive integer (got: "${rawProject}")` };
+  }
+
   const outputPath = flags.get('out');
   // A blank token is "none presented", not a credential: the whole point of
   // sending no header is that the 401 says what it means.
@@ -259,6 +281,7 @@ export function parseArguments(
       ...(outputPath === undefined ? {} : { outputPath }),
       timeoutSeconds,
       ...(token === undefined ? {} : { token }),
+      projectId,
     },
   };
 }

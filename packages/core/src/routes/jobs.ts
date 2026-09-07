@@ -24,6 +24,17 @@
  * since migration `0003` and nothing read it back until then, which is why the
  * board of every project showed on one screen.
  *
+ * ## What the two job GETs publish, without doing anything (t415)
+ *
+ * `GET /jobs` and `GET /jobs/:id` carry two more fields since RF-30 —
+ * `state`, one of six words for what the job is doing right now, and
+ * `state_since`, the instant it started doing it. Neither is a column and
+ * neither is assembled here: `repositories/job.ts` derives both while it builds
+ * the projection, off the log, the lease table and the job's graph version, and
+ * these handlers return the object as they always have. The cost of the board
+ * did not change shape either — the resolution is batched for the whole list,
+ * and `test/jobs.test.ts`'s AT17 counts the statements to prove it.
+ *
  * The four WRITES below are deliberately left alone. Scoping a mutation is a
  * different risk — a wrong scope there refuses or misdirects a live transition
  * instead of merely widening a read — and it is the write-side slice of the
@@ -35,13 +46,23 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
+import { buildConversation, type Conversation } from '../domain/conversation.ts';
 import { buildNodeInput } from '../domain/context.ts';
 import { integerFromQuery } from '../repositories/common.ts';
+import {
+  ALREADY_COMPLETED,
+  EXTERNAL_CALL_OUTCOMES,
+  completeExternalCall,
+  createExternalCallIntent,
+  listExternalCalls,
+  type ExternalCallOutcome,
+} from '../repositories/external-calls.ts';
 import { getVersion } from '../repositories/graphs.ts';
 import { listInputRequests } from '../repositories/input-request.ts';
 import {
   CrossProjectVersionReferenceError,
   GraphVersionNotReadyError,
+  UnknownProjectError,
   blockJob,
   getJob,
   createJob,
@@ -55,6 +76,7 @@ import {
   type Job,
 } from '../repositories/job.ts';
 import { listSessions } from '../repositories/session.ts';
+import { isObject } from '../util/is-object.ts';
 import {
   withValidation,
   refusal,
@@ -94,7 +116,7 @@ const CREATE_JOB_SCHEMA = {
  * - the job itself, for `input.job` and for the class's own field values;
  * - the version's snapshot, for the class's `project` object and for each
  *   node's `contract.produces`. A version that no longer resolves is read as no
- *   graph at all — the same posture `isAtFinalNode` and `requireFieldsOfNode`
+ *   graph at all — the same posture `hasArrived` and `requireFieldsOfNode`
  *   already take in `repositories/job.ts`;
  * - the job's COMPLETED sessions of this round. Only `completed`, because an
  *   incomplete session's report is not a fact about the graph, and only this
@@ -170,6 +192,162 @@ function nodeInputOf(
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/* t370 — the record of a call to an external MCP server (FR6).                */
+/* -------------------------------------------------------------------------- */
+
+/** The fields an intent body has to carry, each a `400` when it does not. */
+const INTENT_FIELDS = [
+  'node_id',
+  'name',
+  'server',
+  'tool',
+  'arguments_sha256',
+  'started_at',
+] as const;
+
+/** What a body refusal carries: which field, and one sentence about it. */
+interface FieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** A non-empty string, or the refusal that names the field. */
+function requiredText(
+  body: Record<string, unknown>,
+  field: string,
+): { value: string } | { refusal: FieldRefusal } {
+  const value = body[field];
+  if (typeof value !== 'string' || value.trim() === '') {
+    return { refusal: { field, message: `${field} has to be a non-empty string` } };
+  }
+  return { value };
+}
+
+/**
+ * Reads an intent body — the shape with no `call_id`.
+ *
+ * `direction` defaults to `'input'` and is the one field that may be absent:
+ * this ticket's only writer fetches, t371's will send, and a default that
+ * matched the only behaviour there is beats a required field every caller sets
+ * to the same value. `arguments_summary` may be absent too and reads `''`: a
+ * call with no arguments summarises to nothing, which is not a malformed body.
+ */
+function readIntent(
+  body: Record<string, unknown>,
+): { intent: Parameters<typeof createExternalCallIntent>[2] } | { refusal: FieldRefusal } {
+  const read: Record<string, string> = {};
+  for (const field of INTENT_FIELDS) {
+    const value = requiredText(body, field);
+    if ('refusal' in value) return value;
+    read[field] = value.value;
+  }
+
+  const direction = body.direction ?? 'input';
+  if (direction !== 'input' && direction !== 'output') {
+    return { refusal: { field: 'direction', message: 'direction is `input` or `output`' } };
+  }
+
+  const summary = body.arguments_summary ?? '';
+  if (typeof summary !== 'string') {
+    return { refusal: { field: 'arguments_summary', message: 'arguments_summary is text' } };
+  }
+
+  return {
+    intent: {
+      node_id: read.node_id,
+      direction,
+      name: read.name,
+      server: read.server,
+      tool: read.tool,
+      arguments_sha256: read.arguments_sha256,
+      // Truncated HERE and never on the caller's word that it already did
+      // (RF-37): a summary is a summary because this side made it one.
+      arguments_summary: summary,
+      started_at: read.started_at,
+    },
+  };
+}
+
+/** Reads a completion body — the shape carrying `call_id`. */
+function readCompletion(
+  body: Record<string, unknown>,
+):
+  | { callId: number; completion: Parameters<typeof completeExternalCall>[3] }
+  | { refusal: FieldRefusal } {
+  const callId = body.call_id;
+  if (!Number.isInteger(callId)) {
+    return { refusal: { field: 'call_id', message: 'call_id has to be an integer' } };
+  }
+
+  const finishedAt = requiredText(body, 'finished_at');
+  if ('refusal' in finishedAt) return finishedAt;
+
+  const outcome = body.outcome;
+  if (typeof outcome !== 'string' || !EXTERNAL_CALL_OUTCOMES.includes(outcome as ExternalCallOutcome)) {
+    return {
+      refusal: { field: 'outcome', message: 'outcome is `ok` or `error`' },
+    };
+  }
+
+  const summary = body.result_summary ?? null;
+  if (summary !== null && typeof summary !== 'string') {
+    return { refusal: { field: 'result_summary', message: 'result_summary is text or null' } };
+  }
+
+  return {
+    callId: callId as number,
+    completion: {
+      finished_at: finishedAt.value,
+      outcome: outcome as ExternalCallOutcome,
+      result_summary: summary,
+    },
+  };
+}
+
+/**
+ * The four reads behind `GET /jobs/:id/conversation` (t360, FR5).
+ *
+ * Same division of labour as {@link nodeInputOf}: the MERGE is
+ * `domain/conversation.ts`, pure and testable without a server, and what lives
+ * here is only which rows feed it.
+ *
+ * - the job itself, for the scope check and for the terminal flag. It is the
+ *   one read that can answer "this job is not yours", so it goes first and
+ *   nothing below runs without it;
+ * - the timeline, for the ORDER of the questions. `input_request.answered`
+ *   carries no `job_id`, so the answers cannot come from here;
+ * - both slices of the input-request queue, for the answers and for the one
+ *   question still open;
+ * - the job's sessions, for the draft and for whether one is running.
+ *
+ * ## Which of them take the scope
+ *
+ * Two: the job and the timeline. `listInputRequests` and `listSessions` do not,
+ * for the reason `nodeInputOf` already writes down — both are called with a
+ * `job_id` the job read has already confirmed belongs to the resolved project,
+ * and a scope parameter there would be a second copy of a judgement already
+ * made.
+ *
+ * @param db Open database.
+ * @param id Job id.
+ * @param projectId Project the request resolved to.
+ * @returns The conversation, or `null` when the job does not exist in that
+ *   project.
+ */
+function conversationOf(db: Database, id: number, projectId: number): Conversation | null {
+  const job = getJob(db, id, projectId);
+  if (job === null) return null;
+
+  return buildConversation({
+    events: jobTimeline(db, id, projectId) ?? [],
+    answered: listInputRequests(db, { status: 'answered', job_id: id }),
+    pending: listInputRequests(db, { status: 'pending', job_id: id }),
+    sessions: listSessions(db, { job_id: id }),
+    done: job.completed,
+  });
+}
+
 /**
  * Registers the job routes in the `/v1` scope.
  *
@@ -186,10 +364,23 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       });
     } catch (error) {
       // `withValidation` re-throws anything that is not a `ValidationError`, and
-      // correctly so — neither of these is a verdict about the body. Both are
-      // the same 409 in the same envelope, with their context as SIBLING
-      // fields, so a client that reads one of the three codes reads all of them.
+      // correctly so — none of these three is a verdict about the body. All of
+      // them travel in the same envelope, with their context as SIBLING fields,
+      // so a client that reads one of the codes reads all of them.
       //
+      // The scope names no project at all (t417, FR2). A 404 and not a 409,
+      // because this is an ABSENCE and not a conflict — and byte for byte the
+      // body `requireProject` gives `GET /v1/jobs?project_id=99`, so the two
+      // halves of the same partition answer the same words to the same mistake.
+      if (error instanceof UnknownProjectError) {
+        // The code is spelled out rather than read off `error.code`, which
+        // holds the same value: `test/write-scope-guard.test.ts` sweeps this
+        // source for the literal, and a route that hides its answer behind a
+        // property is a route the guard cannot vouch for.
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: error.projectId,
+        });
+      }
       // The version resolves, but in another project (t410, FR7): the request
       // is reaching across a partition, which is a conflict and never a silent
       // accept. A hash that resolves in NO project is untouched by this branch
@@ -262,6 +453,31 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
     }),
   );
 
+  /**
+   * The same job's escalations, read as the conversation they are (t360, FR5).
+   *
+   * A GET beside `/context` and for the same reason: it is assembled out of
+   * four reads and it answers one page's whole question. What it is NOT is a
+   * second door onto the input-request queue — `GET /v1/input-requests` still
+   * owns that, spelling and all. This one is the interview's own shape: the
+   * closed turns in log order, the one question still open, the draft the last
+   * session reported, and whether anything is running.
+   *
+   * A job that never asked anything projects empty turns, a `null` pending and
+   * a `null` draft — the honest answer for a job of any class at all, which is
+   * why nothing here checks that the job is an interview. Only an id that names
+   * nothing, or names a job of another project, is a 404.
+   */
+  app.get('/jobs/:id/conversation', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const conversation = conversationOf(db, routeId(request.params), scope.project.id);
+      return conversation === null ? notFound(reply, 'job') : conversation;
+    }),
+  );
+
   app.get('/jobs/:id/events', async (request, reply) =>
     withValidation(reply, () => {
       const scope = requireProject(db, request, reply);
@@ -303,6 +519,94 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       ),
     );
   };
+
+  /**
+   * The record of one call to an external MCP server (t370, FR6; RF-37).
+   *
+   * ONE route for both phases, told apart by the body: no `call_id` opens the
+   * intent (`201`), and a `call_id` closes that row (`200`). Two routes would
+   * have been two lines in `RUNNER_SURFACE` for one act, and the raw ticket's
+   * own criterion — "the runner allowlist gains exactly the external-calls
+   * route" — is a design constraint worth honouring: an allowlist grows one
+   * decision at a time, and this is one decision.
+   *
+   * Left unscoped by `requireProject`, following this file's own documented
+   * split: the four writes above are deliberately unscoped because a job id
+   * already resolves to exactly one project through its own row, and scoping a
+   * mutation is the write-side slice of a different ticket.
+   */
+  app.post('/jobs/:id/external-calls', async (request, reply) =>
+    withValidation(reply, () => {
+      const body = isObject(request.body) ? request.body : {};
+      const jobId = routeId(request.params);
+
+      if (!('call_id' in body)) {
+        const read = readIntent(body);
+        if ('refusal' in read) {
+          return refusal(reply, 400, 'invalid_body', read.refusal.message, {
+            field: read.refusal.field,
+          });
+        }
+
+        const created = createExternalCallIntent(db, jobId, read.intent);
+        if (created === null) return notFound(reply, 'job');
+
+        reply.code(201);
+        return { external_call: created };
+      }
+
+      const read = readCompletion(body);
+      if ('refusal' in read) {
+        return refusal(reply, 400, 'invalid_body', read.refusal.message, {
+          field: read.refusal.field,
+        });
+      }
+
+      const completed = completeExternalCall(db, read.callId, jobId, read.completion);
+      // A call of ANOTHER job answers the same `404` an unknown id gets: a
+      // boundary a client can tell apart from an absence is a boundary that
+      // reports which ids are taken elsewhere (t411, t422).
+      if (completed === null) return notFound(reply, 'external call');
+      if (completed === ALREADY_COMPLETED) {
+        return refusal(
+          reply,
+          409,
+          'external_call_already_completed',
+          'this call already has an outcome; the first answer stands',
+          { call_id: read.callId },
+        );
+      }
+
+      return { external_call: completed };
+    }),
+  );
+
+  /**
+   * What was called for one job, in order (t370, FR6).
+   *
+   * Scoped with `requireProject` exactly like the job family's other GETs, and
+   * operator-only by omission: this dispatch never reads its own call history
+   * back, and t371 is the first runner-side reader — it adds its own allowlist
+   * line the day it needs one, on the one-route-at-a-time discipline t166 and
+   * t401 already set.
+   *
+   * A row with `outcome: null` and `finished_at: null` well after `started_at`
+   * is a call nobody closed: the reader concludes "unknown", and nothing in
+   * this system ever wrote that word down.
+   */
+  app.get('/jobs/:id/external-calls', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const id = routeId(request.params);
+      // The JOB is what carries the partition (D25), so it is what the scope is
+      // applied to; the listing below inherits it through the foreign key.
+      if (getJob(db, id, scope.project.id) === null) return notFound(reply, 'job');
+
+      return { external_calls: listExternalCalls(db, id) };
+    }),
+  );
 
   write('/jobs/:id/transitions', 'post', (id, body) => transitionJob(db, id, body));
   write('/jobs/:id/blocks', 'post', (id, body) => blockJob(db, id, body));

@@ -471,6 +471,26 @@ const FAKE_PROBE = (): EngineCommand => ({
 });
 
 /**
+ * The MCP listing every adapter built here runs, on the fake binary (t434).
+ *
+ * The same rule as {@link FAKE_PROBE}, applied to the spawn t401 added: since
+ * the startup reports a probe, `buildProbeReport` calls `discoverMcpServers()`
+ * unconditionally, and an adapter left with the real `claude mcp list` /
+ * `codex mcp list --json` puts this file's startup path back on an installed
+ * CLI — the one thing the header says the suite must never do. It was also
+ * expensive: that spawn measured 2_142ms on an idle developer host and dominated
+ * every startup in this file, which is what AT12's shutdown bound was failing
+ * against on a loaded one.
+ *
+ * The fake answers the empty listing (`FAKE_ENGINE_MCP_LIST` unset), which is
+ * what an engine with nothing configured really prints. A case that needs a
+ * server named builds its own adapter, as `t360 AT4` does.
+ */
+const FAKE_MCP_LIST = (...args: string[]): (() => EngineCommand) => {
+  return () => ({ command: process.execPath, args: [FAKE_ENGINE, 'mcp', 'list', ...args] });
+};
+
+/**
  * The `engineFactory` seam, pointed at the fake engine.
  *
  * Only the BINARY changes: the argv each adapter's own command builder produces
@@ -498,6 +518,7 @@ function fakeEngineFactory(
             environmentBuilder: (spec) => ({ ...buildCodexEnvironment(spec), ...overrides }),
             graceMs: 300,
             probeCommandBuilder,
+            mcpListCommandBuilder: FAKE_MCP_LIST('--json'),
           }),
           decodeSessionText: decodeCodexSessionText,
         }
@@ -510,6 +531,7 @@ function fakeEngineFactory(
             environmentBuilder: (spec) => ({ ...buildEnvironment(spec), ...overrides }),
             graceMs: 300,
             probeCommandBuilder,
+            mcpListCommandBuilder: FAKE_MCP_LIST(),
           }),
           decodeSessionText: decodeClaudeCodeSessionText,
         };
@@ -1122,16 +1144,28 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     // invisible to that assertion. This is the one that separates "noticed the
     // abort" from "waited the interval out".
     //
-    // The number is measured, not guessed (t292). `took` is not pure shutdown
-    // latency: the loop awaits whatever tick is in flight, and `runRunner`
-    // pairs, preflights and reports its models before it ever parks, so an
-    // abort that lands during that startup makes `took` the remainder of it.
-    // Across 16 runs of this suite on an 8-core machine — 10 sequential, 6 with
-    // two suites at once — that residue measured between 0ms and 753ms. 5_000ms
-    // is ~6x the worst of them and ~1/4 of the ~19.7s the defect would cost, so
-    // no scheduling hiccup reaches the bound and the defect cannot hide under
-    // it. The earlier bound was `intervalMs / 2` — 1_000ms against a 753ms
-    // worst case, which is how this became an intermittently red suite.
+    // The number is measured, not guessed (t292), and re-measured when it went
+    // red (t434). `took` is not pure shutdown latency: the loop awaits whatever
+    // tick is in flight, and `runRunner` pairs, preflights and reports its
+    // models before it ever parks, so an abort that lands during that startup
+    // makes `took` the remainder of it.
+    //
+    // t292 measured that residue at 0-753ms across 16 runs. t401 then put an
+    // MCP discovery on the same startup, and this file's fake engine answered
+    // `--version` but not `mcp list` — so every runner here spawned the host's
+    // REAL `claude`, which measured 1_840-2_530ms unloaded and 343-3_659ms
+    // under contention, and ~5.5s on a machine at load 31 with swap exhausted,
+    // which is where this case went red. `FAKE_MCP_LIST` is that gap closed;
+    // the residue is a residue again.
+    //
+    // Re-measured on 2026-09-07, 8-core machine, this file alone: 0, 0, 1, 123,
+    // 183, 234 and 442ms, the last two with the load average at 9.3 and 29.7 —
+    // the same saturation the red report was taken under. 5_000ms is ~11x the
+    // worst of those and ~1/4 of the ~19.7s the defect would cost, so no
+    // scheduling hiccup reaches the bound and the defect cannot hide under it.
+    // The bound is the same number t292 set: what changed is what it measures.
+    // The earlier bound was `intervalMs / 2` — 1_000ms against a 753ms worst
+    // case, which is how this became an intermittently red suite.
     const promptlyMs = 5_000;
     assert.ok(
       took < promptlyMs,

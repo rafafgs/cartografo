@@ -512,6 +512,17 @@ async function reportModels(
  * session's worktree can be cut from this path, and a bare repository answers
  * the second question and not the first.
  *
+ * **`execFileSync`, and measured before being left that way (t434).** This is
+ * the only synchronous subprocess spawn in the runner — every adapter uses
+ * async `spawn()` — so it was the first suspect when the startup window this
+ * report is built in went over AT12's shutdown bound. It is not the cause: it
+ * measured 18-39ms across the startup of every case in
+ * `test/cli/run.e2e.test.ts`, against 2_100-3_600ms for the MCP discovery two
+ * lines below it in the same report. Named here rather than changed, because
+ * rewriting the call that is 1% of the window would have made the number look
+ * addressed while the other 99% stayed. Whoever finds a host where a `git
+ * rev-parse` costs more than that has the timing above to compare against.
+ *
  * @param directory Absolute path to ask about.
  * @returns Whether git claims it is inside a working tree.
  */
@@ -863,15 +874,39 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
     requestTimeoutMs: options.requestTimeoutMs,
   });
 
+  /** Has a stop been asked for? Read fresh: the answer changes under an await. */
+  const stopped = (): boolean => options.signal?.aborted === true;
+
+  // Declared HERE, above the startup, and read between every phase of it
+  // (t434, FR3). Until this ticket the first read was after all four had run,
+  // so a stop that landed during the startup waited out the rest of it — and
+  // the startup is no longer the cheap thing that assumption was written
+  // against: `reportProbe` grew a second preflight and an MCP discovery
+  // (t401, t360), and that discovery spawns the engine's own CLI. `claude mcp
+  // list` measured 2_142ms on an unloaded developer host, and fork/exec is one
+  // of the few costs in this path that scales badly under contention, which is
+  // how the same window reached ~5.5s on a machine at load 31.
+  //
+  // The check is BETWEEN the phases and never inside them: the awaited phase
+  // is already spent, and abandoning it mid-flight would leave a report the
+  // control plane half-took. What it buys is that no phase which had not
+  // STARTED begins after the signal fired.
+  //
+  // A bare `return` and nothing to unwind: no lease has been taken, no session
+  // is in flight, and `onReady` has not fired — the runner never came up, so
+  // there is nothing for it to announce or hand back.
+
   // First call of the process, and it is not negotiable: everything below
   // answers 404 for a runner the control plane has never heard of.
   await client.registerRunner(options.runnerId);
+  if (stopped()) return;
 
   // Second call, and only when there is something left to decide: the three
   // values everything below reads come either from the command line or from
   // this project's settings, and until this line a settings-mode runner does
   // not know where it may write (t404, FR5).
   const resolved = await resolveRunnerPaths(client, options);
+  if (stopped()) return;
 
   // Two routes, and the key of each is the engine's own name: the dispatch
   // resolves the engine from the NODE the work is standing on, so a node that
@@ -886,6 +921,7 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // the critical path: a CLI that did not answer and a report that was refused
   // are both logged, and the runner goes on to work.
   await reportModels(client, resolved.engine, route.adapter);
+  if (stopped()) return;
 
   // ...and then what the operator page reads: the same preflight, the MCP
   // servers this engine names, and the two directories this process was pointed
@@ -897,6 +933,7 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // computing it twice would be two CLI spawns and two answers about one
   // machine.
   const probe = await reportProbe(client, options, resolved, route.adapter);
+  if (stopped()) return;
 
   // The client the precedent resolver speaks through: the same address, the
   // same credential and the same deadline the dispatch itself uses. Built here
@@ -966,9 +1003,6 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   });
 
   options.onReady?.(resolved);
-
-  /** Has a stop been asked for? Read fresh: the answer changes under an await. */
-  const stopped = (): boolean => options.signal?.aborted === true;
 
   while (!stopped()) {
     try {

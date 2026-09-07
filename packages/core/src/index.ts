@@ -260,7 +260,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
     applyPragmas(db);
     migrationsApplied = migrate(db, MIGRATIONS_DIR);
 
-    // The local runner's three defaults (t403, RF-08), seeded right after the
+    // The local runner's defaults (t403, RF-08), seeded right after the
     // schema exists so `GET /v1/settings` answers correctly even for an
     // operator who never touches the later one-command flow. `INSERT OR
     // IGNORE` underneath (`seedDefaultSettings`) is what makes this safe to run
@@ -271,6 +271,11 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
       workspace_root: path.join(os.homedir(), '.cartografo', 'workspace'),
       worktrees_root: path.join(os.homedir(), '.cartografo', 'worktrees'),
       engine: 'claude-code',
+      // t439's fourth key, seeded on, with no consumer yet. Same shape and same
+      // reasoning as the three above when t403 wrote them: an operator who
+      // wants it off can `PATCH /v1/settings` today, and the ticket that
+      // finally reads it finds a value already there on every existing install.
+      allow_git_clone: 'true',
     });
 
     // Inside the `try`, like `serverPort`: a misconfigured ceiling — or a

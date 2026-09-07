@@ -10,8 +10,8 @@
  *
  * `KNOWN_SETTING_KEYS` is where v0's closed vocabulary lives, the same way
  * `MODEL_ORIGINS` lives in `engine-models.ts` rather than in a migration
- * `CHECK`: a fourth key (the check-screen ticket) is a code change here, not a
- * migration.
+ * `CHECK`: a further key is a code change here, not a migration — which is
+ * exactly how `allow_git_clone` arrived (t439).
  *
  * Like every other repository it receives the already-open database and never
  * touches the driver (D1).
@@ -20,11 +20,17 @@
 import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
 
-/** The only three keys v0 accepts anywhere. */
+/** The only keys v0 accepts anywhere. */
 export const KNOWN_SETTING_KEYS: readonly string[] = Object.freeze([
   'workspace_root',
   'worktrees_root',
   'engine',
+  // t439. A workspace-level on/off switch for cloning a repository, added here
+  // before anything reads it — exactly as the three above shipped in t403,
+  // before the one-command startup existed to read them. A key with no consumer
+  // costs one line and a seeded row; a consumer with no key costs a migration
+  // of the vocabulary in the middle of the ticket that needs it.
+  'allow_git_clone',
 ]);
 
 /**

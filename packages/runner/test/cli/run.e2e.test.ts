@@ -87,6 +87,7 @@ import {
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type McpDiscovery,
   type ModelCatalog,
   type SessionListener,
   type SessionSpec,
@@ -470,6 +471,26 @@ const FAKE_PROBE = (): EngineCommand => ({
 });
 
 /**
+ * The MCP listing every adapter built here runs, on the fake binary (t434).
+ *
+ * The same rule as {@link FAKE_PROBE}, applied to the spawn t401 added: since
+ * the startup reports a probe, `buildProbeReport` calls `discoverMcpServers()`
+ * unconditionally, and an adapter left with the real `claude mcp list` /
+ * `codex mcp list --json` puts this file's startup path back on an installed
+ * CLI — the one thing the header says the suite must never do. It was also
+ * expensive: that spawn measured 2_142ms on an idle developer host and dominated
+ * every startup in this file, which is what AT12's shutdown bound was failing
+ * against on a loaded one.
+ *
+ * The fake answers the empty listing (`FAKE_ENGINE_MCP_LIST` unset), which is
+ * what an engine with nothing configured really prints. A case that needs a
+ * server named builds its own adapter, as `t360 AT4` does.
+ */
+const FAKE_MCP_LIST = (...args: string[]): (() => EngineCommand) => {
+  return () => ({ command: process.execPath, args: [FAKE_ENGINE, 'mcp', 'list', ...args] });
+};
+
+/**
  * The `engineFactory` seam, pointed at the fake engine.
  *
  * Only the BINARY changes: the argv each adapter's own command builder produces
@@ -497,6 +518,7 @@ function fakeEngineFactory(
             environmentBuilder: (spec) => ({ ...buildCodexEnvironment(spec), ...overrides }),
             graceMs: 300,
             probeCommandBuilder,
+            mcpListCommandBuilder: FAKE_MCP_LIST('--json'),
           }),
           decodeSessionText: decodeCodexSessionText,
         }
@@ -509,6 +531,7 @@ function fakeEngineFactory(
             environmentBuilder: (spec) => ({ ...buildEnvironment(spec), ...overrides }),
             graceMs: 300,
             probeCommandBuilder,
+            mcpListCommandBuilder: FAKE_MCP_LIST(),
           }),
           decodeSessionText: decodeClaudeCodeSessionText,
         };
@@ -518,6 +541,91 @@ function fakeEngineFactory(
 const QUIET_LINES = JSON.stringify([
   { stream: 'stdout', text: 'I did what the node asked for; nothing to ask.' },
 ]);
+
+/**
+ * An adapter that holds the startup open at its preflight (t434, FR3).
+ *
+ * `runRunner` runs four phases before it ever parks — pairing, the paths, the
+ * model catalog, the probe — and what this adapter measures is what happens to
+ * the ones that had NOT started when the abort landed. So it does two things
+ * and nothing else: it writes down every startup call it is asked for, in
+ * order, and it parks the FIRST `verifyCli` until the case lets it go, which is
+ * what makes "the signal fired while a phase was in flight" a moment the test
+ * can name instead of a race it has to guess at.
+ *
+ * The first call and not every call: `reportModels` and the probe each run
+ * their own preflight (`run.ts`, `verifyEngineCli` and `buildProbeReport`), and
+ * holding the second one too would park a phase this case asserts never starts.
+ *
+ * Independent of host load, on purpose. Every other measurement of this
+ * shutdown is a stopwatch, and a stopwatch on a busy machine measures the
+ * machine; this one measures the ORDER, which a loaded host cannot change.
+ */
+class GatedStartupAdapter implements EngineAdapter {
+  readonly engineName = 'claude-code';
+
+  /** Every startup call this adapter answered, in the order they arrived. */
+  readonly calls: string[] = [];
+
+  /** Resolves once the preflight has been entered and is being held. */
+  readonly atPreflight: Promise<void>;
+
+  #reachedPreflight: () => void = () => undefined;
+  #openPreflight: () => void = () => undefined;
+  readonly #heldPreflight: Promise<void>;
+
+  constructor() {
+    this.atPreflight = new Promise<void>((resolve) => {
+      this.#reachedPreflight = resolve;
+    });
+    this.#heldPreflight = new Promise<void>((resolve) => {
+      this.#openPreflight = resolve;
+    });
+  }
+
+  /** Lets the held preflight answer, and with it the phase it belongs to. */
+  releasePreflight(): void {
+    this.#openPreflight();
+  }
+
+  async verifyCli(): Promise<CliProbe> {
+    this.calls.push('verifyCli');
+    if (this.calls.length === 1) {
+      this.#reachedPreflight();
+      await this.#heldPreflight;
+    }
+    return { available: true, version: '9.9.9 (Gated Engine)', authenticated: true };
+  }
+
+  async listModels(): Promise<ModelCatalog> {
+    this.calls.push('listModels');
+    return {
+      models: [{ id: 'gated-1', label: 'Gated 1', origin: 'catalog' }],
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  async discoverMcpServers(): Promise<McpDiscovery> {
+    this.calls.push('discoverMcpServers');
+    return { servers: [], origin: 'file', resolvedAt: new Date().toISOString() };
+  }
+
+  async startSession(): Promise<string> {
+    throw new Error('this adapter never opens a session');
+  }
+
+  async getStatus(): Promise<SessionStatus> {
+    throw new Error('this adapter never opens a session');
+  }
+
+  async cancel(): Promise<void> {
+    // Nothing has ever been started, so there is nothing to take down.
+  }
+
+  capabilities(): EngineCapabilities {
+    return BASELINE_CAPABILITIES;
+  }
+}
 
 /** A runner running in this process, and the handle that stops it. */
 interface RunningRunner {
@@ -1036,20 +1144,90 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     // invisible to that assertion. This is the one that separates "noticed the
     // abort" from "waited the interval out".
     //
-    // The number is measured, not guessed (t292). `took` is not pure shutdown
-    // latency: the loop awaits whatever tick is in flight, and `runRunner`
-    // pairs, preflights and reports its models before it ever parks, so an
-    // abort that lands during that startup makes `took` the remainder of it.
-    // Across 16 runs of this suite on an 8-core machine — 10 sequential, 6 with
-    // two suites at once — that residue measured between 0ms and 753ms. 5_000ms
-    // is ~6x the worst of them and ~1/4 of the ~19.7s the defect would cost, so
-    // no scheduling hiccup reaches the bound and the defect cannot hide under
-    // it. The earlier bound was `intervalMs / 2` — 1_000ms against a 753ms
-    // worst case, which is how this became an intermittently red suite.
+    // The number is measured, not guessed (t292), and re-measured when it went
+    // red (t434). `took` is not pure shutdown latency: the loop awaits whatever
+    // tick is in flight, and `runRunner` pairs, preflights and reports its
+    // models before it ever parks, so an abort that lands during that startup
+    // makes `took` the remainder of it.
+    //
+    // t292 measured that residue at 0-753ms across 16 runs. t401 then put an
+    // MCP discovery on the same startup, and this file's fake engine answered
+    // `--version` but not `mcp list` — so every runner here spawned the host's
+    // REAL `claude`, which measured 1_840-2_530ms unloaded and 343-3_659ms
+    // under contention, and ~5.5s on a machine at load 31 with swap exhausted,
+    // which is where this case went red. `FAKE_MCP_LIST` is that gap closed;
+    // the residue is a residue again.
+    //
+    // Re-measured on 2026-09-07, 8-core machine, this file alone: 0, 0, 1, 123,
+    // 183, 234 and 442ms, the last two with the load average at 9.3 and 29.7 —
+    // the same saturation the red report was taken under. 5_000ms is ~11x the
+    // worst of those and ~1/4 of the ~19.7s the defect would cost, so no
+    // scheduling hiccup reaches the bound and the defect cannot hide under it.
+    // The bound is the same number t292 set: what changed is what it measures.
+    // The earlier bound was `intervalMs / 2` — 1_000ms against a 753ms worst
+    // case, which is how this became an intermittently red suite.
     const promptlyMs = 5_000;
     assert.ok(
       took < promptlyMs,
       `an idle stop took ${took}ms, past the ${promptlyMs}ms it is given: the shutdown is waiting the ${intervalMs}ms interval out instead of noticing the abort`,
+    );
+  });
+
+  await parent.test('t434 AT1 — an abort during the startup skips the phases that had not started', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    // Plain directories, for AT12's reason: this runner never reaches a tick.
+    const { repoRoot, worktreesRoot } = workspace(t, 't434-at1');
+
+    const adapter = new GatedStartupAdapter();
+    const announced: RunModule.ResolvedRunnerPaths[] = [];
+    const aborter = new AbortController();
+
+    const finished = runRunner({
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId: 'runner-t434-at1',
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      // Never waited out, and never reached: the abort lands in the startup, so
+      // a loop that parked at all would hang this case for a minute instead of
+      // failing it in a way somebody has to read twice.
+      intervalMs: 60_000,
+      leaseTtlSeconds: 10,
+      engineFactory: () => ({ adapter, decodeSessionText: decodeClaudeCodeSessionText }),
+      onReady: (values) => announced.push(values),
+      signal: aborter.signal,
+    });
+
+    // The abort lands while the model catalog's own preflight is still in
+    // flight — the only moment that proves anything. A startup that checks
+    // nothing between its phases goes on to the probe from here regardless of
+    // the signal, and on a machine where that probe spawns a real CLI that is
+    // seconds of work nobody asked for (t434: `claude mcp list` measured
+    // 2_142ms on the developer's host).
+    await adapter.atPreflight;
+    aborter.abort();
+    adapter.releasePreflight();
+
+    await finished;
+
+    // The phase in flight finishes — it is already spent, and abandoning it
+    // mid-await would leave a report half-posted — and NOTHING after it starts.
+    // `discoverMcpServers` is the tell: it belongs to `reportProbe`, the fourth
+    // phase, which an abort-blind startup runs anyway.
+    assert.deepEqual(
+      adapter.calls,
+      ['verifyCli', 'listModels'],
+      'the startup ran a phase that began after the abort',
+    );
+    assert.deepEqual(
+      announced,
+      [],
+      'a runner that never parked announced itself ready anyway',
     );
   });
 

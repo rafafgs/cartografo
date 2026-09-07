@@ -54,7 +54,15 @@ import type {
   SessionLog,
   Settings,
 } from './client.ts';
-import { draftToDraw, renderChat, renderMap, renderMapProgress } from './interview.ts';
+import {
+  ANSWER_DOCUMENT_SCRIPT,
+  draftToDraw,
+  isFieldList,
+  renderAnswerFields,
+  renderChat,
+  renderMap,
+  renderMapProgress,
+} from './interview.ts';
 import { renderMapDocument, roleDescriptionLabel, type MapDocumentGraph } from './map-document.ts';
 import { extractMcpHint, type McpCatalog, type McpServerSuggestion } from './mcp-catalog.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
@@ -773,34 +781,54 @@ function questionSummary(question: Question): string {
  * arrives whole from the API, leaving no room to break the `for`/`id` pair.
  * Pinned by `packages/screen/test/questions-answer-field.test.ts`; it is the same
  * fix `t128` made on the inbox's reason field.
+ *
+ * Since t481 the card draws one of two shapes, and the second one is not this
+ * file's: a question whose `options` carries FIELDS rather than labels is a
+ * whole step asked at once, and the controls come from `renderAnswerFields` in
+ * `interview.ts`, which `/interview/:id` draws out of too. What stays here is
+ * this page's own DOM contract — `data-opcao`, the one field named `resposta`,
+ * and the author beside the submit — and a flat list of labels renders exactly
+ * as it did before, script or no script.
+ *
+ * The `<dl>` states the recommendation before the context (§7.5: the
+ * recommendation comes first, because it is the text of the button that accepts
+ * it). The default answer follows it for a single decision and is left out of a
+ * batched one, where each field carries its own pre-selected value and the
+ * question-level default is a JSON document with no single line worth showing.
  */
 function questionCard(question: Question): string {
   const field = (label: string, value: string | null): string =>
     value === null || value === '' ? '' : `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`;
 
+  const batched = isFieldList(question.options);
+
   const options =
-    question.options === null || question.options.length === 0
+    batched || question.options === null || question.options.length === 0
       ? ''
-      : `<div class="opcoes">${question.options
+      : `<div class="opcoes">${(question.options as string[])
           .map(
             (option) =>
               `<button type="button" data-opcao="${escapeHtml(option)}">${escapeHtml(option)}</button>`,
           )
           .join('\n      ')}</div>`;
 
+  const inside = isFieldList(question.options)
+    ? renderAnswerFields(question.options, `field-${question.id}`, 'resposta')
+    : `${options}
+    <label for="resposta-${question.id}">your answer</label>
+    <textarea id="resposta-${question.id}" name="resposta" required placeholder="the answer, as you would give it to a person">${escapeHtml(question.default_answer ?? '')}</textarea>`;
+
   return `<article class="pergunta" data-pergunta="${question.id}">
   <strong>${escapeHtml(question.question)}</strong>
   <dl>
     <dt>job</dt><dd><a href="/jobs/${question.job_id}">#${question.job_id}</a></dd>
     ${field('created at', question.created_at)}
-    ${field('context', question.context)}
     ${field('recommendation', question.recommendation)}
-    ${field('default answer', question.default_answer)}
+    ${field('context', question.context)}
+    ${batched ? '' : field('default answer', question.default_answer)}
   </dl>
-  <form method="post" action="/input-requests/${question.id}/answer">
-    ${options}
-    <label for="resposta-${question.id}">your answer</label>
-    <textarea id="resposta-${question.id}" name="resposta" required placeholder="the answer, as you would give it to a person">${escapeHtml(question.default_answer ?? '')}</textarea>
+  <form method="post" action="/input-requests/${question.id}/answer"${batched ? ' data-batched' : ''}>
+    ${inside}
     <p>
       <label>who is answering <input name="respondido_por" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
       <button type="submit">answer</button>
@@ -1555,7 +1583,7 @@ export async function questionsPage(
   const body =
     questions.length === 0
       ? '<p class="vazio">Nobody waiting for an answer. 🎉</p>'
-      : `${questions.map(questionCard).join('\n')}\n${OPTIONS_SCRIPT}`;
+      : `${questions.map(questionCard).join('\n')}\n${OPTIONS_SCRIPT}\n${ANSWER_DOCUMENT_SCRIPT}`;
 
   return {
     status: 200,
@@ -2178,7 +2206,7 @@ export async function interviewPage(
       },
       { title: 'the map so far', html: renderMap(conversation.draft), progress },
     ) +
-    `\n${INTERVIEW_OPTIONS_SCRIPT}\n${interviewIsland(interviewId, conversation.done)}`;
+    `\n${INTERVIEW_OPTIONS_SCRIPT}\n${ANSWER_DOCUMENT_SCRIPT}\n${interviewIsland(interviewId, conversation.done)}`;
 
   return { status: 200, html: layout('interview', body, scope) };
 }

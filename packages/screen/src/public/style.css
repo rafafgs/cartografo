@@ -224,6 +224,71 @@ form .opcoes {
   margin: .4rem 0;
 }
 
+/*
+ * A question that asks a whole step at once (t481).
+ *
+ * One box per decision, and the box is the only thing the group needs: the
+ * `<legend>` names it, `var(--line)` draws it, and there is no fill, no shadow
+ * and no colour anywhere in here — a form is not a state (§1). The escape
+ * hatch under each list is set apart by a rule of the same line and nothing
+ * else, because "something else" is one more option, not a warning.
+ *
+ * The `(recommended)` marker is text at the supporting grade. It says which
+ * control is already ticked, which is information and not attention, and
+ * attention is what colour is reserved for.
+ */
+
+.question-field {
+  margin: .75rem 0;
+  padding: .5rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.question-field legend {
+  padding: 0 .25rem;
+  font-size: .8rem;
+  letter-spacing: .02em;
+  color: var(--soft);
+}
+
+/* An option is read at body size: it IS the answer, not the label of one. */
+.question-field .option {
+  display: block;
+  margin: .25rem 0;
+  font-size: inherit;
+  letter-spacing: normal;
+  color: var(--ink);
+}
+
+.question-field .option input {
+  margin-right: .5rem;
+}
+
+.question-field .other {
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--line);
+}
+
+.question-field .other input[type="text"] {
+  width: 100%;
+  padding: .25rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.question-field .recommended {
+  color: var(--soft);
+}
+
+.needs-script {
+  margin: .5rem 0 0;
+  font-size: .8rem;
+  color: var(--soft);
+}
+
 form.action {
   margin-top: .5rem;
   max-width: 52rem;

@@ -191,6 +191,33 @@ export interface SessionLog {
   transcript_artifact_id: number | null;
 }
 
+/**
+ * One control of a question that asks a whole step at once (t480).
+ *
+ * A second, hand-kept mirror of `packages/runner/src/dispatch/parse-input-request.ts`,
+ * for the same reason every other interface in this file mirrors something: the
+ * screen declares no dependency on `packages/runner`, and a page that imported
+ * one would be a page with a privilege over the API it is supposed to be an
+ * ordinary client of (D11).
+ *
+ * The two shapes `options` may take travel on one key and are told apart by
+ * what the items ARE — a short label for one decision, or a named control of a
+ * form. Nothing was migrated for the second to exist, which is why both are
+ * permanent.
+ */
+export interface Field {
+  /** The key this field's value carries in the answer document. */
+  id: string;
+  /** What the person reads beside the control. */
+  label: string;
+  /** choice: pick one. multi: pick any number. free_text: type it. */
+  kind: 'choice' | 'multi' | 'free_text';
+  /** What there is to pick from, for a `choice` or a `multi`. */
+  options?: string[];
+  /** What the agent would pick, pre-selected on the control. */
+  recommended?: string | string[];
+}
+
 /** Projection of an input request, as `GET /v1/input-requests` returns it. */
 export interface Question {
   id: number;
@@ -199,7 +226,8 @@ export interface Question {
   kind: string;
   question: string;
   context: string | null;
-  options: string[] | null;
+  /** One decision's labels, or a whole step's fields (t480). */
+  options: string[] | Field[] | null;
   recommendation: string | null;
   default_answer: string | null;
   status: string;
@@ -390,7 +418,8 @@ export interface PendingQuestion {
   question: string;
   context: string | null;
   recommendation: string | null;
-  options: string[] | null;
+  /** One decision's labels, or a whole step's fields (t480). */
+  options: string[] | Field[] | null;
   default: string | null;
 }
 

@@ -224,3 +224,111 @@ test('t310 — a blank answer is refused with an English page', async (t) => {
   );
   assert.ok(html.includes('back to the board'), `the way out is not English:\n${html}`);
 });
+
+/* ================================================================================
+ * t481 — the same batched question, in this page's own vocabulary
+ *
+ * `/input-requests` and `/interview/:id` draw the same component out of the
+ * same renderer, and the only thing that differs is the DOM contract this page
+ * has carried since t107: `data-opcao`, and the one field named `resposta`.
+ * ============================================================================= */
+
+const BATCHED_BODY = {
+  question: 'Three things about this step, all at once',
+  context: 't101 runs in parallel and owns the same numbering space.',
+  recommendation: 'Keep 0002 and renumber only if it collides on the merge.',
+  options: [
+    {
+      id: 'numbering',
+      label: 'Which number does the migration take?',
+      kind: 'choice',
+      options: ['0002', '0003'],
+      recommended: '0002',
+    },
+    {
+      id: 'owners',
+      label: 'Who else writes in that space?',
+      kind: 'multi',
+      options: ['t101', 't102'],
+    },
+    { id: 'notes', label: 'Anything the merge should know?', kind: 'free_text' },
+  ],
+};
+
+/** The card of the one pending question of the queue. */
+async function oneCard(screen: Parameters<typeof openPage>[0]): Promise<string> {
+  const page = await openPage(screen, '/input-requests');
+  assert.equal(page.status, 200);
+  const cards = blocks(page.html, 'pergunta');
+  assert.equal(cards.length, 1, 'exactly one question is pending');
+  return cards[0].excerpt;
+}
+
+test('t481 AT8 — a batched question draws one control per field, under name="resposta"', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'a whole step at once', entry_node_id: 'refinar' });
+  const question = await createQuestion(cp, { job_id: job.id, ...BATCHED_BODY });
+
+  const screen = await startScreen(t, cp);
+  const card = await oneCard(screen);
+
+  for (const field of BATCHED_BODY.options) {
+    assert.ok(
+      new RegExp(`data-field="${field.id}"`).test(card),
+      `the "${field.id}" field is drawn:\n${card}`,
+    );
+    assert.ok(card.includes(field.label), `and it is named: ${field.label}`);
+  }
+  assert.ok(/<input[^>]*type="radio"/.test(card), `the choice field is a radio group:\n${card}`);
+  assert.ok(/<input[^>]*type="checkbox"/.test(card), `the multi field is a checkbox group:\n${card}`);
+  assert.ok(/<textarea\b/.test(card), `the free-text field is a textarea:\n${card}`);
+  assert.ok(card.includes('(recommended)'), `the recommended option says so, in text:\n${card}`);
+
+  // The DOM contract of this page is untouched: one field named `resposta`,
+  // and the form still answers this very question.
+  assert.ok(
+    /<input[^>]*name="resposta"[^>]*>/.test(card),
+    `the assembled answer travels on the same one field:\n${card}`,
+  );
+  assert.ok(card.includes(`action="/input-requests/${question.id}/answer"`), 'and answers this one');
+  assert.ok(card.includes('<noscript>'), `a batched form declares what it needs:\n${card}`);
+  assert.ok(card.includes('respondido_por'), 'who is answering is still asked');
+
+  // §7.5, on this page too: the recommendation is read before the situation.
+  assert.ok(
+    card.indexOf('<dt>recommendation</dt>') < card.indexOf('<dt>context</dt>'),
+    `the recommendation comes first:\n${card}`,
+  );
+  assert.ok(
+    !card.includes('<dt>default answer</dt>'),
+    `each field shows its own recommendation instead:\n${card}`,
+  );
+});
+
+test('t481 AT8 — a question with a flat list of labels is drawn exactly as it was', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'with a question', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
+
+  const screen = await startScreen(t, cp);
+  const card = await oneCard(screen);
+
+  for (const option of FULL_BODY.options) {
+    assert.ok(
+      new RegExp(`<button[^>]*data-opcao="${option}"`).test(card),
+      `the one-click button for "${option}" is untouched:\n${card}`,
+    );
+  }
+  assert.ok(/<textarea[^>]*name="resposta"/.test(card), `the shared field is untouched:\n${card}`);
+  assert.ok(!/data-field="/.test(card), `and nothing of the batched shape:\n${card}`);
+  assert.ok(!card.includes('<noscript>'), 'it needs no script and claims none');
+  assert.ok(card.includes('<dt>default answer</dt>'), 'the accept line still renders');
+  assert.ok(
+    card.indexOf('<dt>recommendation</dt>') < card.indexOf('<dt>context</dt>'),
+    `§7.5 holds for the legacy shape too:\n${card}`,
+  );
+});

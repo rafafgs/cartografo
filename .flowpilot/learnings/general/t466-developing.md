@@ -1,0 +1,5 @@
+### t466 (developing, unverified)
+
+- AT1's swept region has to START AFTER the plan-B paragraph, not at it: that paragraph already contains the literal `resumeFrom` (interview.md:61), so a region that includes it passes the first assertion with zero new text written. The test slices from the first blank line past the `**What this costs, and the recorded plan B.**` marker for exactly that reason, and the red run confirmed it (the region was `\n\n---\n`).
+- `resumeFrom` is NOT absent from the runner as a whole — it is a declared optional field on SessionSpec (types.ts:103), assembled by buildCommand (command.ts:282) and explicitly refused by both shell-adapter.ts and codex-adapter.ts. The fact worth pinning, and the only one AT2 pins, is that the DISPATCH path never sets it. A future grep for `resumeFrom` across packages/runner will find plenty and look like the doc is stale when it is not.
+- The full suite is green on this machine right now, including packages/core/test/docker-image.e2e.test.ts, which t465's integration note recorded as failing locally on an apt-get signature error. Whatever that was, it is not reproducing today.

@@ -104,6 +104,8 @@ import {
   parsePortFromEnv,
   resolveControlPlaneToken,
   resolveControlPlaneUrl,
+  resolveScreenHost,
+  SCREEN_HOST_ENV,
   untrustedOriginResponse,
   type ProxiedResponse,
 } from './proxy.ts';
@@ -147,10 +149,15 @@ export const DEFAULT_PORT = 4318;
 export const PORT_ENV = 'CARTOGRAFO_SCREEN_PORT';
 
 /**
- * Listening address. Loopback, and it stays loopback even now that the control
- * plane authenticates (t124): the screen takes no credential from the browser,
- * so its own port is the boundary. `CARTOGRAFO_HOST` moves the control plane,
- * not this.
+ * Loopback: the default listening address, and the host of the default control
+ * plane URL the usage text quotes.
+ *
+ * It stays loopback for the reason t124 gave — the screen takes no credential
+ * from the browser, so its own port is the boundary — and `CARTOGRAFO_HOST`
+ * still moves the control plane and not this. What t250 added is a knob of its
+ * own, `CARTOGRAFO_SCREEN_HOST` (`resolveScreenHost`, in `proxy.ts`), for the
+ * one deployment where loopback is the container's interface rather than the
+ * operator's machine.
  */
 export const DEFAULT_HOST = '127.0.0.1';
 
@@ -191,6 +198,7 @@ options:
   -h, --help             this text
 
 environment:
+  ${SCREEN_HOST_ENV}  the address to bind (default ${DEFAULT_HOST})
   ${PORT_ENV}  the screen's own port (default ${DEFAULT_PORT})
   ${CONTROL_PLANE_URL_ENV}          control plane address, unless --url says otherwise
 
@@ -1114,7 +1122,7 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
  */
 export async function startScreenRouter(options: ScreenOptions = {}): Promise<RunningScreen> {
   const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneUrl();
-  const host = options.host ?? DEFAULT_HOST;
+  const host = options.host ?? resolveScreenHost();
   const server = createScreenRouter({ ...options, controlPlaneUrl });
 
   await new Promise<void>((resolve, reject) => {
@@ -1191,6 +1199,7 @@ export async function runScreenCli(
   const screen = await startScreenRouter({
     controlPlaneUrl: resolveControlPlaneUrl(env, urlFromArgs(args)),
     token: resolveControlPlaneToken(env),
+    host: resolveScreenHost(env),
     port: screenPortFromEnv(env),
   });
 

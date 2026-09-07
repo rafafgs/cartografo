@@ -41,6 +41,46 @@ export const SCREEN_TOKEN_ENV = 'CARTOGRAFO_SCREEN_TOKEN';
 /** Fallback credential: the one the CLI already uses, when the screen has none. */
 export const SHARED_TOKEN_ENV = 'CARTOGRAFO_TOKEN';
 
+/** Environment variable that overrides the screen's own listening address (t250). */
+export const SCREEN_HOST_ENV = 'CARTOGRAFO_SCREEN_HOST';
+
+/**
+ * Address the screen binds when nobody says otherwise. Loopback, as it always
+ * was: the screen holds a service credential and takes none from the browser
+ * (t124, D11), so its own port — not a login — is what keeps a passer-by out of
+ * the only writer in the system.
+ *
+ * It stopped being the ONLY possible address in t250, for the one deployment
+ * where loopback means the wrong machine: inside a container `127.0.0.1` is the
+ * container's own interface, so a published `4318:4318` maps the host's port
+ * onto something nothing listens on and the browser is refused. Same shape, and
+ * same reasoning, as the control plane's `CARTOGRAFO_HOST`
+ * (`packages/core/src/index.ts`): the default does not move, and opening the
+ * address stays a decision taken in the open — `compose.yml`, where an operator
+ * reads it — rather than one a command takes on their behalf.
+ *
+ * It lives here, beside `parsePortFromEnv`, for the reason t199 gave when it put
+ * the URL resolver here: the package has TWO entry points (`startScreen` in
+ * `server.ts`, `runScreenCli` in `router.ts`), and a knob honoured by one of
+ * them is a knob that silently does nothing in production.
+ */
+export const DEFAULT_SCREEN_HOST = '127.0.0.1';
+
+/**
+ * Resolves the address the screen listens on.
+ *
+ * A blank value is not a configuration — an unset variable and one exported
+ * empty by a compose file that had nothing to put in it mean the same thing,
+ * and both fall back to loopback.
+ *
+ * @param env Environment to read `CARTOGRAFO_SCREEN_HOST` from.
+ * @returns The address to bind.
+ */
+export function resolveScreenHost(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env[SCREEN_HOST_ENV]?.trim();
+  return configured === undefined || configured === '' ? DEFAULT_SCREEN_HOST : configured;
+}
+
 /** Environment variable that gives the control plane port of the default URL. */
 export const CONTROL_PLANE_PORT_ENV = 'CARTOGRAFO_PORT';
 

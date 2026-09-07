@@ -282,9 +282,61 @@ database.
 | `CARTOGRAFO_TOKEN` | — | The credential the subcommands and the runner present (or `--token`). |
 | `CARTOGRAFO_LEASE_CAP_RUNNER` | `50` | Cap on simultaneous leases per runner. The runner declares what it wants and the **smaller** of the two wins: concurrency is the control plane's call. |
 | `CARTOGRAFO_LEASE_CAP_PROJECT` | `50` | The same, per project. |
+| `CARTOGRAFO_SCREEN_HOST` | `127.0.0.1` | The screen's listening address. Same rule as `CARTOGRAFO_HOST`: opening it is your decision. `compose.yml` is the one place that takes it, because a container's loopback is not yours. |
 | `CARTOGRAFO_SCREEN_PORT` | `4318` | The screen's port. `npx cartografo` reads it too, so the screen it starts and the browser it opens land on the same one. |
 | `CARTOGRAFO_SCREEN_TOKEN` | `CARTOGRAFO_TOKEN` | A credential of the screen's own. It presents this to the control plane and asks the browser for none, which is why it listens on loopback. |
 | `CARTOGRAFO_MCP_TOKEN` | `CARTOGRAFO_TOKEN` | The same for the MCP server. There is deliberately no `--token` flag on that command. |
+
+## Running in a container
+
+`Dockerfile` and `compose.yml` at the root build one image and run two
+containers from it: the control plane and the screen. Both are the single
+`cartografo` package installed the way anyone else installs it, so the commands
+inside the container are the commands in the table above.
+
+**The runner does not go in the container**, and that is a decision rather than
+an omission (D23): it needs the engine CLI already authenticated and the target
+repository on the same machine, and an image that carried both would be an image
+carrying your credentials. It runs on the host, beside the two containers, and
+is the last of the three commands below.
+
+Bring the control plane up first, because the screen needs a credential that
+only exists once it has started:
+
+```bash
+docker compose up control-plane                               # 1 (leave it running)
+```
+
+On the **first** start against a new volume, its `cartografo.ready` line carries
+a `bootstrapToken` — the same field, printed the same once-and-never-again way,
+as `npx cartografo` in the Quick Start. Read it off that line, and then, in
+another terminal:
+
+```bash
+export CARTOGRAFO_TOKEN=<the token from step 1>
+docker compose up screen                                      # 2 → http://127.0.0.1:4318
+CARTOGRAFO_URL=http://127.0.0.1:4317 npx cartografo-runner    # 3 (on the host, not in a container)
+```
+
+Once you have the token, `docker compose up` with no service name starts both
+containers together: nothing mints a second token, so a later start needs
+nothing new pasted into it.
+
+Three things worth knowing before you point anything real at this:
+
+- **The database is on a named volume**, `cartografo-db`, mounted at `/data` on
+  the control plane alone. `docker compose down` leaves it; `docker compose down
+  --volumes` is what deletes it, along with the operator credential inside it.
+- **The image binds loopback, the compose file opens it.** There is no
+  `CARTOGRAFO_HOST` in the `Dockerfile` on purpose — an image should not decide
+  for its operator that a port is open. `compose.yml` sets `0.0.0.0` for both
+  services and publishes `4317` and `4318`, which puts the same two ports on your
+  host that the Quick Start would. The control plane's is behind the credential
+  gate; the screen's is not, and it is holding a credential of its own, so treat
+  `4318` the way the Quick Start's loopback default already treats it.
+- **The screen's service has its healthcheck turned off.** The image's baked
+  `HEALTHCHECK` probes the control plane's `/health` on port `4317`, which the
+  screen never listens on; there is no equivalent route for the screen yet.
 
 ## The factory graphs
 

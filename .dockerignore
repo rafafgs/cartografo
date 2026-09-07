@@ -1,0 +1,43 @@
+# What never belongs in the build context (t250).
+#
+# Mirrors `.gitignore`, with the same reasoning: everything here is either
+# reproduced inside the image (`npm ci` rebuilds `node_modules` for the image's
+# own platform, and a macOS `better-sqlite3` copied in would be worse than
+# useless) or is local state that has nothing to do with a build. Keeping the
+# context small is the cheap part; keeping a developer's database and history
+# out of a published image is the point.
+
+# Dependencies — reinstalled in the build, at any depth
+node_modules/
+**/node_modules/
+
+# History and CI: the image is built from the tree, not from the repository
+.git
+.gitignore
+.github/
+
+# Local state of the control plane (D1) — the operator's database, and any
+# credential hash inside it
+.cartografo/
+*.db
+*.db-shm
+*.db-wal
+
+# Build artefacts and tool caches
+dist/
+**/dist/
+*.tsbuildinfo
+.eslintcache
+
+# Working notes and the ticket tool's cached profile
+notes/
+.flowpilot/
+
+# System
+.DS_Store
+
+# The container artefacts themselves: changing a comment here should not
+# invalidate the `COPY . .` layer
+Dockerfile
+.dockerignore
+compose.yml

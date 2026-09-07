@@ -339,7 +339,12 @@ export function createClaudeCodeDispatch(
       // What this session PRODUCES, wired in one place (t296): its lines, its
       // ref, its denials and its end. `session-collector.ts` says how each is
       // caught; WHEN each is read is the sequence's business and stays here.
-      const collected = createSessionCollector(call, permissions);
+      //
+      // The decoder goes in with them since t465: the collector sends the page
+      // a decoded draft every few seconds while the session runs, and it is
+      // handed the SAME function the final decode below uses, so what a person
+      // watches mid-turn never redraws when the turn ends.
+      const collected = createSessionCollector(call, permissions, route.decodeSessionText);
       const { lines, denials } = collected;
 
       // `startSession` rejects with `SessionStartError` when the session did not
@@ -389,6 +394,10 @@ export function createClaudeCodeDispatch(
         preSession.reset(job.id);
 
         denials.bindSession(session.id);
+        // ...and the draft the page shows while this runs (t465, FR7). Same
+        // line, same reason: until `POST /v1/sessions` answered there was no id
+        // to address either write to.
+        collected.bindSession(session.id);
 
         outcome = await collected.end;
         announceSessionEnd();

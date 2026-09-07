@@ -252,10 +252,14 @@ test(
       // (`0035_input_request_origin.sql`). Both numbers were free at the merge,
       // which is the first time in ten instances that this comment has nothing
       // to record about a collision.
+      // ...and t465 moved it once more with `0036_session_partial_text.sql` —
+      // the draft a running session writes for the interview page to show —
+      // whose number was free at the merge, for the second time in eleven
+      // instances that this comment has no collision to record.
       assert.equal(
         first.readiness.migrationsApplied,
-        35,
-        'a brand-new database applies the thirty-five migrations the package ships',
+        36,
+        'a brand-new database applies the thirty-six migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

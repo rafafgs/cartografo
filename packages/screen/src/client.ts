@@ -403,6 +403,15 @@ export interface Conversation {
   /** Something is running and there is nothing to answer yet. */
   thinking: boolean;
   /**
+   * What that step has written so far; `null` when there is nothing to show yet
+   * (t465).
+   *
+   * The content behind `thinking`, reported under exactly the same condition —
+   * so a page never has to decide on its own whether the text it was handed is
+   * still about the state it is drawing.
+   */
+  partial: string | null;
+  /**
    * The map the last completed session reported; `null` when there is none.
    *
    * `unknown` on purpose, and it is the honest type: what is in there is an

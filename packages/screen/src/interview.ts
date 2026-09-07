@@ -282,13 +282,33 @@ function doneHtml(interviewId: number, drawable: boolean): string {
   );
 }
 
-/** Nothing to answer and nothing finished: somebody is working on the next question. */
-function thinkingHtml(): string {
-  return (
-    `<article class="thinking" data-state="thinking">` +
-    `<p>Working on the next question…</p>` +
-    `</article>`
-  );
+/**
+ * Nothing to answer and nothing finished: somebody is working on the next
+ * question — and, since t465, what they have written of it so far.
+ *
+ * The text REPLACES the placeholder rather than sitting beside it. A line that
+ * says "working on the next question" above four paragraphs of the answer being
+ * written is a page narrating itself; what §3 of the design system asks for is
+ * the shape of what is coming, and here what is coming has already started
+ * arriving.
+ *
+ * A blank draft is not content: a session that has printed only whitespace has
+ * said nothing a person can read, so the placeholder stands.
+ *
+ * `escapeHtml` with no exception, exactly like every other string this module
+ * renders (D4) — this one is the model's own prose, arriving mid-sentence.
+ *
+ * @param partial What the running step has written, as the projection reports it.
+ * @returns The article, ready to drop into the column.
+ */
+function thinkingHtml(partial: string | null): string {
+  const written = typeof partial === 'string' ? partial.trim() : '';
+  const body =
+    written === ''
+      ? `<p>Working on the next question…</p>`
+      : `<p class="partial">${escapeHtml(written)}</p>`;
+
+  return `<article class="thinking" data-state="thinking">${body}</article>`;
 }
 
 /**
@@ -315,7 +335,7 @@ export function renderChat(
       ? pendingHtml(conversation.pending, interviewId, suggestions, engine)
       : conversation.done
         ? doneHtml(interviewId, draftToDraw(conversation.draft) !== undefined)
-        : thinkingHtml();
+        : thinkingHtml(conversation.partial ?? null);
 
   const opening =
     history === '' && conversation.pending === null && !conversation.done

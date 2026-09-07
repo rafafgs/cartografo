@@ -389,6 +389,30 @@ tr.attention td:first-child {
   font-style: italic;
 }
 
+/*
+ * What the step is writing RIGHT NOW, inside the same muted box (t465).
+ *
+ * It overrides its parent on two properties and adds one, and each is the same
+ * argument: this is arriving CONTENT, not the placeholder it replaces. So it is
+ * ink rather than the supporting grade (§1: hierarchy is a token, and the token
+ * for body text is `--ink`), upright rather than italic, and `pre-wrap` so the
+ * model's own line breaks survive a column that would otherwise reflow them
+ * into one paragraph.
+ *
+ * What it deliberately is NOT: monospace (§4 — this is prose, never something
+ * copied, compared or typed) and never a left-edge bar (§8 — that bar belongs
+ * to "waiting on you" and to nothing else, and a step writing is precisely the
+ * state where nobody is waited on). It invents no colour, no radius and no
+ * spacing value: the box is the one `.interview .turn, .asking, .closing,
+ * .thinking` already draws.
+ */
+.interview .thinking .partial {
+  color: var(--ink);
+  font-style: normal;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
 .interview .asked {
   margin: 0 0 .35rem;
   font-weight: 600;

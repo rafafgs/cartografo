@@ -152,6 +152,24 @@ export interface Session {
    * of the session — see {@link finishSession}.
    */
   output: Record<string, unknown> | null;
+  /**
+   * What the session is writing right now, decoded (t465, FR4).
+   *
+   * The freshest value and never a history of them: the runner resends the
+   * whole decoded buffer every few seconds, each tick overwriting the last, and
+   * {@link finishSession} clears it on every close. So a `null` here means one
+   * of exactly two things — the session is open and has not written a tick's
+   * worth yet, or it is over — and neither of them is a value anybody replays.
+   *
+   * It is decoded PROSE, held against no schema, which is why it does not live
+   * beside {@link Session.output}'s structured report: the two are the same
+   * session seen from opposite ends, one still being written and one checked at
+   * the finish.
+   *
+   * Born in English, like `transcript_artifact_id`, so `toSession` spreads it
+   * and builds nothing.
+   */
+  partial_text: string | null;
   opened_at: string;
   finished_at: string | null;
 }
@@ -184,7 +202,7 @@ const COLUMNS = `
   prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
   usage, models, transcript,
   transcricao_truncada, transcricao_tamanho_original, transcript_artifact_id, output,
-  opened_at, finished_at
+  partial_text, opened_at, finished_at
 `;
 
 /**
@@ -644,6 +662,15 @@ export interface FinishSessionResult {
  * artifact is a row nobody reads, while a reference to content that was never
  * written is a route that fails forever.
  *
+ * ## The draft is cleared here, and only here (t465, FR3)
+ *
+ * `partial_text = NULL` is a literal in the `UPDATE` below, with no parameter
+ * and no condition: whoever SETTLES a session is who clears what it was
+ * writing. That is what makes "a draft exists only while the session is open"
+ * true by construction, instead of by a filter every read would have to
+ * remember — and it is the reason {@link writePartialText} can be a plain
+ * unguarded write with nothing to reconcile afterwards.
+ *
  * ## The node's structured result, and why a bad one does not refuse (t253, FR4)
  *
  * `output` is what the next node's `input` projection is built out of, and it is
@@ -777,7 +804,7 @@ export async function finishSession(
         `UPDATE session SET status = ?, exit_code = ?, timeout_reason = ?, usage = ?,
                 models = ?, transcript = ?, transcricao_truncada = ?,
                 transcricao_tamanho_original = ?, transcript_artifact_id = ?,
-                output = ?, finished_at = ?
+                output = ?, partial_text = NULL, finished_at = ?
           WHERE id = ? AND status = 'open'`,
       )
       .run(
@@ -874,6 +901,72 @@ export async function finishSession(
     // has to quote the reasons is the one being told there are some.
     ...(accepted ? {} : { output_schema_error: problems }),
   };
+}
+
+/**
+ * Stores what the session is writing right now (t465, FR2).
+ *
+ * The runner sends the whole decoded buffer every few seconds while a session
+ * runs, and every one of those writes is a full snapshot: no sequence number,
+ * no delta, nothing to order. A tick that never lands costs one interval of
+ * staleness and the next one carries the same text plus what arrived since —
+ * which is why there is no retry anywhere on this path, on either side.
+ *
+ * Three refusals and one silence, and the silence is the interesting one:
+ *
+ * - a `text` that is absent or is not a string is a {@link ValidationError},
+ *   which the route answers as a 400. Unlike the transcript's own reading,
+ *   absence is not "nothing was reported" here — a tick with no text is a
+ *   caller with nothing to say, and it should not have called;
+ * - a session id that names no row answers `null`, which the route answers as
+ *   a 404;
+ * - a session that is no longer open changes NOTHING and still answers
+ *   normally. `finishSession` throws on a lost `status = 'open'` claim because
+ *   a second ending over the first is a real conflict; a draft landing just
+ *   after the closure is the ordinary shape of a fire-and-forget write crossing
+ *   a network, and answering 409 to it would be inventing an incident out of
+ *   the expected case. What the row holds is already right: the closure NULLed
+ *   it (FR3).
+ *
+ * No event is recorded, deliberately. `renewLease` writes `heartbeat_at` dozens
+ * of times a minute with no append-only counterpart, on the reasoning that a
+ * log built to answer "what happened" has no room for a value that is only ever
+ * the freshest one. A draft is that, only more so — it is cleared wholesale at
+ * the close, so there would be nothing for a replay to arrive at.
+ *
+ * The cap is the transcript's, reused rather than restated: {@link capTranscript}
+ * cuts on a character boundary and keeps the TAIL, which is what a reader
+ * watching a session write wants anyway. Only its `text` is kept — the flag and
+ * the pre-cut size belong to the transcript's own contract, and there is no
+ * column and no reader for them here.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param input Request body.
+ * @returns `true` once the session exists, whatever its status; `null` when the
+ *   id names no session at all.
+ * @throws {ValidationError} When `text` is absent or is not a string.
+ */
+export function writePartialText(
+  db: Database,
+  id: number,
+  input: { text?: unknown },
+): true | null {
+  if (readRow(db, id) === undefined) return null;
+
+  if (typeof input.text !== 'string') {
+    throw new ValidationError(['text has to be a string']);
+  }
+
+  // Unguarded except for the status: zero rows affected is a session that
+  // finished between the runner's tick and this write landing, and that is an
+  // ordinary Tuesday, not a conflict to raise.
+  db.prepare(`UPDATE session SET partial_text = ? WHERE id = ? AND status = 'open'`).run(
+    capTranscript(input.text).text,
+    id,
+  );
+
+  return true;
 }
 
 /**

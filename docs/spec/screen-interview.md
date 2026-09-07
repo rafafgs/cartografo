@@ -107,7 +107,18 @@ it falls back to the default engine rather than failing the page.
 | every closed turn | question and answer, oldest first, in the order the log recorded the questions |
 | `pending` is set | the open question with its context, recommendation and default, one button per option, and an answer `<textarea>` with a visible `<label>` tied by `for`/`id` |
 | `done` is true | the closing state, carrying the two actions of §4 |
-| anything else | "thinking" |
+| anything else | what the step is writing right now (`conversation.partial`), or "thinking" when it has written nothing yet |
+
+**What the last row draws changed with t465.** For the whole of a turn that can
+take minutes it said the one word "thinking" while the step was writing the map
+the entire time. It now shows that writing: the runner decodes the lines it has
+buffered so far — with the very function the finished transcript is decoded by,
+so nothing redraws when the turn ends — and sends them, throttled to the poll's
+own three seconds, to `PATCH /v1/sessions/:id/partial-text`. The projection
+reports the text as `Conversation.partial`, under exactly the condition
+`thinking` holds, and the page renders it in place of the static line, in its
+own `.partial` element. `null` — nothing running, nothing written yet, or a
+question waiting — is still the placeholder, unchanged.
 
 The last row is wider than `conversation.thinking` and deliberately so. The
 projection sets that flag only when a session is actually open, which leaves a
@@ -163,6 +174,15 @@ injection vector D4 names.
 | stops | the first response whose `done` is `true` |
 | never starts | when the page's own initial `done` is already `true` |
 | on failure | this tick is dropped and the next one is scheduled |
+
+**The poll can now animate content, not only toggle between fixed states**
+(t465). `chat` used to change only when the interview did — a question arrived,
+an answer landed, the interview ended — so two consecutive polls of a step that
+was thinking returned the same bytes. Since the thinking state carries the text
+being written, consecutive polls of one unchanged state legitimately differ.
+Nothing about the contract above moves: same interval, same stop condition, same
+focus rule, same `{chat, map, done}` shape, and `interview.js` is untouched —
+the swap has always handled arbitrary HTML inside `#chat`.
 
 **Focus preservation.** Before each swap the island looks at what has focus; if
 it is inside `#chat` and the incoming HTML still declares an element with that

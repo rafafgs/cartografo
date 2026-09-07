@@ -73,6 +73,26 @@ function decode(lines: readonly string[], frameText: (line: string) => string[] 
 /**
  * The text a Claude Code `stream-json` frame carries, or `null` when the line is
  * not a frame this engine emits.
+ *
+ * What makes a line this engine's is structural, and it is one field: every
+ * `stream-json` line `claude` prints carries a string `type`. The two shapes
+ * read below — the terminal `result` and an assistant `message.content[]` — are
+ * the only ones that carry TEXT, and they are a subset. Everything else with a
+ * `type` is the engine's own session envelope, recognized here and dropped.
+ *
+ * Recognized-and-textless is not a hypothetical (t485): the founder watched an
+ * interview render `system/init` (tools, MCP servers, model id, permission mode,
+ * slash commands, worktree and socket paths), `rate_limit_event` and
+ * `system/thinking_tokens` as the running turn's answer, because none of them
+ * has a `message` key and this function used to return `null` for all three —
+ * the same `null` it returns for a line that is not JSON at all. `decode()` has
+ * no way to tell those two apart, so the envelope went to the screen as prose.
+ *
+ * Deliberately NOT a list of the three types seen so far: the next frame kind
+ * `claude` adds would leak the same way. Only a line that fails to parse as
+ * JSON, or parses to an object with no `type`, is genuinely not a frame — and
+ * that line still passes through raw, because a plain-text runtime error is the
+ * only account left of a session that died mid-stream.
  */
 function claudeCodeFrameText(line: string): string[] | null {
   const frame = asFrame(line);
@@ -83,6 +103,8 @@ function claudeCodeFrameText(line: string): string[] | null {
     result?: unknown;
     message?: unknown;
   };
+
+  if (typeof type !== 'string') return null;
 
   // The final frame carries the whole last answer; it is the most reliable
   // place the block shows up whole.
@@ -96,7 +118,8 @@ function claudeCodeFrameText(line: string): string[] | null {
     if (Array.isArray(content)) return content.filter(isTextBlock).map((block) => block.text);
   }
 
-  return null;
+  // A frame of this engine that said nothing: recognized, and therefore dropped.
+  return [];
 }
 
 /**
@@ -125,6 +148,10 @@ function claudeCodeFrameText(line: string): string[] | null {
  * The `type` check is what distinguishes "recognized frame with nothing to say"
  * from "not a frame": any object carrying a string `type` is Codex talking, and
  * its non-text frames are dropped rather than echoed.
+ *
+ * That rule needed no change for t485, which is the whole of t485's fix on the
+ * other side: `claudeCodeFrameText` now discriminates the same way, and the two
+ * functions are meant to be read as a pair.
  */
 function codexFrameText(line: string): string[] | null {
   const frame = asFrame(line);

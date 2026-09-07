@@ -143,8 +143,9 @@ test('t485/AT-2 — the surrounding assistant prose stays intact and in order', 
   // frame. Portuguese, like the two `codex-*.jsonl` transcripts and for the same
   // reason — rewriting a recording falsifies the evidence it was captured to be.
   const lines = transcript('claude-code-envelope-frames.jsonl');
+  type Block = { type: string; text?: string };
   const prose = [lines[0], lines[4]].map((line) => {
-    const { message } = JSON.parse(line) as { message: { content: { type: string; text?: string }[] } };
+    const { message } = JSON.parse(line) as { message: { content: Block[] } };
     return message.content
       .filter((block) => block.type === 'text')
       .map((block) => block.text)

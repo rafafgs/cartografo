@@ -15,7 +15,7 @@ other job on any other graph.
 | File | What it is |
 |---|---|
 | `graph.json` | Two nodes, one edge. `interview` (entry) and `deliver` (final). |
-| `skills/interview.json` | Asks one question per session and reports the map under construction after every answer. |
+| `skills/interview.json` | Asks one thing per session — one decision, or one whole step as a form — and reports the map under construction after every answer. |
 | `skills/deliver-bundle.json` | Writes the draft out, holds it against `scripts/validate-graph.mjs`, and reports it. |
 
 ## Topology

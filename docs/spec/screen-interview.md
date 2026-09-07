@@ -9,8 +9,8 @@ the public API, with no privileges" · [D4](../../DECISIONS.md) — "a skill is
 pinned by content, and agent-authored content is an injection vector"
 
 The [interview](interview.md) has existed since t360 and had no door. It is a
-job on the `map-design` class, asking one question per turn through the ordinary
-escalation grammar, and the only way to hold a conversation with it was the
+job on the `map-design` class, asking one thing per turn — one decision, or one
+whole step as a form — through the ordinary escalation grammar, and the only way to hold a conversation with it was the
 generic queue at `/input-requests` — which shows a question and says nothing at
 all about the map being drawn on the other side of it.
 
@@ -105,9 +105,22 @@ it falls back to the default engine rather than failing the page.
 | State | What is drawn |
 |---|---|
 | every closed turn | question and answer, oldest first, in the order the log recorded the questions |
-| `pending` is set | the open question with its context, recommendation and default, one button per option, and an answer `<textarea>` with a visible `<label>` tied by `for`/`id` |
+| `pending` is set | the open question, in whichever of its two shapes it was asked in — see below |
 | `done` is true | the closing state, carrying the two actions of §4 |
 | anything else | what the step is writing right now (`conversation.partial`), or "thinking" when it has written nothing yet |
+
+**The `pending` row has two renderings, and the question itself says which.**
+A question that asks ONE decision draws what it always drew: the recommendation,
+the context, the default, one button per option, and an answer `<textarea>` with
+a visible `<label>` tied by `for`/`id`. A question whose `options` carry FIELDS
+rather than labels (t480) is a whole step asked at once, and draws as a form —
+one named control per field, every offered list with its own way out, each
+field's own pre-selected value in place of the question-level default line. The
+markup of both belongs to [`design-system.md`](design-system.md) §7.2 and §7.5
+and is not restated here; what this page owes them is the same single answer
+field, since a form is posted as ONE document on the route one label is posted
+on. The vocabulary rule below covers both: a form's labels say *step*, *needs*
+and *goes wrong*, never *field id* or *input request*.
 
 **What the last row draws changed with t465.** For the whole of a turn that can
 take minutes it said the one word "thinking" while the step was writing the map

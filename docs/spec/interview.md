@@ -5,7 +5,8 @@
 ([`0020`](../../packages/core/migrations/0020_sessao_saida.sql)) and the
 input-request tables of [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql)
 **Founding requirement:** §3.3 (RF-14 to RF-20) — the person describes their
-problem, names the class, and is asked **one question at a time**
+problem, names the class, and is asked **one thing at a time** (one decision, or
+one whole step — §2)
 
 The [synthesizer](synthesizer.md) turns a declaration into a draft in ONE
 session: you write a paragraph, it hands back a topology, and everything you did
@@ -124,19 +125,34 @@ the same convention `skill-do-crossing.json` set (t259,
 
 ### The questions, in order
 
-Per step, and one per session:
+Per step — five of them, and since t482 all five in ONE turn:
 
-| Question | Where the answer lands | Requirement |
+| Field | Where the answer lands | Requirement |
 |---|---|---|
-| what it needs before it can start | `contract.input_schema` | RF-19 |
-| what it produces, and the labels its exits carry | `contract.output_schema`, and the `condition` of the edges leaving it | RF-19 |
-| how you know it went well | `contract.checks` | RF-19 |
-| **what usually goes wrong there** | `contract.checks` | RF-18 |
-| whether it reaches outside, and through which server | the step's description, from `input.environment.mcp_servers` — plus, when nothing on that list fits, one `NEEDS_MCP_SERVER:` line in the question's own `context` | RF-20 |
+| `needs` — what it needs before it can start | `contract.input_schema` | RF-19 |
+| `produces` — what it produces, and the labels its exits carry | `contract.output_schema`, and the `condition` of the edges leaving it | RF-19 |
+| `checks` — how you know it went well | `contract.checks` | RF-19 |
+| **`goes_wrong` — what usually goes wrong there** | `contract.checks` | RF-18 |
+| `reach` — whether it reaches outside, and through which server | the step's description, from `input.environment.mcp_servers` — plus, when nothing on that list fits, one `NEEDS_MCP_SERVER:` line in the turn's own `context` | RF-20 |
 
-RF-19 is **two** questions and not one: the output *schema* and the *checks* are
-different fields and different judgements, and asking them together gets one
-answer that half-fills both.
+The turn is one `input-request` block like every other, and what makes it a form
+is what `options` carries: a list of FIELDS instead of a list of labels — `{id,
+label, kind}`, with `options` and `recommended` where a field has them (t480,
+[`parse-input-request.ts`](../../packages/runner/src/dispatch/parse-input-request.ts)).
+It is answered as ONE JSON document keyed by those five ids, on the same route
+and the same field a one-click label is answered on; the next dispatch reads it
+back as one labelled bullet per field (`prompt.ts`'s `renderAnswer`), and the
+page draws one named control per field
+([`design-system.md`](design-system.md) §7.2).
+
+The five stay **five fields and not one box**, and that is the same argument
+that made RF-19 two questions back when a turn could hold only one: the output
+*schema* and the *checks* are different fields and different judgements, and
+asking for both in one place gets one answer that half-fills both. What t482
+changed is not the argument, it is the PRICE of it. Keeping two things apart now
+costs a row in a form; it used to cost a whole re-dispatch, and at five
+dispatches a step the interview could not reach the map sizes this product is
+dimensioned for — the arithmetic is in §4.
 
 ### `NEEDS_MCP_SERVER:` — the one machine-readable line in a freeform turn
 
@@ -352,9 +368,17 @@ Nothing in §3 changes because of it.
   successfully (§6), and `max_consecutive_failures` is untouched by it. What that
   ceiling does cover is the session that ends with **neither** a question nor a
   draft.
-- **Twenty questions.** The skill's own instructions bound the interview: past
-  that, it closes with what it has and says in the draft which steps are still
-  rough. A person who has answered twenty questions has given enough.
+- **Twenty turns**, and the arithmetic behind the number is `3 + N` since t482:
+  three fixed turns — the class, what they already have, the ends — plus ONE per
+  step, because a step is one form and not five questions. The twelve-step map
+  this product is dimensioned for ([`design-system.md`](design-system.md) §1,
+  rule 4) is **fifteen** turns, which leaves five of the twenty for the
+  occasional follow-up a form did not anticipate; the seven-step map the cost
+  was measured on is **ten**. Under the old `3 + 5N` those same seven steps were
+  **thirty-eight** — the ceiling was never a budget that shape could spend, it
+  was a wall it hit at step four. So twenty stands, unchanged: past it the
+  interview closes with what it has and says in the draft which steps are still
+  rough. A person who has answered twenty turns has given enough.
 - **`escalation_policy: "always"`.** The `interview` node declares it, because
   asking IS the work it does — it is the one node in the repository where
   escalating is not a last resort.

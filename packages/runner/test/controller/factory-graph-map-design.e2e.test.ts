@@ -48,7 +48,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { bootCore } from '@cartografo/test-support';
@@ -112,8 +112,14 @@ interface Question {
   status: string;
 }
 
-/** The draft as the interview reports it, turn after turn. */
-interface Draft {
+/**
+ * The map as the interview reports it, turn after turn.
+ *
+ * An index signature and not two fields alone: since t464 the two keys ARE the
+ * report's own top level, so a `Draft` is spread straight into what a scripted
+ * session prints and has to read as the `Record` that shape is.
+ */
+interface Draft extends Record<string, unknown> {
   graph: Record<string, unknown>;
   skills: Record<string, unknown>[];
 }
@@ -148,23 +154,20 @@ function bundleFile(...segments: string[]): Record<string, unknown> {
 }
 
 /**
- * A session that reports its draft and asks one question, in that order.
+ * A session that reports its map and asks one question, in that order.
  *
- * `extra` is the sibling fields of the report — since t440 that is
- * `skill_source`, which the turn that receives the answer reports ONCE, beside
- * `done`/`draft` and never inside the draft: the bucket merge is shallow and
- * last-writer-wins per key, so a key no later turn repeats survives, while a
- * draft that is not re-reported whole is gone (`docs/spec/interview.md` §2).
+ * `report` is what the turn printed beside `done`: since t464 that is `graph`
+ * and, on the turns that settled a manifest, `skills` — two top-level keys and
+ * no `draft` wrapper, so the bucket merge carries each of them on its own
+ * (`docs/spec/interview.md` §2). `skill_source` rides in the same object for
+ * the same reason it always did: the turn that receives the answer reports it
+ * ONCE, and no later turn repeats it.
  */
-function asksWith(
-  draft: Draft,
-  question: Record<string, unknown>,
-  extra: Record<string, unknown> = {},
-): string {
+function asksWith(report: Record<string, unknown>, question: Record<string, unknown>): string {
   return JSON.stringify([
     { stream: 'stdout', text: 'Here is the map as it stands.' },
     { stream: 'stdout', text: '```resultado' },
-    { stream: 'stdout', text: JSON.stringify({ done: false, draft, ...extra }) },
+    { stream: 'stdout', text: JSON.stringify({ done: false, ...report }) },
     { stream: 'stdout', text: '```' },
     { stream: 'stdout', text: '```input-request' },
     { stream: 'stdout', text: JSON.stringify(question) },
@@ -173,11 +176,11 @@ function asksWith(
 }
 
 /** ...and the last session, which reports a finished map and asks nothing. */
-function delivers(draft: Draft): string {
+function delivers(report: Record<string, unknown>): string {
   return JSON.stringify([
     { stream: 'stdout', text: 'The map is complete.' },
     { stream: 'stdout', text: '```resultado' },
-    { stream: 'stdout', text: JSON.stringify({ done: true, draft }) },
+    { stream: 'stdout', text: JSON.stringify({ done: true, ...report }) },
     { stream: 'stdout', text: '```' },
   ]);
 }
@@ -337,14 +340,133 @@ function directoryWorktrees(root: string): WorktreeManager {
   };
 }
 
-test('t360 — the interview is a traversal: four turns, one node, one bundle at the end', async (t) => {
-  assert.ok(existsSync(BUNDLE), 'artifact does not exist yet: factory-graphs/map-design');
+/** One control plane, one runner and one scripted engine — the whole crossing. */
+interface Crossing {
+  /** Where the control plane answers. */
+  baseUrl: string;
+  /** The token every call above carries. */
+  token: string;
+  /** The controller that takes the leases. */
+  controller: Controller;
+  /** What each dispatch was told, in order — the projection and the environment. */
+  dispatched: { projection: Record<string, unknown>; environment: Record<string, unknown> }[];
+  /** One dispatch, with what its session says. */
+  run: (lines: string) => Promise<void>;
+  /** A temporary directory of this crossing's own, removed with the test. */
+  root: string;
+}
+
+/**
+ * Boots everything a scripted crossing of this bundle needs.
+ *
+ * Extracted with t464 because a second crossing needs it: the first proves the
+ * four turns, and the second proves that a turn which omits `skills` does not
+ * cost `deliver` its manifests. What each of them SCRIPTS is the whole
+ * difference between them, so the boot is shared and nothing else is.
+ *
+ * @param t The running test, for the temporary directory's own cleanup.
+ * @param runnerId The identity the leases belong to.
+ * @returns The control plane's coordinates and the controller over them.
+ */
+async function startCrossing(t: TestContext, runnerId: string): Promise<Crossing> {
   const { url: baseUrl, token } = await bootCore(t);
 
   const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t360-interview-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
+
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner(runnerId, 'the one that runs the interview');
+
+  let currentLines = '[]';
+  const worktrees = directoryWorktrees(root);
+
+  // --- the machine half of a dispatched input (t270, t360, t440) ------------
+  //
+  // Wired here for the first time in this crossing, because t440's subject IS
+  // this seam: the executor environment reads the projection the merge just
+  // fetched, finds the `skill_source` an earlier turn reported into it, and
+  // turns it into one derived draft per `SKILL.md` at
+  // `input.environment.skill_drafts`. Cloning is switched OFF — the fixture is
+  // a folder, and a crossing that reached the network for it would be testing
+  // somebody's connectivity.
+  const bench = path.join(root, 'bench');
+  mkdirSync(bench, { recursive: true });
+  for (const args of [
+    ['init', '--quiet', '--initial-branch', 'main'],
+    ['config', 'user.email', 'fixture@cartografo.local'],
+    ['config', 'user.name', 'Fixture t440'],
+    ['commit', '--quiet', '--allow-empty', '-m', 'the bench this crossing only reads'],
+  ]) {
+    execFileSync('git', args, { cwd: bench, stdio: 'pipe' });
+  }
+
+  const machineFacts = createExecutorEnvironmentResolver({
+    testBenchPath: bench,
+    referenceMode: 'ponta_do_principal',
+    resolveSkillSource: createSkillSourceResolver({
+      allowGitClone: false,
+      scratchRoot: path.join(root, '.skill-sources'),
+    }),
+  });
+
+  const dispatched: { projection: Record<string, unknown>; environment: Record<string, unknown> }[] =
+    [];
+
+  const controller = new Controller({
+    client,
+    runnerId,
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: {
+          'claude-code': {
+            adapter: new ClaudeCodeAdapter({
+              commandBuilder: (spec) => ({
+                command: process.execPath,
+                args: [FAKE_ENGINE, ...buildCommand(spec).args],
+              }),
+              graceMs: 300,
+            }),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        worktrees,
+        timeoutSeconds: 60,
+        executorEnvironment: async (jobRow, resolved, projection) => {
+          const environment = await machineFacts(jobRow, resolved, projection);
+          dispatched.push({
+            projection,
+            environment: environment.environment as Record<string, unknown>,
+          });
+          return environment;
+        },
+        envOverrides: { FAKE_ENGINE_LINES: currentLines },
+      })(jobId),
+  });
+
+  return {
+    baseUrl,
+    token,
+    controller,
+    dispatched,
+    root,
+    run: async (lines: string): Promise<void> => {
+      currentLines = lines;
+      assert.ok(await controller.tick(), 'the released job was not picked up');
+    },
+  };
+}
+
+test('t360 — the interview is a traversal: four turns, one node, one bundle at the end', async (t) => {
+  assert.ok(existsSync(BUNDLE), 'artifact does not exist yet: factory-graphs/map-design');
+  const { baseUrl, token, dispatched, run, root } = await startCrossing(t, 'runner-t360');
 
   // --- the bundle, verbatim, and NOT registered by this test ----------------
   //
@@ -401,81 +523,6 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
   );
   assert.equal(job.current_node_id, 'interview', 'an interview opens on the node that asks');
 
-  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
-  await client.registerRunner('runner-t360', 'the one that runs the interview');
-
-  let currentLines = '[]';
-  const worktrees = directoryWorktrees(root);
-
-  // --- the machine half of a dispatched input (t270, t360, t440) ------------
-  //
-  // Wired here for the first time in this crossing, because t440's subject IS
-  // this seam: the executor environment reads the projection the merge just
-  // fetched, finds the `skill_source` an earlier turn reported into it, and
-  // turns it into one derived draft per `SKILL.md` at
-  // `input.environment.skill_drafts`. Cloning is switched OFF — the fixture is
-  // a folder, and a crossing that reached the network for it would be testing
-  // somebody's connectivity.
-  const bench = path.join(root, 'bench');
-  mkdirSync(bench, { recursive: true });
-  for (const args of [
-    ['init', '--quiet', '--initial-branch', 'main'],
-    ['config', 'user.email', 'fixture@cartografo.local'],
-    ['config', 'user.name', 'Fixture t440'],
-    ['commit', '--quiet', '--allow-empty', '-m', 'the bench this crossing only reads'],
-  ]) {
-    execFileSync('git', args, { cwd: bench, stdio: 'pipe' });
-  }
-
-  const machineFacts = createExecutorEnvironmentResolver({
-    testBenchPath: bench,
-    referenceMode: 'ponta_do_principal',
-    resolveSkillSource: createSkillSourceResolver({
-      allowGitClone: false,
-      scratchRoot: path.join(root, '.skill-sources'),
-    }),
-  });
-
-  /** What each dispatch was told, in order — the projection and the environment. */
-  const dispatched: { projection: Record<string, unknown>; environment: Record<string, unknown> }[] =
-    [];
-
-  const controller = new Controller({
-    client,
-    runnerId: 'runner-t360',
-    projectId: 1,
-    runnerCap: 1,
-    projectCap: 4,
-    ttlSeconds: 30,
-    dispatch: async (jobId) =>
-      createClaudeCodeDispatch({
-        urlBase: baseUrl,
-        token,
-        engines: {
-          'claude-code': {
-            adapter: new ClaudeCodeAdapter({
-              commandBuilder: (spec) => ({
-                command: process.execPath,
-                args: [FAKE_ENGINE, ...buildCommand(spec).args],
-              }),
-              graceMs: 300,
-            }),
-            decodeSessionText: decodeClaudeCodeSessionText,
-          },
-        },
-        worktrees,
-        timeoutSeconds: 60,
-        executorEnvironment: async (jobRow, resolved, projection) => {
-          const environment = await machineFacts(jobRow, resolved, projection);
-          dispatched.push({
-            projection,
-            environment: environment.environment as Record<string, unknown>,
-          });
-          return environment;
-        },
-        envOverrides: { FAKE_ENGINE_LINES: currentLines },
-      })(jobId),
-  });
 
   const jobNow = async (): Promise<Work> =>
     await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${String(job.id)}`);
@@ -500,12 +547,6 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
       )
     ).input_requests;
 
-  /** One dispatch, with what its session says. */
-  const run = async (lines: string): Promise<void> => {
-    currentLines = lines;
-    assert.ok(await controller.tick(), 'the released interview was not picked up');
-  };
-
   /** Answers the single open question, exactly as a person at the screen would. */
   const answer = async (turn: number): Promise<void> => {
     const pending = await pendingNow();
@@ -528,9 +569,11 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
     // answer to "do you already have skills for this, and where" (t440, FR1/FR2).
     await run(
       asksWith(
-        DRAFTS[turn],
+        {
+          ...DRAFTS[turn],
+          ...(turn === 0 ? { skill_source: { kind: 'path', location: SKILL_SOURCE } } : {}),
+        },
         QUESTIONS[turn],
-        turn === 0 ? { skill_source: { kind: 'path', location: SKILL_SOURCE } } : {},
       ),
     );
 
@@ -549,18 +592,19 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
 
   const reported = (await sessionsNow())
     .filter((session) => session.status === 'completed')
-    .map((session) => session.output?.draft);
+    .map((session) => ({ graph: session.output?.graph, skills: session.output?.skills }));
   assert.equal(reported.length, 3, 'three sessions asked, and all three reported');
-  assert.deepEqual(reported, [DRAFTS[0], DRAFTS[1], DRAFTS[2]], 'each turn`s draft is its own');
+  assert.deepEqual(reported, [DRAFTS[0], DRAFTS[1], DRAFTS[2]], 'each turn`s map is its own');
   assert.notDeepEqual(reported[0], reported[1], 'a turn that changed nothing asked for nothing');
   assert.notDeepEqual(reported[1], reported[2]);
 
   // --- t440. the source somebody named survives, and becomes drafts ---------
   //
-  // Turn 0 reported `skill_source` once, beside its draft. No later turn
-  // repeats it — and it is still in the input of every one of them, because the
-  // bucket merge is shallow and per key: a key nobody overwrites keeps its
-  // value, unlike `draft`, which every turn has to report whole.
+  // Turn 0 reported `skill_source` once, beside its map. No later turn repeats
+  // it — and it is still in the input of every one of them, because the bucket
+  // merge is shallow and per key: a key nobody overwrites keeps its value. The
+  // same rule `skills` lives under since t464, and `graph` deliberately does
+  // not, because a graph is reported whole every turn.
   assert.deepEqual(
     (dispatched[0].projection.interview as Record<string, unknown> | undefined)?.skill_source,
     undefined,
@@ -630,7 +674,11 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
 
   const final = (await sessionsNow()).at(-1)?.output;
   assert.equal(final?.done, true, 'the last turn says the map is finished');
-  const draft = final?.draft as Draft;
+  const draft: Draft = {
+    graph: final?.graph as Record<string, unknown>,
+    skills: final?.skills as Record<string, unknown>[],
+  };
+  assert.deepEqual(draft, DRAFTS[3], 'the last turn reported the whole map, key by key (t464)');
 
   // --- AT1. every node carries the three contract fields D9 demands ---------
   const nodes = draft.graph.nodes as Record<string, unknown>[];
@@ -719,5 +767,88 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
     validarGrafo(pinned).soundness.violations,
     [],
     'reachable, terminating, every edge labelled, every node under a contract',
+  );
+});
+
+test('t464 AT7 — a turn that omits `skills` still dispatches `deliver` with every manifest', async (t) => {
+  assert.ok(existsSync(BUNDLE), 'artifact does not exist yet: factory-graphs/map-design');
+  const { baseUrl, token, dispatched, run } = await startCrossing(t, 'runner-t464');
+
+  const { classes } = await api<{ classes: { class: string; current_version_id: string | null }[] }>(
+    baseUrl,
+    token,
+    'GET',
+    '/v1/classes',
+  );
+  const registered = classes.find((entry) => entry.class === 'map-design');
+  assert.ok(registered?.current_version_id != null, 'the startup imported the interview');
+
+  const job = await api<Work>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/jobs',
+    {
+      title: 'a map for support tickets the first line could not close',
+      body: 'They pile up, nobody knows who owns them, and the customer asks twice.',
+      entry_node_id: 'interview',
+      execution_id: EXECUTION_ID,
+      graph_version_id: registered.current_version_id,
+    },
+    201,
+  );
+
+  // --- turn 1. the manifests are settled, and reported ----------------------
+  await run(asksWith(DRAFTS[2], QUESTIONS[2]));
+  const { input_requests: pending } = await api<{ input_requests: Question[] }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/input-requests?status=pending&job_id=${String(job.id)}`,
+  );
+  assert.equal(pending.length, 1, 'the turn asked exactly one thing');
+  await api(baseUrl, token, 'PATCH', `/v1/input-requests/${String(pending[0].id)}/answer`, {
+    answer: QUESTIONS[2].recommendation,
+    answered_by: 'rafael',
+  });
+
+  // --- turn 2. the last one moved the graph and no manifest -----------------
+  //
+  // So it reports `graph` alone. Under the whole-draft reprint this was not
+  // expressible at all: `draft` was ONE key, and a turn that left half of it
+  // out lost the other half at the next merge.
+  await run(delivers({ graph: DRAFTS[3].graph }));
+
+  const routed = await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${String(job.id)}`);
+  assert.equal(routed.current_node_id, 'deliver', 'a session that asked nothing routed');
+
+  // --- and `deliver` is dispatched with the WHOLE map -----------------------
+  await run(
+    JSON.stringify([
+      { stream: 'stdout', text: '```resultado' },
+      {
+        stream: 'stdout',
+        text: JSON.stringify({
+          bundle: { graph: DRAFTS[3].graph, skills: DRAFTS[2].skills },
+          checked: { structure: true, soundness: true, problems: [] },
+          note: 'the map covers triage and the escalation itself',
+        }),
+      },
+      { stream: 'stdout', text: '```' },
+    ]),
+  );
+
+  const delivered = dispatched.at(-1);
+  assert.ok(delivered !== undefined, 'the deliver node was dispatched');
+  const bucket = delivered.projection.interview as Record<string, unknown>;
+  assert.deepEqual(
+    bucket.graph,
+    DRAFTS[3].graph,
+    'the graph is the last one reported, because every turn reports it whole',
+  );
+  assert.deepEqual(
+    bucket.skills,
+    DRAFTS[2].skills,
+    'and the manifests are the ones an EARLIER turn settled: omitting them lost nothing',
   );
 });

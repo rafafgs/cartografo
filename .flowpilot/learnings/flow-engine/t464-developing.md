@@ -1,0 +1,3 @@
+### t464 (developing, unverified)
+
+- The e2e crossing could not host AT7 inline: the existing test ends the moment the job routes to `deliver` and never dispatches it, and AT6 requires the FINAL turn to report both keys — so no turn inside it can be the omitting one. AT7 is a second scripted crossing, and the boot (bootCore + git bench + executor-environment resolver + Controller + fake engine) was extracted into `startCrossing(t, runnerId)` and shared. The extracted helper owns the tmp dir, so it returns `root` — the existing test still writes the drafted graph into it for the validator step.

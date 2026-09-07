@@ -1,7 +1,7 @@
 {
   "id": "deliver-bundle",
   "version": "1.0.0",
-  "hash": "sha256:0917952ef6c172e81c50968a42baa9a741ee8b17445bb3500425f3e4c5a73c71",
+  "hash": "sha256:a6e147afe56eef6f4c1e9101b3991f069e77ffd1955b94476e3b648af66a11c7",
   "role": "work",
   "description": "Writes the interviewed draft out as a bundle directory, checks its shape and soundness, and hands it back as the job's result.",
   "input": {
@@ -13,30 +13,23 @@
     "properties": {
       "interview": {
         "type": "object",
-        "description": "the bucket the interview node produces; its last turn is the one that survives",
+        "description": "the bucket the interview node produces, accumulated key by key over every turn: `graph` from the last turn that reported one, `skills` from the last turn that settled a manifest",
         "required": [
-          "draft"
+          "graph"
         ],
         "properties": {
           "done": {
             "type": "boolean"
           },
-          "draft": {
+          "graph": {
             "type": "object",
-            "required": [
-              "graph",
-              "skills"
-            ],
-            "properties": {
-              "graph": {
-                "type": "object"
-              },
-              "skills": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                }
-              }
+            "description": "the graph document the interview settled, whole"
+          },
+          "skills": {
+            "type": "array",
+            "description": "one manifest per node of that graph, WITHOUT `hash`. NOT `required`, and deliberately: since t464 a turn reports `skills` only when it settled a manifest, so nothing in the interview's own output schema GUARANTEES the key — an interview abandoned before any manifest existed really does arrive here without it, and `unproduced_input` (`domain/graph.ts`) is right to refuse a pin this bundle could not keep. What the map owes is a manifest per node; a delivery that finds fewer says so in `checked.problems` rather than being stopped at the gate",
+            "items": {
+              "type": "object"
             }
           }
         }
@@ -102,7 +95,7 @@
     }
   },
   "preconditions": [
-    "the interview reported a draft with a graph and one manifest per node",
+    "the interview settled a map: `input.interview.graph`, and one manifest per node at `input.interview.skills`",
     "the session may write inside its own working directory"
   ],
   "checks": [
@@ -127,7 +120,7 @@
       "allowed": false
     }
   },
-  "instructions": "# Deliver the interviewed map as a bundle\n\nThe interview is over. What you have is a draft — a graph document and one skill\nmanifest per node — and what this step owes is a bundle somebody can look at and\ndecide about.\n\n## Write it out\n\nIn the directory you are in, write:\n\n```\ndraft/graph.json          the graph document, exactly as the interview left it\ndraft/skills/<id>.json    one file per manifest, named after its own `id`\n```\n\nWrite them as they came. **Do not improve the map here.** If something is wrong\nwith it, that is a finding you report, not a thing you fix: the person answered\nthose questions, and a step that silently edits their answers makes the whole\ninterview unreviewable.\n\n## Check it\n\nRun the check this node declares:\n\n```\nnode scripts/validate-graph.mjs draft/graph.json\n```\n\nIt answers two things — is the document structurally a graph, and is its topology\na sound workflow net: one entry, every node reachable, every node able to reach a\nfinal one, no dangling edge. Report **what it answered**, in `checked`, whether\nit passed or not.\n\nOne violation is expected and is not a defect: the `node_with_contract` rule also\nasks each node for a pinned `hash`, and a draft has none. Name it in `problems`\nand say so in the note; treat every OTHER violation as real.\n\nThen check by hand the two things the validator cannot:\n\n- there is exactly one manifest per node, and each node's `skill_ref` names an\n  `id` and a `version` that a manifest in `draft/skills/` really has;\n- **no manifest carries a `hash`**. The pin is computed by whoever registers the\n  bundle; a hash written here is a pin that will not close, and D4's whole point\n  is that a pin which does not close stops the map.\n\n## Report\n\n```resultado\n{\"bundle\": {\"graph\": {…}, \"skills\": [{…}]},\n \"checked\": {\"structure\": true, \"soundness\": true, \"problems\": []},\n \"note\": \"<one line: what this map covers, and anything the interview left rough>\"}\n```\n\nA draft that did not pass is still reported — with `structure` or `soundness`\nfalse and every problem named in `problems`. Registering is not yours and never\nwas: a person reads this and decides.\n",
+  "instructions": "# Deliver the interviewed map as a bundle\n\nThe interview is over. What you have is the map it settled — the graph document\nat `input.interview.graph` and one skill manifest per node at\n`input.interview.skills` — and what this step owes is a bundle somebody can look\nat and decide about.\n\n## Write it out\n\nIn the directory you are in, write:\n\n```\ndraft/graph.json          `input.interview.graph`, exactly as the interview left it\ndraft/skills/<id>.json    one file per entry of `input.interview.skills`, named after its own `id`\n```\n\nWrite them as they came. **Do not improve the map here.** If something is wrong\nwith it, that is a finding you report, not a thing you fix: the person answered\nthose questions, and a step that silently edits their answers makes the whole\ninterview unreviewable.\n\n## Check it\n\nRun the check this node declares:\n\n```\nnode scripts/validate-graph.mjs draft/graph.json\n```\n\nIt answers two things — is the document structurally a graph, and is its topology\na sound workflow net: one entry, every node reachable, every node able to reach a\nfinal one, no dangling edge. Report **what it answered**, in `checked`, whether\nit passed or not.\n\nOne violation is expected and is not a defect: the `node_with_contract` rule also\nasks each node for a pinned `hash`, and a draft has none. Name it in `problems`\nand say so in the note; treat every OTHER violation as real.\n\nThen check by hand the two things the validator cannot:\n\n- there is exactly one manifest per node, and each node's `skill_ref` names an\n  `id` and a `version` that a manifest in `draft/skills/` really has;\n- **no manifest carries a `hash`**. The pin is computed by whoever registers the\n  bundle; a hash written here is a pin that will not close, and D4's whole point\n  is that a pin which does not close stops the map.\n\n## Report\n\n```resultado\n{\"bundle\": {\"graph\": {…}, \"skills\": [{…}]},\n \"checked\": {\"structure\": true, \"soundness\": true, \"problems\": []},\n \"note\": \"<one line: what this map covers, and anything the interview left rough>\"}\n```\n\nA draft that did not pass is still reported — with `structure` or `soundness`\nfalse and every problem named in `problems`. Registering is not yours and never\nwas: a person reads this and decides.\n",
   "origin": {
     "type": "native"
   }

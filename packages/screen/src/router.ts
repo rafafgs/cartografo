@@ -111,6 +111,7 @@ import {
 } from './proxy.ts';
 import { buildBundleZip } from './export-bundle.ts';
 import { draftToDraw, renderChat, renderMap } from './interview.ts';
+import { cachedCatalog, officialRegistry, type McpCatalog } from './mcp-catalog.ts';
 import { registerMap, type MapDraft, type PinProblem } from './register-map.ts';
 import { resolveStaticFile, serveStatic } from './static.ts';
 import {
@@ -128,6 +129,7 @@ import {
   interviewStartPage,
   jobPage,
   questionsPage,
+  readInterviewChat,
   runnersPage,
   sessionLogPage,
   type Page,
@@ -515,10 +517,18 @@ export function failurePage(error: unknown, controlPlaneUrl: string): Page {
  * Decides which view answers a request.
  *
  * @param client Client of the public API, already pointed at the control plane.
+ * @param mcpCatalog Where the interview's missing-server suggestions come from
+ *   (t373). Built once by {@link createScreenRouter} and handed down here,
+ *   never constructed per request: a cache rebuilt on every call is not a cache,
+ *   and this page polls itself every three seconds.
  * @param request The raw request.
  * @returns The page, or the redirect target.
  */
-async function route(client: ApiClient, request: IncomingMessage): Promise<RouteResult> {
+async function route(
+  client: ApiClient,
+  mcpCatalog: McpCatalog,
+  request: IncomingMessage,
+): Promise<RouteResult> {
   // The trailing slash is stripped so `/board/` and `/board` are one address —
   // with one exception, and it is the whole of t402's FR9: the EXACT root keeps
   // its own literal instead of collapsing to the empty string. The root used to
@@ -558,7 +568,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       const id = routeId(fragmentMatch[1]);
       return id === null
         ? errorPage(404, 'invalid interview', 'An interview id is an integer.')
-        : await interviewFragment(client, id, request);
+        : await interviewFragment(client, mcpCatalog, id, request);
     }
 
     const interviewMatch = /^\/interview\/([^/]+)$/.exec(pathname);
@@ -566,7 +576,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       const id = routeId(interviewMatch[1]);
       return id === null
         ? errorPage(404, 'invalid interview', 'An interview id is an integer.')
-        : await interviewPage(client, id, scope);
+        : await interviewPage(client, id, scope, mcpCatalog);
     }
 
     // A lineage's id IS its class (D8), so this `:id` is a name and never an
@@ -912,12 +922,20 @@ async function submitAnswer(
  */
 async function interviewFragment(
   client: ApiClient,
+  mcpCatalog: McpCatalog,
   interviewId: number,
   request: IncomingMessage,
 ): Promise<RouteResult> {
-  const conversation = await client.getConversation(interviewId, {
-    project_id: projectFromCookie(request.headers.cookie),
-  });
+  // `readInterviewChat` and not three reads inlined here: it is the ONE place
+  // the engine and the missing-server candidates are resolved, and the page
+  // calls the same function (t373). Two resolvers would be exactly the drift
+  // this route's own "the two can never disagree" pin exists to catch.
+  const { conversation, suggestions, engine } = await readInterviewChat(
+    client,
+    mcpCatalog,
+    interviewId,
+    projectFromCookie(request.headers.cookie),
+  );
   if (conversation === null) {
     return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
   }
@@ -927,7 +945,7 @@ async function interviewFragment(
       status: 200,
       headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
       body: JSON.stringify({
-        chat: renderChat(conversation, interviewId),
+        chat: renderChat(conversation, interviewId, suggestions, engine),
         map: renderMap(conversation.draft),
         done: conversation.done,
       }),
@@ -1293,6 +1311,22 @@ export interface ScreenOptions {
   host?: string;
   /** `fetch` implementation to use. Default: the global `fetch`. */
   doFetch?: typeof fetch;
+  /**
+   * Where the interview's missing-server suggestions come from (t373).
+   *
+   * Injected whole, for a test that wants to count the calls or answer without
+   * a socket. Default: the official registry behind {@link cachedCatalog}.
+   */
+  mcpCatalog?: McpCatalog;
+  /**
+   * The registry address, when the default catalogue should point elsewhere.
+   *
+   * Also a test seam — it is how a suite runs the whole screen against a fake
+   * registry on a loopback port — and deliberately NOT an operator knob: a
+   * second catalogue is a `McpCatalog` implementation, not a URL (D11's own
+   * reading of an extension point as a format rather than a setting).
+   */
+  mcpRegistryUrl?: string;
 }
 
 /** Is this path the API's, or the screen's? */
@@ -1395,6 +1429,15 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
   const token = options.token ?? resolveControlPlaneToken();
   const client = new ApiClient({ baseUrl: controlPlaneUrl, token, doFetch: options.doFetch });
 
+  // ONCE, here, and never inside the handler (t373). The cache is the whole
+  // value of this object, and what it is protecting is the interview's own
+  // three-second poll — a catalogue rebuilt per request would re-attempt a
+  // registry that is down on every single tick, which is t434's finding one
+  // layer up from where it was measured.
+  const mcpCatalog =
+    options.mcpCatalog ??
+    cachedCatalog(officialRegistry({ baseUrl: options.mcpRegistryUrl, doFetch: options.doFetch }));
+
   return createServer((request: IncomingMessage, response: ServerResponse) => {
     void (async () => {
       // Nobody awaits this call, so this `try` is the only thing between a
@@ -1464,7 +1507,7 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
         // 3. What is left is a view rendered here.
         let result: RouteResult;
         try {
-          result = await route(client, request);
+          result = await route(client, mcpCatalog, request);
         } catch (error) {
           // A dead client is not a page. It goes up to the guard, which logs it
           // and hangs up — rendering HTML for a socket nobody is holding would

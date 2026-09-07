@@ -19,8 +19,8 @@
       "escalation_policy": "always",
       "skill_ref": {
         "id": "interview",
-        "version": "1.0.0",
-        "hash": "sha256:bc9a1ef73e666bb4eaee6a09bde3dd72bcb9a59c0449b8e740bade0e162e2402"
+        "version": "1.1.0",
+        "hash": "sha256:282c8205edb350d6d45bfe6781852b0aaa237dd0a183748ae84ddf4c6a290d61"
       },
       "contract": {
         "input_schema": {
@@ -102,6 +102,12 @@
             "instruction": "Read the session's own output and answer both, quoting the exact text that supports each answer. 1. Does the turn end with AT MOST ONE `input-request` block, and does that block ask exactly one thing — no compound question, no list of decisions? 2. Does the reported draft still carry everything the previous turns settled, plus what this turn's answer added? Name any field that was present before and is missing now.",
             "required_evidence": true,
             "description": "The two ways this node fails silently: asking two things at once, which makes an answer unattributable, and reporting a draft that lost what an earlier turn had already settled."
+          },
+          {
+            "type": "agentic",
+            "instruction": "Compare the turn's question against the servers this dispatch was given in `environment.mcp_servers`. When the step reaches an external system that none of them covers — and a `null` list covers none — the question's `context` has to carry a line of its own reading `NEEDS_MCP_SERVER: <capability>`; when one of them does cover it, that line must not be there at all. Quote the context and the server list.",
+            "required_evidence": true,
+            "description": "The screen turns that one line into up to three suggestions from the public MCP registry, so a missing line costs a person the help and a spurious one sends them looking for a server they already have."
           }
         ]
       }

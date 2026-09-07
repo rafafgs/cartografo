@@ -2,7 +2,8 @@
 
 **Package:** [`packages/screen`](../../packages/screen) · **Port:** `4318` ·
 **Pages:** `/interview`, `/interview/:id`, `/graphs/:class`
-**Founding requirements:** §3.3 (RF-15, RF-16, RF-21 to RF-25) and RNF-04 ·
+**Founding requirements:** §3.3 (RF-15, RF-16, RF-20's extension, RF-21 to
+RF-25), §1.4's *sugere, nunca instala*, and RNF-04 ·
 **Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
 the public API, with no privileges" · [D4](../../DECISIONS.md) — "a skill is
 pinned by content, and agent-authored content is an injection vector"
@@ -64,8 +65,11 @@ this address".
 
 ## 2. The page itself
 
-`GET /interview/:id` reads **one route** — `GET /v1/jobs/:id/conversation` —
-and renders two columns.
+`GET /interview/:id` reads `GET /v1/jobs/:id/conversation` — the whole of what
+it draws — and renders two columns. Since t373 there is one read beside it,
+`GET /v1/settings`, and it decides nothing about the conversation: it says which
+engine's `mcp add` spelling §6's suggestions are written in, and a failure to get
+it falls back to the default engine rather than failing the page.
 
 **The left column, in this order of precedence:**
 
@@ -221,7 +225,121 @@ ordinary **404**.
 
 ---
 
-## 6. What this page does not do yet
+## 6. When the machine has no server for the step
+
+RF-20's question asks which server a step reaches outside through, offering the
+names the engine actually reports (`interview.md` §2). When the answer is "none
+of those", the turn writes one line into the question's own `context` —
+`NEEDS_MCP_SERVER: <capability>`, the convention
+[`interview.md`](interview.md#needs_mcp_server--the-one-machine-readable-line-in-a-freeform-turn)
+specifies and an agentic check enforces — and this page turns it into up to
+three candidates from the public registry.
+
+**It suggests and it never installs** (§3.3 of the requirements, and §1.4's
+*sugere, nunca instala*). That is a statement about the markup and is asserted
+directly on it: the suggestion block contains **no `<form>`, no `<button>`, and
+no `href` whose target is anything but the candidate's own `homepage`**. The way
+a person gets the server is that they read the command, run it themselves on
+their engine, and press **Check again** — t401/t402's recheck, untouched here.
+The next probe reports the new server, `environment.mcp_servers` carries it on
+the interview's next redispatch, and the turn after that stops asking.
+
+### The catalogue
+
+[`mcp-catalog.ts`](../../packages/screen/src/mcp-catalog.ts), an ordinary HTTP
+client with no new dependency — global `fetch` and `AbortController`, the same
+posture `client.ts` keeps.
+
+```ts
+interface McpServerSuggestion {
+  name: string; description: string; homepage: string | null;
+  install: { claude_code: string | null; codex: string | null };
+}
+interface McpCatalog { search(query: string): Promise<McpServerSuggestion[]> }
+```
+
+`officialRegistry()` asks
+`GET https://registry.modelcontextprotocol.io/v0/servers?search=<capability>&limit=3`
+and reads the envelope that address actually returns (measured 2026-09-07):
+`{"servers": [{"server": {…}, "_meta": {…}}], …}`, where `search` is a substring
+match on the server's `name`. Per entry:
+
+| Field | Read from |
+|---|---|
+| `name` | `server.name`, verbatim — it is also the local add name |
+| `description` | `server.description` |
+| `homepage` | `server.websiteUrl`, else `server.repository.url`, else `null` |
+| `install.*` | derived from `server.packages[]`, and only for two `registryType`s |
+
+**The two runtimes, and no third.** An `npm` package becomes `npx -y
+<identifier>` and a `pypi` one `uvx <identifier>`, each wrapped as
+`claude mcp add <name> -- <command>` or `codex mcp add <name> -- <command>` —
+the only two `mcp add` shapes this repository has evidence for
+([`packages/mcp/README.md`](../../packages/mcp/README.md) and t400's captured
+`codex mcp add` in [`engine-adapter.md`](../formats/engine-adapter.md)). Every
+other case — a `remotes`-only entry, a `docker`/`oci`/`nuget` package, no
+packages at all — leaves **both** `install` fields `null`, and the card says
+"no known add command; see its homepage" instead. Inventing a flag for those
+would put an unverified command beside a measured one with the same authority,
+which is the failure t402 already named and refused once here.
+
+**The result is sliced to three** on this side, whatever `limit` came back with.
+
+**The failure posture is the same one this page already takes toward a control
+plane that is down: a registry that does not answer in time renders the question
+with no suggestions, never an error.** `search()` **never rejects.** A network
+failure, a non-2xx, a three-second timeout, a body that does not parse and a body
+that parses into a shape nobody expected all resolve `[]`, and the question
+renders whole — its context, its recommendation, its answer form — with zero
+cards and no error text anywhere on the page.
+
+### The cache, and why its two TTLs differ
+
+`cachedCatalog()` wraps it in an in-process `Map` keyed by the exact query,
+built **once at server construction** and never per request.
+
+| What came back | Reused for |
+|---|---|
+| one or more candidates | 5 minutes |
+| nothing — which, per above, includes every failure | 30 seconds |
+
+The asymmetry is the point, and it is a lesson this product already paid for
+once: t434 found `discoverMcpServers()` on the runner's startup path costing
+2.1–3.3s because nothing bounded a repeat call. One layer up, §3's three-second
+poll would re-attempt a down registry — timeout and all — twenty times a minute.
+Thirty seconds is ten polls: often enough that a registry coming back is noticed
+promptly, rare enough that one that is down costs almost nothing. The figure is a
+judgement, not a measurement.
+
+### What the page renders
+
+`GET /interview/:id` and `GET /interview/:id/fragment` each read the conversation
+and `GET /v1/settings` **in parallel**, and consult the catalogue only when
+`conversation.pending` exists AND its `context` carries the hint — so an ordinary
+question, which is nearly every question, costs not one extra request. A settings
+read that fails degrades to the default engine rather than failing the page; the
+only thing riding on it is which of two spellings a command is shown in.
+
+Both routes call the SAME resolver and the same renderer, which is how t433's
+"the page and the poll can never disagree" keeps holding over this new content.
+
+The block sits between the question's `<dl>` and its answer form, and each card
+carries, in order: the candidate's `name`, its `description` (escaped — it is
+somebody else's prose), the add command for the engine in force in a
+`<pre><code>` (or the "no known add command" line), a plain link to its
+`homepage` when it published one, and then, once per card and verbatim:
+
+> not reviewed by anyone on your side; configure its credentials on the engine,
+> not here.
+
+An `engine` setting this product does not recognize renders the same
+"no known add command" line as an unrecognized runtime does — to the person
+reading, "we do not know your CLI" and "we do not know this server's runtime" are
+one instruction, which is to go and read its homepage.
+
+---
+
+## 7. What this page does not do yet
 
 Every item is another ficha's declared scope, not an oversight:
 
@@ -239,3 +357,12 @@ Every item is another ficha's declared scope, not an oversight:
   no `skill` row behind.
 - **Starting on a class other than `map-design`, or on a version other than its
   current one.** There is no fork or variant entry point here (D13).
+- **A second catalogue** beside §6's official registry — Smithery, a private
+  index. `McpCatalog` is the seam that makes one a new implementation instead of
+  a new branch, and nothing beyond `officialRegistry` is built.
+- **Installing, running or configuring an MCP server**, or holding any credential
+  for one. The person runs the shown command themselves, on the engine, outside
+  cartografo — §6 is the whole of what this page does about it.
+- **Suggesting *skills*** from any catalogue. `interview.md` §5 already lists that
+  as something the interview does not do, and §6 does not change it: what is
+  suggested is a server for a step, never a step.

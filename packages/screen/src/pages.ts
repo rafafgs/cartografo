@@ -39,10 +39,12 @@
 import type {
   ApiClient,
   Artifact,
+  Conversation,
   Example,
   ExecutionSummary,
   Job,
   JobState,
+  PendingQuestion,
   Project,
   Question,
   RunnerHealth,
@@ -53,6 +55,7 @@ import type {
 } from './client.ts';
 import { renderChat, renderMap } from './interview.ts';
 import { renderMapDocument, type MapDocumentGraph } from './map-document.ts';
+import { extractMcpHint, type McpCatalog, type McpServerSuggestion } from './mcp-catalog.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
 
 /** A page ready to go to the browser. */
@@ -135,6 +138,15 @@ const STYLE = `
   .interview dd { margin: 0; }
   .interview .options { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
   .interview .closing form { display: inline-block; margin: .5rem .5rem 0 0; }
+  .mcp-suggestions { margin: .6rem 0; padding: .5rem .6rem; border: 1px dashed currentColor; border-radius: 6px; }
+  .mcp-suggestions .lead { margin: 0 0 .5rem; font-size: .82rem; opacity: .75; }
+  .mcp-suggestion { border-top: 1px solid currentColor; padding-top: .5rem; margin-top: .5rem; }
+  .mcp-suggestion:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .mcp-suggestion h3 { font-size: .9rem; margin: 0 0 .25rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mcp-suggestion p { margin: .25rem 0 0; font-size: .85rem; }
+  .mcp-suggestion pre { overflow-x: auto; margin: .35rem 0 0; padding: .4rem .5rem; border: 1px dashed currentColor; border-radius: 4px; }
+  .mcp-suggestion code { font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
+  .mcp-suggestion .no-command, .mcp-suggestion .caveat { font-size: .75rem; opacity: .7; }
   .map-document ol { list-style: decimal; padding-left: 1.4rem; margin: 0; }
   .map-document li { border: 1px solid currentColor; border-radius: 6px; padding: .6rem .8rem; margin-bottom: .6rem; }
   .map-document h3 { font-size: .95rem; margin: 0 0 .4rem; }
@@ -847,6 +859,21 @@ const WORKTREES_ROOT_PLACEHOLDER = '<a sibling directory, never inside it>';
 
 /** The engine the runner takes when nothing recorded one (`settings.engine`). */
 const DEFAULT_ENGINE = 'claude-code';
+
+/**
+ * The catalogue a caller that passed none gets: one that finds nothing (t373).
+ *
+ * A null object rather than an optional parameter threaded through three
+ * signatures. Only `createScreenRouter` builds a real one, because only it
+ * lives long enough for the cache to be worth anything; everything else — a
+ * test rendering a page directly, a future caller — suggests nothing, which is
+ * exactly the behaviour the page had before this ticket.
+ */
+const EMPTY_CATALOG: McpCatalog = {
+  async search(): Promise<McpServerSuggestion[]> {
+    return [];
+  },
+};
 
 /**
  * Everything the fix actions need to know about one engine.
@@ -1841,38 +1868,141 @@ export async function interviewStartPage(
 }
 
 /**
+ * The engine this project records, for the interview's suggestion commands (t373).
+ *
+ * A settings read that fails is deliberately NOT a failure of the page, the
+ * same tolerance `readScope` already documents for the project listing: the
+ * only thing riding on it is which of two `mcp add` spellings a candidate is
+ * shown with, and a control plane too old to answer `GET /v1/settings` must not
+ * turn the interview into a 502. When the control plane is genuinely down, the
+ * conversation read beside this one fails, and THAT is what the page reports.
+ *
+ * @param client Client of the public API.
+ * @param projectId Which project's settings.
+ * @returns The recorded engine, or the default.
+ */
+async function interviewEngine(client: ApiClient, projectId: number): Promise<string> {
+  try {
+    const settings = await client.getSettings({ project_id: projectId });
+    return settings.engine ?? DEFAULT_ENGINE;
+  } catch {
+    return DEFAULT_ENGINE;
+  }
+}
+
+/**
+ * The candidates an open question earns, if it earns any (t373, RF-20).
+ *
+ * The gate is the hint and nothing else: a question whose `context` carries no
+ * `NEEDS_MCP_SERVER:` line never reaches the catalogue at all, so an ordinary
+ * turn of the interview — which is nearly every turn — costs not one extra
+ * request, cached or otherwise. That is the shape of the mistake t434 measured
+ * one layer down, refused here before it can be made.
+ *
+ * @param catalog Where to look candidates up.
+ * @param pending The open question, or `null` when nothing is being asked.
+ * @returns At most three candidates; `[]` whenever there is no hint to act on.
+ */
+async function interviewSuggestions(
+  catalog: McpCatalog,
+  pending: PendingQuestion | null | undefined,
+): Promise<McpServerSuggestion[]> {
+  if (pending === null || pending === undefined) return [];
+  const hint = extractMcpHint(pending.context);
+  if (hint === null) return [];
+  return await catalog.search(hint);
+}
+
+/**
+ * Everything the chat column needs, for the page AND for the poll (t373).
+ *
+ * Exported for `router.ts`'s `interviewFragment`, and there is exactly one of
+ * it on purpose. t433 pinned the two routes together on one promise — the
+ * fragment answers the exact inner HTML the page rendered into `#chat` — and
+ * two slightly different ways of resolving the engine and the suggestions would
+ * be precisely the drift that pin was written to catch.
+ *
+ * The conversation and the settings go out **in parallel** (t402's own
+ * precedent on the check page): they are independent reads, and the second one
+ * only decides which of two `mcp add` spellings a candidate is shown with.
+ * The catalogue is consulted after both, and only when the open question asked
+ * for a server nobody on this machine has.
+ *
+ * @param client Client of the public API.
+ * @param mcpCatalog Where a missing server's candidates come from.
+ * @param interviewId The interview being read.
+ * @param projectId Which project to scope both reads to.
+ * @returns The projection — `null` when there is no such interview — and the
+ *   two extra arguments `renderChat` takes.
+ */
+export async function readInterviewChat(
+  client: ApiClient,
+  mcpCatalog: McpCatalog,
+  interviewId: number,
+  projectId: number,
+): Promise<{
+  conversation: Conversation | null;
+  suggestions: McpServerSuggestion[];
+  engine: string;
+}> {
+  const [conversation, engine] = await Promise.all([
+    client.getConversation(interviewId, { project_id: projectId }),
+    interviewEngine(client, projectId),
+  ]);
+  if (conversation === null) return { conversation: null, suggestions: [], engine };
+
+  return {
+    conversation,
+    suggestions: await interviewSuggestions(mcpCatalog, conversation.pending),
+    engine,
+  };
+}
+
+/**
  * `GET /interview/:id` — the interview itself, in two columns (FR3).
  *
- * One read, and it is the conversation projection: the page never joins a
- * timeline against a queue against a session listing, and it never learns what
- * is underneath. What it renders is `interview.ts`'s two functions, which is
- * also what `/interview/:id/fragment` renders — so the full page and the poll
- * cannot come to say different things.
+ * It reads the conversation projection and nothing about the mechanism: the
+ * page never joins a timeline against a queue against a session listing, and it
+ * never learns what is underneath. What it renders is `interview.ts`'s two
+ * functions, which is also what `/interview/:id/fragment` renders — so the full
+ * page and the poll cannot come to say different things.
  *
  * @param client Client of the public API.
  * @param interviewId The interview to show.
  * @param scope Which project is in force.
+ * @param mcpCatalog Where a missing server's candidates come from; a page built
+ *   without one suggests nothing, which is what every non-router caller wants.
  * @returns The page, or 404 when the control plane does not know it.
  */
 export async function interviewPage(
   client: ApiClient,
   interviewId: number,
   scope: ProjectScope = DEFAULT_SCOPE,
+  mcpCatalog: McpCatalog = EMPTY_CATALOG,
 ): Promise<Page> {
-  const conversation = await client.getConversation(interviewId, { project_id: scope.projectId });
+  const { conversation, suggestions, engine } = await readInterviewChat(
+    client,
+    mcpCatalog,
+    interviewId,
+    scope.projectId,
+  );
   if (conversation === null) {
     return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
   }
 
   const body =
     twoColumns(
-      { title: 'the exchange', html: renderChat(conversation, interviewId) },
+      {
+        title: 'the exchange',
+        html: renderChat(conversation, interviewId, suggestions, engine),
+      },
       { title: 'the map so far', html: renderMap(conversation.draft) },
     ) +
     `\n${INTERVIEW_OPTIONS_SCRIPT}\n${interviewIsland(interviewId, conversation.done)}`;
 
   return { status: 200, html: layout('interview', body, scope) };
 }
+
 
 /**
  * `GET /graphs/:class` — an already-registered map, read only (FR9, RF-22/23).

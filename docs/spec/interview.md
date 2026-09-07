@@ -96,11 +96,55 @@ Per step, and one per session:
 | what it produces, and the labels its exits carry | `contract.output_schema`, and the `condition` of the edges leaving it | RF-19 |
 | how you know it went well | `contract.checks` | RF-19 |
 | **what usually goes wrong there** | `contract.checks` | RF-18 |
-| whether it reaches outside, and through which server | the step's description, from `input.environment.mcp_servers` | RF-20 |
+| whether it reaches outside, and through which server | the step's description, from `input.environment.mcp_servers` — plus, when nothing on that list fits, one `NEEDS_MCP_SERVER:` line in the question's own `context` | RF-20 |
 
 RF-19 is **two** questions and not one: the output *schema* and the *checks* are
 different fields and different judgements, and asking them together gets one
 answer that half-fills both.
+
+### `NEEDS_MCP_SERVER:` — the one machine-readable line in a freeform turn
+
+RF-20's question has an extension (§3.3 of the requirements, and §1.4's *sugere,
+nunca instala*): when the person names something **none** of the discovered
+servers covers, the screen offers up to three candidates from the public MCP
+registry, each with the command that would add it —
+[`screen-interview.md`](screen-interview.md#6-when-the-machine-has-no-server-for-the-step)
+is where that page is specified.
+
+The signal it reads **cannot be a branch in code.** Every turn of this interview
+is one freeform LLM dispatch (§1), so nothing in `packages/core` or
+`packages/runner` is in a position to decide "this question is about a capability
+nobody has". So the mechanism is the skill's own instructions asking for it: when
+nothing on `environment.mcp_servers` covers what was just described — **including
+when the list is `null`**, since "this engine cannot answer" is not "there is
+nothing" — the turn puts one line, by itself, inside the question's `context`:
+
+```
+NEEDS_MCP_SERVER: <a short capability phrase>
+```
+
+Three things about it, and each one is a decision:
+
+- **It names a capability, never a product.** `calendar`, not the brand of the
+  one the model happens to know: the phrase is fed to a registry search, and a
+  brand name narrows that search to a choice nobody asked for.
+- **It is one more line inside `context`, and `context` is not typed by it.**
+  That field has always been free text carrying prose — `cli/skill-import.ts`
+  already puts a JSON blob in it beside its own — and this convention adds no
+  schema, no new field and no change to the projection of §3, which passes
+  `context` through verbatim.
+- **It is enforced the way this skill's other rule is: by an agentic check.**
+  `mcp-suggestion-hint-when-unmatched` (`skills/interview.json`'s `checks`, and
+  the matching entry in the node's `contract.checks`) reads the turn's own
+  question and the server list it was dispatched with, and confirms the line is
+  there exactly when it should be — present for a step nothing covers, absent for
+  one something does. Whether a model reliably gets that right is not something a
+  deterministic test can pin, which is precisely what an agentic check is for
+  (§4, and the check that already guards "one question, a whole draft").
+
+Nothing about the line changes the draft, and nothing anywhere installs anything:
+the person runs the command themselves, on their engine, and the next probe is
+what tells the interview they now have it.
 
 The class name comes first (RF-14, [D8](../../DECISIONS.md)): the person names
 it, and a scoring class from `input.environment.similar_classes` is offered as

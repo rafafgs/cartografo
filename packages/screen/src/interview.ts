@@ -46,10 +46,33 @@
 
 import type { Conversation, ConversationTurn, PendingQuestion } from './client.ts';
 import { renderMapDocument, type MapDocumentGraph, type MapDocumentManifest } from './map-document.ts';
+import type { McpServerSuggestion } from './mcp-catalog.ts';
 import { escapeHtml } from './pages.ts';
 
 /** What the map column says while the interview has drawn nothing yet. */
 const NOTHING_TO_DRAW = 'nothing to draw yet';
+
+/**
+ * The engine a suggestion's command is written for when nothing recorded one.
+ *
+ * A literal, and NOT an import of `pages.ts`'s own `DEFAULT_ENGINE`: the two
+ * modules already import each other (this one takes `escapeHtml` from there,
+ * that one takes `renderChat` from here), and a second name crossing the same
+ * bidirectional edge buys nothing. Both spell the same string, and
+ * `test/interview.test.ts` reads it off the rendered page.
+ */
+const DEFAULT_ENGINE = 'claude-code';
+
+/** What every suggestion says about itself, verbatim, and by whose authority. */
+const MCP_DISCLAIMER =
+  'not reviewed by anyone on your side; configure its credentials on the engine, not here.';
+
+/** What a suggestion says instead of a command when none is evidenced. */
+const NO_COMMAND_LINE = 'no known add command; see its homepage';
+
+/** The one line above the candidates: where they came from, and what they are not. */
+const MCP_INTRO =
+  'Nothing this engine reports covers that. These come from the official MCP registry — cartografo suggests, and never installs.';
 
 /** The map as the interview reports it: a graph document and one manifest per step. */
 interface DraftShape {
@@ -97,6 +120,77 @@ function turnHtml(turn: ConversationTurn, index: number): string {
 }
 
 /**
+ * The command that adds one candidate on the engine this project records.
+ *
+ * Two engines have a measured `mcp add` shape in this repository, and an
+ * `engine` setting is free text an operator wrote — so anything else is not a
+ * failure to render, it is a candidate with no command, exactly like one whose
+ * registry entry offered no runnable package. The two cases collapse here
+ * deliberately: to the person reading, "we do not know your CLI" and "we do not
+ * know this server's runtime" are the same instruction, which is to go and read
+ * its homepage.
+ *
+ * @param suggestion The candidate.
+ * @param engine The `engine` setting in force.
+ * @returns The command, or `null` when none is evidenced.
+ */
+function addCommand(suggestion: McpServerSuggestion, engine: string): string | null {
+  if (engine === 'claude-code') return suggestion.install.claude_code;
+  if (engine === 'codex') return suggestion.install.codex;
+  return null;
+}
+
+/**
+ * The candidates for a capability nobody on this machine covers (RF-20).
+ *
+ * Read the markup twice, because two of its absences are the requirement and
+ * not an oversight: there is **no `<form>` and no `<button>`** anywhere in this
+ * block, and the ONLY `href` it emits is a candidate's own `homepage`. §1.4 of
+ * the requirements says this suggests and never installs, and a page that
+ * offered a one-click "add it" would be installing — through the person's hand,
+ * on a server nobody on their side reviewed (D4's reading of an imported
+ * capability as an injection vector).
+ *
+ * The command is a `<pre><code>` to copy, the same shape the check page's own
+ * fix actions take (`pages.ts`'s `commandBlock`) — repeated rather than
+ * imported, because that helper is private to a page whose vocabulary this
+ * column does not share.
+ *
+ * @param suggestions The candidates, at most three.
+ * @param engine The `engine` setting, for which command to show.
+ * @returns The block, or an empty string when there is nothing to suggest.
+ */
+function suggestionsHtml(suggestions: McpServerSuggestion[], engine: string): string {
+  if (suggestions.length === 0) return '';
+
+  const cards = suggestions
+    .map((suggestion) => {
+      const command = addCommand(suggestion, engine);
+      const how =
+        command === null
+          ? `<p class="no-command">${NO_COMMAND_LINE}</p>`
+          : `<pre><code>${escapeHtml(command)}</code></pre>`;
+      const where =
+        suggestion.homepage === null
+          ? ''
+          : `<p class="homepage"><a href="${escapeHtml(suggestion.homepage)}">${escapeHtml(suggestion.homepage)}</a></p>`;
+
+      return (
+        `<article class="mcp-suggestion">` +
+        `<h3>${escapeHtml(suggestion.name)}</h3>` +
+        `<p class="what">${escapeHtml(suggestion.description)}</p>` +
+        how +
+        where +
+        `<p class="caveat">${MCP_DISCLAIMER}</p>` +
+        `</article>`
+      );
+    })
+    .join('');
+
+  return `<div class="mcp-suggestions"><p class="lead">${MCP_INTRO}</p>${cards}</div>`;
+}
+
+/**
  * The open question, with everything it takes to decide and the form to answer.
  *
  * The card carries all five fields the projection publishes, for the same
@@ -113,8 +207,19 @@ function turnHtml(turn: ConversationTurn, index: number): string {
  * The options are buttons that copy into the field, exactly `questionCard`'s
  * pattern — with the script outside this fragment, in the page, so that a swap
  * of the column's contents never takes it away.
+ *
+ * Since t373 the card can carry a fourth thing, and only ever between the `<dl>`
+ * and the form: the candidates for a server the question asks for and this
+ * machine does not have. They arrive already resolved — this module still makes
+ * no call of its own — and an empty list draws nothing at all, which is what
+ * every existing call site gets by leaving the parameter off.
  */
-function pendingHtml(pending: PendingQuestion, interviewId: number): string {
+function pendingHtml(
+  pending: PendingQuestion,
+  interviewId: number,
+  suggestions: McpServerSuggestion[] = [],
+  engine: string = DEFAULT_ENGINE,
+): string {
   const field = (label: string, value: string | null): string =>
     value === null || value.trim() === ''
       ? ''
@@ -136,6 +241,7 @@ function pendingHtml(pending: PendingQuestion, interviewId: number): string {
     `<article class="asking" data-state="asking" data-question="${pending.id}">` +
     `<p class="asked">${escapeHtml(pending.question)}</p>` +
     `<dl>${field('why it matters', pending.context)}${field('what I would take', pending.recommendation)}${field('if you just accept', pending.default)}</dl>` +
+    suggestionsHtml(suggestions, engine) +
     `<form method="post" action="/interview/${interviewId}/answer">` +
     options +
     `<label for="${fieldId}">your answer</label>` +
@@ -190,15 +296,23 @@ function thinkingHtml(): string {
  *
  * @param conversation The exchange, as the projection reports it.
  * @param interviewId The interview this page is showing — it addresses the forms.
+ * @param suggestions MCP servers to offer beside the open question (t373); the
+ *   caller resolves them, and `[]` — the default — draws none.
+ * @param engine The `engine` setting, for which add command a suggestion shows.
  * @returns The column's inner HTML, ready to drop into `#chat`.
  */
-export function renderChat(conversation: Conversation, interviewId: number): string {
+export function renderChat(
+  conversation: Conversation,
+  interviewId: number,
+  suggestions: McpServerSuggestion[] = [],
+  engine: string = DEFAULT_ENGINE,
+): string {
   const turns = Array.isArray(conversation.turns) ? conversation.turns : [];
   const history = turns.map(turnHtml).join('');
 
   const now =
     conversation.pending !== null && conversation.pending !== undefined
-      ? pendingHtml(conversation.pending, interviewId)
+      ? pendingHtml(conversation.pending, interviewId, suggestions, engine)
       : conversation.done
         ? doneHtml(interviewId, draftToDraw(conversation.draft) !== undefined)
         : thinkingHtml();

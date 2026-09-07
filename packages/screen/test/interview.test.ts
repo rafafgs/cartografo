@@ -1811,3 +1811,338 @@ test('t460 AT11 — the island swaps the panel from the payload on every poll', 
     'and so does every poll after it',
   );
 });
+
+/* ================================================================================
+ * t481 — a step's worth of decisions, asked as one form
+ *
+ * `input_request.options` carries either the flat list of one-click labels it
+ * was born with, or the fields of a whole step (t480). Everything below is the
+ * SECOND shape on the page, plus the one thing that is true of both: the
+ * recommendation is read before the situation (§7.5).
+ *
+ * End to end against a real control plane, like AT5 above and for the same
+ * reason: the batched shape has to survive the API that stores it, the
+ * projection that reads it back and the renderer, and a hand-written fixture
+ * would only prove the last of the three.
+ * ============================================================================= */
+
+/** The three controls, one of each kind, as a step of the interview asks them. */
+const BATCHED_FIELDS = [
+  {
+    id: 'name',
+    label: 'What do you call this class of problem?',
+    kind: 'choice',
+    options: ['widget-triage', 'widget-review'],
+    recommended: 'widget-triage',
+  },
+  {
+    id: 'arrivals',
+    label: 'Where does the work arrive from?',
+    kind: 'multi',
+    options: ['a shared mailbox', 'a form', 'a spreadsheet'],
+    recommended: ['a form'],
+  },
+  {
+    id: 'anything_else',
+    label: 'Anything else worth writing down?',
+    kind: 'free_text',
+    recommended: 'nothing yet',
+  },
+];
+
+const BATCHED_QUESTION = {
+  question: 'Four things about this step, all at once',
+  context: 'The name is the address every later map is filed under.',
+  options: BATCHED_FIELDS,
+  recommendation: 'Take what is already pre-filled: it is what you said out loud.',
+};
+
+/**
+ * The markup of each field of a batched form, by the id it answers under.
+ *
+ * Sliced on the `data-field` markers rather than parsed: a field is drawn as a
+ * `<fieldset>` when it has options and as something else when it has none, and
+ * a test that demanded one element name would be pinning the implementation
+ * instead of the contract.
+ */
+function fieldBlocks(html: string): Map<string, string> {
+  const marker = /<[a-z]+[^>]*\sdata-field="([^"]+)"/g;
+  const found = [...html.matchAll(marker)];
+  const blocks = new Map<string, string>();
+  found.forEach((match, index) => {
+    const end = index + 1 < found.length ? found[index + 1].index : html.length;
+    blocks.set(match[1], html.slice(match.index, end));
+  });
+  return blocks;
+}
+
+/** Every `<label>` of a fragment, as `{for, text}`. */
+function labelsOf(fragment: string): { target: string | null; text: string }[] {
+  return [...fragment.matchAll(/<label\b([^>]*)>([\s\S]*?)<\/label>/g)].map((match) => ({
+    target: /\sfor="([^"]*)"/.exec(match[1])?.[1] ?? null,
+    text: match[2].replaceAll(/<[^>]*>/g, ' ').replaceAll(/\s+/g, ' ').trim(),
+  }));
+}
+
+/** The opening tag of every `<input>` of a fragment. */
+function inputsOf(fragment: string): string[] {
+  return [...fragment.matchAll(/<input\b[^>]*>/g)].map((match) => match[0]);
+}
+
+/** The one input of a fragment carrying `value="…"`, or `undefined`. */
+function inputWithValue(fragment: string, value: string): string | undefined {
+  return inputsOf(fragment).find((tag) => new RegExp(`\\svalue="${value}"`).test(tag));
+}
+
+/** Opens an interview whose one open question asks a whole step at once. */
+async function seedBatchedInterview(cp: RunningControlPlane): Promise<number> {
+  const jobId = await seedOpenInterview(cp);
+  await createQuestion(cp, { job_id: jobId, ...BATCHED_QUESTION });
+  return jobId;
+}
+
+/* ================================================================= AT1 */
+
+test('t481 AT1 — a batched question draws one control per field, each with a visible name', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedBatchedInterview(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+  const chat = columnOf(page.html, 'chat');
+
+  assert.ok(
+    chat.includes(`action="/interview/${jobId}/answer"`),
+    `the form still answers this interview:\n${chat}`,
+  );
+
+  const blocks = fieldBlocks(chat);
+  assert.deepEqual([...blocks.keys()], ['name', 'arrivals', 'anything_else'], 'one block per field');
+
+  // choice — a radio group behind a <legend>, one radio per offered option.
+  const choice = blocks.get('name') ?? '';
+  assert.ok(
+    new RegExp(`<legend[^>]*>[^<]*${BATCHED_FIELDS[0].label}`).test(choice),
+    `the choice field is named by its own <legend>:\n${choice}`,
+  );
+  for (const option of BATCHED_FIELDS[0].options ?? []) {
+    const tag = inputWithValue(choice, option);
+    assert.ok(tag !== undefined, `there is a control for "${option}":\n${choice}`);
+    assert.ok(/type="radio"/.test(tag), `"${option}" is a radio: ${tag}`);
+    assert.ok(
+      labelsOf(choice).some((label) => label.text.includes(option)),
+      `a visible <label> reads "${option}":\n${choice}`,
+    );
+  }
+  const groups = new Set(
+    inputsOf(choice)
+      .filter((tag) => /type="radio"/.test(tag))
+      .map((tag) => /\sname="([^"]*)"/.exec(tag)?.[1] ?? ''),
+  );
+  assert.equal(groups.size, 1, 'every radio of one field is in the same group');
+
+  // multi — the same, as checkboxes.
+  const multi = blocks.get('arrivals') ?? '';
+  assert.ok(
+    new RegExp(`<legend[^>]*>[^<]*${BATCHED_FIELDS[1].label}`).test(multi),
+    `the multi field is named by its own <legend>:\n${multi}`,
+  );
+  for (const option of BATCHED_FIELDS[1].options ?? []) {
+    const tag = inputWithValue(multi, option);
+    assert.ok(tag !== undefined, `there is a control for "${option}":\n${multi}`);
+    assert.ok(/type="checkbox"/.test(tag), `"${option}" is a checkbox: ${tag}`);
+  }
+
+  // free_text — a textarea behind a <label> tied by for/id.
+  const free = blocks.get('anything_else') ?? '';
+  const textarea = /<textarea[^>]*id="([^"]+)"/.exec(free);
+  assert.ok(textarea !== null, `the free-text field is a <textarea>:\n${free}`);
+  assert.ok(
+    labelsOf(free).some(
+      (label) => label.target === textarea[1] && label.text.includes(BATCHED_FIELDS[2].label),
+    ),
+    `a visible <label for="${textarea[1]}"> names it:\n${free}`,
+  );
+
+  // Nothing of the legacy shape is drawn beside it.
+  assert.ok(!/data-option="/.test(chat), `a batched question draws no one-click buttons:\n${chat}`);
+});
+
+/* ================================================================= AT2 */
+
+test('t481 AT2 — what the agent would take is pre-selected and says so, in text', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedBatchedInterview(cp);
+
+  const chat = columnOf((await openPage(screen, `/interview/${jobId}`)).html, 'chat');
+  const blocks = fieldBlocks(chat);
+
+  const choice = blocks.get('name') ?? '';
+  const chosen = inputWithValue(choice, 'widget-triage');
+  assert.ok(chosen !== undefined && /\schecked\b/.test(chosen), `the recommended radio is checked: ${chosen}`);
+  assert.ok(
+    inputWithValue(choice, 'widget-review')?.includes('checked') !== true,
+    'and it is the only one',
+  );
+  assert.ok(
+    labelsOf(choice).some(
+      (label) => label.text.includes('widget-triage') && label.text.includes('(recommended)'),
+    ),
+    `the recommended option says so in its own label:\n${choice}`,
+  );
+
+  const multi = blocks.get('arrivals') ?? '';
+  const ticked = inputWithValue(multi, 'a form');
+  assert.ok(ticked !== undefined && /\schecked\b/.test(ticked), `the recommended box is ticked: ${ticked}`);
+  assert.ok(
+    inputWithValue(multi, 'a spreadsheet')?.includes('checked') !== true,
+    'and the others are not',
+  );
+
+  const free = blocks.get('anything_else') ?? '';
+  assert.ok(
+    /<textarea[^>]*>nothing yet<\/textarea>/.test(free),
+    `the free-text field opens on what would be written:\n${free}`,
+  );
+});
+
+/* ================================================================= AT3 */
+
+test('t481 AT3 — a field with options can also be answered outside them', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedBatchedInterview(cp);
+
+  const chat = columnOf((await openPage(screen, `/interview/${jobId}`)).html, 'chat');
+  const blocks = fieldBlocks(chat);
+
+  for (const id of ['name', 'arrivals']) {
+    const block = blocks.get(id) ?? '';
+    const other = inputsOf(block).find((tag) => /data-other\b/.test(tag));
+    assert.ok(other !== undefined, `"${id}" offers something outside the list:\n${block}`);
+    assert.ok(
+      /type="(radio|checkbox)"/.test(other),
+      `the escape hatch is paired with the group: ${other}`,
+    );
+    const typed = inputsOf(block).find((tag) => /type="text"/.test(tag));
+    assert.ok(typed !== undefined, `"${id}" has a box to write it in:\n${block}`);
+    const id_ = /\sid="([^"]+)"/.exec(typed)?.[1] ?? '';
+    assert.ok(
+      labelsOf(block).some((label) => label.target === id_ && label.text !== ''),
+      `a visible <label for="${id_}"> names the box:\n${block}`,
+    );
+  }
+
+  const free = blocks.get('anything_else') ?? '';
+  assert.equal(
+    inputsOf(free).filter((tag) => /type="text"/.test(tag)).length,
+    0,
+    `free text needs no escape hatch of its own:\n${free}`,
+  );
+});
+
+/* ================================================================= AT4 */
+
+test('t481 AT4 — the recommendation is read before the situation, on both shapes', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const legacyId = await seedOpenInterview(cp);
+  await createQuestion(cp, {
+    job_id: legacyId,
+    question: 'What do you call this class of problem?',
+    context: 'The name is the address every later map is filed under.',
+    options: ['widget-triage', 'widget-review'],
+    recommendation: 'Take widget-triage: it is what you already call it out loud.',
+    default_answer: 'widget-triage',
+  });
+  const legacy = columnOf((await openPage(screen, `/interview/${legacyId}`)).html, 'chat');
+  assert.ok(
+    legacy.indexOf('what I would take') < legacy.indexOf('why it matters'),
+    `§7.5: the recommendation comes first:\n${legacy}`,
+  );
+  assert.ok(legacy.includes('if you just accept'), 'and the accept line still renders');
+
+  const batchedId = await seedBatchedInterview(cp);
+  const batched = columnOf((await openPage(screen, `/interview/${batchedId}`)).html, 'chat');
+  assert.ok(
+    batched.indexOf('what I would take') < batched.indexOf('why it matters'),
+    `§7.5 holds for a batched question too:\n${batched}`,
+  );
+  assert.ok(
+    !batched.includes('if you just accept'),
+    `a batched question shows each field's own recommendation instead:\n${batched}`,
+  );
+});
+
+/* ================================================================= AT5 */
+
+test('t481 AT5 — a question with a flat list of labels renders exactly as it did', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedOpenInterview(cp);
+  await createQuestion(cp, {
+    job_id: jobId,
+    question: 'What do you call this class of problem?',
+    options: ['widget-triage', 'widget-review'],
+    default_answer: 'widget-triage',
+  });
+
+  const chat = columnOf((await openPage(screen, `/interview/${jobId}`)).html, 'chat');
+
+  for (const option of ['widget-triage', 'widget-review']) {
+    assert.ok(
+      new RegExp(`<button[^>]*data-option="${option}"`).test(chat),
+      `the one-click button for "${option}" is untouched:\n${chat}`,
+    );
+  }
+  assert.equal(
+    [...chat.matchAll(/<textarea\b/g)].length,
+    1,
+    `one shared answer field, as before:\n${chat}`,
+  );
+  assert.ok(/<textarea[^>]*name="answer"/.test(chat), 'posted under the same one name');
+  assert.equal(fieldBlocks(chat).size, 0, `and nothing of the batched shape:\n${chat}`);
+});
+
+/* ================================================================= AT6 */
+
+test('t481 AT6 — the forbidden vocabulary holds over a batched question', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedBatchedInterview(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assertSaysNothingForbidden(page.html, 'a batched question');
+});
+
+/* ================================================================= AT7 */
+
+test('t481 AT7 — the batched form says it needs a script; the legacy one does not', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const batchedId = await seedBatchedInterview(cp);
+  const batched = columnOf((await openPage(screen, `/interview/${batchedId}`)).html, 'chat');
+  const notice = /<noscript>([\s\S]*?)<\/noscript>/.exec(batched);
+  assert.ok(notice !== null, `a batched form declares what it needs:\n${batched}`);
+  assert.ok(/\S/.test(notice[1].replaceAll(/<[^>]*>/g, '')), 'and the notice says something');
+
+  // The document the script assembles is posted under the one field the route
+  // already reads, so nothing about the write changes.
+  assert.ok(
+    /<input[^>]*type="hidden"[^>]*name="answer"/.test(batched) ||
+      /<input[^>]*name="answer"[^>]*type="hidden"/.test(batched),
+    `the assembled answer travels on the same field:\n${batched}`,
+  );
+
+  const legacyId = await seedOpenInterview(cp);
+  await createQuestion(cp, { job_id: legacyId, question: 'What do you call it?' });
+  const legacy = columnOf((await openPage(screen, `/interview/${legacyId}`)).html, 'chat');
+  assert.ok(
+    !legacy.includes('<noscript>'),
+    `a question that works without a script claims nothing:\n${legacy}`,
+  );
+});

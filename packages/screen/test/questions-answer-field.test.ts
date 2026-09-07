@@ -240,3 +240,83 @@ test('t134 AT6 — two pending questions keep one name each', async (t) => {
     assert.notEqual(accessibleNameOf(html, field), '');
   }
 });
+
+/* ================================================================================
+ * t481 — the same pin, over every control a batched question draws
+ *
+ * A question that asks a whole step at once replaces the one shared field with
+ * one control per decision, and the rule the single field has carried since
+ * t134 does not get weaker because there are now eight of them: a radio, a
+ * checkbox, the text box paired with "something else" and the free-text area
+ * each carry a visible name, resolved the way a reader resolves it.
+ *
+ * The one deliberate exception is the hidden field the assembled document
+ * travels on: it is not a control anybody reaches, it takes no keystroke, and a
+ * label pointing at it would name something invisible.
+ * ============================================================================= */
+
+const BATCHED = {
+  question: 'Three things about this migration, all at once',
+  context: 't101 runs in parallel and owns the same numbering space.',
+  recommendation: 'Keep 0002 and renumber only if it collides on the merge.',
+  options: [
+    {
+      id: 'numbering',
+      label: 'Which number does the migration take?',
+      kind: 'choice',
+      options: ['0002', '0003'],
+      recommended: '0002',
+    },
+    {
+      id: 'owners',
+      label: 'Who else writes in that space?',
+      kind: 'multi',
+      options: ['t101', 't102'],
+    },
+    { id: 'notes', label: 'Anything the merge should know?', kind: 'free_text' },
+  ],
+};
+
+/** Every control of a card except the hidden one the document travels on. */
+function visibleControlsOf(card: string): string[] {
+  return controlsOf(card).filter((tag) => attributeOf(tag, 'type') !== 'hidden');
+}
+
+test('t481 AT9 — every control of a batched question has an accessible name', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, { title: 'a whole step at once', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...BATCHED });
+
+  const screen = await startScreen(t, cp);
+  const { html, cards } = await openQueue(screen);
+  assert.equal(cards.length, 1);
+  const card = cards[0];
+
+  const controls = visibleControlsOf(card);
+  const kinds = controls.map((tag) => attributeOf(tag, 'type') ?? tag.slice(1, 9));
+  for (const kind of ['radio', 'checkbox', 'text']) {
+    assert.ok(kinds.includes(kind), `the card draws no ${kind} at all: ${kinds.join(', ')}`);
+  }
+  assert.ok(/<textarea\b/.test(card), 'the card draws no textarea at all');
+
+  for (const control of controls) {
+    assert.notEqual(
+      accessibleNameOf(card, control),
+      '',
+      `control without an accessible name: ${control}`,
+    );
+    // Resolved over the WHOLE page too: eight controls on one card is eight
+    // chances for two of them to share an id and point both labels at the first.
+    const id = attributeOf(control, 'id');
+    if (id !== null && id !== '') {
+      assert.equal(namingLabelsOf(html, control).length, 1, `exactly one label names ${control}`);
+    }
+  }
+
+  const ids = controls
+    .map((tag) => attributeOf(tag, 'id'))
+    .filter((id): id is string => id !== null && id !== '');
+  assert.equal(new Set(ids).size, ids.length, `two controls share an id: ${ids.join(', ')}`);
+});

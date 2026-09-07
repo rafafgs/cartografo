@@ -1,0 +1,4 @@
+### t458 (developing, unverified)
+
+- The ticket's own §10/merge framing named only ONE bare-selector collision between the two files (body). There is actually a second: both declared bare `h2` with different rules. Verified against the tree before resolving it — scoped the static half's copy to `.column h2` (every real <h2> on /inbox and /graph-editor.html sits inside .column) instead of letting the two fight for the cascade. No markup touched, no visual change for either half.
+- check-design-tokens.mjs sweeps a directory's *.css files non-recursively (not a full-tree walk like check-single-writer.mjs) — a root argument IS the directory to glob, not a repo root to walk. Matches the ticket's own 'sweeping packages/screen/src/public/*.css' framing and kept fixtures simple (write style.css straight into a temp dir).

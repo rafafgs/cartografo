@@ -31,6 +31,7 @@ import type { Database } from '../db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../db/events.ts';
 import { requireValidData, ValidationError } from '../db/event-validation.ts';
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
+import { decodeSessionText } from '../domain/session-log.ts';
 import { isObject } from '../util/is-object.ts';
 import { createArtifact, getArtifactContent } from './artifacts.ts';
 import { getVersion } from './graphs.ts';
@@ -972,6 +973,61 @@ export async function getSessionTranscript(
     transcript: row.transcript,
     transcript_truncated: asBoolean(row.transcricao_truncada),
     transcript_original_size: row.transcricao_tamanho_original,
+  };
+}
+
+/** What `GET /v1/sessions/:id/log` answers with (t368, RF-39/RF-40). */
+export interface SessionLog {
+  session_id: number;
+  node_id: string | null;
+  engine: string;
+  exit_code: number | null;
+  /** The decoded text, or `null` when the session recorded no transcript. */
+  text: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+  /** The artifact holding the WHOLE transcript, when the cap bit; see {@link Session.transcript_artifact_id}. */
+  transcript_artifact_id: number | null;
+}
+
+/**
+ * The session's own transcript, decoded back into what the engine SAID
+ * (t368, RF-39/RF-40).
+ *
+ * Reads the ROW's transcript — the tail `finishSession` kept, capped at
+ * {@link TRANSCRIPT_CAP_BYTES} — and decodes THAT, never the whole artifact
+ * `transcript_artifact_id` may point to. This is a view for a person reading
+ * what already sits on the row; the complete original is reachable on its own
+ * terms, through `GET /v1/artifacts/:id/content`, which is why the cut and the
+ * size still ride along unchanged rather than being resolved away the way
+ * {@link getSessionTranscript} resolves them. That route answers "give me the
+ * whole thing"; this one answers "show me what happened, and tell me if I am
+ * looking at all of it".
+ *
+ * Scoped exactly like {@link getSessionTranscript}: a session of another
+ * project answers the same `404` an unknown id gets, and the check runs before
+ * anything about the row is read.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param projectId Scope of the caller; omitted, any project answers.
+ * @returns The decoded log, or `null` if the session does not exist in the
+ *   scope asked for.
+ */
+export function getSessionLog(db: Database, id: number, projectId?: number): SessionLog | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+  if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
+
+  return {
+    session_id: row.id,
+    node_id: row.node_id,
+    engine: row.engine,
+    exit_code: row.exit_code,
+    text: row.transcript === null ? null : decodeSessionText(row.engine, row.transcript),
+    transcript_truncated: asBoolean(row.transcricao_truncada),
+    transcript_original_size: row.transcricao_tamanho_original,
+    transcript_artifact_id: row.transcript_artifact_id,
   };
 }
 

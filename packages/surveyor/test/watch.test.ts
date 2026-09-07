@@ -218,6 +218,37 @@ test('t247 AT6 — the line shape is exactly FR3: nothing carries a field it has
   ]);
 });
 
+test('t419 AT4 — runWatch threads projectId into the default stream, with no events injected', async () => {
+  const { runWatch } = await loadWatch();
+  const requestedUrls: string[] = [];
+
+  const doFetch: typeof fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(JSON.stringify({ error: 'invalid_credential' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  await assert.rejects(
+    () =>
+      runWatch({
+        url: 'http://127.0.0.1:4317',
+        token: 'operator-token',
+        projectId: 2,
+        doFetch,
+        write: () => undefined,
+      }),
+    (failure: unknown) => failure instanceof Error && failure.name === 'StreamDeniedError',
+  );
+
+  assert.equal(requestedUrls.length, 1, 'the default stream made exactly one connection attempt');
+  assert.ok(
+    requestedUrls[0].includes('project_id=2'),
+    `runWatch did not thread projectId into the default stream: ${requestedUrls[0]}`,
+  );
+});
+
 test('t247 FR3 — one execution at a time: two lens runs never overlap in one process', async () => {
   const { runWatch } = await loadWatch();
   const timeline: string[] = [];

@@ -1,0 +1,134 @@
+{
+  "id": "deliver-bundle",
+  "version": "1.0.0",
+  "hash": "sha256:0917952ef6c172e81c50968a42baa9a741ee8b17445bb3500425f3e4c5a73c71",
+  "role": "work",
+  "description": "Writes the interviewed draft out as a bundle directory, checks its shape and soundness, and hands it back as the job's result.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "interview"
+    ],
+    "properties": {
+      "interview": {
+        "type": "object",
+        "description": "the bucket the interview node produces; its last turn is the one that survives",
+        "required": [
+          "draft"
+        ],
+        "properties": {
+          "done": {
+            "type": "boolean"
+          },
+          "draft": {
+            "type": "object",
+            "required": [
+              "graph",
+              "skills"
+            ],
+            "properties": {
+              "graph": {
+                "type": "object"
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "bundle",
+      "checked",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "bundle": {
+        "type": "object",
+        "required": [
+          "graph",
+          "skills"
+        ],
+        "description": "the same draft, written out and checked: this is what the next step registers or exports",
+        "properties": {
+          "graph": {
+            "type": "object"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "checked": {
+        "type": "object",
+        "required": [
+          "structure",
+          "soundness"
+        ],
+        "description": "what the validator answered, so a person reads a verdict and not a claim",
+        "properties": {
+          "structure": {
+            "type": "boolean"
+          },
+          "soundness": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1,
+        "description": "one line: what the map covers, and anything the interview left rough"
+      }
+    }
+  },
+  "preconditions": [
+    "the interview reported a draft with a graph and one manifest per node",
+    "the session may write inside its own working directory"
+  ],
+  "checks": [
+    {
+      "id": "the-drafted-graph-validates",
+      "type": "deterministic",
+      "description": "The draft is held against the same validator that guards the bundles committed in this repository — structure and the four soundness rules. One violation is EXPECTED and is not a defect: `node_with_contract` also asks each node for a pinned `hash`, and a draft has none, because computing the pin belongs to whoever registers (D4). Report it as such; every other violation is a real one.",
+      "command": "node scripts/validate-graph.mjs draft/graph.json",
+      "timeout_s": 60
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Deliver the interviewed map as a bundle\n\nThe interview is over. What you have is a draft — a graph document and one skill\nmanifest per node — and what this step owes is a bundle somebody can look at and\ndecide about.\n\n## Write it out\n\nIn the directory you are in, write:\n\n```\ndraft/graph.json          the graph document, exactly as the interview left it\ndraft/skills/<id>.json    one file per manifest, named after its own `id`\n```\n\nWrite them as they came. **Do not improve the map here.** If something is wrong\nwith it, that is a finding you report, not a thing you fix: the person answered\nthose questions, and a step that silently edits their answers makes the whole\ninterview unreviewable.\n\n## Check it\n\nRun the check this node declares:\n\n```\nnode scripts/validate-graph.mjs draft/graph.json\n```\n\nIt answers two things — is the document structurally a graph, and is its topology\na sound workflow net: one entry, every node reachable, every node able to reach a\nfinal one, no dangling edge. Report **what it answered**, in `checked`, whether\nit passed or not.\n\nOne violation is expected and is not a defect: the `node_with_contract` rule also\nasks each node for a pinned `hash`, and a draft has none. Name it in `problems`\nand say so in the note; treat every OTHER violation as real.\n\nThen check by hand the two things the validator cannot:\n\n- there is exactly one manifest per node, and each node's `skill_ref` names an\n  `id` and a `version` that a manifest in `draft/skills/` really has;\n- **no manifest carries a `hash`**. The pin is computed by whoever registers the\n  bundle; a hash written here is a pin that will not close, and D4's whole point\n  is that a pin which does not close stops the map.\n\n## Report\n\n```resultado\n{\"bundle\": {\"graph\": {…}, \"skills\": [{…}]},\n \"checked\": {\"structure\": true, \"soundness\": true, \"problems\": []},\n \"note\": \"<one line: what this map covers, and anything the interview left rough>\"}\n```\n\nA draft that did not pass is still reported — with `structure` or `soundness`\nfalse and every problem named in `problems`. Registering is not yours and never\nwas: a person reads this and decides.\n",
+  "origin": {
+    "type": "native"
+  }
+}

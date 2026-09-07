@@ -216,11 +216,24 @@ test(
       // and renumbered at the merge with t354, which is this count's whole point
       // restated one more time. t401 moved it last with
       // `0028_runner_probe.sql`: what a paired machine reports about itself, and
-      // the operator's request that it report again.
+      // the operator's request that it report again. t417 moved it once more
+      // with `0031_reassign_orphan_projects.sql`, which sends the rows the
+      // unvalidated write side already produced back to a project that exists —
+      // numbered 0031 because 0029 and 0030 were claimed by unmerged branches,
+      // so the count and the highest number no longer agree, and only the count
+      // is what this line is about. t359 is one of those branches, and moved it
+      // once more with `0029_delivery_claim.sql`, the `claimed_at` both delivery
+      // tables need so a routine that died mid-attempt is diagnosable (RF-06) —
+      // it keeps its own number, which is still free, and lands below 0031.
+      // t422 is the other one, and moved it once more with
+      // `0030_artifacts.sql` — the reference to a file a session produced — and
+      // it too keeps the number reserved for it, landing between 0029 and 0031,
+      // which the runner applies in numeric order among the ones not yet in the
+      // ledger.
       assert.equal(
         first.readiness.migrationsApplied,
-        28,
-        'a brand-new database applies the twenty-eight migrations the package ships',
+        31,
+        'a brand-new database applies the thirty-one migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

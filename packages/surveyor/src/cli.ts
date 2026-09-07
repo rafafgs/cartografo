@@ -52,6 +52,11 @@ options:
   --url <url>            control plane to watch (required)
   --token <token>        control plane credential (required); it is printed the
                          first time the control plane starts
+  --project <id>         project to watch (default: 1). No other value is
+                         accepted yet: the flow lens (runner/surveyor/proposal)
+                         and the cost lens (cost-surveyor) still read and write
+                         against project 1 only, so watching another project
+                         would risk posting its proposal under the wrong one
   --lens <flow|cost|all> which lens to run per execution (default: all)
   --dry-run              report what each lens would run, and run neither
   -h, --help             this text
@@ -80,9 +85,17 @@ export interface CliContext {
 export interface WatchArguments {
   url: string;
   token: string;
+  projectId: number;
   lens: LensSelection;
   dryRun: boolean;
 }
+
+/**
+ * Project `watch` is allowed to run against, until the flow and cost lenses
+ * it triggers are themselves scoped to a project (see the ticket that added
+ * this constant for the reasoning).
+ */
+const DEFAULT_PROJECT = 1;
 
 /** What is left of the command line after taking one option out. */
 interface Extraction {
@@ -126,6 +139,29 @@ function extractValue(args: string[], name: string): Extraction {
   return { value, rest };
 }
 
+/**
+ * Reads `--project`, refusing anything that is not a positive integer.
+ *
+ * Package-local, and deliberately not imported from the runner's own copy
+ * (`packages/runner/src/cli/index.ts`) or from `packages/core`'s
+ * `common.ts`: a client package does not reach into another package's
+ * internals for a six-line check (D11), so each one — the runner's CLI,
+ * `cost-surveyor`'s `--execution` — carries its own.
+ *
+ * @param raw Value as it came off the command line, or `undefined`.
+ * @returns `DEFAULT_PROJECT` when `raw` is `undefined`, the parsed value otherwise.
+ * @throws {UsageError} When `raw` is not a positive integer.
+ */
+function positiveProjectId(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_PROJECT;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new UsageError(`--project has to be a positive integer (got: "${raw}")`);
+  }
+  return parsed;
+}
+
 /** Takes a valueless flag out of the list. */
 function extractFlag(args: string[], name: string): { present: boolean; rest: string[] } {
   const rest = args.filter((argument) => argument !== name);
@@ -149,11 +185,26 @@ export function parseArguments(args: string[]): WatchArguments {
   const fromDryRun = extractFlag(args, '--dry-run');
   const fromUrl = extractValue(fromDryRun.rest, '--url');
   const fromToken = extractValue(fromUrl.rest, '--token');
-  const fromLens = extractValue(fromToken.rest, '--lens');
+  const fromProject = extractValue(fromToken.rest, '--project');
+  const fromLens = extractValue(fromProject.rest, '--lens');
 
   if (fromLens.rest.length > 0) {
     throw new UsageError(
       `watch does not understand: ${fromLens.rest.map((extra) => `"${extra}"`).join(', ')}`,
+    );
+  }
+
+  // Knowable from the flag alone, with no network round trip — the same
+  // posture as the runner's own engine-name and worktree-path checks — so it
+  // runs before --url/--token are used for anything network-related, and
+  // before either lens is constructed.
+  const projectId = positiveProjectId(fromProject.value);
+  if (projectId !== DEFAULT_PROJECT) {
+    throw new UsageError(
+      `--project ${projectId} is not supported yet: the flow lens ` +
+        '(packages/runner/src/surveyor/proposal.ts) and the cost lens (packages/cost-surveyor) ' +
+        `still read and write against project ${DEFAULT_PROJECT} only, so watch cannot serve ` +
+        'another project without risking a proposal posted under the wrong one',
     );
   }
 
@@ -172,6 +223,7 @@ export function parseArguments(args: string[]): WatchArguments {
   return {
     url: fromUrl.value,
     token: fromToken.value.trim(),
+    projectId,
     lens,
     dryRun: fromDryRun.present,
   };
@@ -218,6 +270,7 @@ export async function runCli(args: string[], context: CliContext = {}): Promise<
     await runWatch({
       url: parsed.url,
       token: parsed.token,
+      projectId: parsed.projectId,
       lens: parsed.lens,
       dryRun: parsed.dryRun,
       write: (line) => write(`${line}\n`),

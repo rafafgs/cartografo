@@ -270,6 +270,83 @@ test('t247 AT5d — a 401 on connect throws at once, and never retries', async (
   assert.equal(fake.connections.length, 1, 'a 401 is fatal on the first connection');
 });
 
+test('t419 AT1 — with no projectId, the subscription URL carries project_id=1', async (t) => {
+  const { watchFinishedExecutions } = await loadStream();
+
+  const fake = await fakeStream(t, (_attempt, response) => {
+    openStream(response);
+    response.write(message(40, 'execution.finished', 800));
+  });
+
+  const events = watchFinishedExecutions({
+    url: fake.url,
+    token: 'operator-token',
+    backoffMs: FAST_BACKOFF_MS,
+  });
+
+  await take(events, 1);
+
+  assert.ok(
+    fake.connections[0].url.includes('project_id=1'),
+    `no projectId option defaults to project 1: ${fake.connections[0].url}`,
+  );
+});
+
+test('t419 AT2 — projectId: 2 puts project_id=2 in the URL, alongside the type filter', async (t) => {
+  const { watchFinishedExecutions } = await loadStream();
+
+  const fake = await fakeStream(t, (_attempt, response) => {
+    openStream(response);
+    response.write(message(41, 'execution.finished', 801));
+  });
+
+  const events = watchFinishedExecutions({
+    url: fake.url,
+    token: 'operator-token',
+    projectId: 2,
+    backoffMs: FAST_BACKOFF_MS,
+  });
+
+  await take(events, 1);
+
+  assert.ok(
+    fake.connections[0].url.includes('project_id=2'),
+    `projectId: 2 did not reach the query string: ${fake.connections[0].url}`,
+  );
+  assert.ok(fake.connections[0].url.includes('type=execution.finished'));
+});
+
+test('t419 AT3 — a reconnection after a drop carries the same project_id as the first attempt', async (t) => {
+  const { watchFinishedExecutions } = await loadStream();
+
+  const fake = await fakeStream(t, (attempt, response) => {
+    openStream(response);
+    if (attempt === 1) {
+      response.write(message(50, 'execution.finished', 900));
+      setTimeout(() => response.destroy(), 20);
+      return;
+    }
+    response.write(message(51, 'execution.finished', 901));
+  });
+
+  const events = watchFinishedExecutions({
+    url: fake.url,
+    token: 'operator-token',
+    projectId: 3,
+    backoffMs: FAST_BACKOFF_MS,
+  });
+
+  await take(events, 2);
+
+  assert.equal(fake.connections.length, 2, 'a drop is a reconnection, not an end');
+  for (const connection of fake.connections) {
+    assert.ok(
+      connection.url.includes('project_id=3'),
+      `the reconnection dropped the project filter: ${connection.url}`,
+    );
+  }
+});
+
 test('t247 AT5d — a 400 is fatal too; a 502 is a drop and reconnects', async (t) => {
   const { watchFinishedExecutions, StreamDeniedError } = await loadStream();
 

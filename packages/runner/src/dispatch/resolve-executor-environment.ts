@@ -19,6 +19,16 @@
  * process that is about to open the session, and are merged into the resolved
  * input right before the manifest renders (`dispatch.ts`).
  *
+ * ## `input.environment`, the third value with the same problem (t360)
+ *
+ * The interview (`factory-graphs/map-design`) has to ask which steps reach
+ * outside and through which MCP server (RF-20), and it has to be able to
+ * suggest a class this installation already knows (RF-14, D8). Both are the same
+ * kind of fact as the two above — true of one machine and one installation, and
+ * false the moment a graph version stores them — so they arrive through this
+ * same seam, under `environment`. Neither is a bench, which is why the key is
+ * its own rather than a third field of `banco_de_testes`.
+ *
  * ## The two modes, and why one is memoized and the other is not
  *
  * `implantar-release`'s own manifest already writes the distinction down, and
@@ -86,6 +96,43 @@ export class ExecutorEnvironmentError extends Error {
 export type ReferenceMode = 'instalacao_em_uso' | 'ponta_do_principal';
 
 /**
+ * What this engine's MCP discovery answered, for the whole process (t360, FR4).
+ *
+ * A discriminated union and not `string[] | null`, for the reason
+ * `engine/types.ts` gives the capability itself: an adapter that never
+ * implemented discovery is NOT an engine with zero MCP servers, and a shape
+ * that could only say "none" would make the two indistinguishable at the point
+ * where they are handed to a session. The union survives all the way to
+ * `environment.mcp_servers`, where `supported: false` becomes `null` and a
+ * supported discovery becomes the list — the empty one included, which is a
+ * real answer.
+ */
+export type McpDiscoveryResult =
+  | { supported: false }
+  | { supported: true; servers: readonly string[] };
+
+/**
+ * A registered class whose current version reads like this job (t360, FR4).
+ *
+ * Structurally the synthesizer's own `SimilarClass` (`synthesizer/prompt.ts`)
+ * with English keys, and it is a separate declaration rather than an import for
+ * one reason: those keys are the SYNTHESIS PROMPT's frozen vocabulary and are
+ * Portuguese, while these are read by a manifest written after D24. The scoring
+ * is not duplicated — `synthesizer/similarity.ts` is what computes it, from
+ * `cli/run.ts`, and this is only the shape it arrives in.
+ */
+export interface SimilarClass {
+  /** The class id, which is also the lineage id (D8). */
+  class: string;
+  /** `metadata.name` of its current version. */
+  name: string;
+  /** `metadata.description` of its current version; empty when it declares none. */
+  description: string;
+  /** Jaccard score in `[0, 1]`. */
+  score: number;
+}
+
+/**
  * What a dispatch with no bench configured contributes: nothing.
  *
  * The honest default, and it lives here rather than inside `dispatch.ts` so the
@@ -119,6 +166,37 @@ export interface ExecutorEnvironmentConfig {
   referenceRepo?: string;
   /** The branch `ponta_do_principal` reads. Default: `main`. */
   mainBranch?: string;
+  /**
+   * Which MCP servers this runner's engine sees — `input.environment.mcp_servers`
+   * (t360, FR4; RF-20).
+   *
+   * A plain VALUE and not a function, unlike {@link classPrecedents} below, and
+   * the asymmetry is the whole point: MCP discovery costs one CLI spawn and its
+   * answer cannot change inside a process, so `cli/run.ts` computes it once —
+   * for the probe report t401 already sends — and hands the same answer here.
+   * A resolver that discovered per dispatch would spend a spawn per session and
+   * let the operator page and the interview describe the same machine
+   * differently.
+   *
+   * Absent means the same as `{supported: false}`: a deployment that wired
+   * nothing knows nothing, and saying so is the honest answer.
+   */
+  mcpDiscovery?: McpDiscoveryResult;
+  /**
+   * Registered classes that read like THIS job — `input.environment.similar_classes`
+   * (t360, FR4; RF-14, D8).
+   *
+   * A FUNCTION, because the score is computed against the job's own title and
+   * body: two jobs of the same runner get two different lists, and there is
+   * nothing here to memoize. `cli/run.ts` builds it out of `GET /v1/classes`
+   * and `synthesizer/similarity.ts`.
+   *
+   * Absent means an empty list, which is a real answer — "this installation has
+   * no precedent to suggest" — and not a missing capability. The distinction
+   * `mcp_servers` needs `null` for does not arise here: a control plane always
+   * has a class listing, even an empty one.
+   */
+  classPrecedents?: (job: Job) => Promise<SimilarClass[]>;
 }
 
 /** What `git rev-parse` answered. */
@@ -190,14 +268,19 @@ async function readCommit(repoRoot: string, revision: string): Promise<string> {
 /**
  * Builds the dispatch's `executorEnvironment` out of one runner's configuration.
  *
- * The returned function takes the work and the resolved node and reads neither,
- * today: the environment is a fact about the PROCESS, identical for every job
- * this runner takes. The two parameters are there because the seam beside it
- * (`resolveInput`) has them and a second signature would be one more thing for
- * whoever wires a dispatch to get right — and because a bench chosen per class
- * is a plausible next ficha that would need exactly them.
+ * The returned function takes the work and the resolved node, and since t360 it
+ * READS the first of them: `environment.similar_classes` is scored against this
+ * job's own words, so it cannot be a fact about the process the way the bench
+ * and the reference are. `environment.mcp_servers` still is one — it is
+ * discovered once per runner and handed in as a value, not a resolver — and the
+ * asymmetry between the two is stated field by field on
+ * {@link ExecutorEnvironmentConfig}. The resolved node is still unread, and the
+ * parameter stays for the reason it always did: the seam beside this one
+ * (`resolveInput`) has it, and a second signature would be one more thing for
+ * whoever wires a dispatch to get right.
  *
- * @param config The bench, the mode, and the two optional overrides.
+ * @param config The bench, the mode, the two optional overrides, and what this
+ *   machine knows about MCP and about precedent classes.
  * @returns The function, with `instalacao_em_uso`'s single read memoized in it.
  */
 export function createExecutorEnvironmentResolver(
@@ -227,13 +310,38 @@ export function createExecutorEnvironmentResolver(
     lido_em: new Date().toISOString(),
   });
 
-  return async (): Promise<Record<string, unknown>> => {
+  /**
+   * The two machine facts the interview reads, in the shape it declares.
+   *
+   * `null` for `mcp_servers` is load-bearing and is argued at
+   * {@link McpDiscoveryResult}: it means "this engine implements no discovery",
+   * which a session has to be able to tell apart from "it found none".
+   */
+  const environmentOf = async (job: Job): Promise<Record<string, unknown>> => ({
+    mcp_servers:
+      config.mcpDiscovery?.supported === true ? [...config.mcpDiscovery.servers] : null,
+    // Sorted HERE and not only in whoever computed it: "best first" is what the
+    // interview's instructions promise the session, so it is a property of this
+    // key rather than a habit of one caller. Descending, and a tie keeps the
+    // order it arrived in — `sort` is stable, and two classes that score the
+    // same have nothing to break the tie with that would not be arbitrary.
+    similar_classes:
+      config.classPrecedents === undefined
+        ? []
+        : [...(await config.classPrecedents(job))].sort((a, b) => b.score - a.score),
+  });
+
+  return async (job: Job): Promise<Record<string, unknown>> => {
     const reference =
       config.referenceMode === 'instalacao_em_uso'
         ? (installed ??= await read('HEAD'))
         : await read(mainBranch);
 
     return {
+      // The one key of this seam that is not the bench's, and the one that is
+      // English: `banco_de_testes`/`referencia` are the software bundle's frozen
+      // manifest vocabulary, while `environment` is born after D24 (t360).
+      environment: await environmentOf(job),
       banco_de_testes: {
         caminho: config.testBenchPath,
         // Declared, and empty, because `testar-alpha`'s body interpolates it:

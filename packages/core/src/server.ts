@@ -14,7 +14,10 @@ import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
 
 import { registerAuth } from './auth.ts';
+import { artifactRootFor, LocalArtifactStore } from './artifacts/local-store.ts';
+import type { ArtifactStore } from './artifacts/store.ts';
 import type { Database } from './db/connection.ts';
+import { registerArtifacts } from './routes/artifacts.ts';
 import type { ErrorResponse } from './routes/common.ts';
 import { registerEngines } from './routes/engines.ts';
 import { registerEvents } from './routes/events.ts';
@@ -127,6 +130,29 @@ export interface AppOptions {
    * control plane, never of the request.
    */
   leaseCeilings?: LeaseCeilings;
+  /**
+   * Where an artifact's bytes are stored (t422, FR3).
+   *
+   * The app receives the store the same way it receives the database: whoever
+   * decides WHERE things live is the startup (`src/index.ts`), and a second
+   * implementation is a different value here — never a rewrite of the route or
+   * the repository layer.
+   *
+   * Optional for exactly one reason, and it is not indecision: eleven call
+   * sites already build this app with nothing but a handle, and making them all
+   * name a store would put this ticket's diff in ten test files it has no
+   * business touching. Absent, the store is the local one rooted beside the
+   * database file this app was handed — which is the same place `start()` would
+   * have put it, so an app built either way reads the same artifacts.
+   */
+  artifactStore?: ArtifactStore;
+  /**
+   * Ceiling of an artifact upload, in bytes (t422, FR7).
+   *
+   * Resolved from the environment by `start()`, like {@link leaseCeilings};
+   * omitted, the route falls back to its own `DEFAULT_ARTIFACT_SIZE_CAP_BYTES`.
+   */
+  artifactSizeCapBytes?: number;
 }
 
 /**
@@ -136,6 +162,9 @@ export interface AppOptions {
  * @returns A Fastify instance ready to `listen`.
  */
 export function createApp(options: AppOptions): FastifyInstance {
+  const artifactStore =
+    options.artifactStore ?? new LocalArtifactStore(artifactRootFor(options.db.name));
+
   const app = Fastify({
     logger: options.logger ?? false,
     // Unconditionally, and it is not the same switch as the one above (t197,
@@ -291,6 +320,16 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerWebhooks(inner, options.db));
       scope.register(async (inner) => registerHookSecrets(inner, options.db));
       scope.register(async (inner) => registerSettings(inner, options.db));
+      // Its own `register` like every other family, and here the encapsulation
+      // is load-bearing rather than tidy: this is the one family that installs
+      // a raw content-type parser, and the boundary of the plugin is what keeps
+      // it off the JSON routes registered above (t422, FR6).
+      scope.register(async (inner) =>
+        registerArtifacts(inner, options.db, {
+          store: artifactStore,
+          sizeCapBytes: options.artifactSizeCapBytes,
+        }),
+      );
     },
     { prefix: API_PREFIX },
   );

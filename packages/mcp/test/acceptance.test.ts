@@ -108,8 +108,9 @@ test('the round trip: status, the map, a job created and read back through the A
   };
   assert.equal(reported.control_plane.health.status, 'ok');
   assert.deepEqual(
-    reported.classes.map((row) => row.class),
+    reported.classes.map((row) => row.class).filter((name) => name !== 'map-design'),
     [CLASS],
+    'beside `map-design`, the interview every startup registers on its own (t360)',
   );
   assert.equal(reported.jobs.total, 0, 'a fresh control plane holds no jobs');
 

@@ -1,0 +1,48 @@
+-- 0029_delivery_claim — when a routine took the delivery for itself (t359, RF-06).
+--
+-- Number provisional in the ticket and kept here: another ticket landing `0029`
+-- first is the conflict git does not report, and `src/db/migrate.ts` fails
+-- loudly on a repeated number. Renumber at the merge, the way the headers of
+-- 0003, 0005, 0017, 0019, 0022, 0026, 0027 and 0028 already record.
+--
+-- Both background daemons used to read their due rows and send. Nothing between
+-- the read and the network call said "this one is mine", and the property that
+-- kept two attempts from going out for one delivery was environmental, not
+-- structural: one process, whose ticks cannot overlap
+-- (`src/util/polling-dispatcher.ts`), guarded by a file lock that forbids a
+-- second control plane over the same database (`src/db/lock.ts`). RF-06 asks for
+-- the property BY CONSTRUCTION, because a second process is exactly what a
+-- hosted step adds, and it has to hold before that step exists rather than be
+-- retrofitted after it.
+--
+-- The claim itself needs no column: it is one guarded
+-- `UPDATE ... WHERE id = ? AND status = 'pending' AND next_attempt_at <= ?`,
+-- decided by rowcount, over columns that were already here. `claimed_at` is for
+-- the HUMAN reading the table afterwards — "claimed at T, still pending" is the
+-- shape of a routine that died mid-attempt, and without this column that state
+-- is indistinguishable from "scheduled for T by a failure". `attempts` and
+-- `next_attempt_at` cannot tell the two apart on their own, because the claim
+-- writes both of them exactly as a failure would.
+--
+-- **Nullable, no backfill, no index.** NULL means never claimed, which is the
+-- honest reading of every row written before this migration — the same reasoning
+-- `0011_sessao_orcamento_silencio.sql` and `0017_trabalho_tier.sql` wrote down
+-- for their own additions. And no index because nothing queries it: the tick's
+-- hot question is still "what is due right now?", answered by
+-- `idx_webhook_delivery_pending` / `idx_hook_delivery_pending`, and the claim's
+-- own UPDATE is by primary key. An index nobody reads is a write cost per
+-- attempt bought for nothing.
+--
+-- **Both tables in one migration**, because it is one fact about one mechanism:
+-- `src/repositories/hooks.ts` imports the claim from
+-- `src/repositories/webhooks.ts` rather than defining a second one, and a
+-- schema where only one of the two tables could record a claim would make that
+-- shared helper impossible to write.
+--
+-- English top to bottom: the t279 frozen-names rule protects the pre-existing
+-- Portuguese migration files, and this one is new (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE webhook_delivery ADD COLUMN claimed_at TEXT;  -- NULL = never claimed
+ALTER TABLE hook_delivery    ADD COLUMN claimed_at TEXT;  -- NULL = never claimed

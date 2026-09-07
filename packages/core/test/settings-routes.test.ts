@@ -29,6 +29,7 @@ interface SettingsBody {
   workspace_root?: string;
   worktrees_root?: string;
   engine?: string;
+  allow_git_clone?: string;
 }
 
 interface ErrorBody {
@@ -78,6 +79,10 @@ const SEEDED = Object.freeze({
   workspace_root: '/home/operator/.cartografo/workspace',
   worktrees_root: '/home/operator/.cartografo/worktrees',
   engine: 'claude-code',
+  // t439's fourth key. Nothing reads it yet, and the routes did not have to
+  // learn it: `GET`/`PATCH /v1/settings` already carry whatever is in
+  // `KNOWN_SETTING_KEYS`, which is exactly why adding a key is one line there.
+  allow_git_clone: 'true',
 });
 
 function seedTestDefaults(ctx: TestContext, projectId = 1): void {
@@ -108,9 +113,14 @@ test('t403 AT5 — GET /v1/settings: no credential refuses 401, a runner refuses
   assert.equal(asUser.status, 200);
   assert.equal(asUser.body.project_id, 1);
   assert.deepEqual(
-    { workspace_root: asUser.body.workspace_root, worktrees_root: asUser.body.worktrees_root, engine: asUser.body.engine },
+    {
+      workspace_root: asUser.body.workspace_root,
+      worktrees_root: asUser.body.worktrees_root,
+      engine: asUser.body.engine,
+      allow_git_clone: asUser.body.allow_git_clone,
+    },
     SEEDED,
-    'the three seeded defaults come back',
+    'every seeded default comes back, allow_git_clone included',
   );
 });
 
@@ -145,6 +155,16 @@ test('t403 AT7 — PATCH /v1/settings updates the named key and leaves the other
   const after = await request<SettingsBody>(ctx, 'GET', '/v1/settings?project_id=1');
   assert.equal(after.status, 200);
   assert.deepEqual(after.body, patched.body, 'a subsequent GET reflects the same values');
+
+  // t439: the fourth key travels the same two routes as the other three, with
+  // no route change of its own — a generic surface is what makes that true.
+  const flag = await request<SettingsBody>(ctx, 'PATCH', '/v1/settings', { allow_git_clone: 'false' });
+  assert.equal(flag.status, 200, JSON.stringify(flag.body));
+  assert.equal(flag.body.allow_git_clone, 'false');
+  assert.equal(flag.body.engine, 'other-engine', 'the earlier patch is left alone');
+
+  const reread = await request<SettingsBody>(ctx, 'GET', '/v1/settings?project_id=1');
+  assert.equal(reread.body.allow_git_clone, 'false', 'a known key persists like any other');
 });
 
 test('t403 AT8 — PATCH /v1/settings with an unknown key refuses 400 unknown_setting, and writes nothing', async (t) => {

@@ -70,6 +70,11 @@ const DEFAULTS = Object.freeze({
   workspace_root: '/home/operator/.cartografo/workspace',
   worktrees_root: '/home/operator/.cartografo/worktrees',
   engine: 'claude-code',
+  // t439: the fourth known key. It ships with no consumer at all — exactly as
+  // the three above shipped in t403, before the one-command startup read them —
+  // so what has to be true of it here is only that the repository treats it like
+  // any other key: seeded, read back, patchable, and refused nowhere.
+  allow_git_clone: 'true',
 });
 
 test('t403 AT1 — seedDefaultSettings inserts exactly the given rows, and getSettings reads them flat', async (t) => {
@@ -84,11 +89,12 @@ test('t403 AT1 — seedDefaultSettings inserts exactly the given rows, and getSe
   assert.deepEqual(
     rows,
     [
+      { project_id: 1, key: 'allow_git_clone', value: 'true' },
       { project_id: 1, key: 'engine', value: 'claude-code' },
       { project_id: 1, key: 'workspace_root', value: DEFAULTS.workspace_root },
       { project_id: 1, key: 'worktrees_root', value: DEFAULTS.worktrees_root },
     ],
-    'exactly the three rows passed in, for the given project_id — nothing more',
+    'exactly the four rows passed in, for the given project_id — nothing more',
   );
 
   assert.deepEqual(getSettings(db, 1), { ...DEFAULTS }, 'a flat object, not projection rows');
@@ -132,7 +138,7 @@ test('t403 AT3 — updateSettings with one unknown key alongside a valid one wri
   );
 });
 
-test('t403 AT4 — updateSettings with only valid keys updates just those, and returns all three current values', async (t) => {
+test('t403 AT4 — updateSettings with only valid keys updates just those, and returns every current value', async (t) => {
   const db = await openMigrated(t);
   const { seedDefaultSettings, updateSettings, getSettings } = await loadRepository();
 
@@ -146,7 +152,7 @@ test('t403 AT4 — updateSettings with only valid keys updates just those, and r
   assert.deepEqual(
     result,
     { ...DEFAULTS, engine: 'codex' },
-    'the return value reflects all three current values',
+    'the return value reflects every current value',
   );
   assert.deepEqual(getSettings(db, 1), { ...DEFAULTS, engine: 'codex' });
 
@@ -156,7 +162,23 @@ test('t403 AT4 — updateSettings with only valid keys updates just those, and r
   assert.deepEqual(after, before, 'the untouched key\'s value AND updated_at are left alone');
 });
 
-test('t403 — KNOWN_SETTING_KEYS names exactly the three v0 accepts', async () => {
+test('t403/t439 — KNOWN_SETTING_KEYS names exactly the keys v0 accepts', async () => {
   const { KNOWN_SETTING_KEYS } = await loadRepository();
-  assert.deepEqual([...KNOWN_SETTING_KEYS].sort(), ['engine', 'workspace_root', 'worktrees_root']);
+  assert.deepEqual(
+    [...KNOWN_SETTING_KEYS].sort(),
+    ['allow_git_clone', 'engine', 'workspace_root', 'worktrees_root'],
+    'the vocabulary is closed and exhaustive: a fifth key is a code change here',
+  );
+});
+
+test('t439 — allow_git_clone round-trips through updateSettings like any other known key', async (t) => {
+  const db = await openMigrated(t);
+  const { seedDefaultSettings, updateSettings, getSettings } = await loadRepository();
+
+  seedDefaultSettings(db, 1, { ...DEFAULTS });
+  assert.equal(getSettings(db, 1).allow_git_clone, 'true', 'seeded like the other three');
+
+  const result = updateSettings(db, 1, { allow_git_clone: 'false' });
+  assert.deepEqual(result, { ...DEFAULTS, allow_git_clone: 'false' });
+  assert.deepEqual(getSettings(db, 1), { ...DEFAULTS, allow_git_clone: 'false' });
 });

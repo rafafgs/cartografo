@@ -28,7 +28,10 @@ dependency in the repository.
 **What this endpoint is not:** it is not history. It starts in the present (§5)
 and serves the past only when you ask for it by cursor. To read a whole round
 after the fact, there is `GET /v1/executions/:id/events`, which returns the
-complete list in JSON.
+complete list in JSON. To take a traversal off the machine altogether there is
+`cartografo export-history` ([history-export.md](history-export.md)): the same
+facts as a portable, offline JSON Lines file, with the sessions and the
+questions folded in.
 
 ---
 

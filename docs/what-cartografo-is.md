@@ -150,6 +150,16 @@ timeline (agent working, waiting on you, queueing); every question carries the
 context to answer it without opening the repository; the history makes it
 possible to reconstruct any execution.
 
+**Take a job's whole story with you.** One command writes everything that
+happened to a ticket — or to a whole round — into a plain text file, one fact
+per line: the steps it went through, what each agent session did and cost, every
+question that was asked and how it was answered. It is a file anyone can read
+with ordinary tools, so changing machines, filing a record or sending somebody
+the story of one job does not mean giving them access to the system. Two things
+are worth knowing before you send one: it goes only one way — there is no
+importing a history back into another installation — and it carries what was
+recorded, unredacted.
+
 **Build on top, without reading the code.** Everything the screen does goes
 through a public API — and that API describes itself: the server publishes the
 `/openapi.json` document and a browsable page at `/docs`, both generated from the

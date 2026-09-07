@@ -428,6 +428,22 @@ a few forms, and a front-end pipeline would cost more maintenance than the whole
 thing it would serve. It is also reversible — the boundary D11 freezes is the
 HTTP contract between the screen and the core, not what the screen uses inside.
 
+### How it looks is a specification of its own
+
+*No framework* is a statement about the build, never about the visual language.
+What a page may look like is [`design-system.md`](design-system.md): the token
+set, the six derived job states, focus/loading/error, console density, the
+product's own seven components, the left-edge bar and the voice table. It is
+binding on every route this document lists, and on both stylesheets — the static
+half's [`public/style.css`](../../packages/screen/src/public/style.css) and the
+rendered half's `STYLE` constant in
+[`pages.ts`](../../packages/screen/src/pages.ts).
+
+That document was written after this one, and after the wave that built most of
+these routes. It says so, and §10 of it lists what the two halves still disagree
+about, so that a reader meets the divergence as a recorded state rather than as
+a surprise.
+
 ### The `data-*` markers are contract
 
 They exist so that the acceptance tests can assert about **structure** — what is

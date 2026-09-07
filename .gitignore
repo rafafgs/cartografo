@@ -12,11 +12,16 @@ dist/
 *.tsbuildinfo
 .eslintcache
 
-# Project profile the ticket tool assembles by itself on every refinement, out
-# of DECISIONS.md/README.md/notes — a cache, not a source of truth: versioning it
-# would only guarantee a portrait of the repo that goes stale on every change of
-# its shape.
-.flowpilot/
+# .flowpilot/ IS versioned, deliberately. It used to be ignored on the belief
+# that the profile was a cache the ticket tool rebuilt out of
+# DECISIONS.md/README.md/notes on every refinement. That stopped being true:
+# .flowpilot/profile.yml is now the source of truth, resolved from this checkout
+# at the moment of use, and the tool's database column is only its
+# last-known-good copy. Beside it, .flowpilot/overlays/*.md are appended to
+# every agent session of the matching stage and .flowpilot/learnings/*.md are
+# injected by area — none of which anything rebuilds. Ignoring them meant a
+# clone of this repository carried no process configuration at all, and a
+# `git clean` silently discarded it.
 
 # System
 .DS_Store

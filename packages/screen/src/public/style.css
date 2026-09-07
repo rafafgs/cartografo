@@ -1,9 +1,21 @@
 /*
  * Minimal style for the inbox: three columns, one system font, no assets.
  *
- * The screen has no build step and no dependency, so this file is the whole
- * design system. What it is really for is legibility of the diff — the person
- * reading it is deciding whether a change enters the graph.
+ * The screen has no build step and no dependency (RNF-04), so this file is
+ * plain CSS — but it is NOT the design system. That is
+ * `docs/spec/design-system.md`, and this file is one of its two incomplete
+ * implementations: the static half serves `/inbox`, while the twenty-four
+ * rendered routes are styled by the `STYLE` constant in `../pages.ts`. The two
+ * share no token, which is a known divergence recorded in §10 of the spec and
+ * not a licence to add a third answer here.
+ *
+ * What this file is really for is legibility of the diff — the person reading
+ * it is deciding whether a change enters the graph.
+ *
+ * The tokens below predate the spec and do not yet match it (§1): they are hex
+ * rather than the HSL token set, and there is no focus style. Aligning them is
+ * a deliberate delivery, not a drive-by edit — it moves the look of the inbox
+ * at once.
  */
 
 :root {

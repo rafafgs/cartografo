@@ -1,0 +1,123 @@
+canonical_docs:
+- README.md — what the product is, how to run it, and the six commands
+- DECISIONS.md — the recorded decisions D1-D25; cite a number, never overrule one
+- docs/spec/design-system.md — MANDATORY for any change under packages/screen, including
+  a server-rendered page, the STYLE constant in pages.ts, style.css and the interview island
+- docs/spec/screen.md — the twenty-four routes, the no-privilege rule (D11), no build chain
+- docs/spec/interview.md — the interview as a traversal, its turns and its output contract
+- docs/spec/screen-interview.md — the interview page, its two columns and its poll
+- docs/spec/graph.md — the graph document, nodes, edges, contracts
+- docs/spec/human-escalation.md — input requests, blocking, answering, redispatch
+- docs/spec/runner-and-controller.md — leases, heartbeat, the core/runner boundary
+- docs/what-cartografo-is.md — the plain-language explanation (D19, living document)
+- notes/2026-08-14-architecture-brain-dump.md — the original architecture thinking
+- notes/2026-08-14-learning.md — what "learning" is narrowed to here
+- notes/2026-08-14-extension-and-quality.md — the extension points and the quality bar
+- notes/2026-08-14-loop-or-graph.md — why a graph and not a loop
+commands:
+  build: npm run build
+  lint: npm run lint
+  migration_heads: null
+  run: null
+  setup: npm install --no-audit --no-fund
+  test: npm test
+  typecheck: npm run typecheck
+conventions:
+- 'LANGUAGE — ENGLISH ONLY, EVERYWHERE (Rafael, 2026-08-18; supersedes the D18 exemptions):
+  every new or edited artifact is in English — code, identifiers, comments, tests, commit
+  messages (Conventional Commits, English subject and body), ticket titles/bodies, agent
+  questions and answers, specs, docs, notes, READMEs, DECISOES entries, factory bundles
+  (skill instructions, class keys, check ids, node descriptions), file and folder names,
+  package/bin/script names, config keys and values. Portuguese is allowed only in the
+  brand name `cartografo`, in verbatim quotations of pre-existing Portuguese text, and in
+  the frozen migration file names (never rename them). If you touch a Portuguese
+  artifact, leave it in Portuguese unless your ticket is the translation ticket — but
+  everything YOU write is English. Nothing new is born in Portuguese.'
+- 'DECISOES.md is the declared source of truth for project decisions: incremental,
+  dated, numbered (D1-D23 as of 2026-08-16), and reversible only by another recorded
+  decision. Agents answer questions by citing a decision number and escalate to the
+  human rather than change a recorded decision. Who writes there: preferably Rafael;
+  an agent only with his explicit authorization, case by case or in batches, and the
+  entry names who authorized it.'
+- 'Fixed meta-process, dynamic object-graph: the pipeline (declare -> query capabilities
+  -> synthesize -> validate graph -> execute -> evaluate -> propose mutation) is fixed;
+  only the graphs it produces vary per problem class.'
+- Graph is frozen during execution and versioned between executions. Nodes never freely
+  pick paths at runtime; the only in-flight decisions are gate outcomes (pass / fail
+  / escalate to human).
+- 'Contract-first: every capability (skill, gate, node) declares input and output
+  as JSON Schema plus a list of typed verification checks, each either a deterministic
+  command or an agentic instruction with mandatory evidence (D9). No contract, no
+  entry into the registry.'
+- 'Single writer: only the server writes to SQLite; the runner never touches the database
+  directly and speaks only to the API (D1).'
+- API-first headless core; the official UI has no privileges beyond any other API
+  client and lives in a separate package (D11).
+- 'Append-only persistence with git-like versioning inside the database rather than
+  via git: graph / graph_version (id = snapshot hash, parent pointer) / proposal (typed
+  semantic operations with inverses, evidence, expected metric, status). Rollback
+  moves a pointer; nothing is ever deleted (D15, D2).'
+- Semantic diffs over line diffs; git is used only at the edges as an interchange/bundle
+  format, never as a core dependency (D15).
+- Gates are deterministic wherever possible (run tests, validate schema, build) and
+  agentic only where judgment is required; an agentic gate must verify with its own
+  evidence, never with the self-report of the worker it checks.
+- Learning is defined narrowly as a versioned diff on a learnable surface, backed
+  by log evidence, approved at a human gate. No model weights, no in-flight adaptation.
+- 'Safety ladder for evolution: the evaluator (''topografo'') only suggests at first;
+  every change passes a human gate; only with accumulated history do low-risk mutations
+  auto-apply, always with rollback (principle 5).'
+- Human escalation is a first-class entity (input_requests), not a special case; telemetry
+  is a first-class citizen (append-only event log, agent sessions, input requests).
+- Node instructions/skills are injected into the session from the database by the
+  runner, with no dependency on CLAUDE.md or resident markdown files in the target
+  repo.
+- 'In an open project the real extension points are formats, not code: graph schema,
+  skill manifest, event taxonomy, and the EngineAdapter interface are versioned and
+  specified as products.'
+- 'Rule of two consumers: no extension point is frozen before two real consumers exist
+  (two adapters before freezing EngineAdapter, two topographers before freezing the
+  proposal format, two graphs before freezing the graph schema).'
+- 'Quality non-negotiables recorded for v0: formal workflow-net soundness validation
+  of every synthesized graph, replayability by event sourcing, skill permissions declared
+  in the manifest with hash pinning, one-command start, and automatic database migrations
+  plus a versioned API from v0 onward.'
+- 'Imported skills are treated as a prompt-injection vector: pinned by version/hash,
+  reviewed at import, and given a derived contract before entering the registry (D4).'
+- 'MVP ordering is enforced: control plane + one EngineAdapter + one fixed graph ported
+  from flowpilot must run end to end before any synthesizer is built; the synthesizer
+  is the last piece, not the first (D6).'
+- Distributed runners use leases with heartbeat and idempotent API writes; work from
+  a dead runner returns to the queue (D5).
+- Repository stays private until it works; it becomes public together with a newsletter
+  article as a subscriber-growth lever (D7).
+- 'Process/monitoring guardrail: never write directly to the flowpilot database (read-only
+  queries allowed); every change goes through the UI or API; never edit a ticket body
+  without asking.'
+- Work is executed externally on a flowpilot board (this project is flowpilot project
+  id=3), released ticket by ticket in dependency order with a maximum of 3 active
+  tickets in parallel, and no wave-2 ticket is released until the PoC is accepted
+  by the human against the D16 criteria.
+- 'DESIGN SYSTEM — docs/spec/design-system.md is binding on every page this product
+  serves, and it is not optional reading for a ticket that draws or edits one. It is
+  near-monochrome with no brand token, colour reserved for state, border instead of
+  shadow, console density (15.5px base, 44px rows, 36px buttons, 8px radius, multiples
+  of four), and a first-class monospace for anything copied, compared or typed. Never a
+  literal hex in a rule, never currentColor as a border, never opacity as a text grade,
+  never a shadow on anything that does not float over the page. The two stylesheets
+  (packages/screen/src/public/style.css and the STYLE constant in pages.ts) are a known
+  divergence recorded in that document, never a licence to invent a third.'
+detected_artifacts:
+- future_disposition: retire
+  kind: other
+  path: notas/monitoria-execucao-prompt.md
+stack_summary: 'Pre-implementation, documentation-only repository (8 markdown files,
+  zero source code, no build tooling, no CI, no dependency manifest). The project,
+  ''cartografo'', is a design-stage framework that synthesizes, executes, and evolves
+  work graphs per problem class. The stack is decided but not yet written: per decision
+  D17, TypeScript with a REST/JSON API and embedded SQLite; a Node ''control plane''
+  owns the database as sole writer (D1), with a stateless ''runner'' as an API client
+  that dispatches CLI agent sessions through an EngineAdapter abstraction (Claude
+  Code as first adapter); the UI ships as a separate package that is just another
+  unprivileged client of the public API (D11). Licensing decided as Apache-2.0 (D12).
+  All prose is in Brazilian Portuguese.'

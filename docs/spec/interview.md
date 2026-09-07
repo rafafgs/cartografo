@@ -66,20 +66,36 @@ precisely so that swapping one for the other is not a rewrite of the screen.
 
 ## 2. What the interview produces, turn by turn
 
-Every turn, the session prints its report **whole** — never a patch:
+Every turn, the session prints the map it has settled — as two top-level keys of
+the report, and never as one nested `draft` (t464):
 
 ```
 ```resultado
-{"done": false, "draft": {"graph": {…}, "skills": [{…}]}}
+{"done": false, "graph": {…}, "skills": [{…}]}
 ```
 ```
 
 `interview` declares `contract.produces: "interview"`, so each turn's report
 merges into the `input.interview` bucket in closing order
 ([`domain/context.ts`](../../packages/core/src/domain/context.ts)). Shallow merge,
-last writer wins — so the LAST turn's `{done: true, draft}` is what `deliver`
-reads at `input.interview.draft`. That is also why the draft is reported whole:
-what a turn does not report is not there next turn.
+last writer wins, **per top-level key** — which is what makes `graph` and
+`skills` two independent merge keys, and it is the whole reason the report is
+flat. `deliver` reads them at `input.interview.graph` and
+`input.interview.skills`, each one as the last turn that reported it left it.
+
+The two keys are not reported under the same rule:
+
+- **`graph`, every turn, whole** — never a patch. What a turn leaves out of it is
+  gone at the next turn.
+- **`skills` only on the turn that created or edited a manifest** — and then the
+  WHOLE cumulative array, every manifest settled so far. A turn that omits it
+  keeps what the last turn that reported it set; a turn that reports a SHORTER
+  array deletes every manifest missing from it, because the merge is per key and
+  never per array item.
+
+That asymmetry is the point of the shape: `skills` is roughly half of what a
+turn reprints, and nothing in the interview reads it before `deliver` does, so a
+turn that changed no manifest pays nothing to say so.
 
 There is **no routing key** in the block. The interview→deliver edge is
 `always`, so there is nothing to label, and the whole payload is the report —
@@ -142,7 +158,7 @@ Three things about it, and each one is a decision:
   deterministic test can pin, which is precisely what an agentic check is for
   (§4, and the check that already guards "one question, a whole draft").
 
-Nothing about the line changes the draft, and nothing anywhere installs anything:
+Nothing about the line changes the map, and nothing anywhere installs anything:
 the person runs the command themselves, on their engine, and the next probe is
 what tells the interview they now have it.
 
@@ -161,17 +177,18 @@ prompt they have been carrying between projects is the map they have already
 half-drawn — and starting from it beats starting from nothing.
 
 A "no" changes nothing at all: `skill_source` goes unreported and the interview
-walks on. A "yes" is reported **beside** `done`/`draft`, never inside the draft:
+walks on. A "yes" is reported as a key of its own, beside `done` and `graph`:
 
 ```json
-{"done": false, "draft": {…},
+{"done": false, "graph": {…},
  "skill_source": {"kind": "path", "location": "/Users/somebody/skills"}}
 ```
 
 `kind` is `path` for a folder and `git` for a URL. It is reported **once**: the
 bucket merge of §2 is shallow and last-writer-wins *per key*, so a key no later
-turn repeats keeps its value — which is exactly why the draft, whose whole
-content is one key, has to be reported whole every time and this does not.
+turn repeats keeps its value. `skills` lives under exactly the same rule since
+t464, and `graph` deliberately does not — a graph reported in halves would be a
+graph nobody could validate, and it is cheap to reprint next to the manifests.
 
 What the runner does with it is
 [`resolve-skill-source.ts`](../../packages/runner/src/dispatch/resolve-skill-source.ts):
@@ -210,7 +227,7 @@ uses whatever credential helper the machine already has — nothing is added for
 authentication, so a private repository with none configured simply refuses like
 any other unreachable URL.
 
-**One manifest per step.** The draft carries a skill manifest for every node —
+**One manifest per step.** `skills` carries a skill manifest for every node —
 instructions, contract, permissions — so a map for a new domain has something to
 pin. They are emitted **without `hash`**: computing the pin belongs to whoever
 registers the bundle, and a hash the interview invented is a pin that will not
@@ -272,7 +289,7 @@ this route answers one page's whole question instead.
 |---|---|
 | `turns` | `input_request.created` events, in log order, each matched by entity id against the ANSWERED rows |
 | `pending` | the single open row, with `default_answer` renamed to `default` |
-| `draft` | the `draft` of the LAST completed session's `output` |
+| `draft` | `graph` and `skills` accumulated across EVERY completed session, in closing order, one independent key at a time — never the last session's own report (t464) |
 | `done` | `job.completed`, already derived |
 | `thinking` | nothing pending, not done, and a session is `open` |
 

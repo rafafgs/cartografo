@@ -3,7 +3,7 @@
  *
  * `factory-graphs/map-design` asks its questions through the ordinary
  * escalation grammar: one `input_request` per turn, the job blocked on the node
- * that asked, the draft carried in the session's own structured `output`. That
+ * that asked, the map carried in the sessions' own structured `output`. That
  * is the right mechanism — it is the one every other node already uses — and it
  * is the wrong SHAPE for a page that has to read as a chat. Rebuilding the
  * exchange on the client would mean the screen joining a timeline against an
@@ -75,8 +75,18 @@ export interface ProjectedInputRequest {
 
 /** One session of the job, in the part this projection reads. */
 export interface ProjectedSessionState {
+  /**
+   * The session's own id, spelled the way the row spells it.
+   *
+   * Not `session_id`: `routes/jobs.ts` hands `listSessions`'s rows over as they
+   * come, and a second spelling here would mean the route mapping every field
+   * of every session to satisfy a name only this file wanted.
+   */
+  id: number;
   status: string;
   output: Record<string, unknown> | null;
+  /** When the session closed — the ordering key of the walk; `null` while it runs. */
+  finished_at: string | null;
 }
 
 /** One closed exchange: what was asked, and what came back. */
@@ -112,7 +122,10 @@ export interface Conversation {
   pending: PendingQuestion | null;
   /** A session is running and there is nothing to answer yet. */
   thinking: boolean;
-  /** The draft the last completed session reported; `null` when there is none. */
+  /**
+   * The map every completed session settled between them; `null` when no
+   * session has reported a `graph` yet.
+   */
   draft: unknown;
   /** The traveller arrived: the job is standing on a final node it has run. */
   done: boolean;
@@ -133,7 +146,13 @@ export interface ConversationSources {
    * a person is looking at.
    */
   pending: readonly ProjectedInputRequest[];
-  /** The job's sessions, in id order. */
+  /**
+   * The job's sessions, in any order.
+   *
+   * The order the map is accumulated in is this module's own question, and it
+   * sorts for it below — id order and closing order agree for every job that
+   * ever ran one session at a time, and disagree exactly where it matters.
+   */
   sessions: readonly ProjectedSessionState[];
   /** Whether the job has arrived, as `repositories/job.ts` already derives it. */
   done: boolean;
@@ -148,8 +167,45 @@ const SESSION_OPEN = 'open';
 /** The status of a session that closed with a report. */
 const SESSION_COMPLETED = 'completed';
 
-/** The key the interview reports its map under, inside the session's output. */
-const DRAFT_KEY = 'draft';
+/**
+ * The keys the interview reports its map under, at the TOP of its output (t464).
+ *
+ * Two keys and not one wrapper, which is the whole of that ticket: the bucket
+ * merge in `domain/context.ts` is per top-level key, so a turn that changed no
+ * manifest can leave `skills` out and keep it — and this projection has to
+ * answer the same way, or the page and the next dispatch would disagree about
+ * what the interview has settled.
+ */
+const MAP_KEYS = ['graph', 'skills'] as const;
+
+/**
+ * The key whose absence means there is no map at all.
+ *
+ * `skills` alone is not a map — `register-map.ts` and `map-document.ts` both
+ * start from `graph.nodes` — so a walk that never reported a graph reports
+ * `null` here rather than a half object nothing downstream can draw.
+ */
+const GRAPH_KEY = 'graph';
+
+/**
+ * Orders two sessions by when they closed.
+ *
+ * The same rule and the same reason as `domain/context.ts`'s `byClosingTime`:
+ * `finished_at` first, because that is the order the traversal really happened
+ * in, and the id breaks a tie. Restated rather than imported — the two modules
+ * are deliberately independent pure projections, and sharing a comparator would
+ * be the first thread of a dependency neither of them wants.
+ *
+ * @param a One session.
+ * @param b Another.
+ * @returns Negative when `a` closed first.
+ */
+function byClosingTime(a: ProjectedSessionState, b: ProjectedSessionState): number {
+  const left = a.finished_at ?? '';
+  const right = b.finished_at ?? '';
+  if (left !== right) return left < right ? -1 : 1;
+  return a.id - b.id;
+}
 
 /**
  * Builds the conversation one job's interview amounts to.
@@ -161,10 +217,14 @@ const DRAFT_KEY = 'draft';
  *    is the currently open one, and it is reported as `pending` instead of being
  *    silently dropped into the history;
  * 2. `pending` — the open row, with `default_answer` renamed to `default`;
- * 3. `draft` — the `draft` of the LAST completed session's output. Completed
- *    only: an unfinished session's report is not a fact yet, and a session that
- *    reported nothing structured leaves the previous draft standing rather than
- *    erasing it;
+ * 3. `draft` — `graph` and `skills` accumulated ACROSS every completed session,
+ *    in closing order, one independent key at a time (t464). Completed only: an
+ *    unfinished session's report is not a fact yet, and a session that named
+ *    neither key — `deliver`'s own `{bundle, checked, note}`, say — moves
+ *    neither. Not the last session's own report: since the interview stopped
+ *    reprinting its manifests every turn, "what the last turn printed" and
+ *    "what the interview has settled" are two different answers, and the page
+ *    owes the second one;
  * 4. `done` — passed through from the job's own projection;
  * 5. `thinking` — nothing to answer, not finished, and a session is open.
  *
@@ -214,19 +274,26 @@ export function buildConversation(sources: ConversationSources): Conversation {
           default: open.default_answer,
         };
 
-  // The LAST completed session, read for its draft. The listing is already in
-  // id order, so walking it backwards is walking the traversal backwards — and
-  // it is the last one that counts, not the last one that happened to report:
-  // a turn that closed without a draft is a turn that lost the map, which is
-  // exactly what this node's own check exists to catch, and hiding it behind an
-  // older draft would make the page disagree with the log.
-  let draft: unknown = null;
-  for (let index = sessions.length - 1; index >= 0; index -= 1) {
-    const session = sessions[index];
+  // The map, accumulated forwards over the walk: each completed session
+  // overwrites only the keys IT named, so the last turn that reported a `graph`
+  // owns `graph` and the last turn that reported `skills` owns `skills`,
+  // whether or not they are the same turn. This is `context.ts`'s bucket merge
+  // narrowed to two keys, and the two agreeing is what makes the page show what
+  // the next dispatch will be told.
+  const map: Record<string, unknown> = {};
+  for (const session of [...sessions].sort(byClosingTime)) {
     if (session.status !== SESSION_COMPLETED) continue;
-    draft = isObject(session.output) ? (session.output[DRAFT_KEY] ?? null) : null;
-    break;
+    const output = session.output;
+    if (!isObject(output)) continue;
+    for (const key of MAP_KEYS) {
+      // `undefined` is "this turn said nothing about it" and keeps what stands;
+      // a `null` the session really reported is a value like any other, and
+      // overwriting with it is what the turn asked for.
+      if (output[key] === undefined) continue;
+      map[key] = output[key];
+    }
   }
+  const draft: unknown = map[GRAPH_KEY] === undefined ? null : map;
 
   return {
     turns,

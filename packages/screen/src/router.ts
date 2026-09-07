@@ -121,6 +121,7 @@ import {
   jobPage,
   questionsPage,
   runnersPage,
+  sessionLogPage,
   type Page,
   type ProjectScope,
 } from './pages.ts';
@@ -394,7 +395,8 @@ async function readScope(client: ApiClient, request: IncomingMessage): Promise<P
 function rendersAView(pathname: string): boolean {
   return (
     ['/', '/board', '/examples', '/executions', '/input-requests', '/runners'].includes(pathname) ||
-    /^\/(executions|jobs)\/[^/]+$/.test(pathname)
+    /^\/(executions|jobs)\/[^/]+$/.test(pathname) ||
+    /^\/sessions\/[^/]+\/log$/.test(pathname)
   );
 }
 
@@ -535,6 +537,14 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
       return id === null
         ? errorPage(404, 'invalid job', 'A job id is an integer.')
         : await jobPage(client, id, scope);
+    }
+
+    const sessionLogMatch = /^\/sessions\/([^/]+)\/log$/.exec(pathname);
+    if (sessionLogMatch !== null) {
+      const id = routeId(sessionLogMatch[1]);
+      return id === null
+        ? errorPage(404, 'invalid session', 'A session id is an integer.')
+        : await sessionLogPage(client, id, scope);
     }
   }
 

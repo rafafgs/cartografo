@@ -26,7 +26,7 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The fifteen routes
+## 1. The sixteen routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
@@ -41,7 +41,8 @@ runs in `npm run lint`, and locked down by
 | `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
 | `POST /jobs/:id/unblock` | Nothing: it lowers the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/board`. | `POST /v1/jobs/:id/unblocks` |
 | `POST /jobs/:id/block` | Nothing: it raises the job's blocked flag, with the stated reason and the operator as the actor, and redirects (303) to `/jobs/:id`. | `POST /v1/jobs/:id/blocks` |
-| `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
+| `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals; and, since t368 (RF-39), what the traversal produced (one row per artifact, with a link to open it) and the job's own sessions (one row each, reaching the decoded log below). | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=`, `GET /v1/jobs/:id/artifacts` |
+| `GET /sessions/:id/log` | One session's decoded log (t368, RF-39/RF-40): the id, node and exit code, the text turned back from frames into what the model said, the line the session actually failed on marked (a non-zero `exit_code`, on the last non-blank line), and the cut declared — never hidden — when the stored transcript overflowed the cap. | `GET /v1/sessions/:id/log` |
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
 | `POST /runners/:id/rechecks` | Nothing: it asks one runner to report about its machine again and redirects (303) to `/`. The runner serves the request on its next loop tick; reloading is what shows the new probe. | `POST /v1/runners/:id/rechecks` |
 | `POST /settings` | Nothing: it writes `workspace_root`/`worktrees_root` for the project in the cookie and redirects (303) to `/`. A field left blank is not sent. | `PATCH /v1/settings` |
@@ -85,7 +86,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/inbox`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The fifteen routes of this specification, rendered on the server. |
+| Anything else | The sixteen routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
@@ -432,14 +433,21 @@ one of them is changing the contract; changing a CSS class is not.
 | `data-runner` | a line of the runner table, or a group of the check | the runner's id |
 | `data-sessao` | a line of the session table | the session's id |
 | `data-transcricao` | the link in the transcript cell, in the session table | the session's id (the `href` is `/v1/sessions/:id/transcript`) |
+| `data-artifact` | a row of the job page's artifact table (t368) | the artifact's id |
+| `data-log-line` | a line of a session's decoded log, on `/sessions/:id/log` (t368) | the line's 1-based number |
 | `data-pergunta` | a question card | the question's id |
 | `data-segmento` | a timeline item | `fila`, `agente_trabalhando`, `esperando_humano` (with `data-inicio` and `data-fim`; an empty `data-fim` = open) |
 
 The transcript cell is a raw link to the API's route, and not a rendered view:
 whoever clicks lands on the control plane's JSON response, served by the
 **verbatim** `/v1/*` proxy (§1). That is on purpose — the screen gains no new
-route and no privilege at all (D11), and decoding `stream-json` on the screen is
-another ticket.
+route and no privilege at all (D11). Decoding `stream-json` on the screen was
+deferred to "another ticket" when this sentence was first written; t368 is that
+ticket, and `/sessions/:id/log` is the decoded view. The raw link stays exactly
+where it was — beside the decoded view, on the job page's session row — as a
+deliberate companion and not a stand-in: the whole point of RF-40's cut notice
+is that the decoded view is a TAIL when the transcript overflowed, and the raw
+route is still how the complete original is fetched.
 
 Every piece of data that goes into HTML passes through `escapar`. A job's title,
 a question's text and a blocking reason come from outside, through an API that

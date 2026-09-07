@@ -225,10 +225,15 @@ test(
       // once more with `0029_delivery_claim.sql`, the `claimed_at` both delivery
       // tables need so a routine that died mid-attempt is diagnosable (RF-06) —
       // it keeps its own number, which is still free, and lands below 0031.
+      // t422 is the other one, and moved it once more with
+      // `0030_artifacts.sql` — the reference to a file a session produced — and
+      // it too keeps the number reserved for it, landing between 0029 and 0031,
+      // which the runner applies in numeric order among the ones not yet in the
+      // ledger.
       assert.equal(
         first.readiness.migrationsApplied,
-        30,
-        'a brand-new database applies the thirty migrations the package ships',
+        31,
+        'a brand-new database applies the thirty-one migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

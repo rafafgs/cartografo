@@ -315,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    30,
-    'a fresh database applies the thirty migrations of the package and nothing else',
+    31,
+    'a fresh database applies the thirty-one migrations of the package and nothing else',
   );
 
   const objects = db

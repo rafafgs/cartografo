@@ -31,7 +31,7 @@ runs in `npm run lint`, and locked down by
 | Route | What it shows | What it reads from the API |
 |---|---|---|
 | `GET /` | The check: whether this machine is ready to run anything, per paired runner — engine, model credential, the `cartografo` MCP server, workspace — or the single "everything is ready" panel with a way into the board. | `GET /v1/runners` (probe embedded), `GET /v1/settings` |
-| `GET /board` | The board: every job, banded into the six states t415 derives, in attention order (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`), each band sorted by how long the job has been in it — oldest wait first — and grouped by `no_atual` inside the band while the board holds 12 jobs or fewer; past that it collapses to one flat, time-sorted table per band. Every job still shows the blocking reason where there is one. A job whose `entry_node_id` is `interview` (t459) links to `/interview/:id` — its own two-column exchange — instead of the ordinary job console at `/jobs/:id`. This is the one page that auto-refreshes every 30 seconds (§7). | `GET /v1/jobs` |
+| `GET /board` | The board: every job, banded into the six states t415 derives, in attention order (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`), each band sorted by how long the job has been in it — oldest wait first — and grouped by `no_atual` inside the band while the board holds 12 jobs or fewer; past that it collapses to one flat, time-sorted table per band. Every job still shows the blocking reason where there is one. A job whose `entry_node_id` is `interview` (t459) links to `/interview/:id` — its own two-column exchange — instead of the ordinary job console at `/jobs/:id`. Beside the node id, a second line gives the job's map position (t463): `step N/M · <role/description, or the bare node id>`, resolved from the job's own `graph_version_id`, once per distinct version per render — absent whenever any link of that chase comes up empty (no version pinned, no version resolved, or no matching node), never an error. This is the one page that auto-refreshes every 30 seconds (§7). | `GET /v1/jobs`, `GET /v1/graph-versions/:id` (once per distinct `graph_version_id` on the page) |
 | `GET /examples` | The bundles the control plane can demonstrate: one card each, with the demo's title, whether the class is already registered, and a form that runs it. | `GET /v1/examples` |
 | `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
 | `GET /executions/:id` | One round's slice: the board, the sessions and the pending questions on the same page. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
@@ -468,6 +468,7 @@ one of them is changing the contract; changing a CSS class is not.
 | `data-pergunta` | a question card | the question's id |
 | `data-segmento` | a timeline item | `fila`, `agente_trabalhando`, `esperando_humano` (with `data-inicio` and `data-fim`; an empty `data-fim` = open) |
 | `data-interviews-open` | the still-open list on `GET /interview` (t459), wrapping its cards or table | how many interviews are still open — `0` when there are none, and the list still renders |
+| `data-panel` | the map-position line on a `/board` card (t463) | `board-step` |
 
 The transcript cell is a raw link to the API's route, and not a rendered view:
 whoever clicks lands on the control plane's JSON response, served by the
@@ -513,9 +514,6 @@ Every item is another ticket's declared scope, not an oversight:
   escalation cycle (§3); the screen only writes the fact.
 - **A node label with the `papel`/`descricao` of the graph's snapshot** — the
   board shows the raw `no_atual`; fetching the graph to label it is additive.
-- **"step NN/MM" beside a job's node** (RF-30 Part 2 component 4) — no route of
-  the API exposes a node's ordinal position inside its graph version, and
-  inventing that surface is not `/board`'s ticket to do (t416).
 - **Pagination** — no route of the API paginates today, and it is not this ticket
   that invents what the API does not have.
 - **Live updates by any mechanism other than the two named in §1** — a

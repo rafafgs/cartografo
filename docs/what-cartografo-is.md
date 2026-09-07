@@ -26,12 +26,16 @@ public API any tool can consume, and the interface and the runner are separate
 processes with no privilege of their own — being started for you changes
 nothing about that.
 
-**Start from ready-made maps.** Factory graphs come in the box: three of them —
-the software development one, the investment thesis one and the B3 flow radar,
-which brings three real trading days along as fixtures so it runs offline.
-Import one with a single command and you already have a governed process — or
-open the screen's examples page and run one with a single click, which registers
-the bundle and starts its demo job for you.
+**Start from ready-made maps.** Factory graphs come in the box: four of them —
+the software development one, the investment thesis one, the B3 flow radar,
+which brings three real trading days along as fixtures so it runs offline, and
+the map design one, which is the interview itself: it asks you about a problem
+you keep solving by hand, one question at a time, and hands back a map of your
+own. That fourth one is registered for you at the first start, because you would
+have to know it existed to import it. Import any of the others with a single
+command and you already have a governed process — or open the screen's examples
+page and run one with a single click, which registers the bundle and starts its
+demo job for you.
 
 **Keep more than one project in the same installation, and switch between them
 on the screen.** A project is a name you give — `default` is the one that is

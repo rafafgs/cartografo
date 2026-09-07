@@ -198,3 +198,109 @@ test('t270 AT — a path that is not a repository blocks, naming the command', a
     },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* What the machine knows about MCP and about precedent classes (t360, FR4)   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The two keys the interview reads, and the honesty rule they are written
+ * under.
+ *
+ * `mcp_servers` is `null` — never `[]` — for an engine whose adapter never
+ * implemented discovery, which is t400's own discipline restated one layer out:
+ * an engine that cannot answer knows no more about this machine's MCP servers
+ * than one with no discovery at all, and collapsing the two tells the person
+ * being interviewed a lie about their own machine (RF-20).
+ *
+ * `similar_classes` comes from a FUNCTION and not a value, because it depends on
+ * the job's own title and body: the precedent that reads like THIS declaration
+ * is what D8 asks the interview to suggest, never decide.
+ */
+test('t360 AT3 — a supported discovery lands verbatim at environment.mcp_servers', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'mcp-supported');
+
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    mcpDiscovery: { supported: true, servers: ['cartografo', 'flowpilot'] },
+  });
+
+  const resolved = await resolve(readEnvironment);
+  const environment = resolved.environment as Record<string, unknown>;
+  assert.deepEqual(
+    environment.mcp_servers,
+    ['cartografo', 'flowpilot'],
+    'what the runner discovered once is what the session is told, name for name',
+  );
+  assert.deepEqual(
+    environment.similar_classes,
+    [],
+    'no precedent resolver configured is an empty list, which is a real answer',
+  );
+
+  // The bench keys are untouched: this seam grew, it did not change.
+  assert.equal((resolved.banco_de_testes as Record<string, unknown>).caminho, repoRoot);
+});
+
+test('t360 AT3 — an engine with no discovery reports null, never an empty list', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'mcp-unsupported');
+
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    mcpDiscovery: { supported: false },
+  });
+
+  const environment = (await resolve(readEnvironment)).environment as Record<string, unknown>;
+  assert.equal(
+    environment.mcp_servers,
+    null,
+    '`null` is "this engine`s MCP discovery is not implemented"; `[]` would claim it found none',
+  );
+
+  // And a runner that was told nothing at all reads the same way: absent is not
+  // an empty list either.
+  const silent = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+  });
+  assert.equal((( await resolve(silent)).environment as Record<string, unknown>).mcp_servers, null);
+});
+
+test('t360 AT3 — the class precedents are resolved per job, and sorted by score', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'precedents');
+
+  const asked: number[] = [];
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    mcpDiscovery: { supported: false },
+    classPrecedents: (job) => {
+      asked.push(job.id);
+      return Promise.resolve([
+        { class: 'b3-flow-radar', name: 'B3 flow radar', description: 'daily flow', score: 0.1 },
+        {
+          class: 'software-development',
+          name: 'Software delivery',
+          description: 'the flowpilot flow, ported',
+          score: 0.42,
+        },
+      ]);
+    },
+  });
+
+  const environment = (await resolve(readEnvironment)).environment as Record<string, unknown>;
+  assert.deepEqual(
+    (environment.similar_classes as { class: string }[]).map((entry) => entry.class),
+    ['software-development', 'b3-flow-radar'],
+    'best first: the interview suggests the closest precedent and never decides (D8)',
+  );
+
+  // Per dispatch, not per process: the score is about THIS job`s own words.
+  await resolve(readEnvironment);
+  assert.deepEqual(asked, [270, 270], 'the resolver is asked again on the next dispatch');
+});

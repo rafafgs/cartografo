@@ -1622,7 +1622,7 @@ test('t460 AT9 — the fragment carries the panel the validation route answers f
 
   const draft = draftWithUnlabelledEdge();
   const jobId = await seedOpenInterview(cp);
-  await reportFrom(cp, jobId, 'interview', { done: false, draft });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...draft });
 
   const fragment = await fetch(`${screen.url}/interview/${jobId}/fragment`);
   assert.equal(fragment.status, 200);
@@ -1648,7 +1648,7 @@ test('t460 AT10 — the page and the poll draw the same panel, behind the same i
 
   const jobId = await seedOpenInterview(cp);
   await createQuestion(cp, { job_id: jobId, question: 'What do you call it?' });
-  await reportFrom(cp, jobId, 'interview', { done: false, draft: draftWithUnlabelledEdge() });
+  await reportFrom(cp, jobId, 'interview', { done: false, ...draftWithUnlabelledEdge() });
 
   const page = await openPage(screen, `/interview/${jobId}`);
   assert.equal(page.status, 200);

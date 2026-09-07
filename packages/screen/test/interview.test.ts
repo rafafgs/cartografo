@@ -50,6 +50,7 @@ import type * as RegisterMapModule from '../src/register-map.ts';
 import type * as RouterModule from '../src/router.ts';
 import {
   api,
+  blocks,
   createJob,
   createQuestion,
   openPage,
@@ -234,9 +235,28 @@ async function seedFinishedInterview(
   const created = await createJob(cp, {
     title: 'how I triage a widget',
     body: 'Every week I look at the widgets that came in.',
-    entry_node_id: 'deliver',
+    // The same entry_node_id every real interview is created with, and it never
+    // changes for the life of the job (t459 FR8) — only `current_node_id` moves
+    // as the job travels. Seeding `deliver` here used to be harmless because
+    // nothing branched on the field; t459's still-open list does.
+    entry_node_id: 'interview',
     graph_version_id: await mapDesignVersion(cp),
   });
+  // `current_node_id` starts at `entry_node_id` and moves only through
+  // `/transitions` — never through a session merely finishing (t459). With
+  // `entry_node_id` corrected to `interview` above, the job has to actually
+  // walk the graph's one edge to `deliver` for `hasArrived` to read true; a
+  // real traversal does this the moment the interview's last session reports
+  // `done`, before the deliver node's own session ever opens.
+  const walked = await api(cp, 'POST', `/v1/jobs/${created.id}/transitions`, {
+    to_node_id: 'deliver',
+  });
+  assert.equal(walked.status, 200, 'the interview walks its one edge to deliver');
+  // Order matters beyond arrival: `buildConversation` reads `draft` off the
+  // LAST completed session BY CREATION ORDER (`domain/conversation.ts`), so
+  // `deliver`'s session — carrying no `draft` key — has to open and finish
+  // FIRST, leaving the `interview` session (which does) the one the page
+  // actually reads from.
   await reportFrom(cp, created.id, 'deliver', {
     bundle: { graph: draft.graph, skills: draft.skills },
     checked: { structure: true, soundness: true },
@@ -1260,4 +1280,149 @@ test('t373 AT15 — the command shown is the one for the engine actually recorde
     withStrange.html.includes(NO_COMMAND_LINE),
     `it says so plainly instead:\n${withStrange.html}`,
   );
+});
+
+/* ===========================================================================
+ * t459 — the two doors back into an interview already in flight: the board's
+ * own card (`board.test.ts`) and the still-open list at the top of
+ * `GET /interview`. Only the second half lives here.
+ * ======================================================================== */
+
+/**
+ * The `data-interviews-open="N"` wrapper's own inner HTML.
+ *
+ * A plain `indexOf('</section>')` rather than `columnOf`'s depth counting:
+ * nothing the wrapper ever draws (an empty-state paragraph, a run of
+ * `<article>` cards, or a `<table>`) nests another `<section>`.
+ */
+function stillOpenBlock(html: string): { count: number; excerpt: string } {
+  const opening = /<section data-interviews-open="(\d+)">/.exec(html);
+  assert.ok(opening !== null, `the page has no data-interviews-open wrapper:\n${html}`);
+  const start = opening.index + opening[0].length;
+  const end = html.indexOf('</section>', start);
+  assert.ok(end >= 0, `the data-interviews-open wrapper is never closed:\n${html}`);
+  return { count: Number(opening[1]), excerpt: html.slice(start, end) };
+}
+
+/** `count` interviews, all still open, sharing one graph-version read. */
+async function seedManyOpenInterviews(cp: RunningControlPlane, count: number): Promise<number[]> {
+  const version = await mapDesignVersion(cp);
+  const ids: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const created = await createJob(cp, {
+      title: `interview #${index}`,
+      body: 'a body, so the fixture is a real job',
+      entry_node_id: 'interview',
+      graph_version_id: version,
+    });
+    ids.push(created.id);
+  }
+  return ids;
+}
+
+test('t459 AT3 — with zero interviews open, GET /interview renders the empty wrapper, above the form', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const page = await openPage(screen, '/interview');
+  assert.equal(page.status, 200);
+
+  const block = stillOpenBlock(page.html);
+  assert.equal(block.count, 0);
+  assert.ok(!block.excerpt.includes('data-trabalho'), `an empty list must carry no card:\n${block.excerpt}`);
+  assert.ok(
+    /no interviews/i.test(block.excerpt),
+    `an explicit empty-state line, not silence:\n${block.excerpt}`,
+  );
+
+  const wrapperIndex = page.html.indexOf('data-interviews-open=');
+  const formIndex = page.html.indexOf('<form method="post" action="/interview">');
+  assert.ok(wrapperIndex >= 0 && formIndex >= 0, 'both the wrapper and the form must be on the page');
+  assert.ok(wrapperIndex < formIndex, 'the still-open list sits above the start form');
+
+  assertSaysNothingForbidden(page.html, 'the interview start page with no interviews open');
+});
+
+test('t459 AT4 — the still-open list shows an open interview and excludes a finished one', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const openId = await seedOpenInterview(cp);
+  const finishedId = await seedFinishedInterview(cp, closingDraft());
+
+  const page = await openPage(screen, '/interview');
+  const block = stillOpenBlock(page.html);
+
+  assert.equal(block.count, 1);
+  assert.ok(
+    block.excerpt.includes(`href="/interview/${openId}"`),
+    `the open interview is linked:\n${block.excerpt}`,
+  );
+  assert.ok(
+    !new RegExp(`\\b${finishedId}\\b`).test(block.excerpt),
+    `the finished interview's id must appear nowhere in the wrapper:\n${block.excerpt}`,
+  );
+
+  const wrapperIndex = page.html.indexOf('data-interviews-open=');
+  const formIndex = page.html.indexOf('<form method="post" action="/interview">');
+  assert.ok(wrapperIndex < formIndex, 'the still-open list sits above the start form');
+});
+
+test('t459 AT5 — an interview awaiting an answer carries class="attention" in the still-open list', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const jobId = await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, '/interview');
+  const block = stillOpenBlock(page.html);
+
+  const card = blocks(block.excerpt, 'trabalho').find((one) => one.value === String(jobId));
+  assert.ok(card !== undefined, `no card found for interview ${jobId}:\n${block.excerpt}`);
+  assert.match(
+    card.excerpt,
+    /class="[^"]*\battention\b[^"]*"/,
+    'an interview awaiting an answer must carry .attention',
+  );
+});
+
+test('t459 AT6 — twelve open interviews render as cards, a thirteenth switches the list to a table', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const twelve = await seedManyOpenInterviews(cp, 12);
+
+  const twelvePage = await openPage(screen, '/interview');
+  const twelveBlock = stillOpenBlock(twelvePage.html);
+  assert.equal(twelveBlock.count, 12);
+  assert.ok(
+    !twelveBlock.excerpt.includes('<table>'),
+    `twelve open interviews must stay in card mode:\n${twelveBlock.excerpt}`,
+  );
+
+  const [thirteenth] = await seedManyOpenInterviews(cp, 1);
+  const ids = [...twelve, thirteenth];
+
+  const thirteenPage = await openPage(screen, '/interview');
+  const thirteenBlock = stillOpenBlock(thirteenPage.html);
+  assert.equal(thirteenBlock.count, 13);
+  assert.ok(
+    thirteenBlock.excerpt.includes('<table>'),
+    `thirteen open interviews must switch to a table:\n${thirteenBlock.excerpt}`,
+  );
+  for (const id of ids) {
+    assert.ok(
+      thirteenBlock.excerpt.includes(`href="/interview/${id}"`),
+      `interview ${id} is missing its row:\n${thirteenBlock.excerpt}`,
+    );
+  }
+});
+
+test('t459 AT7 — the forbidden-vocabulary sweep holds with the still-open list populated', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  await seedOpenInterview(cp);
+  await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, '/interview');
+  assertSaysNothingForbidden(page.html, 'the interview start page with the still-open list populated');
 });

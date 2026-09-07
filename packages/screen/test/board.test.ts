@@ -378,6 +378,46 @@ test('t416 AT12 — the board still escapes HTML coming from the control plane',
   );
 });
 
+test('t459 AT1 — a job whose entry_node_id is interview links to /interview/<id>, not /jobs/<id>', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const jobs = [
+    fakeJob({ id: 1, title: 'An interview in progress', entry_node_id: 'interview', state: 'queued' }),
+  ];
+
+  const page = await boardPage(fakeBoardClient(ApiClient, jobs));
+
+  const card = blocks(page.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(card.excerpt.includes('href="/interview/1"'), `the card links to /interview/1:\n${card.excerpt}`);
+  assert.ok(!card.excerpt.includes('href="/jobs/1"'), `the card must not also link to /jobs/1:\n${card.excerpt}`);
+});
+
+test('t459 AT2 — an ordinary job still links to /jobs/<id>, in both card mode and row mode', async () => {
+  const { boardPage, ApiClient } = await loadPagesAndClient();
+
+  const cardBoard = [fakeJob({ id: 1, title: 'An ordinary job', entry_node_id: 'refinar', state: 'queued' })];
+  const cardPage = await boardPage(fakeBoardClient(ApiClient, cardBoard));
+  const card = blocks(cardPage.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(card !== undefined);
+  assert.ok(card.excerpt.includes('href="/jobs/1"'), `the card links to /jobs/1:\n${card.excerpt}`);
+
+  const rowBoard = Array.from({ length: 13 }, (_, index) =>
+    fakeJob({
+      id: index + 1,
+      title: `Job ${index + 1}`,
+      entry_node_id: 'refinar',
+      state: 'queued',
+      state_since: `2026-09-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }),
+  );
+  const rowPage = await boardPage(fakeBoardClient(ApiClient, rowBoard));
+  assert.ok(rowPage.html.includes('<table>'), 'thirteen jobs must be in row mode');
+  const row = blocks(rowPage.html, 'trabalho').find((one) => one.value === '1');
+  assert.ok(row !== undefined);
+  assert.ok(row.excerpt.includes('href="/jobs/1"'), `the row links to /jobs/1:\n${row.excerpt}`);
+});
+
 test('t230 — the Portuguese paths D20 renamed are gone, with no redirect behind them', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);

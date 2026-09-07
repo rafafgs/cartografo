@@ -33,7 +33,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { describe, test, type TestContext } from 'node:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -274,6 +274,43 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+/**
+ * SIGKILLs whatever is left of a fixture's process, group first (t468).
+ *
+ * The counterpart of {@link requireProcessDead} and never a substitute for it:
+ * that one REPORTS an orphan, this one ENDS it. Before t468 the kit only had
+ * the report, so the run that discovered an adapter's process-group kill was
+ * broken was also the run that walked away from the survivors — five
+ * byte-identical SIGTERM-immune stubs, the oldest 20h28m old, on a host with
+ * 58 MB free.
+ *
+ * The group is the honest target and the direct pid is only the fallback: the
+ * engine comes up `detached`, so it leads a group of its own, and the
+ * grandchild C4 asks about is inside that group and nowhere in this process's
+ * bookkeeping.
+ *
+ * Silent, and that is a requirement rather than a style: this runs on every
+ * conformant adapter's C4 too, where there is nothing left to kill, and a
+ * reaper that logs about a pid already gone is a warning that gets filtered
+ * within a week.
+ *
+ * The pair was local to `test/dispatch/dispatch.test.ts` (t148) while it had one
+ * consumer; it lives here now because C4 and `bin.e2e.test.ts`'s AT16 are the
+ * two the rule of two consumers asks for.
+ */
+export function reapIfAlive(pid: number): void {
+  if (!isProcessAlive(pid)) return;
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* it died between the check and the signal; nothing to do */
+    }
+  }
+}
+
 async function requireProcessDead(pid: number, label: string, deadlineMs = 5_000): Promise<void> {
   const limit = Date.now() + deadlineMs;
   while (Date.now() < limit) {
@@ -335,8 +372,13 @@ export function runConformanceKit(
    * The key is the case's own label — the `C<n>` before the em dash — read off
    * the title rather than passed beside it, so a case can never be registered
    * under a name the caller cannot exempt it by.
+   *
+   * The body receives its own `TestContext` since t468, which is how C4 reaches
+   * `t.after` to reap the process group whatever its assertions decide. Only C4
+   * uses it: a callback may declare fewer parameters than its type allows, so
+   * every other case stays the zero-argument function it was.
    */
-  const kitTest = (title: string, body: () => Promise<void>): void => {
+  const kitTest = (title: string, body: (t: TestContext) => Promise<void>): void => {
     const reason = options.skip?.[title.split(' ')[0] ?? ''];
     test(title, reason === undefined ? {} : { skip: reason }, body);
   };
@@ -478,10 +520,15 @@ export function runConformanceKit(
       }
     });
 
-    kitTest('C4 — process death (SIGTERM ignored, grandchild alive)', async () => {
+    kitTest('C4 — process death (SIGTERM ignored, grandchild alive)', async (t) => {
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
+
+      // Hoisted out of the `try` so the reap below can be registered the instant
+      // the pids are known, rather than at the end of a body that may never
+      // reach its end (t468).
+      let record: FakeRecord;
 
       const spec: SessionSpec = {
         workingDir: scenario.workingDir,
@@ -502,7 +549,19 @@ export function runConformanceKit(
         // killing guarantees both pids. Waiting for it to APPEAR, rather than
         // for a fixed window, is what keeps this case about process death
         // instead of about how loaded the machine is.
-        const record = await scenario.readRecord();
+        record = await scenario.readRecord();
+
+        // The unconditional half, registered the moment there is something to
+        // reap and before anything can go wrong (t468). `requireProcessDead`
+        // below REPORTS an orphan and stops; this ENDS it, and it runs whether
+        // the case passes, fails or throws. Against a conformant adapter it
+        // finds nothing left and says nothing — which is the point: the run that
+        // discovers a broken process-group kill used to be the run that walked
+        // away from the survivors.
+        t.after(() => {
+          reapIfAlive(record.pid);
+          if (record.grandchildPid !== null) reapIfAlive(record.grandchildPid);
+        });
 
         await adapter.cancel(handle);
         const end = await collector.awaitEnd('C4', deadline);

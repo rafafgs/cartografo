@@ -47,6 +47,9 @@ import { fileURLToPath } from 'node:url';
 import { CORE_BIN as CONTROL_PLANE_BIN, awaitReadiness, bootCore, spawnWatched } from '@cartografo/test-support';
 
 import { DEFAULT_GRACE_MS } from '../src/engine/claude-code-adapter.ts';
+// The conformance kit's reaper, shared since t468: AT16 is its second consumer
+// and the reason it stopped being a local copy in one test file.
+import { reapIfAlive } from '../src/engine/conformance-kit.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const RUNNER_BIN = path.join(PACKAGE_ROOT, 'bin', 'cartografo-runner.mjs');
@@ -338,6 +341,15 @@ test('t162 — the runner is an installable command, started by plain node', asy
       assert.equal(typeof engine.pid, 'number');
       assert.equal(typeof engine.grandchildPid, 'number', 'the session left a child behind');
       const pids = [engine.pid, engine.grandchildPid as number];
+      // Before a single assertion about them (t468): what this case measures is
+      // whether the RUNNER took the group down, and the poll below reports the
+      // answer without ever ending the survivors it names. So the reap is
+      // registered here, where the pids first exist, and runs whether the case
+      // passes, fails or is interrupted — five SIGTERM-immune stubs, the oldest
+      // 20h28m old, are what the assertion-only version cost.
+      t.after(() => {
+        for (const pid of pids) reapIfAlive(pid);
+      });
       for (const pid of pids) assert.ok(alive(pid), `pid ${pid} should be running before the stop`);
 
       const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(

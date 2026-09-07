@@ -38,6 +38,7 @@
 
 import type {
   ApiClient,
+  Artifact,
   Example,
   ExecutionSummary,
   Job,
@@ -47,6 +48,7 @@ import type {
   RunnerHealth,
   RunnerProbe,
   Session,
+  SessionLog,
   Settings,
 } from './client.ts';
 import { renderChat, renderMap } from './interview.ts';
@@ -75,7 +77,7 @@ export interface Page {
 export const DEFAULT_ANSWERED_BY = 'tela';
 
 const STYLE = `
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light dark; --remove: #b3261e; }
   * { box-sizing: border-box; }
   body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 1.5rem 2rem 4rem; }
   header.topo { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
@@ -146,6 +148,10 @@ const STYLE = `
   .map-document [data-field="network"]::before { content: "reaches outside"; }
   .map-document .required, .map-document .agentic-note { font-size: .72rem; opacity: .65; }
   .empty { opacity: .6; font-style: italic; }
+  .log-header { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; overflow: auto; max-height: 32rem; border: 1px solid currentColor; border-radius: 6px; padding: .5rem .6rem; white-space: pre-wrap; word-break: break-word; }
+  .log-line { padding-left: .4rem; }
+  .log-line-failed { border-left: 3px solid var(--remove); padding-left: calc(.4rem - 3px); }
 `;
 
 /** Everything that goes into HTML passes through here. With no exception. */
@@ -275,6 +281,29 @@ export function formatDuration(ms: number | null): string {
   const rest = minutes % 60;
   if (hours < 48) return rest === 0 ? `${hours}h` : `${hours}h ${rest}min`;
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+/**
+ * Readable size, binary (1024-based), for an artifact's `size` and for the
+ * transcript-cut notice (t368, FR7): `"512 B"`, `"1 MiB"`, `"3.4 MiB"`.
+ *
+ * One decimal place, and dropped when it is `.0` — `formatDuration`'s own
+ * economy of digits, applied to bytes instead of milliseconds.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+
+  const rounded = Math.round(value * 10) / 10;
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${text} ${units[unit]}`;
 }
 
 /**
@@ -582,6 +611,79 @@ function stateBoard(jobs: Job[], now: number, renderedAt: string): string {
  * @param projectId The project the page is being read under.
  * @returns The table, or the empty-state paragraph.
  */
+/**
+ * What a job's traversal produced, and where to open it (t368, RF-39).
+ *
+ * `node` is joined off the owning session by the control plane, never guessed
+ * here. `open` is a raw link to `/v1/artifacts/:id/content` through the
+ * verbatim `/v1/*` proxy — the same reasoning `sessionsTable`'s transcript cell
+ * already gives: it is a read, so it carries no new privilege (D11).
+ *
+ * @param artifacts The job's artifacts, newest first, as the API sent them.
+ * @param projectId The project the page is being read under.
+ * @returns The table, or the empty-state paragraph — verbatim, never nothing.
+ */
+function jobArtifactsTable(artifacts: Artifact[], projectId: number): string {
+  if (artifacts.length === 0) {
+    return '<p class="vazio">this traversal produced no artifacts yet</p>';
+  }
+
+  const rows = artifacts.map(
+    (artifact) => `<tr data-artifact="${artifact.id}">
+      <td>${escapeHtml(artifact.name)}</td>
+      <td>${escapeHtml(artifact.node_id ?? '—')}</td>
+      <td>${escapeHtml(formatBytes(artifact.size))}</td>
+      <td>${escapeHtml(artifact.created_at)}</td>
+      <td><a href="/v1/artifacts/${artifact.id}/content?project_id=${projectId}">open</a></td>
+    </tr>`,
+  );
+
+  return `<table>
+  <thead><tr><th>name</th><th>node</th><th>size</th><th>created at</th><th></th></tr></thead>
+  <tbody>
+    ${rows.join('\n    ')}
+  </tbody>
+</table>`;
+}
+
+/**
+ * The job's own sessions, each reaching its decoded log (t368, FR3).
+ *
+ * Added because without it the log view (`sessionLogPage`) has no entry point
+ * from the job page — the raw ticket's Context misread `jobPage` as already
+ * rendering a session table, which it does not (only `executionPage` does, via
+ * {@link sessionsTable}). This is a smaller table on purpose: the job is
+ * already this page's own subject, so the columns are the session's own
+ * identity (id, node, status, exit code) plus the two doors out of it — the
+ * decoded view, and the raw transcript link beside it, unchanged
+ * (`data-transcricao`, t159).
+ *
+ * @param sessions The job's sessions, as `jobPage` already fetches them.
+ * @param projectId The project the page is being read under.
+ * @returns The table, or the section's own empty state.
+ */
+function jobSessionsTable(sessions: Session[], projectId: number): string {
+  if (sessions.length === 0) return '<p class="vazio">No sessions on this job yet.</p>';
+
+  const rows = sessions.map(
+    (session) => `<tr data-sessao="${session.id}">
+      <td>#${session.id}</td>
+      <td>${escapeHtml(session.node_id ?? '—')}</td>
+      <td>${escapeHtml(session.status)}</td>
+      <td>${session.exit_code === null ? '—' : session.exit_code}</td>
+      <td><a href="/sessions/${session.id}/log">view log</a></td>
+      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript?project_id=${projectId}">raw</a></td>
+    </tr>`,
+  );
+
+  return `<table>
+  <thead><tr><th>session</th><th>node</th><th>status</th><th>exit code</th><th>log</th><th>raw transcript</th></tr></thead>
+  <tbody>
+    ${rows.join('\n    ')}
+  </tbody>
+</table>`;
+}
+
 function sessionsTable(sessions: Session[], projectId: number): string {
   if (sessions.length === 0) return '<p class="vazio">No sessions in this execution.</p>';
 
@@ -1426,11 +1528,12 @@ export async function jobPage(
   scope: ProjectScope = DEFAULT_SCOPE,
 ): Promise<Page> {
   const project_id = scope.projectId;
-  const [job, events, sessions, questions] = await Promise.all([
+  const [job, events, sessions, questions, artifacts] = await Promise.all([
     client.getJob(jobId, { project_id }),
     client.jobEvents(jobId, { project_id }),
     client.listSessions({ job_id: jobId, project_id }),
     client.listQuestions({ job_id: jobId, project_id }),
+    client.listJobArtifacts(jobId, { project_id }),
   ]);
 
   if (job === null || events === null) {
@@ -1469,7 +1572,132 @@ ${hold}
 <h2>timeline</h2>
 ${segments}
 <h2>totals</h2>
-${totalsHtml(timeline)}`,
+${totalsHtml(timeline)}
+<h2>artifacts</h2>
+${jobArtifactsTable(artifacts ?? [], project_id)}
+<h2>sessions</h2>
+${jobSessionsTable(sessions, project_id)}`,
+      scope,
+    ),
+  };
+}
+
+/**
+ * The last non-blank line of a decoded log, 0-based — where a session's own
+ * failure shows up (t368, FR5).
+ *
+ * Blank lines are skipped so the marker lands on something a reader can
+ * actually read: a stream that ends in a run of empty lines (a trailing
+ * newline, a frame that decoded to nothing) would otherwise mark nothing
+ * visible at all.
+ *
+ * @param lines The decoded text, already split on `\n`.
+ * @returns The index, or `null` when every line is blank.
+ */
+function lastNonBlankLineIndex(lines: readonly string[]): number | null {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (lines[index].trim() !== '') return index;
+  }
+  return null;
+}
+
+/**
+ * Which line carries `log-line-failed` (t368, FR5).
+ *
+ * Only a non-null, non-zero `exit_code` marks anything — a session that ran to
+ * completion, or one still open, has nothing to point at. This stands in for
+ * the per-check-id record the raw ticket's FR3 named ("the finish report's
+ * check results"), which does not exist anywhere in this codebase (see the
+ * ticket's own Context and Refinement Log): `exit_code` is the one failure
+ * signal every session already carries.
+ *
+ * @param lines The decoded text, already split on `\n`.
+ * @param exitCode The session's own `exit_code`.
+ * @returns The index to mark, or `null` when nothing should be.
+ */
+function failedLineIndex(lines: readonly string[], exitCode: number | null): number | null {
+  if (exitCode === null || exitCode === 0) return null;
+  return lastNonBlankLineIndex(lines);
+}
+
+/**
+ * The cut notice of a session log, when the row's transcript overflowed the
+ * cap (t368, FR5, RF-40).
+ *
+ * The cap itself is a literal `1 MiB`, not computed: it is `TRANSCRIPT_CAP_
+ * BYTES` on the core side, and this package imports nothing from `packages/
+ * core` (D11) — a number that never changes independently of a deploy this
+ * screen would need rebuilding for anyway is not worth a round trip to fetch.
+ * The artifact link renders only once `transcript_artifact_id` is populated —
+ * t424 landed the column this ticket reads, but nothing upstream of it writes
+ * a non-null value yet outside that ticket's own tests, which is the honest
+ * state of the pipeline today and requires no code change here to activate
+ * later.
+ *
+ * @param log The decoded session log.
+ * @param projectId The project the page is being read under.
+ * @returns The notice, or an empty string when nothing overflowed.
+ */
+function transcriptCutNotice(log: SessionLog, projectId: number): string {
+  if (!log.transcript_truncated) return '';
+
+  const original = formatBytes(log.transcript_original_size ?? 0);
+  const artifactLink =
+    log.transcript_artifact_id === null
+      ? ''
+      : ` · <a href="/v1/artifacts/${log.transcript_artifact_id}/content?project_id=${projectId}">see the whole thing</a>`;
+
+  return `<p class="notice">transcript cut at 1 MiB · ${escapeHtml(original)} in the original${artifactLink}</p>`;
+}
+
+/**
+ * `GET /sessions/:id/log` — a session's decoded log (t368, RF-39/RF-40).
+ *
+ * The densest surface of the product (the ticket's own Context, Part 2
+ * component 6): monospace, wrapping inside its own scrolling container instead
+ * of dragging the page, the failed line marked with the same red bar used
+ * elsewhere rather than a background that gets lost when printed, and the cut
+ * declared out loud instead of hidden.
+ *
+ * The raw JSON transcript link is deliberately NOT duplicated here: it lives on
+ * the job page's Sessions row (`jobSessionsTable`), reachable from wherever
+ * this page's reader came from, and this view's whole reason to exist is the
+ * decoded text the raw link does not give.
+ *
+ * @param client Client of the public API.
+ * @param sessionId Session id.
+ * @returns The log page, or 404 when the session does not exist in scope.
+ */
+export async function sessionLogPage(
+  client: ApiClient,
+  sessionId: number,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const project_id = scope.projectId;
+  const log = await client.getSessionLog(sessionId, { project_id });
+
+  if (log === null) {
+    return errorPage(404, 'session not found', `There is no session #${sessionId}.`);
+  }
+
+  const lines = (log.text ?? '').split('\n');
+  const failedIndex = failedLineIndex(lines, log.exit_code);
+  const body = lines
+    .map((line, index) => {
+      const failed = index === failedIndex ? ' log-line-failed' : '';
+      return `<div class="log-line${failed}" data-log-line="${index + 1}">${escapeHtml(line)}</div>`;
+    })
+    .join('\n');
+
+  return {
+    status: 200,
+    html: layout(
+      `session #${log.session_id} log`,
+      `<p class="log-header">session #${log.session_id} · node ${escapeHtml(log.node_id ?? '—')} · exit ${log.exit_code === null ? '—' : log.exit_code}</p>
+<div class="log">
+${body}
+</div>
+${transcriptCutNotice(log, project_id)}`,
       scope,
     ),
   };

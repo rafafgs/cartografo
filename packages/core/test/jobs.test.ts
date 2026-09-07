@@ -3395,4 +3395,108 @@ test('t360 AT2 — the conversation is scoped by project, and an unknown job is 
     elsewhere.status,
     404,
     'a job of another project answers the same 404 an unknown id gets (t410)',
-  );});
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t368 — every artifact of every session of a job, newest first (RF-39).      */
+/* -------------------------------------------------------------------------- */
+
+/** A raw-body upload: the one route in the app that is not JSON (t422). */
+async function uploadArtifact(
+  ctx: TestContext,
+  sessionId: number,
+  name: string,
+  content: Buffer,
+): Promise<{ id: number }> {
+  const response = await fetch(`${ctx.url}/v1/sessions/${sessionId}/artifacts`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${ctx.token}`,
+      'content-type': 'text/plain',
+      'x-artifact-name': name,
+    },
+    body: new Uint8Array(content),
+  });
+  const body = (await response.json()) as { id: number };
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return body;
+}
+
+test('t368 AT1 — GET /v1/jobs/:id/artifacts lists every artifact of every session, newest first', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, {
+    title: 'a traversal that leaves evidence behind',
+    entry_node_id: 'redigir',
+  });
+  const first = await openSessionOn(ctx, job.id, 'redigir');
+  const second = await openSessionOn(ctx, job.id, 'revisar');
+
+  const a = await uploadArtifact(ctx, first, 'draft.md', Buffer.from('the first cut'));
+  const b = await uploadArtifact(ctx, second, 'review.md', Buffer.from('the review notes'));
+  const c = await uploadArtifact(ctx, second, 'screenshot.png', Buffer.from('binary-ish content'));
+
+  const response = await request<{ artifacts: Array<Record<string, unknown>> }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/artifacts`,
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+
+  const ids = response.body.artifacts.map((artifact) => artifact.id);
+  assert.deepEqual(ids, [c.id, b.id, a.id], 'newest first');
+
+  const byId = new Map(response.body.artifacts.map((artifact) => [artifact.id, artifact]));
+  assert.equal(byId.get(a.id)?.session_id, first);
+  assert.equal(byId.get(a.id)?.node_id, 'redigir');
+  assert.equal(byId.get(b.id)?.session_id, second);
+  assert.equal(byId.get(b.id)?.node_id, 'revisar');
+  assert.equal(byId.get(c.id)?.session_id, second);
+  assert.equal(byId.get(c.id)?.node_id, 'revisar');
+});
+
+test('t368 AT1 — a job with no artifacts answers an empty list, not a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const job = await createJob(ctx, {
+    title: 'nothing produced yet',
+    entry_node_id: 'redigir',
+  });
+
+  const response = await request<{ artifacts: unknown[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/artifacts`,
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.deepEqual(response.body.artifacts, []);
+});
+
+test('t368 AT1 — a job of another project, and an unknown job id, both answer 404', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  assert.equal(await declareProject(ctx, 'second'), 2);
+
+  const theirs = await createJob(ctx, {
+    title: 'born in project two',
+    entry_node_id: 'redigir',
+    project_id: 2,
+  });
+
+  const crossed = await request<ScopeRefusal>(ctx, 'GET', `/v1/jobs/${theirs.id}/artifacts`);
+  assert.equal(crossed.status, 404, JSON.stringify(crossed.body));
+  assert.equal(crossed.body.error, 'not_found');
+
+  const scoped = await request<{ artifacts: unknown[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${theirs.id}/artifacts?project_id=2`,
+  );
+  assert.equal(scoped.status, 200, JSON.stringify(scoped.body));
+
+  const missing = await request<ScopeRefusal>(ctx, 'GET', '/v1/jobs/987654/artifacts');
+  assert.equal(missing.status, 404, JSON.stringify(missing.body));
+  assert.equal(missing.body.error, 'not_found');
+});

@@ -38,7 +38,8 @@ import type { Readable } from 'node:stream';
 
 import type { ArtifactStore } from '../artifacts/store.ts';
 import type { Database } from '../db/connection.ts';
-import { now } from './common.ts';
+import { now, DEFAULT_PROJECT } from './common.ts';
+import { getJob } from './job.ts';
 import { sessionProject } from './session.ts';
 
 /** The stored artifact, and exactly what `/v1` publishes. */
@@ -195,6 +196,54 @@ export function listSessionArtifacts(
   return db
     .prepare(`SELECT ${PUBLIC_COLUMNS} FROM artifact WHERE session_id = ? ORDER BY id`)
     .all(sessionId) as Artifact[];
+}
+
+/** One row of `GET /v1/jobs/:id/artifacts` (t368, RF-39) — an artifact plus the node that produced it. */
+export interface JobArtifact {
+  id: number;
+  session_id: number;
+  node_id: string | null;
+  name: string;
+  media_type: string;
+  size: number;
+  created_at: string;
+}
+
+/**
+ * Every artifact of every session of one job, newest first (t368, RF-39).
+ *
+ * Mirrors `jobTimeline`'s own contract in `repositories/job.ts`: the job's
+ * existence AND its project are settled in ONE read, through {@link getJob},
+ * before the join ever runs — a job of another project answers the same
+ * `null` an unknown id does, and the route above turns both into the same
+ * `404` (t410's non-leaking convention). `sha256` is deliberately off this
+ * wire: this listing answers "what did this traversal produce, and where do I
+ * open it", not the content-addressing detail `GET /v1/artifacts/:id` already
+ * gives a reader who wants it.
+ *
+ * @param db Open handle.
+ * @param jobId Job to list.
+ * @param projectId Scope of the caller.
+ * @returns The artifacts (possibly empty), or `null` when the job does not
+ *   exist in that project.
+ */
+export function listArtifactsForJob(
+  db: Database,
+  jobId: number,
+  projectId: number = DEFAULT_PROJECT,
+): JobArtifact[] | null {
+  if (getJob(db, jobId, projectId) === null) return null;
+
+  return db
+    .prepare(
+      `SELECT artifact.id, artifact.session_id, session.node_id, artifact.name,
+              artifact.media_type, artifact.size, artifact.created_at
+       FROM artifact
+       JOIN session ON session.id = artifact.session_id
+       WHERE session.job_id = ?
+       ORDER BY artifact.created_at DESC, artifact.id DESC`,
+    )
+    .all(jobId) as JobArtifact[];
 }
 
 /**

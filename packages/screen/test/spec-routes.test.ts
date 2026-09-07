@@ -51,7 +51,7 @@ const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
  * read off §1 and never written here. t339's two job-flag writes pushed the
  * count on again, to fifteen, without this list needing to move. t433 is the
  * first ficha to push it past twenty, which the dictionary did not cover: the
- * three hyphenated keys below are that growth, and `SPELLED_COUNT`'s
+ * four hyphenated keys below are that growth, and `SPELLED_COUNT`'s
  * alternation reads them with no further edit.
  */
 const NUMERALS = new Map([
@@ -78,6 +78,7 @@ const NUMERALS = new Map([
   ['twenty-one', 21],
   ['twenty-two', 22],
   ['twenty-three', 23],
+  ['twenty-four', 24],
 ]);
 
 /** A spelled-out count of routes, anywhere in the prose. */

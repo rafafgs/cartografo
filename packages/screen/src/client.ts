@@ -165,6 +165,32 @@ export interface Session {
   finished_at: string | null;
 }
 
+/** One row of `GET /v1/jobs/:id/artifacts` (t368, RF-39). */
+export interface Artifact {
+  id: number;
+  session_id: number;
+  /** Joined from the session that produced it; `null` for a session with none declared. */
+  node_id: string | null;
+  name: string;
+  media_type: string;
+  size: number;
+  created_at: string;
+}
+
+/** `GET /v1/sessions/:id/log`'s answer — the decoded session log (t368, RF-39/RF-40). */
+export interface SessionLog {
+  session_id: number;
+  node_id: string | null;
+  engine: string;
+  exit_code: number | null;
+  /** The decoded text, or `null` when the session recorded no transcript. */
+  text: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+  /** The artifact holding the WHOLE transcript, when the cap bit; `null` until t424 populates it. */
+  transcript_artifact_id: number | null;
+}
+
 /** Projection of an input request, as `GET /v1/input-requests` returns it. */
 export interface Question {
   id: number;
@@ -598,6 +624,21 @@ export class ApiClient {
   }
 
   /**
+   * Every artifact of every session of one job, newest first (t368, RF-39).
+   *
+   * @param jobId Job id.
+   * @param filter Scope of the read.
+   * @returns The artifacts, or `null` if the control plane says the job does
+   *   not exist in that scope.
+   */
+  async listJobArtifacts(jobId: number, filter: Filter = {}): Promise<Artifact[] | null> {
+    const body = await this.#getOrNull<{ artifacts: Artifact[] }>(
+      `/v1/jobs/${jobId}/artifacts${queryString(filter)}`,
+    );
+    return body === null ? null : body.artifacts;
+  }
+
+  /**
    * The executions that exist, with the counts of each.
    *
    * @returns One row per execution, with the `null` group last.
@@ -697,6 +738,18 @@ export class ApiClient {
       `/v1/sessions${queryString(filter)}`,
     );
     return sessions;
+  }
+
+  /**
+   * One session's decoded log (t368, RF-39/RF-40).
+   *
+   * @param id Session id.
+   * @param filter Scope of the read.
+   * @returns The decoded log, or `null` if the control plane says the session
+   *   does not exist in that scope.
+   */
+  async getSessionLog(id: number, filter: Filter = {}): Promise<SessionLog | null> {
+    return await this.#getOrNull<SessionLog>(`/v1/sessions/${id}/log${queryString(filter)}`);
   }
 
   /**

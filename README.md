@@ -160,8 +160,8 @@ and reading the system when that work stops moving —
 
 ## The commands
 
-**`cartografo`** — the one command that brings the product up, plus `status`
-and `export`.
+**`cartografo`** — the one command that brings the product up, plus `status`,
+`export` and `export-history`.
 
 ```bash
 npx cartografo                                 # control plane + screen + runner, browser opens
@@ -169,6 +169,7 @@ npx cartografo --no-browser --no-runner --no-screen  # the control plane on its 
 npx cartografo status                          # server and registered projects
 npx cartografo status --json                   # the same, for a script
 npx cartografo export software-development     # writes ./software-development.graph.json
+npx cartografo export-history --job 41         # writes ./job-41.history.jsonl
 ```
 
 With no subcommand it is `up`, and the three `--no-*` options belong to it
@@ -181,6 +182,13 @@ waiting.
 
 What `export` writes is what `import` takes back: importing it elsewhere
 produces the same `graph_version.id`.
+
+`export-history` writes a job's — or a whole round's, with `--execution` — story
+as JSON Lines: a header with the map version, then every event, session and
+question in `id` order, one complete object per line, so a file cut in the
+middle still reads to its last line ([the
+format](docs/spec/history-export.md)). It goes only one way: there is no
+importing a history back, and the file carries the record unredacted.
 
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick

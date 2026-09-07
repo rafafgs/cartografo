@@ -62,6 +62,26 @@ recorded alternative is a dedicated chat with `resumeFrom` — and the page read
 [the projection below](#3-the-conversation-projection) rather than the mechanism,
 precisely so that swapping one for the other is not a rewrite of the screen.
 
+**And why the engine's prompt cache cannot soften that.** Every dispatch opens a
+brand-new engine session — an interview turn included: `buildSessionSpec`
+([`packages/runner/src/dispatch/session-spec.ts`](../../packages/runner/src/dispatch/session-spec.ts))
+never sets `resumeFrom`, so `buildCommand`
+([`packages/runner/src/engine/command.ts`](../../packages/runner/src/engine/command.ts))
+never has a `--resume` to assemble. What reaches the CLI is two flat strings and
+nothing else — `composeWithSystemPromptFlag`
+([`packages/runner/src/engine/types.ts`](../../packages/runner/src/engine/types.ts))
+returns `["--system-prompt", spec.instructions, spec.prompt]`, carrying no
+cache-boundary marker of ours, so WHERE that content is cached is the CLI's own
+internal decision and not one this runner can express. That is the whole
+explanation of the shape a real interview job shows: the cache READ sits pinned
+at the size of `spec.instructions`, the rendered skill, which is byte-identical
+on every dispatch of the node; the per-turn prompt `buildPrompt` grows by
+appending is, to each `claude --print` process, new content in a conversation
+that has no next turn, so it is written to cache once and never read back. There
+is nothing to build here without either a CLI flag that does not exist or
+reopening the no-resume decision recorded above — so the waste, seconds per turn
+on the input side, is accepted as it stands.
+
 ---
 
 ## 2. What the interview produces, turn by turn

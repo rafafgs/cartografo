@@ -82,6 +82,21 @@ export interface FlagInput {
   actor: ScreenActor;
 }
 
+/**
+ * Body of `POST /v1/jobs`, in the four fields this screen ever sends (t433).
+ *
+ * Narrower than the route's own contract on purpose: `POST /v1/jobs` accepts
+ * acceptance criteria, class fields, a tier and a round, and the one form of
+ * this screen that creates a job asks for none of them. A field the page cannot
+ * fill has no business being declarable here.
+ */
+export interface NewJob {
+  title: string;
+  body: string;
+  entry_node_id: string;
+  graph_version_id: string;
+}
+
 /** Projection of a job, as `GET /v1/jobs` returns it. */
 export interface Job {
   id: number;
@@ -343,6 +358,103 @@ export interface ExampleRun {
   /** Whether THIS call is what registered the bundle. */
   registered: boolean;
 }
+
+/**
+ * One closed exchange of an interview, as `GET /v1/jobs/:id/conversation`
+ * returns it (t360, `docs/spec/interview.md` §3).
+ *
+ * Mirrors the wire and does not own it, like every other interface here: the
+ * projection is `packages/core/src/domain/conversation.ts`'s, and the screen
+ * reads it because a page that rebuilt the exchange out of three listings would
+ * have to get the ordering rule right on its own.
+ */
+export interface ConversationTurn {
+  question: string;
+  answer: string;
+  /** Who answered; `null` when nobody signed it. */
+  answered_by: string | null;
+  /** When the answer landed; `null` for a row written before the column. */
+  at: string | null;
+}
+
+/**
+ * The one open question of an interview, in the vocabulary the fenced block
+ * uses.
+ *
+ * `default` and not `default_answer`: the projection renames exactly that one
+ * field, `GET /v1/input-requests` is untouched, and this interface mirrors the
+ * route it actually reads.
+ */
+export interface PendingQuestion {
+  id: number;
+  question: string;
+  context: string | null;
+  recommendation: string | null;
+  options: string[] | null;
+  default: string | null;
+}
+
+/** The whole exchange of one interview, as one page-sized answer. */
+export interface Conversation {
+  /** Closed turns, in the order the log recorded the questions. */
+  turns: ConversationTurn[];
+  /** The one open question, or `null` when nobody is being asked anything. */
+  pending: PendingQuestion | null;
+  /** Something is running and there is nothing to answer yet. */
+  thinking: boolean;
+  /**
+   * The map the last completed session reported; `null` when there is none.
+   *
+   * `unknown` on purpose, and it is the honest type: what is in there is an
+   * agent's structured report, checked upstream against the node's own output
+   * schema and against nothing this package declares. Whoever reads it narrows
+   * it where it is used (`register-map.ts`'s `MapDraft`).
+   */
+  draft: unknown;
+  /** The traveller arrived: there is nothing left to ask. */
+  done: boolean;
+}
+
+/** A lineage, as `GET /v1/graphs/:id` returns it inside `{graph}` (D8: `id` IS the class). */
+export interface GraphSummary {
+  id: string;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  current_version_id: string | null;
+  created_at: string;
+}
+
+/**
+ * One version WITH its snapshot, as `GET /v1/graph-versions/:id` returns it
+ * inside `{graph_version}`.
+ *
+ * `snapshot` is typed as an open record and never as the graph format: the
+ * document's schema lives in `schema/graph.schema.json` and the one consumer
+ * here — `map-document.ts` — already declares the slice it reads, field by
+ * field, and degrades on everything else.
+ */
+export interface GraphVersionSummary {
+  id: string;
+  graph_id: string;
+  parent_version: string | null;
+  created_at: string;
+  snapshot: Record<string, unknown>;
+}
+
+/**
+ * One registered skill manifest, as `GET /v1/skills/:id` returns it.
+ *
+ * The three pin fields are named because the one caller matches on all three
+ * (D4); everything else rides along as declared keys of an open record, which
+ * is what lets `permissions.network` reach `map-document.ts` without this file
+ * restating `specs/formats/skill-manifest.schema.json`.
+ */
+export type SkillSummary = Record<string, unknown> & {
+  id: string;
+  version: string;
+  hash: string;
+};
 
 /** A project, as `GET /v1/projects` returns it (t354). */
 export interface Project {
@@ -735,6 +847,143 @@ export class ApiClient {
    */
   async unblockJob(id: number, input: FlagInput): Promise<Job> {
     return await this.#request<Job>(`/v1/jobs/${id}/unblocks`, { method: 'POST', body: input });
+  }
+
+  /**
+   * Starts an interview: an ordinary job, on an ordinary class (t433, FR2).
+   *
+   * The screen decides nothing about the shape of it. `entry_node_id` and the
+   * version are the caller's, read off the class the button targets, and the
+   * title and the description are what a person typed — which is why the input
+   * is the four fields and not a `Job`: everything else on that projection is
+   * the control plane's answer, not this screen's request.
+   *
+   * @param input Title, description, entry node and the version to travel.
+   * @param filter Scope of the write.
+   * @returns The job as the control plane created it.
+   * @throws {ApiError} When the control plane refuses.
+   */
+  async createJob(input: NewJob, filter: Filter = {}): Promise<Job> {
+    return await this.#request<Job>('/v1/jobs', {
+      method: 'POST',
+      body: {
+        ...input,
+        ...(filter.project_id === undefined ? {} : { project_id: filter.project_id }),
+      },
+    });
+  }
+
+  /**
+   * One interview, read as the conversation it is (t360, FR5).
+   *
+   * The page reads THIS and never a job, a session or an input request by name
+   * — which is the whole reason the projection exists: the mechanism under it
+   * (one dispatch per question today) can be swapped for the recorded plan B
+   * without this method, or the page above it, changing at all.
+   *
+   * @param id Job id.
+   * @param filter Scope of the read.
+   * @returns The exchange, or `null` when the control plane does not know it.
+   */
+  async getConversation(id: number, filter: Filter = {}): Promise<Conversation | null> {
+    return await this.#getOrNull<Conversation>(`/v1/jobs/${id}/conversation${queryString(filter)}`);
+  }
+
+  /**
+   * One lineage, by the class it belongs to — which is its id (D8).
+   *
+   * @param id Class name.
+   * @param filter Scope of the read.
+   * @returns The lineage, or `null` when no class answers to that name.
+   */
+  async getGraph(id: string, filter: Filter = {}): Promise<GraphSummary | null> {
+    const body = await this.#getOrNull<{ graph: GraphSummary }>(
+      `/v1/graphs/${encodeURIComponent(id)}${queryString(filter)}`,
+    );
+    return body === null ? null : body.graph;
+  }
+
+  /**
+   * One version, snapshot included.
+   *
+   * @param id Version id — the hash of the document itself.
+   * @param filter Scope of the read.
+   * @returns The version, or `null` when it does not exist.
+   */
+  async getGraphVersion(id: string, filter: Filter = {}): Promise<GraphVersionSummary | null> {
+    const body = await this.#getOrNull<{ graph_version: GraphVersionSummary }>(
+      `/v1/graph-versions/${encodeURIComponent(id)}${queryString(filter)}`,
+    );
+    return body === null ? null : body.graph_version;
+  }
+
+  /**
+   * One registered manifest, by its pin.
+   *
+   * A pin that resolves to nothing comes back as `null` and never as a throw:
+   * the one caller draws a map document, and a step whose manifest cannot be
+   * found still has a step to draw — the same grace `map-document.ts` already
+   * documents for its own "no manifest for that node" case.
+   *
+   * @param id Skill id.
+   * @param pin The version and/or the content hash asked for.
+   * @param filter Scope of the read.
+   * @returns The manifest, or `null`.
+   */
+  async getSkill(
+    id: string,
+    pin: { version?: string; hash?: string } = {},
+    filter: Filter = {},
+  ): Promise<SkillSummary | null> {
+    const params = new URLSearchParams();
+    if (pin.version !== undefined) params.set('version', pin.version);
+    if (pin.hash !== undefined) params.set('hash', pin.hash);
+    if (filter.project_id !== undefined) params.set('project_id', String(filter.project_id));
+    const query = params.toString();
+    return await this.#getOrNull<SkillSummary>(
+      `/v1/skills/${encodeURIComponent(id)}${query === '' ? '' : `?${query}`}`,
+    );
+  }
+
+  /**
+   * Registers one skill manifest — the first half of registering a map (t432).
+   *
+   * Declared with exactly the shape `register-map.ts`'s `RegisterMapClient`
+   * asks for, so this class satisfies that interface structurally, with no
+   * adapter type in between: the manifest goes up whole, and a refusal is the
+   * `ApiError` every other method of this class already throws.
+   *
+   * @param manifest The manifest, already pinned.
+   * @param filter Scope of the write.
+   * @returns The registered skill, as the registry left it.
+   * @throws {ApiError} When the registry refuses it.
+   */
+  async registerSkill(manifest: Record<string, unknown>, filter: Filter = {}): Promise<unknown> {
+    return await this.#request<unknown>(`/v1/skills${queryString(filter)}`, {
+      method: 'POST',
+      body: manifest,
+    });
+  }
+
+  /**
+   * Registers one graph document — the second half, and only after the first.
+   *
+   * The ORDER is `register-map.ts`'s to keep, not this method's: a class whose
+   * nodes pin a capability the registry refused is a class nobody can dispatch.
+   *
+   * @param document The graph document, with every pin closed.
+   * @param filter Scope of the write.
+   * @returns The lineage and the version it was born as.
+   * @throws {ApiError} When the control plane refuses it.
+   */
+  async registerGraph(
+    document: Record<string, unknown>,
+    filter: Filter = {},
+  ): Promise<{ graph: unknown; graph_version: unknown }> {
+    return await this.#request<{ graph: unknown; graph_version: unknown }>(
+      `/v1/graphs${queryString(filter)}`,
+      { method: 'POST', body: document },
+    );
   }
 
   async #get<T>(path: string): Promise<T> {

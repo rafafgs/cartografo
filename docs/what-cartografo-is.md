@@ -40,6 +40,17 @@ command and you already have a governed process — or open the screen's example
 page and run one with a single click, which registers the bundle and starts its
 demo job for you.
 
+**Be interviewed into a map of your own, in the browser.** Open the interview
+page, say what the problem is in your own words, and answer one question at a
+time: what each step needs, what it produces, how you know it went well, what
+usually goes wrong there, whether it reaches outside. Every question arrives with
+a recommendation you can accept in one click, and the map grows beside the
+conversation as you answer — the page refreshes itself, so there is nothing to
+reload. When it is over you either register the map, which puts the class and its
+skills in for real, or download it as a bundle you can import anywhere. The same
+page, read only, shows any map already registered: the whole procedure top to
+bottom, one block per step, with nothing to open, expand or drag.
+
 **Keep more than one project in the same installation, and switch between them
 on the screen.** A project is a name you give — `default` is the one that is
 already there — and everything that belongs to a map lives inside one: the

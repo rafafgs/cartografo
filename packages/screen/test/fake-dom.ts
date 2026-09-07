@@ -14,12 +14,29 @@
  * `createElement`, `getElementById`, `append`, `replaceChildren`, `classList`,
  * `textContent`, `addEventListener` and `focus` — that list is the file.
  *
+ * t433 added the four `interview.js` needs on top of that list: `innerHTML`,
+ * `contains`, `name`, and the document's `activeElement`. The first one is the
+ * only interesting addition, and it is deliberately NOT a parser: assigning
+ * `innerHTML` stores the string and, so that the page can find again the field
+ * it is carrying a typed value into, registers every `id="…"` the string
+ * declares as a NEW element of the document — replacing whatever answered to
+ * that id before, exactly as a real swap does. Nothing else about the markup is
+ * interpreted, and a test that needs more than "this id now exists" is a test
+ * this stub cannot honestly serve.
+ *
  * It is a stub, so it is honest about being one: no layout, no CSS, no event
  * bubbling, no default actions. Anything that depends on those is not testable
  * here and should not pretend to be.
  */
 
 type Listener = () => void;
+
+/** An opening tag in an injected HTML string — the only markup this stub reads. */
+const OPENING_TAG = /<([a-z][a-z0-9-]*)((?:\s[^>]*)?)>/gi;
+
+/** `id="x"` and `name="x"` inside one element's attributes. */
+const ID_ATTRIBUTE = /\bid="([^"]+)"/i;
+const NAME_ATTRIBUTE = /\bname="([^"]+)"/i;
 
 /** One element: properties the page sets, plus the queries a test needs. */
 export class FakeElement {
@@ -30,6 +47,8 @@ export class FakeElement {
   id = '';
   /** Mirrors `HTMLLabelElement.htmlFor`, i.e. the `for` attribute. */
   htmlFor = '';
+  /** The `name` attribute, as a property — the handle a form control carries. */
+  name = '';
   type = '';
   placeholder = '';
   value = '';
@@ -40,6 +59,10 @@ export class FakeElement {
 
   children: FakeElement[] = [];
 
+  /** The document this element belongs to, when it was made by one. */
+  ownerDocument: FakeDocument | null = null;
+
+  #html = '';
   #text = '';
   readonly #attributes = new Map<string, string>();
   readonly #listeners = new Map<string, Listener[]>();
@@ -57,6 +80,27 @@ export class FakeElement {
   set textContent(value: string) {
     this.#text = value;
     this.children = [];
+  }
+
+  /** The markup last assigned; `''` for an element nobody swapped into. */
+  get innerHTML(): string {
+    return this.#html;
+  }
+
+  /**
+   * Swaps this element's contents, the way `interview.js` does after a poll.
+   *
+   * Whatever was inside is gone — children and text both — and every `id` the
+   * new markup declares becomes a NEW element of the owning document. That
+   * replacement is the honest half: a stub that let the old element keep
+   * answering to its id would make "the value was carried over" pass without
+   * anything having been carried anywhere.
+   */
+  set innerHTML(value: string) {
+    this.#html = value;
+    this.#text = '';
+    this.children = [];
+    this.ownerDocument?.absorb(value);
   }
 
   get classList() {
@@ -132,6 +176,12 @@ export class FakeElement {
     this.dispatch('input');
   }
 
+  /** Is `node` this element, or somewhere under it? — `Node.contains`. */
+  contains(node: FakeElement | null): boolean {
+    if (node === null) return false;
+    return node === this || this.descendants().includes(node);
+  }
+
   /** Every descendant, depth-first, this element excluded. */
   descendants(): FakeElement[] {
     return this.children.flatMap((child) => [child, ...child.descendants()]);
@@ -157,16 +207,43 @@ export function only(nodes: FakeElement[], what: string): FakeElement {
 export class FakeDocument {
   readonly #byId = new Map<string, FakeElement>();
 
+  /** What has focus right now; a test sets it, `focus()` never moves it here. */
+  activeElement: FakeElement | null = null;
+
   constructor(ids: readonly string[]) {
     for (const id of ids) {
       const element = new FakeElement('div');
       element.id = id;
+      element.ownerDocument = this;
       this.#byId.set(id, element);
     }
   }
 
   createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName);
+    const element = new FakeElement(tagName);
+    element.ownerDocument = this;
+    return element;
+  }
+
+  /**
+   * Registers every element an injected HTML string declares by id (t433).
+   *
+   * Called by {@link FakeElement.innerHTML}'s setter and by nothing else. It
+   * reads three things and no more — the tag, the id and the `name` — because
+   * that is the whole of what a page finding its way back to a field needs.
+   *
+   * @param html The markup just assigned.
+   */
+  absorb(html: string): void {
+    for (const match of html.matchAll(OPENING_TAG)) {
+      const id = ID_ATTRIBUTE.exec(match[2])?.[1];
+      if (id === undefined) continue;
+      const element = new FakeElement(match[1]);
+      element.ownerDocument = this;
+      element.id = id;
+      element.name = NAME_ATTRIBUTE.exec(match[2])?.[1] ?? '';
+      this.#byId.set(id, element);
+    }
   }
 
   getElementById(id: string): FakeElement | null {

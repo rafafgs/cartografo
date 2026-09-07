@@ -177,6 +177,11 @@ when somebody clicks.
 Scoped like every other job read: absent `project_id` means project 1, and a job
 of another project answers the same `404 not_found` an unknown id gets (t410).
 
+**Consumed by the screen's `/interview/:id`** (t433), which renders it as a chat
+beside the map it is drawing and reads nothing else — see
+[`screen-interview.md`](screen-interview.md). The projection's own contract is
+unchanged by that page: it was written for it.
+
 ---
 
 ## 4. The ladders

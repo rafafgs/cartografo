@@ -35,6 +35,34 @@ class the map will register as — that is the interview's own FIRST question
 (RF-14, [D8](../../DECISIONS.md), `interview.md` §2), and a form that asked for
 it would be asking for something it is about to be asked anyway.
 
+**Finding one already running (t459).** Above the form, this page also lists
+the interviews **still open**: every job whose `entry_node_id` is `interview`
+(written once at creation and never changed afterwards) and whose `completed`
+flag is still `false` — a finished interview, arrived at `deliver`, never
+appears here. This is one of two doors t459 opened; the other is `/board`'s
+own card, which now links to `/interview/:id` instead of the ordinary job
+console whenever a job's `entry_node_id` reads `interview`. Before this
+ticket nothing on the whole screen linked back to an interview in flight, and
+the generic queue at `/input-requests` showed a bare question with none of
+the map being drawn beside it.
+
+Ordering is `/board`'s own: the six-state derivation first (`awaiting_you`,
+`blocked_unasked`, `running`, `unowned`, `completed`, `queued`), oldest wait
+first within a state — never by when the interview was started. An item whose
+state is `awaiting_you` or `blocked_unasked` carries the same left-edge
+attention bar `/board` draws, for the same reason
+(`docs/spec/design-system.md` §8): it is the one state this product exists to
+make noticeable, and an interview waiting on an answer is exactly that.
+Twelve or fewer render as cards; past that the list becomes a table, one row
+per interview — the same threshold and the same reasoning as `/board`'s own
+row mode (`docs/spec/design-system.md` §7.7). With none open, the list still
+renders, carrying an explicit line rather than silence, so a person — or a
+test — can tell "checked, none open" apart from "this feature isn't there".
+
+Each item is a link to `/interview/:id` and nothing more: no block/unblock
+form, no demo badge — those are job-console actions with no place in this
+page's own vocabulary (§2 below).
+
 `POST /interview` reads `GET /v1/graphs/map-design` for the class's
 `current_version_id` and creates an ordinary job:
 
@@ -59,7 +87,8 @@ first startup of a database that does not have it, before it announces itself
 (`interview.md` §6), so a missing class means the import failed. `GET /interview`
 says exactly that and points at the control plane's own startup log, instead of
 translating the upstream 404 into the generic "the control plane does not know
-this address".
+this address" — and it draws no still-open list at all in that case: no
+interview job can exist for a class the control plane never registered.
 
 ---
 
@@ -349,9 +378,14 @@ Every item is another ficha's declared scope, not an oversight:
   this page nothing.
 - **Editing the drafted map's steps before registering.** The interview is the
   only way to shape it (`interview.md` §5), unchanged.
-- **An "interview history" or "in-flight interviews" list.** Finding one you
-  started earlier is unchanged: `/board` and `/jobs/:id` already show it, like
-  any other traveller.
+- **A dedicated `/interviews` route, or a history of finished ones.** t459 gave
+  this page the still-open list of §1 and gave every interview's `/board` card
+  the right link — `entry_node_id: "interview"` always resolves to
+  `/interview/:id`, whether the job is still running or sits in the
+  `completed` band — but a new page for a handful of rows the board already
+  bands correctly was explicitly rejected (`docs/spec/design-system.md` §7.7).
+  A finished interview is found the same way any other arrived job is: on
+  `/board`.
 - **Deleting or abandoning an interview.** Already true with no action at all:
   an abandoned interview simply never reaches §4, and leaves no `graph` row and
   no `skill` row behind.

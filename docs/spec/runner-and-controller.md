@@ -638,6 +638,36 @@ What is left open, and is recorded as out of scope: the routing label
 `announceFinishedExecution` still announces a finished round from
 `current_node_id` against `final_nodes` alone, without looking at the verdict.
 
+### ...and what an accepted report earns, in order
+
+That gate is also what a node's **declared outputs** ride inside of (t371).
+`advance()` does three things, in this order and inside one function on purpose:
+
+1. **the shared bench** advances onto the commit an integration report named
+   (t273, above);
+2. **the declared outputs** are delivered — every entry of the node's
+   `external.outputs`, to the tool on the server the map names
+   ([mcp-client.md](mcp-client.md) §8);
+3. **the transition** is published.
+
+The order is the guarantee, and doing it beside the call site rather than inside
+it would make it a convention. Above step 2 is a report the control plane
+**already accepted**, which is what makes a delivery reviewable at all (RF-33);
+below it is the move, which may not be published while a declared output is still
+unwritten — a job moved off this node is a job whose delivery the log claims was
+made. And a report the control plane refused never reaches `advance()` at all, by
+the five conditions above, so "nothing leaves this machine on the back of a
+refused report" holds structurally rather than carefully.
+
+A delivery that could not be made stops the job exactly as a stale bench does:
+the eighth block (`blockForExternalOutputFailure`), a reason naming the node, the
+output, the server, the tool and the last error, and `{blocked: true, reason}`
+back to the controller. A delivery on a node the map marked `unsafe_to_retry`
+does something no other failure in this file does — it calls a **person** instead
+of retrying, and the answer to that question can settle the job with **no session
+at all**, which is this callback's third ending
+([human-escalation.md](human-escalation.md) §7).
+
 ### Every call has a deadline
 
 A control plane that is down answers, and every method of the client already

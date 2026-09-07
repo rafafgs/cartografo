@@ -483,11 +483,22 @@ inferring:
   reviewable at all — a step whose verification failed has produced nothing
   worth sending.
 
-**Nothing here runs yet.** This ticket is the FORMAT: the runner actually calling
-a server, resolving `{{input.<path>}}` inside `arguments`, materialising `as` and
-sending `outputs` are the runtime tickets that follow. What is real today is that
-the document can say it, that the gates check it, and that changing it is a
-proposal like any other.
+**And it all runs now.** The paragraph this replaces said "nothing here runs
+yet", and it was true when the format was written: t370 built the fetching and
+t371 the delivering. The runner calls the named server before the session opens
+and writes what comes back into the worktree; it delivers `outputs` after the
+control plane has accepted the step's report, once per step, and asks a person
+rather than repeating a delivery at a node marked `unsafe_to_retry`
+([mcp-client.md](mcp-client.md)).
+
+One detail of `arguments` differs between the two directions and belongs here,
+beside the field: on an **input**, string values carry `{{input.<path>}}` against
+the node's own input, as the table above says. On an **output** there is no node
+input left to name — the step has already run — so the same grammar resolves
+against the delivery's own context: `{{input.job.id}}` (which is what the example
+above interpolates) and `{{input.output.<property>}}`, the accepted report. And
+the value at `from` travels as an argument named `from`, unless the declaration
+already reached into the report itself.
 
 The complete example:
 [`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json).
@@ -524,6 +535,31 @@ Three things the field decides:
 The example that carries it:
 [`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json),
 on the node that delivers.
+
+**And the retry path has read it since t371**, which settles the "where the three
+meet" the third point above left open. The flag governs the **delivery** of the
+node's `external.outputs`, and only that
+([mcp-client.md](mcp-client.md) §8.4): a safe node's failed delivery is retried
+up to three times, as a call and never as a session; a `true` node's is attempted
+exactly once, and then a person is asked "retry, skip this output, or mark as
+done?" — a question that is raised even at a node whose `escalation_policy` is
+`never`, because it is the platform asking about a side effect it already
+attempted rather than the node asking a business question.
+
+Two consequences worth having in this file rather than only in that one:
+
+- **an unsafe node's delivery failure never enters
+  `max_consecutive_failures`.** That count is of failed SESSIONS
+  ([runner-and-controller.md](runner-and-controller.md) §4), and a delivery
+  fails after a session succeeded and was accepted — there is no failed session
+  to count. The two never meet, which is the honest version of "it composes with
+  the two policies and does not duplicate either";
+- **the flag does not yet govern anything else.** A session that dies at an
+  `unsafe_to_retry` node is still retried exactly as it always was, and the count
+  above still bounds that. Whether a dying session at such a node should also
+  stop and ask is a real question and a different one: what the flag says today
+  is that the OUTWARD WRITE is not repeated, which is the effect that cannot be
+  taken back.
 
 ### `node_type`: why a gate is a node
 

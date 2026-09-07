@@ -52,6 +52,11 @@ which a manifest reads with the interpolation it already has:
 graph written before the field existed, and which keeps
 `{{input.external.anything}}` failing closed rather than rendering `undefined`.
 
+And the mirror image, which §8 is about: a node may declare what it hands over
+outside. That happens **after** the session is terminal and after the control
+plane has accepted what it reported — never before, and never on the back of a
+report that was refused.
+
 ---
 
 ## 2. Resolving a server: two capabilities, two questions
@@ -294,12 +299,192 @@ because every MCP call happened and finished before `startSession` was reached.
 
 ---
 
-## 8. Out of scope
+## 8. The way out (t371)
 
-- writing a node's **output** back to a server, idempotency, `unsafe_to_retry` —
-  t371;
+Everything above is the **in** direction. The out direction is
+`packages/runner/src/mcp/write-external-outputs.ts`, and it shares this folder,
+the client and the record with the in direction — and almost nothing else.
+Fetching happens before a session, where everything that fails is free.
+Delivering happens after one is terminal, where nothing is free at all: a call
+made here has already left the machine, and no part of this system can take it
+back.
+
+```json
+{
+  "id": "propose",
+  "unsafe_to_retry": true,
+  "external": {
+    "outputs": [
+      {
+        "name": "delivered_proposal",
+        "server": "drive",
+        "tool": "upload_file",
+        "arguments": { "folder": "clients/{{input.job.id}}" },
+        "from": "proposal"
+      }
+    ]
+  }
+}
+```
+
+### 8.1 Where the write happens, and why it cannot happen anywhere else
+
+Inside `report.ts`'s `advance()`, **between** the shared-bench advance and edge
+selection. That position is the whole of RF-33, and it is structural rather than
+careful: `dispatch.ts` only calls `advance()` when five conditions hold — a
+resolved node, a session that COMPLETED, no pending question, no dirty worktree,
+and a report the control plane **accepted**. There is no code path from a refused
+report to a delivery, because the function is never entered.
+
+Below it is the transition, which may not be published while a declared output is
+still unwritten: a work moved off this node is a work whose delivery the log
+claims was made.
+
+`advance()` is also where the report is decoded, once, and read twice from there
+on — the delivery reads the property at `from`, the routing reads the label.
+Decoding it twice would let the two disagree about what the session said.
+
+### 8.2 Resolving one delivery
+
+Per entry, in declared order:
+
+1. **the idempotency lookup** —
+   `GET /v1/jobs/:id/external-calls?node_id=&name=&direction=output`. A row
+   whose `outcome` is `ok`, `skipped_duplicate`, `skipped_by_person` or
+   `marked_done_by_person` means this delivery is **settled**: nothing is sent,
+   and a `skipped_duplicate` row records the standing down. An `error` row is
+   not settled — a call that failed left nothing on the far side;
+2. **the dangling row** — one that was OPENED and never closed. It is the one
+   genuinely ambiguous state, and the two node classes read it differently
+   (§8.4);
+3. **the value** — `report[from]`. A report that does not carry that property is
+   a delivery with nothing to deliver: the work stops with a reason, before any
+   call;
+4. **the arguments** — `interpolate()` from `interpolate-input.ts`, the same
+   fail-closed grammar the in direction uses, against a context of the
+   delivery's own (§8.3). Before any client is built;
+5. **the client** — one per distinct `server` name for the whole step,
+   `initialize`d once, and closed on every path out. Same discovery gate, same
+   connection resolution and same `tools/list` check as §4;
+6. **the call**, bracketed by the record's two phases, then the ladder or the
+   question (§8.4).
+
+### 8.3 What an argument's placeholders resolve against
+
+Not the node's input — that is the fetch direction's context, and it is gone by
+the time this runs. A delivery is about what the step **produced**, so the
+context has two drawers, each named after what is in it:
+
+| Path | What it is |
+|---|---|
+| `{{input.job.id}}`, `{{input.job.node_id}}` | the work and the node it is standing on — which is what `graph.md`'s own example interpolates |
+| `{{input.output.<property>}}` | the accepted report, whole, so a declaration can name any property of it and not only the one at `from` |
+
+The `{{input.…}}` prefix is kept as-is: a second grammar for one more context
+would be two fail-closed rules, and two copies of a fail-closed rule is one copy
+waiting to fail open.
+
+**And `from` names the argument as well as the property.** The value being
+delivered travels as an argument called exactly what `from` says — one name for
+one thing, so `"from": "proposal"` sends `{"proposal": …}` beside whatever
+`arguments` declared. Unless the declaration already reached into the report
+itself: any `{{input.output.…}}` anywhere in `arguments` means the author is
+driving the payload — putting it under the key their tool actually expects — and
+a second copy under a name they did not choose would send a server a parameter it
+never published.
+
+### 8.4 Two ladders, because there are two kinds of step
+
+| | `unsafe_to_retry` absent or `false` | `unsafe_to_retry: true` |
+|---|---|---|
+| Attempts | up to `DEFAULT_MAX_OUTPUT_WRITE_ATTEMPTS` = **3** | exactly **1**, and no dispatch option widens it |
+| Waits | `DEFAULT_OUTPUT_WRITE_BACKOFF_MS` = `[500, 1500]` ms, one fewer than the attempts | none |
+| A dangling row from before | "not yet delivered" — the attempt proceeds | "a write may have happened" — no call at all |
+| A timeout | recorded `error` like any other failure | the row is left **open**: the server may have done the thing, and writing `error` over that would be this side deciding what the far side did |
+| When it runs out | the work stops, `blockForExternalOutputFailure` (the eighth block) | a person is asked (§8.5) |
+
+The safe node's ladder is **entirely local to one call inside one dispatch**. It
+is not `pre-session-retry.ts`'s count of dispatch attempts, and it is not the
+control plane's `max_consecutive_failures` count of failed sessions. Three axes,
+three ceilings; collapsing any two would make one number answer a question it was
+never measured for. Nothing here ever retries the **session** — the whole point
+is that the session already succeeded and was accepted.
+
+### 8.5 The question, and the two carve-outs
+
+`POST /v1/input-requests`, with `auto_approvable: false` (mandatory — an
+environment or side-effect fault is never auto-answered), the three options
+`retry` / `skip this output` / `mark as done`, the relevant `external_call` rows
+in its `context`, and `origin: "external_output_write"`.
+
+**It is posted whatever `escalation_policy` says, `never` included.** That policy
+governs a node's own business doubts having nobody to ask; this is the platform
+asking about a side effect it already attempted, which is a different question
+and one no graph author opted out of. It is the first and so far only exception
+to the swap `human-escalation.md` §7 describes.
+
+**And two of its three answers do not redispatch.** "Resuming is redispatching"
+(`human-escalation.md` §5) is the rule everywhere else, and here it would be the
+bug: re-opening the step's session is exactly the repeat `unsafe_to_retry` exists
+to prevent.
+
+| Answer | What the next tick does |
+|---|---|
+| `retry` | an ordinary dispatch. Any row the previous attempt left open is closed as `error` first — it was left open because nobody knew how it ended, and leaving it open would make the delivery step ask the identical question forever. A new session opens, its report is accepted, and the delivery step runs again: the failed output is retried, and any output that DID land is skipped by the lookup |
+| `skip this output` | **no worktree, no session.** A `skipped_by_person` row is written and the work moves along the edge the ORIGINAL session's stored report names |
+| `mark as done` | the same, with `marked_done_by_person` written onto the attempt that was already open — that row IS the delivery the person confirmed, and a second one would invent a call nobody made |
+| anything else | an ordinary dispatch, exactly like `retry`. Silently skipping a delivery on a sentence nobody parsed is the one outcome worse than either |
+
+Both carve-outs are keyed on `origin` and on nothing else. This is not a general
+"resume without redispatch" capability, and it does not change how any other
+question is answered.
+
+**What keeps a decision from firing twice** is the call log, not the question: an
+answered question stays answered forever, so the check is whether an unsettled
+output row still exists for this node. Once the decision is recorded there is
+none, and a job that loops back to this node later dispatches normally.
+
+### 8.6 What the record gains
+
+No new column and no new table: the three values above join `outcome`'s
+vocabulary, and `direction: "output"` was already in the first migration's
+`CHECK`. The vocabulary itself moved out of SQL —
+`0034_external_call_outcomes.sql` rebuilds the table without the `outcome`
+constraint and `packages/core/src/repositories/external-calls.ts` validates it
+instead, on `setting.key`'s precedent. `direction` keeps its `CHECK`: that axis
+is closed and no third value is coming.
+
+`GET /v1/jobs/:id/external-calls` gains `node_id`, `name` and `direction` as
+filters, which add up as AND. They are not a convenience — they are the shape
+`idx_external_call_lookup (job_id, node_id, name, direction)` was declared for,
+and RF-35's whole mechanism is that one indexed read per attempt.
+
+`RUNNER_SURFACE` is unchanged: the dispatch loop runs under an operator-scoped
+credential, which is the same finding t404 recorded and the reason the runner
+already reaches `POST /v1/jobs/:id/blocks` and `POST /v1/input-requests` without
+either being on that list.
+
+---
+
+## 9. Out of scope
+
+- transactions across servers, compensation, or rolling back a delivery that
+  landed. There is no undo, which is precisely why `unsafe_to_retry` asks a
+  person instead of guessing;
+- batching or streaming deliveries;
+- resolving `from` against an `x-artifact` property — reading the BYTES of a
+  stored artifact rather than a plain output-schema value. Deferred: it would
+  make t422 and t423 hard prerequisites of a ticket that already had two, and
+  RF-33/35–37 are about WHEN and HOW OFTEN to write, never about the payload's
+  shape. An output declared with `x-artifact` today resolves to whatever plain
+  value sits at that property — a path string, most likely — until a follow-up
+  teaches this step to fetch the content;
+- rendering the call log or the unsafe-step warning on the job page — t368's,
+  which owns `packages/screen/src/pages.ts` for exactly that surface. What this
+  ticket exposes is the filtered `GET`;
 - any curated catalogue of servers, and any OAuth flow a server needs: the
   server is configured and authorised by a person, on their engine, before this
   runs;
 - resources and prompts of the MCP spec beyond `tools/call`; streaming results;
-- a CLI flag for `mcpCallTimeoutMs`, and a configurable size cap.
+- a CLI flag for `mcpCallTimeoutMs`, `maxOutputWriteAttempts` or
+  `outputWriteBackoffMs`, and a configurable size cap.

@@ -261,6 +261,45 @@ Without that, a per-node policy would be a policy nobody can evaluate: "this nod
 stops to ask too often" needs a number, and the number needs to know which node
 the question came from.
 
+### The one question the policy does not govern, and the one answer that does not redispatch
+
+A question tagged `origin: "external_output_write"` is the single exception to
+both rules above, and it is deliberately narrow (t371,
+[mcp-client.md](mcp-client.md) §8.5).
+
+It is raised by the RUNNER, after a session has finished and its report has been
+accepted, when a node the map marked `unsafe_to_retry` could not deliver one of
+its declared `external.outputs` — a refusal, a deadline, or an attempt from
+before that never recorded how it ended. The three options are `retry`, `skip
+this output` and `mark as done`, and `auto_approvable` is `false`, which is
+mandatory rather than cautious: an environment or side-effect fault is never
+something a gate should answer on its own.
+
+**It overrides `escalation_policy: never`.** The table above swaps the question
+for a block at such a node, and this one is not swapped. `never` says this node's
+own business doubts have nobody to ask; this is the platform asking about a side
+effect it **already attempted**, which is not the node's doubt and is not
+something a graph author opted out of. It is the first exception to that swap,
+and there are no others.
+
+**And two of its three answers do not redispatch**, which is the exception to §5.
+`retry` uses the ordinary mechanism unchanged — a person authorised trying the
+call again, a fresh session opens, and the delivery is attempted once more; the
+skill itself never touches the external system, so re-running it is wasteful and
+not unsafe. `skip this output` and `mark as done` open **no session and no
+worktree**: the outcome is recorded in `external_call`, the ORIGINAL session's
+stored report is read back, and the job moves along the edge that report names.
+Re-opening the step's session is exactly the repeat `unsafe_to_retry` exists to
+prevent, and "resuming is redispatching" would have made the answer cost the very
+thing the question was asked to avoid.
+
+Both carve-outs are keyed on `origin` and on nothing else — a nullable,
+unconstrained column (`0035_input_request_origin.sql`) that reads `null` for
+every question that exists today. It is not a fourth `kind`: this **is** a
+question, asked of a person, answered like any other; what differs is who raised
+it and what the next tick does with the answer. And it is not a general
+"resume without redispatch" capability — nothing else in this document changes.
+
 ---
 
 ## 8. What this layer does not do yet

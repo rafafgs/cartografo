@@ -70,7 +70,7 @@ export interface ExternalInputDeclaration {
  * sent — and `arguments` carries `{{input.<path>}}` placeholders resolved
  * against the delivery's own context rather than against the node's input:
  * `{{input.job.id}}` and `{{input.output.<property>}}`, which is what
- * `docs/spec/mcp-client.md` §9 spells out. There is no `as`: nothing lands on
+ * `docs/spec/mcp-client.md` §8 spells out. There is no `as`: nothing lands on
  * disk on the way out.
  */
 export interface ExternalOutputDeclaration {

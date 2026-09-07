@@ -152,6 +152,9 @@ const SESSION_KEYS = Object.freeze([
   // projection are the same word, so `toSession` spreads it and builds nothing.
   'transcript_artifact_id',
   'output',
+  // ...and so is this one (t465): the draft a session is writing while it runs,
+  // cleared by the closure and spread out of the row under its own name.
+  'partial_text',
   'opened_at',
   'finished_at',
 ]);

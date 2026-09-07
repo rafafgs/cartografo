@@ -1,0 +1,4 @@
+### t465 (integrating, unverified)
+
+- packages/core/test/docker-image.e2e.test.ts fails on this machine with `apt-get update` returning 100 and 'At least one invalid signature was encountered'. It is the local Docker daemon, not the merge: `docker build --no-cache` on a two-line Dockerfile that is just `FROM node:24.19-slim` + `RUN apt-get update` fails identically, and `git diff main HEAD -- Dockerfile .dockerignore packages/core/test/docker-image.e2e.test.ts` is empty. Nothing was weakened or skipped to hide it. Everything else is green: core 910/912, runner 883, screen 267, mcp 42, cost-surveyor 34, surveyor 26, root 322.
+- docs/spec/screen-interview.md auto-merged with both edits present: §2's table row now names `conversation.partial` (t465, line 110) and §3.1 describes the progress panel (t460, line 206). Neither overwrote the other.

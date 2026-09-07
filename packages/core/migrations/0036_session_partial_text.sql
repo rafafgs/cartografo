@@ -1,0 +1,34 @@
+-- 0036_session_partial_text — what the session is writing RIGHT NOW (t465, FR1).
+--
+-- One column, nullable, unconstrained, unindexed, with no backfill — the same
+-- shape `0035` took, and for a stronger version of the same reason: there is
+-- nothing to migrate old rows into, because the value describes a MOMENT that
+-- has already passed for every row that exists. A session that closed years of
+-- ticks ago was never writing anything; `NULL` is the honest reading and the
+-- only one available.
+--
+-- **What it is for.** A late turn of an interview takes minutes, and for the
+-- whole of that window `/interview/:id` said the one word "thinking" while the
+-- session was writing the map. The page has polled every three seconds since
+-- t433, so the transport was never missing — the CONTENT was. The runner
+-- decodes the lines it has buffered so far, on a throttle, and lands the result
+-- here; `domain/conversation.ts` reports it as `Conversation.partial` and the
+-- page draws it in place of the static word.
+--
+-- **Why no CHECK and no index.** It is read exactly once, by id, alongside the
+-- session row itself (`GET /v1/sessions`), and it is written by one route with
+-- one contract. An index would cost a write on every tick to serve a query
+-- nobody makes, and a CHECK on free text decoded from an engine's own stream
+-- would be a rule about prose.
+--
+-- **Why it is not an event.** `renewLease` updates `lease.heartbeat_at` dozens
+-- of times a minute and records nothing, because an append-only log answers
+-- "what happened" and a value that is only ever the freshest one is not among
+-- the things that happened. A draft is the same kind of fact, and it is cleared
+-- outright at `finishSession` — nobody replays it, so nobody may.
+--
+-- English top to bottom (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE session ADD COLUMN partial_text TEXT;

@@ -30,6 +30,7 @@ import {
   getSessionTranscript,
   listSessions,
   recordPermissionDenial,
+  writePartialText,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict, requireProject } from './common.ts';
 
@@ -108,6 +109,38 @@ export function registerSessions(
           : { output_schema_error: result.output_schema_error }),
       };
     }),
+  );
+
+  // The draft a session is writing right now (t465, FR2). It is the one write
+  // of this family that appends NOTHING: `writePartialText`'s own header says
+  // why, and `renewLease` has been making the same trade since t149.
+  //
+  // Three answers and no fourth: 400 for a body without a string `text`, 404
+  // for an id that names no session, and 200 for everything else — including
+  // the tick that arrives a moment after the session closed, which writes
+  // nothing and is not an error. That is the difference from `/finish` above:
+  // a second ending is a conflict a caller has to hear about, and a late draft
+  // is the ordinary cost of a write nobody waits on.
+  //
+  // It carries the finish route's own body ceiling, and it has to: Fastify's
+  // default is 1 MiB, which is exactly the cap the text is trimmed to, so
+  // without this every draft big enough to be capped would be refused with a
+  // 413 before the handler that would have capped it ever ran.
+  app.patch(
+    '/sessions/:id/partial-text',
+    { bodyLimit: FINISH_BODY_LIMIT_BYTES },
+    async (request, reply) =>
+      withValidation(reply, () => {
+        const written = writePartialText(
+          db,
+          routeId(request.params),
+          (request.body ?? {}) as { text?: unknown },
+        );
+        // Not the session: nobody polls this route to learn the row back, and
+        // answering the projection would invite a client to read a draft off
+        // the response to a write it deliberately does not wait for.
+        return written === null ? notFound(reply, 'session') : { ok: true };
+      }),
   );
 
   // 200 and not 201: what this appends is an event, and the body that comes

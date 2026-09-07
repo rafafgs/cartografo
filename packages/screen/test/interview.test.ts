@@ -34,6 +34,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { FakeDocument, FakeElement } from './fake-dom.ts';
@@ -1002,12 +1003,15 @@ test('t433 AT17 — the chat renderer never says job, runner or input request', 
   // The five shapes `domain/conversation.ts`'s own doc comment enumerates: an
   // open turn (nothing closed yet, one question waiting), a closed turn, a
   // pending question over a history, the thinking state, and the finished one.
+  // `partial` rides on all five since t465, and it is `null` on all five here:
+  // the shape that carries one is t465 AT18's own case, and this sweep is the
+  // pin that the five shapes THIS ticket enumerated still say nothing forbidden.
   const shapes: ClientModule.Conversation[] = [
-    { turns: [], pending, thinking: false, draft: null, done: false },
-    { turns: [turn], pending: null, thinking: false, draft, done: false },
-    { turns: [turn], pending, thinking: false, draft, done: false },
-    { turns: [turn], pending: null, thinking: true, draft, done: false },
-    { turns: [turn], pending: null, thinking: false, draft, done: true },
+    { turns: [], pending, thinking: false, partial: null, draft: null, done: false },
+    { turns: [turn], pending: null, thinking: false, partial: null, draft, done: false },
+    { turns: [turn], pending, thinking: false, partial: null, draft, done: false },
+    { turns: [turn], pending: null, thinking: true, partial: null, draft, done: false },
+    { turns: [turn], pending: null, thinking: false, partial: null, draft, done: true },
   ];
 
   for (const [index, shape] of shapes.entries()) {
@@ -1492,6 +1496,93 @@ test('t459 AT7 — the forbidden-vocabulary sweep holds with the still-open list
 
   const page = await openPage(screen, '/interview');
   assertSaysNothingForbidden(page.html, 'the interview start page with the still-open list populated');
+});
+
+/* ================================================================ t465 */
+
+/**
+ * The conversation of an interview whose session is writing right now.
+ *
+ * Hand-written, like AT17's five shapes and for the same reason: `renderChat`
+ * is pure, and what this ticket adds is a rendering decision, not a wiring one.
+ */
+function drafting(partial: string | null): ClientModule.Conversation {
+  return { turns: [], pending: null, thinking: true, draft: null, partial, done: false };
+}
+
+/** The line the page has always shown while nothing was known about the wait. */
+const PLACEHOLDER = 'Working on the next question';
+
+test('t465 AT16 — a session that is writing shows what it wrote, not the placeholder', async () => {
+  const { renderChat } = await loadInterview();
+
+  const html = renderChat(
+    drafting('Step 03 <needs> the checked proposal & the price table'),
+    42,
+  );
+
+  assert.ok(html.includes('data-state="thinking"'), `it is still the thinking state:\n${html}`);
+  assert.ok(
+    html.includes('class="partial"'),
+    `the arriving text has no class of its own to style or test apart:\n${html}`,
+  );
+  assert.ok(
+    html.includes('Step 03 &lt;needs&gt; the checked proposal &amp; the price table'),
+    `the text is not escaped, and D4 states that rule with no exception:\n${html}`,
+  );
+  assert.ok(
+    !html.includes('<needs>'),
+    `an agent's angle bracket reached the page as markup:\n${html}`,
+  );
+  assert.ok(
+    !html.includes(PLACEHOLDER),
+    `the placeholder is REPLACED by the content, never drawn beside it:\n${html}`,
+  );
+  assert.ok(!html.includes('style='), `nothing on this page carries an inline style:\n${html}`);
+});
+
+test('t465 AT17 — with nothing written yet the placeholder is exactly what it was', async () => {
+  const { renderChat } = await loadInterview();
+
+  for (const conversation of [drafting(null), drafting('   ')]) {
+    const html = renderChat(conversation, 42);
+    assert.ok(html.includes(PLACEHOLDER), `the placeholder is gone:\n${html}`);
+    assert.ok(
+      !html.includes('class="partial"'),
+      `a blank draft is not content and draws no element:\n${html}`,
+    );
+  }
+});
+
+test('t465 AT18 — the vocabulary sweep holds over a conversation that is writing', async () => {
+  const { renderChat } = await loadInterview();
+
+  const html = renderChat(
+    drafting('Drafting the third step of the map: what it needs and what it produces.'),
+    42,
+  ).toLowerCase();
+
+  for (const word of FORBIDDEN) {
+    assert.ok(!html.includes(word), `a conversation with a draft says "${word}":\n${html}`);
+  }
+});
+
+test('t465 AT19 — the arriving text is ink and upright inside the muted placeholder box', async () => {
+  requireArtifacts('src/public/style.css');
+  const stylesheet = readFileSync(
+    new URL('../src/public/style.css', import.meta.url),
+    'utf8',
+  );
+
+  const rule = /\.interview\s+\.thinking\s+\.partial\s*\{([^}]*)\}/.exec(stylesheet);
+  assert.ok(rule !== null, 'the stylesheet has no rule for the arriving text');
+  const body = rule[1];
+
+  assert.match(body, /color:\s*var\(--ink\)/, 'arriving content is ink, not the muted grade');
+  assert.match(body, /font-style:\s*normal/, 'and upright: it is content, not a placeholder');
+  assert.match(body, /white-space:\s*pre-wrap/, "the model's own line breaks have to survive");
+  assert.ok(!/border-left/.test(body), 'the left-edge bar belongs to "waiting on you" alone (§8)');
+  assert.ok(!/monospace/.test(body), 'this is prose, never something copied or typed (§4)');
 });
 
 /* ===========================================================================

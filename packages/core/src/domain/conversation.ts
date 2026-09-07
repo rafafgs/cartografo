@@ -87,6 +87,14 @@ export interface ProjectedSessionState {
   output: Record<string, unknown> | null;
   /** When the session closed — the ordering key of the walk; `null` while it runs. */
   finished_at: string | null;
+  /**
+   * What the session is writing right now, decoded (t465, FR5).
+   *
+   * Read off the column and reported only for the session that is OPEN — the
+   * closure clears it, so a finished row holds `null` anyway, and this
+   * projection never has to decide whether an old draft is still true.
+   */
+  partial_text: string | null;
 }
 
 /** One closed exchange: what was asked, and what came back. */
@@ -122,6 +130,18 @@ export interface Conversation {
   pending: PendingQuestion | null;
   /** A session is running and there is nothing to answer yet. */
   thinking: boolean;
+  /**
+   * What that session has written so far; `null` when there is nothing to show.
+   *
+   * The content behind {@link Conversation.thinking}, and it is reported under
+   * exactly the same condition — the two are one fact seen twice, a flag and
+   * the text that flag is about. `null` covers three different silences and the
+   * page draws the same placeholder for all of them: nothing is running, the
+   * session has written nothing yet, or there is a question waiting, which
+   * outranks a session writing because it is the one that asks something of a
+   * person.
+   */
+  partial: string | null;
   /**
    * The map every completed session settled between them; `null` when no
    * session has reported a `graph` yet.
@@ -226,7 +246,13 @@ function byClosingTime(a: ProjectedSessionState, b: ProjectedSessionState): numb
  *    "what the interview has settled" are two different answers, and the page
  *    owes the second one;
  * 4. `done` — passed through from the job's own projection;
- * 5. `thinking` — nothing to answer, not finished, and a session is open.
+ * 5. `thinking` — nothing to answer, not finished, and a session is open;
+ * 6. `partial` — that same session's own `partial_text`, under exactly the
+ *    condition `thinking` holds. There is at most one open session by the
+ *    interview's one-dispatch-per-question mechanism, so "that session" is not
+ *    a choice; and the two answers travelling together is what keeps the page
+ *    from having to decide on its own whether the text it was handed is still
+ *    about the state it is drawing.
  *
  * ## What `thinking` deliberately does NOT cover
  *
@@ -295,11 +321,20 @@ export function buildConversation(sources: ConversationSources): Conversation {
   }
   const draft: unknown = map[GRAPH_KEY] === undefined ? null : map;
 
+  // One read, two answers. Deriving `thinking` from a `some()` and `partial`
+  // from a separate `find()` would be two chances to disagree about which
+  // session — and about whether there is one at all.
+  const running = sessions.find((session) => session.status === SESSION_OPEN);
+  const thinking = question === null && !done && running !== undefined;
+
   return {
     turns,
     pending: question,
-    thinking:
-      question === null && !done && sessions.some((session) => session.status === SESSION_OPEN),
+    thinking,
+    // `?? null` and not the column's own value: a session that has written
+    // nothing yet is the static-placeholder case, and `undefined` is not a
+    // value this projection publishes.
+    partial: thinking ? (running?.partial_text ?? null) : null,
     draft,
     done,
   };

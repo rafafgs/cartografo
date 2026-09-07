@@ -24,11 +24,15 @@
  * `transcript_original_size` off them by hand.
  */
 
+import { text as readAsText } from 'node:stream/consumers';
+
+import type { ArtifactStore } from '../artifacts/store.ts';
 import type { Database } from '../db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../db/events.ts';
 import { requireValidData, ValidationError } from '../db/event-validation.ts';
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
+import { createArtifact, getArtifactContent } from './artifacts.ts';
 import { getVersion } from './graphs.ts';
 import { announceFinishedExecution, blockOnRepeatedFailure } from './job.ts';
 import { getSkill } from './skill.ts';
@@ -117,6 +121,20 @@ export interface Session {
   /** Size in bytes before the cap; the other Portuguese-column field. */
   transcript_original_size: number | null;
   /**
+   * The artifact holding the WHOLE transcript, when the cap bit (t424, RF-40).
+   *
+   * `null` is "nothing overflowed" — which is also what every row written
+   * before this column existed reads as, and there is no backfill that could
+   * say otherwise: the head those sessions lost is gone. When it is set, the
+   * three fields above still describe the ROW (the tail, the flag, the pre-cut
+   * size) and this one says where the rest is. `GET /v1/sessions/:id/transcript`
+   * is what puts the two back together — see {@link getSessionTranscript}.
+   *
+   * Born in English, unlike its two neighbours, so it is read straight off the
+   * row by {@link toSession}'s spread with nothing built by hand.
+   */
+  transcript_artifact_id: number | null;
+  /**
    * The node's structured result, as the session reported it at `/finish`
    * (t253).
    *
@@ -164,7 +182,7 @@ const COLUMNS = `
   engine, engine_session_ref, working_dir,
   prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
   usage, models, transcript,
-  transcricao_truncada, transcricao_tamanho_original, output,
+  transcricao_truncada, transcricao_tamanho_original, transcript_artifact_id, output,
   opened_at, finished_at
 `;
 
@@ -598,10 +616,32 @@ export interface FinishSessionResult {
  * status and NULL the `usage` this whole file exists to protect — so it is refused
  * with a 409 by the route, and never silently applied.
  *
- * The transcript (t159) rides in the SAME transaction, and there is no second
- * endpoint for it: one write, one caller. It is the raw stream the engine
+ * The transcript (t159) rides in the SAME transaction, and there is still no
+ * second ENDPOINT for it: one write, one caller. It is the raw stream the engine
  * printed, capped by {@link capTranscript} — and it goes to the row only, never
  * into `data`, because the event schema does not know it exists.
+ *
+ * ## What overflows the cap, and where it goes now (t424, RF-40)
+ *
+ * There is a second WRITE, though, and it is not to the row. When
+ * {@link capTranscript} reports that the cap bit, the whole reported string —
+ * not the tail the column keeps — is handed to the {@link ArtifactStore} and
+ * recorded as an `artifact` of this session, whose id lands in
+ * `transcript_artifact_id`. The row is unchanged by any of it: the tail, the
+ * flag and the pre-cut size are written exactly as they were before this ticket,
+ * and {@link getSessionTranscript} is what puts the two halves back together for
+ * a reader.
+ *
+ * That write happens BEFORE the transaction opens, and both halves of that are
+ * deliberate. `better-sqlite3` transactions are synchronous, so an `await` could
+ * not go inside one even if it wanted to; and a filesystem write of up to
+ * `FINISH_BODY_LIMIT_BYTES` has no business holding a database lock open while
+ * it lands. The cost is the failure mode on the far side: if the `UPDATE` below
+ * then loses its `status = 'open'` claim, the artifact row survives with nothing
+ * pointing at it. That is the same trade `createArtifact` already documents on
+ * its own store-then-row ordering, and it falls the same way — an unreferenced
+ * artifact is a row nobody reads, while a reference to content that was never
+ * written is a route that fails forever.
  *
  * ## The node's structured result, and why a bad one does not refuse (t253, FR4)
  *
@@ -634,6 +674,7 @@ export interface FinishSessionResult {
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
+ * @param store Where a transcript over the cap is kept whole (t424).
  * @returns The closed session and the verdict on its report, or `null` if the
  *   session does not exist.
  * @throws {ValidationError} When the status is outside the enum, `usage`,
@@ -641,11 +682,12 @@ export interface FinishSessionResult {
  *   `transcript` is present and is not a string.
  * @throws {Error} When the session stopped being open mid-flight.
  */
-export function finishSession(
+export async function finishSession(
   db: Database,
   id: number,
   input: FinishSessionInput,
-): FinishSessionResult | null {
+  store: ArtifactStore,
+): Promise<FinishSessionResult | null> {
   const row = readRow(db, id);
   if (row === undefined) return null;
 
@@ -664,6 +706,30 @@ export function finishSession(
   const transcript = capTranscript(input.transcript);
   const actor = resolveActor(input.actor, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
+
+  // Only the overage travels (t424, FR2), and only what was ACTUALLY reported:
+  // `truncated` is true exactly when `capTranscript` was handed a string too
+  // long for the column, so the cast below is the flag's own guarantee, not an
+  // assumption about the body.
+  //
+  // Through `createArtifact` and never through an `INSERT INTO artifact` of its
+  // own: that table's shape belongs to `repositories/artifacts.ts`, and a second
+  // writer here would be the copy that agrees with the first until the day the
+  // columns move. It is also what puts the bytes in the store, which is why this
+  // is awaited out here rather than folded into the transaction below — see this
+  // function's own header for the ordering and what it costs.
+  const stored = transcript.truncated
+    ? await createArtifact(
+        db,
+        id,
+        {
+          name: 'transcript',
+          mediaType: 'text/plain; charset=utf-8',
+          buffer: Buffer.from(input.transcript as string, 'utf8'),
+        },
+        store,
+      )
+    : null;
 
   // The schema is resolved on every close, whether or not anything was reported
   // (t333). Until this ticket an absent `output` skipped the lookup to save the
@@ -709,7 +775,8 @@ export function finishSession(
       .prepare(
         `UPDATE session SET status = ?, exit_code = ?, timeout_reason = ?, usage = ?,
                 models = ?, transcript = ?, transcricao_truncada = ?,
-                transcricao_tamanho_original = ?, output = ?, finished_at = ?
+                transcricao_tamanho_original = ?, transcript_artifact_id = ?,
+                output = ?, finished_at = ?
           WHERE id = ? AND status = 'open'`,
       )
       .run(
@@ -729,6 +796,10 @@ export function finishSession(
         transcript.text,
         asInteger(transcript.truncated),
         transcript.originalBytes,
+        // NULL is "nothing overflowed", which is every session whose transcript
+        // fit — and the row and this reference commit together, so a `true` flag
+        // never points at an id that is not there yet (t424).
+        stored === null ? null : stored.id,
         // ...and the same reading a third time (t253): NULL is "nothing
         // structured was reported", and it is also what a report the skill's
         // schema refused leaves behind — the reason travels in the event, so
@@ -838,22 +909,65 @@ export interface SessionTranscript {
  * session here — and a distinct code would leak which ids are taken elsewhere.
  * Which project the session belongs to is {@link sessionProject}'s answer, read
  * off its own `session.opened`, never derived from a job the session may not
- * have (t157).
+ * have (t157). That check runs FIRST, before the artifact below is looked up
+ * let alone opened: a boundary that answered 404 only after reading somebody
+ * else's file would have read it anyway.
+ *
+ * ## What it answers when the cap bit (t424, RF-40)
+ *
+ * The row holds the tail. When `transcript_artifact_id` is set, the whole
+ * transcript was stored through the {@link ArtifactStore} as the session closed
+ * ({@link finishSession}), and THAT is what comes back — never the tail the
+ * column happens to keep, which is the entire point of RF-40. The reference is
+ * resolved through `repositories/artifacts.ts` and not by a `SELECT` of its own:
+ * `storage_ref` is that module's business, and it is the one column deliberately
+ * kept off every projection.
+ *
+ * And the payload then reports `transcript_truncated: false` with
+ * `transcript_original_size: null`, rather than repeating the row's own `true`
+ * and pre-cut size. What is being handed over is COMPLETE, and a caller of this
+ * route never sees the row: "here is the whole thing, and by the way it is
+ * truncated" is a contradiction, and the size that was lost is zero. The two
+ * row-level facts are still published, unchanged, on the session projection —
+ * which is where a reader asking about the column should be looking.
  *
  * @param db Open handle.
  * @param id Session id.
+ * @param store Where a transcript over the cap was kept whole (t424).
  * @param projectId Scope of the caller; omitted, any project answers.
  * @returns The transcript payload, or `null` if the session does not exist in
  *   the scope asked for.
  */
-export function getSessionTranscript(
+export async function getSessionTranscript(
   db: Database,
   id: number,
+  store: ArtifactStore,
   projectId?: number,
-): SessionTranscript | null {
+): Promise<SessionTranscript | null> {
   const row = readRow(db, id);
   if (row === undefined) return null;
   if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
+
+  if (row.transcript_artifact_id !== null) {
+    // No `projectId` on this read: the scope was already settled above, against
+    // the session that owns both the row and the artifact. Asking the same
+    // question twice would answer `null` for nobody's benefit.
+    const content = getArtifactContent(db, row.transcript_artifact_id, store);
+    // `null` here means the referenced row is not in the table, which
+    // append-only makes unreachable — nothing updates a reference and nothing
+    // deletes an artifact (RF-42). Falling through to the column rather than
+    // throwing is the honest answer if it ever happens anyway: the tail, said
+    // out loud to be a tail, beats a 500 on the one route somebody is using to
+    // find out why a session died.
+    if (content !== null) {
+      return {
+        transcript: await readAsText(content.stream),
+        transcript_truncated: false,
+        transcript_original_size: null,
+      };
+    }
+  }
+
   return {
     transcript: row.transcript,
     transcript_truncated: asBoolean(row.transcricao_truncada),

@@ -803,13 +803,19 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
   assert.equal(stored, output.slice(-TRANSCRIPT_CAP_BYTES), 'the TAIL, not the head');
   assert.ok(stored.endsWith(tail), "a crash's evidence is at the end of the stream");
 
+  // What the ROW kept is the tail; what this route answers is the whole thing
+  // (t424, FR4). The overage went to the artifact store when the session
+  // finished, so the payload is complete — and it says `false`/`null`, because
+  // carrying "truncated" beside content that is not truncated would read as a
+  // contradiction to a caller who never sees the row.
   const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
   assert.equal(read.status, 200);
   assert.deepEqual(read.body, {
-    transcript: stored,
-    transcript_truncated: true,
-    transcript_original_size: output.length,
+    transcript: output,
+    transcript_truncated: false,
+    transcript_original_size: null,
   });
+  assert.notEqual(read.body.transcript, stored, 'the route no longer answers only the tail');
 });
 
 test('t159 — the cap cuts on a character boundary, never in the middle of a rune', async (t) => {
@@ -2343,4 +2349,229 @@ test('t411 — the transcript refuses a session of another project, and answers 
   const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${mine.id}/transcript`);
   assert.equal(read.status, 200);
   assert.equal(read.body.transcript, 'all good');
+});
+
+/* -------------------------------------------------------------------------- */
+/* The transcript over the cap, stored whole through the store (t424, RF-40)   */
+/* -------------------------------------------------------------------------- */
+
+/** The migration that gives the row its reference to the stored transcript. */
+const T424_MIGRATION = 'migrations/0032_transcript_artifact.sql';
+
+/**
+ * Everything t424 crosses, on top of {@link ARTIFACTS}.
+ *
+ * The store and its table belong to t422 and are listed here for the same
+ * reason `T159_MIGRATION` is listed beside the session artifacts: a case that
+ * fails because a file does not exist yet has to say WHICH file, rather than
+ * blowing up inside an import.
+ */
+const T424_ARTIFACTS = Object.freeze([
+  T159_MIGRATION,
+  T424_MIGRATION,
+  'migrations/0030_artifacts.sql',
+  'src/artifacts/store.ts',
+  'src/artifacts/local-store.ts',
+  'src/repositories/artifacts.ts',
+  'src/routes/artifacts.ts',
+]);
+
+/**
+ * The session projection, plus the column t424 adds to it.
+ *
+ * Spelled here and not in `support.ts`'s {@link Session} because it is THIS
+ * ticket's claim about the wire: a reference to the stored transcript, `null`
+ * whenever the cap did not bite.
+ */
+interface SessionWithArtifact extends Session {
+  transcript_artifact_id: number | null;
+}
+
+/** What `GET /v1/artifacts/:id` answers (t422, FR5). */
+interface ArtifactBody {
+  id: number;
+  session_id: number;
+  name: string;
+  media_type: string;
+  size: number;
+  sha256: string;
+  created_at: string;
+}
+
+/**
+ * A transcript over the cap whose two halves can be told apart.
+ *
+ * Half `a` and half `b`, because the failure this shape exists to catch is a
+ * test that only ever compares LENGTHS: the tail the row keeps is exactly one
+ * cap of `b`, so a route that answers the tail and a route that answers the
+ * whole thing differ in content as well as in size, and an assertion cannot
+ * pass by accident on either one.
+ *
+ * @returns The full text, over {@link TRANSCRIPT_CAP_BYTES} and ASCII, so byte
+ *   length and character length coincide and the arithmetic is the test's own.
+ */
+function overCapTranscript(): string {
+  const half = (TRANSCRIPT_CAP_BYTES + 500_000) / 2;
+  const text = 'a'.repeat(half) + 'b'.repeat(half);
+  assert.equal(Buffer.byteLength(text, 'utf8'), text.length, 'the sample has to be ASCII');
+  assert.ok(text.length > TRANSCRIPT_CAP_BYTES, 'the sample has to be over the cap');
+  return text;
+}
+
+test('t424 AT1 — a transcript over the cap is stored whole and served whole', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T424_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  const original = overCapTranscript();
+
+  const finished = await request<SessionWithArtifact>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'failed', exit_code: 1, transcript: original },
+  );
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+
+  // The row still keeps the tail and still says so: this ticket adds a place to
+  // put the overage, it does not change what the column holds.
+  assert.equal(finished.body.transcript_truncated, true);
+  assert.equal(finished.body.transcript_original_size, original.length);
+  assert.equal(
+    Buffer.byteLength(finished.body.transcript ?? '', 'utf8'),
+    TRANSCRIPT_CAP_BYTES,
+    'the column is still capped',
+  );
+
+  const artifactId = finished.body.transcript_artifact_id;
+  assert.equal(typeof artifactId, 'number', 'the overage went somewhere, and the row says where');
+  assert.ok((artifactId ?? 0) > 0, 'a real id, not a zero standing in for one');
+
+  const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
+  assert.equal(read.status, 200, JSON.stringify(read.body));
+  assert.equal(
+    Buffer.byteLength(read.body.transcript ?? '', 'utf8'),
+    original.length,
+    'every byte came back',
+  );
+  assert.equal(read.body.transcript, original, 'and they are the SAME bytes, not just as many');
+  assert.equal(read.body.transcript_truncated, false, 'what came back is complete');
+  assert.equal(read.body.transcript_original_size, null, '...so there is no lost size to report');
+});
+
+test('t424 AT2 — a transcript under the cap never touches the store', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T424_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  const output = 'reading the ticket…\nerror: I did not find the file\nexiting with 1\n';
+  const bytes = Buffer.byteLength(output, 'utf8');
+
+  const finished = await request<SessionWithArtifact>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'failed', exit_code: 1, transcript: output },
+  );
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+  assert.equal(finished.body.transcript_artifact_id, null, 'nothing overflowed, nothing was stored');
+  assert.equal(finished.body.transcript, output, 'stored verbatim, byte for byte');
+
+  // Byte-identical to what t159 AT1 already asserts: the under-the-cap path is
+  // the one this ticket may not move.
+  const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body, {
+    transcript: output,
+    transcript_truncated: false,
+    transcript_original_size: bytes,
+  });
+});
+
+test('t424 AT3 — the stored transcript is a real artifact, not a stub row', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T424_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  const original = overCapTranscript();
+
+  const finished = await request<SessionWithArtifact>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'failed', exit_code: 1, transcript: original },
+  );
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+
+  const artifact = await request<ArtifactBody>(
+    ctx,
+    'GET',
+    `/v1/artifacts/${finished.body.transcript_artifact_id}`,
+  );
+  assert.equal(artifact.status, 200, JSON.stringify(artifact.body));
+  assert.equal(artifact.body.session_id, session.id, 'it belongs to the session that printed it');
+  assert.equal(artifact.body.name, 'transcript');
+  assert.equal(artifact.body.media_type, 'text/plain; charset=utf-8');
+  assert.equal(artifact.body.size, Buffer.byteLength(original, 'utf8'), 'the WHOLE size');
+  assert.equal(
+    artifact.body.sha256,
+    createHash('sha256').update(original, 'utf8').digest('hex'),
+    'the digest of the original, which is what proves nothing was cut on the way in',
+  );
+});
+
+test('t424 AT4 — project scope is checked before the artifact is ever touched', async (t) => {
+  requireArtifacts(
+    ...ARTIFACTS,
+    ...T424_ARTIFACTS,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.jobRoutes,
+  );
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const theirJob = await createJob(ctx, {
+    title: 'of the second project',
+    entry_node_id: 'entrada',
+    project_id: second,
+    execution_id: 7,
+  });
+  const theirs = await openSessionWith(ctx, { job_id: theirJob.id, execution_id: 7 });
+  const original = overCapTranscript();
+  const finished = await request<SessionWithArtifact>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${theirs.id}/finish`,
+    { status: 'failed', exit_code: 1, transcript: original },
+  );
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+  assert.equal(typeof finished.body.transcript_artifact_id, 'number', 'there IS an artifact here');
+
+  // The SAME 404 an unknown id gets (t411), and it has to be decided before the
+  // store is reached: a boundary that answered "not found" only after opening
+  // the file would still have opened somebody else's file.
+  const fromDefault = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/transcript?project_id=1`,
+  );
+  assert.equal(fromDefault.status, 404, JSON.stringify(fromDefault.body));
+  assert.equal(fromDefault.body.error, 'not_found');
+
+  const unknown = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id + 9999}/transcript?project_id=1`,
+  );
+  assert.equal(unknown.status, 404, 'the refusal a missing id gets');
+  assert.deepEqual(fromDefault.body, unknown.body, 'and it is the same refusal, word for word');
+
+  // ...and the owner still gets the whole thing.
+  const fromTheirs = await request<Transcript>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/transcript?project_id=${second}`,
+  );
+  assert.equal(fromTheirs.status, 200, JSON.stringify(fromTheirs.body));
+  assert.equal(fromTheirs.body.transcript, original);
 });

@@ -229,11 +229,15 @@ test(
       // `0030_artifacts.sql` — the reference to a file a session produced — and
       // it too keeps the number reserved for it, landing between 0029 and 0031,
       // which the runner applies in numeric order among the ones not yet in the
-      // ledger.
+      // ledger. And t424 moved it last with `0032_transcript_artifact.sql` — the
+      // reference the session row keeps to a transcript that overflowed the cap
+      // (RF-40) — written as `0031` and renumbered here at the merge, because
+      // t417 had already taken that number: the same collision this comment has
+      // now recorded nine times.
       assert.equal(
         first.readiness.migrationsApplied,
-        31,
-        'a brand-new database applies the thirty-one migrations the package ships',
+        32,
+        'a brand-new database applies the thirty-two migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

@@ -519,6 +519,193 @@ test('t168 — a document with no custom_fields is a structure error in both val
 });
 
 /**
+ * t369 — what a node declares it needs from outside, and what it hands over.
+ *
+ * `external` is graph data like `hooks`, so its shape is checked where every
+ * other rule of this format is checked: in `validateStructure`, mirrored in
+ * `scripts/validate-graph.mjs`. The schema declares the same rules and enforces
+ * none of them on the way in — `POST /v1/graphs` compiles no ajv against
+ * `schema/graph.schema.json` (draft 2020-12 against the draft-07 ajv Fastify
+ * ships), exactly as t256 found for `hook_raw_secret`.
+ *
+ * Two rules, and each one is a mistake somebody makes by hand:
+ *
+ * - two entries answering to the same `name` make the materialisation ambiguous
+ *   — one of them wins and the document does not say which, the same reasoning
+ *   `duplicate_node_id` already writes down;
+ * - an `as` that climbs out of the working directory (`../`, or an absolute
+ *   path) is a fetch that writes wherever it likes on the runner's machine,
+ *   which is precisely what "materialised in the step's working directory"
+ *   (RF-32) promises it will not do.
+ */
+const EXTERNAL_CASES: Array<{
+  name: string;
+  mutate: (node: Record<string, unknown>) => void;
+  code: string;
+  quoted: string;
+}> = [
+  {
+    name: 'two external inputs sharing a name',
+    mutate: (node) => {
+      const external = node.external as { inputs: Array<Record<string, unknown>> };
+      external.inputs.push(structuredClone(external.inputs[0]));
+    },
+    code: 'duplicate_external_name',
+    quoted: 'prices',
+  },
+  {
+    name: 'two external outputs sharing a name',
+    mutate: (node) => {
+      const external = node.external as { outputs: Array<Record<string, unknown>> };
+      external.outputs.push(structuredClone(external.outputs[0]));
+    },
+    code: 'duplicate_external_name',
+    quoted: 'delivered_proposal',
+  },
+  {
+    name: 'an "as" that climbs out of the working directory',
+    mutate: (node) => {
+      const external = node.external as { inputs: Array<Record<string, unknown>> };
+      external.inputs[0].as = '../x';
+    },
+    code: 'invalid_external_as',
+    quoted: '"../x"',
+  },
+  {
+    name: 'an absolute "as"',
+    mutate: (node) => {
+      const external = node.external as { inputs: Array<Record<string, unknown>> };
+      external.inputs[0].as = '/etc/passwd';
+    },
+    code: 'invalid_external_as',
+    quoted: '"/etc/passwd"',
+  },
+];
+
+test('t369 — the external fixture passes both validators, and the port agrees with the reference', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = readExample('graph-valid-external-io.json') as Record<string, unknown>;
+
+  assert.deepEqual(
+    ported.validateGraph(document),
+    { valid: true, structure: { valid: true, errors: [] }, soundness: { valid: true, violations: [] } },
+    'the fixture that declares external I/O has to pass both validations whole',
+  );
+  assert.deepEqual(ported.validateStructure(document), reference.validarEstrutura(document));
+  assert.deepEqual(ported.validateSoundness(document), reference.validarSoundness(document));
+
+  const declaring = (document.nodes as Array<Record<string, unknown>>).find((node) =>
+    Object.hasOwn(node, 'external'),
+  );
+  assert.ok(declaring !== undefined, 'the fixture has to carry a node declaring external I/O');
+  assert.equal(declaring.unsafe_to_retry, true, 'and the flag that says the delivery is one-way');
+  assert.ok(
+    (document.nodes as Array<Record<string, unknown>>).some(
+      (node) => !Object.hasOwn(node, 'external') && !Object.hasOwn(node, 'unsafe_to_retry'),
+    ),
+    'a node declaring NEITHER rides along: absence is the default, and it stays valid',
+  );
+});
+
+test('t369 — a duplicate external name and an escaping "as" are structure errors in both validators', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  for (const scenario of EXTERNAL_CASES) {
+    const document = readExample('graph-valid-external-io.json') as Record<string, unknown>;
+    const nodes = document.nodes as Array<Record<string, unknown>>;
+    const node = nodes.find((candidate) => Object.hasOwn(candidate, 'external'));
+    assert.ok(node !== undefined, 'the fixture has to carry a node declaring external I/O');
+    scenario.mutate(node);
+
+    const report = ported.validateStructure(document);
+
+    // Parity first, exactly as t153 and t256 do: a rule only one of the two
+    // validators applies is a rule the reference validator no longer documents.
+    assert.deepEqual(
+      report,
+      reference.validarEstrutura(document),
+      `structure diverged on: ${scenario.name}`,
+    );
+    assert.equal(report.valid, false, `has to be refused: ${scenario.name}`);
+
+    // The fixture is valid but for the mutation, so the whole report is the one
+    // error — no companion code fires in its place.
+    assert.deepEqual(
+      report.errors.map((item) => item.code),
+      [scenario.code],
+      `wrong codes on: ${scenario.name}`,
+    );
+    assert.equal(report.errors[0].target, node.id, `the node has to be named on: ${scenario.name}`);
+    assert.ok(
+      report.errors[0].message.includes(scenario.quoted),
+      `the message has to quote ${scenario.quoted} on: ${scenario.name} — ${report.errors[0].message}`,
+    );
+
+    assert.deepEqual(
+      ported.validateSoundness(document).violations,
+      [],
+      'the net itself is sound: a bad external declaration is shape, never a workflow-net rule',
+    );
+  }
+});
+
+test('t369 — external, its two lists and unsafe_to_retry reuse invalid_field when the type is wrong', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const cases: Array<{ name: string; mutate: (node: Record<string, unknown>) => void }> = [
+    {
+      name: 'external is not an object',
+      mutate: (node) => {
+        node.external = 'drive';
+      },
+    },
+    {
+      name: 'external.inputs is not a list',
+      mutate: (node) => {
+        (node.external as Record<string, unknown>).inputs = { prices: 'prices.xlsx' };
+      },
+    },
+    {
+      name: 'external.outputs is not a list',
+      mutate: (node) => {
+        (node.external as Record<string, unknown>).outputs = { proposal: 'drive' };
+      },
+    },
+    {
+      name: 'unsafe_to_retry is not a boolean',
+      mutate: (node) => {
+        node.unsafe_to_retry = 'yes';
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const document = readExample('graph-valid-external-io.json') as Record<string, unknown>;
+    const nodes = document.nodes as Array<Record<string, unknown>>;
+    const node = nodes.find((candidate) => Object.hasOwn(candidate, 'external'));
+    assert.ok(node !== undefined);
+    scenario.mutate(node);
+
+    const report = ported.validateStructure(document);
+    assert.deepEqual(
+      report,
+      reference.validarEstrutura(document),
+      `structure diverged on: ${scenario.name}`,
+    );
+    assert.deepEqual(
+      report.errors.map((item) => item.code),
+      ['invalid_field'],
+      `wrong codes on: ${scenario.name}`,
+    );
+    assert.equal(report.errors[0].target, node.id, `the node has to be named on: ${scenario.name}`);
+  }
+});
+
+/**
  * t180/t230 — the report's prose, keys, codes and rule names are all English.
  *
  * The prose moved with t180; the vocabulary around it with t230, the fifth

@@ -128,11 +128,11 @@ test('AT1 — every fixture in schema/examples validates against the schema', as
   const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
 
   // Seven from t96, plus the `model` fixture t166 added, the
-  // `escalation_policy` one t167 added, the two `hooks` ones t169 added and the
-  // `shell` engine one t332 added. The count is asserted instead of merely
-  // iterated so that a fixture dropped by accident shows up here, and not as a
-  // silently smaller loop.
-  assert.equal(names.length, 12, `expected the twelve committed fixtures, found ${names.length}`);
+  // `escalation_policy` one t167 added, the two `hooks` ones t169 added, the
+  // `shell` engine one t332 added and the `external`/`unsafe_to_retry` one t369
+  // added. The count is asserted instead of merely iterated so that a fixture
+  // dropped by accident shows up here, and not as a silently smaller loop.
+  assert.equal(names.length, 13, `expected the thirteen committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,

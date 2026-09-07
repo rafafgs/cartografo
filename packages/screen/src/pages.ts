@@ -42,6 +42,7 @@ import type {
   Conversation,
   Example,
   ExecutionSummary,
+  GraphVersionSummary,
   Job,
   JobState,
   PendingQuestion,
@@ -54,7 +55,7 @@ import type {
   Settings,
 } from './client.ts';
 import { draftToDraw, renderChat, renderMap, renderMapProgress } from './interview.ts';
-import { renderMapDocument, type MapDocumentGraph } from './map-document.ts';
+import { renderMapDocument, roleDescriptionLabel, type MapDocumentGraph } from './map-document.ts';
 import { extractMcpHint, type McpCatalog, type McpServerSuggestion } from './mcp-catalog.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
 
@@ -397,6 +398,71 @@ function jobMetaHtml(job: Job, now: number, renderedAt: string): string {
 }
 
 /**
+ * `/board`'s missing second answer to §7.4 (t463): the map position, resolved
+ * once per distinct `graph_version_id` rather than once per job — the same
+ * parallel-fetch shape `graphPage` already uses for its own pins.
+ *
+ * A version that fails to resolve is simply absent from the returned map: the
+ * caller degrades to "no step line" rather than failing the whole board.
+ *
+ * @param client Client of the public API.
+ * @param jobs The jobs on the page.
+ * @param scope Which project is in force.
+ * @returns A map from `graph_version_id` to its resolved version.
+ */
+async function resolveGraphVersions(
+  client: ApiClient,
+  jobs: Job[],
+  scope: ProjectScope,
+): Promise<Map<string, GraphVersionSummary>> {
+  const ids = [...new Set(jobs.map((job) => job.graph_version_id).filter((id): id is string => id !== null))];
+  const resolved = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        return await client.getGraphVersion(id, { project_id: scope.projectId });
+      } catch {
+        // A version nobody can resolve is one job missing its step line, never
+        // a board that refuses to draw the rest (FR5).
+        return null;
+      }
+    }),
+  );
+
+  const versions = new Map<string, GraphVersionSummary>();
+  ids.forEach((id, index) => {
+    const version = resolved[index];
+    if (version !== null) versions.set(id, version);
+  });
+  return versions;
+}
+
+/**
+ * The job's position in the map it is travelling (FR2): `step N/M · label`.
+ *
+ * `undefined` whenever any link of the chain is missing — no
+ * `graph_version_id`, no resolved version, or no node in the snapshot whose
+ * `id` matches `current_node_id` — never an error, never an invented
+ * placeholder (FR5).
+ *
+ * `label` reuses §7.1's own fallback rule verbatim (`roleDescriptionLabel`),
+ * falling back to the bare node id. Both are already HTML-escaped, so the
+ * caller must not escape this string a second time (AT8).
+ */
+function mapPositionHtml(job: Job, graphVersions: Map<string, GraphVersionSummary>): string | undefined {
+  if (job.graph_version_id === null) return undefined;
+  const version = graphVersions.get(job.graph_version_id);
+  if (version === undefined) return undefined;
+
+  const document = version.snapshot as unknown as MapDocumentGraph;
+  const nodes = Array.isArray(document.nodes) ? document.nodes : [];
+  const index = nodes.findIndex((node) => node.id === job.current_node_id);
+  if (index === -1) return undefined;
+
+  const label = roleDescriptionLabel(nodes[index]) ?? escapeHtml(nodes[index].id);
+  return `step ${index + 1}/${nodes.length} · ${label}`;
+}
+
+/**
  * Where a job's own detail page lives (t459 FR1).
  *
  * An interview is a job like any other, but its door back is `/interview/:id`
@@ -419,14 +485,21 @@ function jobHref(job: Job): string {
  * walked and let through, and banding it by state (t416) moved the cards
  * without moving that door.
  */
-function stateCard(job: Job, now: number, renderedAt: string): string {
+function stateCard(
+  job: Job,
+  now: number,
+  renderedAt: string,
+  graphVersions: Map<string, GraphVersionSummary>,
+): string {
   const classes = ['cartao', job.blocked ? 'bloqueado' : null, isAttentionState(job.state) ? 'attention' : null]
     .filter((one): one is string => one !== null)
     .join(' ');
+  const step = mapPositionHtml(job, graphVersions);
+  const stepLine = step === undefined ? '' : `<p class="map-step" data-panel="board-step">${step}</p>\n      `;
   return `<article data-trabalho="${job.id}" class="${classes}">
       <div class="id">#${job.id}</div>
       <a href="${jobHref(job)}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}
-      ${jobMetaHtml(job, now, renderedAt)}
+      ${stepLine}${jobMetaHtml(job, now, renderedAt)}
       ${blockReasonHtml(job)}
       ${releaseFormHtml(job)}
     </article>`;
@@ -440,22 +513,34 @@ function stateCard(job: Job, now: number, renderedAt: string): string {
  * past a dozen jobs is exactly the one whose held column most needs walking, so
  * row mode must not be the shape where the way out quietly disappears.
  */
-function stateRow(job: Job, now: number, renderedAt: string): string {
+function stateRow(
+  job: Job,
+  now: number,
+  renderedAt: string,
+  graphVersions: Map<string, GraphVersionSummary>,
+): string {
   const rowClass = isAttentionState(job.state) ? ' class="attention"' : '';
   const words = job.state.replaceAll('_', ' ');
   const duration = formatDuration(now - Date.parse(job.state_since));
+  const step = mapPositionHtml(job, graphVersions);
+  const nodeCell = step === undefined ? escapeHtml(job.current_node_id) : `${escapeHtml(job.current_node_id)} · ${step}`;
   return `<tr data-trabalho="${job.id}"${rowClass}>
       <td>#${job.id}</td>
       <td><a href="${jobHref(job)}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}</td>
       <td>${escapeHtml(words)}</td>
-      <td>${escapeHtml(job.current_node_id)}</td>
+      <td>${nodeCell}</td>
       <td>for ${escapeHtml(duration)} · as of ${escapeHtml(renderedAt)}</td>
       <td>${blockReasonHtml(job)}${releaseFormHtml(job)}</td>
     </tr>`;
 }
 
 /** A band's jobs, still grouped by node — card mode's shape, unchanged from {@link jobBoard} (FR4). */
-function cardBand(jobs: Job[], now: number, renderedAt: string): string {
+function cardBand(
+  jobs: Job[],
+  now: number,
+  renderedAt: string,
+  graphVersions: Map<string, GraphVersionSummary>,
+): string {
   const byNode = new Map<string, Job[]>();
   for (const job of jobs) {
     const group = byNode.get(job.current_node_id) ?? [];
@@ -468,7 +553,7 @@ function cardBand(jobs: Job[], now: number, renderedAt: string): string {
     .map(
       ([node, inNode]) => `<section class="grupo" data-no-atual="${escapeHtml(node)}">
     <h2>${escapeHtml(node)} <span class="id">(${inNode.length})</span></h2>
-    ${inNode.map((job) => stateCard(job, now, renderedAt)).join('\n    ')}
+    ${inNode.map((job) => stateCard(job, now, renderedAt, graphVersions)).join('\n    ')}
   </section>`,
     );
 
@@ -476,8 +561,13 @@ function cardBand(jobs: Job[], now: number, renderedAt: string): string {
 }
 
 /** A band's jobs, flat and sorted — row mode's shape: time-order, not node-order (FR5). */
-function rowBand(jobs: Job[], now: number, renderedAt: string): string {
-  const rows = jobs.map((job) => stateRow(job, now, renderedAt));
+function rowBand(
+  jobs: Job[],
+  now: number,
+  renderedAt: string,
+  graphVersions: Map<string, GraphVersionSummary>,
+): string {
+  const rows = jobs.map((job) => stateRow(job, now, renderedAt, graphVersions));
   return `<table>
   <thead><tr><th>job</th><th>title</th><th>state</th><th>node</th><th>time</th><th>note</th></tr></thead>
   <tbody>
@@ -501,9 +591,15 @@ function sortByStateSince(jobs: Job[]): Job[] {
  * same way `jobBoard` never drew an empty node column.
  *
  * `now`/`renderedAt` are captured ONCE by the caller and threaded through
- * every card and row on the page — not one clock read per job.
+ * every card and row on the page — not one clock read per job. `graphVersions`
+ * (t463) is likewise resolved once by the caller, keyed by `graph_version_id`.
  */
-function stateBoard(jobs: Job[], now: number, renderedAt: string): string {
+function stateBoard(
+  jobs: Job[],
+  now: number,
+  renderedAt: string,
+  graphVersions: Map<string, GraphVersionSummary>,
+): string {
   if (jobs.length === 0) return '<p class="vazio">No jobs here yet.</p>';
 
   const rowMode = jobs.length > ROW_MODE_THRESHOLD;
@@ -516,7 +612,9 @@ function stateBoard(jobs: Job[], now: number, renderedAt: string): string {
 
   const bands = STATE_ORDER.filter((state) => (byState.get(state)?.length ?? 0) > 0).map((state) => {
     const inState = sortByStateSince(byState.get(state) as Job[]);
-    const body = rowMode ? rowBand(inState, now, renderedAt) : cardBand(inState, now, renderedAt);
+    const body = rowMode
+      ? rowBand(inState, now, renderedAt, graphVersions)
+      : cardBand(inState, now, renderedAt, graphVersions);
     return `<section data-state="${state}">
   <h2>${escapeHtml(state.replaceAll('_', ' '))} <span class="id">(${inState.length})</span></h2>
   ${body}
@@ -1231,11 +1329,13 @@ export async function boardPage(
   // one clock read per job.
   const now = Date.now();
   const renderedAt = new Date(now).toISOString();
+  // Resolved ONCE per distinct graph version (t463 FR1), not once per job.
+  const graphVersions = await resolveGraphVersions(client, jobs, scope);
   return {
     status: 200,
     html: layout(
       'board',
-      `<h2>board · ${jobs.length} job(s)</h2>\n${stateBoard(jobs, now, renderedAt)}`,
+      `<h2>board · ${jobs.length} job(s)</h2>\n${stateBoard(jobs, now, renderedAt, graphVersions)}`,
       scope,
       true,
     ),

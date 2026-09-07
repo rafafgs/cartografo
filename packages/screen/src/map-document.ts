@@ -159,8 +159,14 @@ function isFilledString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
-/** `role`/`description`, joined for display — `undefined` when neither is declared. */
-function roleDescriptionLabel(node: MapDocumentNode | undefined): string | undefined {
+/**
+ * `role`/`description`, joined for display — `undefined` when neither is
+ * declared.
+ *
+ * Exported so `pages.ts` can reuse this exact §7.1 fallback rule for `/board`'s
+ * step line (t463) rather than reimplementing the join a surface over.
+ */
+export function roleDescriptionLabel(node: MapDocumentNode | undefined): string | undefined {
   if (node === undefined) return undefined;
   const parts = [node.role, node.description].filter(isFilledString).map((part) => escapeHtml(part.trim()));
   return parts.length === 0 ? undefined : parts.join(' — ');

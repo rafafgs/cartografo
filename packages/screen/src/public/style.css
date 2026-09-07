@@ -148,6 +148,12 @@ h2 {
   margin-top: .35rem;
 }
 
+.map-step {
+  font-size: .82rem;
+  color: var(--soft);
+  margin-top: .35rem;
+}
+
 /* ------------------------------------------------------------------------ tables */
 
 table {

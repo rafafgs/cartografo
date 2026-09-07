@@ -1,0 +1,4 @@
+### t472 (developing, unverified)
+
+- JS regex has no `\z` end-of-string atom outside `u`-mode identity-escape rules — it silently matches a literal 'z' instead of failing to compile, so a `(?=^\S|\z)` lookahead used to bound a YAML block only works when the file happens to end in 'z' or has a following top-level key. Caught by the fixture with no app_url (nothing followed the commands: block); replaced with a line-based scan.
+- The bench command genuinely works end-to-end: manually ran `CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner` in this worktree, confirmed / and /interview and /graphs/map-design all return 200, confirmed no runner process was spawned, and confirmed a single SIGTERM to the negative PGID (per up.ts's own documented process-group inheritance) stopped both the control plane and the screen.

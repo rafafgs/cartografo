@@ -233,11 +233,15 @@ test(
       // reference the session row keeps to a transcript that overflowed the cap
       // (RF-40) — written as `0031` and renumbered here at the merge, because
       // t417 had already taken that number: the same collision this comment has
-      // now recorded nine times.
+      // now recorded nine times. t370 moved it once more with
+      // `0033_external_calls.sql` — every call the runner makes to an MCP server
+      // on a node's behalf — written as `0032` and renumbered here at the merge
+      // for the tenth instance of exactly that collision, because t424 had
+      // already taken it.
       assert.equal(
         first.readiness.migrationsApplied,
-        32,
-        'a brand-new database applies the thirty-two migrations the package ships',
+        33,
+        'a brand-new database applies the thirty-three migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

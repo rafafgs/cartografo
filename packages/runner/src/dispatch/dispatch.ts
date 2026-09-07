@@ -84,11 +84,12 @@
  * compared.
  *
  * **And a failure BEFORE the session is a block, not a throw** (t252, t270,
- * t272). Seven of the ways the window below can fail reproduce identically on
- * every retry — a dangling `graph_version_id`, an engine with no route, an
+ * t272, t370). Eight of the ways the window below can fail reproduce identically
+ * on every retry — a dangling `graph_version_id`, an engine with no route, an
  * unregistered skill, a pin that stopped matching, a placeholder that does not
- * resolve, a test bench `git` cannot read, and a permission policy the adapter
- * refuses to open a session under. Thrown, each of
+ * resolve, a test bench `git` cannot read, a permission policy the adapter
+ * refuses to open a session under, and an external input no MCP server would
+ * hand over. Thrown, each of
  * them was a job retried every two seconds forever, invisibly, with the rest of
  * the project's queue stuck behind it. So they stop the work with a reason a
  * person can read and resolve `{blocked: true}`.
@@ -163,8 +164,9 @@ import {
 } from './report.ts';
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy } from './resolve-node.ts';
-import { resolveSessionPlan, type SessionPlan } from './resolve-session-plan.ts';
+import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
 import { createSessionCollector } from './session-collector.ts';
+import { openSession, type Session } from './open-session.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
 import { uploadArtifacts } from './upload-artifacts.ts';
@@ -179,11 +181,6 @@ import { uploadArtifacts } from './upload-artifacts.ts';
  * anybody edit an import.
  */
 export * from './surface.ts';
-
-/** A session, as `POST /v1/sessions` gives it back. */
-interface Session {
-  id: number;
-}
 
 /**
  * Builds the controller's `dispatch` callback (t103), with a real engine behind
@@ -239,10 +236,10 @@ export function createClaudeCodeDispatch(
     // The whole window before a worktree exists, under ONE catch (t252). What it
     // reads is `resolve-session-plan.ts`, which is a straight line of reads and
     // owns none of this decision; which of its failures blocks the work instead
-    // of throwing — and why exactly seven — is the paragraph at the top of this
+    // of throwing — and why exactly eight — is the paragraph at the top of this
     // file, and where the line is drawn is `pre-session-failure.ts`.
     try {
-      plan = await resolveSessionPlan(call, job, options.engines, resolveInput, options.projectId);
+      plan = await resolveSessionPlan(call, job, options, resolveInput);
     } catch (error) {
       // The first of the three sites that route through ONE decision (t272,
       // FR5), so the three cannot drift into three policies. `null` is "this one
@@ -288,6 +285,12 @@ export function createClaudeCodeDispatch(
     const tree = new WorktreeRelease(options.worktrees, worktree);
 
     try {
+      // The MCP window's disk half, at the first line where a directory exists
+      // and still before a session does (t370, FR4). Its failures are ordinary
+      // throws and not a ninth classified cause — the split, and why, is
+      // `src/mcp/resolve-external-inputs.ts`'s own header.
+      await writeExternalInputs(worktree.path, plan.pendingWrites);
+
       // The two reads the prompt needs, and the spec they get packed into
       // (`session-spec.ts`). Inside the `try` and after the worktree, where they
       // have always been: a read that fails here retains the tree and opens no
@@ -342,16 +345,13 @@ export function createClaudeCodeDispatch(
         // then. There is no endpoint to fill `engine_session_ref` in later (out
         // of scope), so `null` here means "the engine had not said it yet" and
         // never "this engine has no ref".
-        session = await call<Session>('/v1/sessions', 'POST', {
-          job_id: job.id,
-          node_id: job.current_node_id,
-          engine: route.adapter.engineName,
-          engine_session_ref: collected.engineRef(),
-          working_dir: spec.workingDir,
-          prompt: spec.prompt,
-          timeout_seconds: spec.timeoutSeconds,
-          silence_seconds: spec.silenceSeconds,
-        });
+        session = await openSession(
+          call,
+          job,
+          route.adapter.engineName,
+          collected.engineRef(),
+          spec,
+        );
 
         // The streak of failures BEFORE a session dies right here (t272, FR6).
         // Whatever this work had been failing on, it now has a session row: that

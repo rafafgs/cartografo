@@ -256,3 +256,61 @@ test('t270 AT — a bench git could not read blocks, naming the command', async 
     'the reason ends where every other one does: fix the configuration and unblock',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t370 AT22 — the eighth cause: an external input that could not be fetched.  */
+/*                                                                            */
+/* A node's declared `external.inputs` are resolved BEFORE the worktree, in    */
+/* the same window as the other seven, and every one of the five ways that     */
+/* can fail reproduces identically on the next tick: a server this machine's   */
+/* engine does not name, a connection nobody can read, an argument the input   */
+/* does not carry, a tool that is not on the server, a server that is down or  */
+/* silent. Leaving them unclassified would reopen t252's loop for the one      */
+/* failure mode this ticket invents.                                          */
+/* -------------------------------------------------------------------------- */
+
+test('AT22 — each of the five external-input reasons names the node, the server and the tool', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+  const { ExternalInputResolutionError } = await import(
+    new URL('../../src/mcp/resolve-external-inputs.ts', import.meta.url).href
+  );
+
+  const reasons = [
+    'unknown_server',
+    'call_error',
+    'tool_not_found',
+    'timeout',
+    'unresolved_argument',
+  ] as const;
+
+  for (const reason of reasons) {
+    const classified = classifyPreSessionFailure(
+      new ExternalInputResolutionError({
+        nodeId: 'collect-fundamentals',
+        name: 'report',
+        server: 'reports',
+        tool: 'read_file',
+        reason,
+      }),
+      JOB,
+    );
+
+    namesAll(classified, ['collect-fundamentals', 'report', 'reports', 'read_file', reason]);
+    assert.match(
+      classified ?? '',
+      /unblock/,
+      'the reason ends where every other one does: fix the cause and unblock',
+    );
+  }
+});
+
+test('AT22 — the seven existing causes are unaffected, and everything else is still null', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  // The regression half: adding a branch to a closed set is only safe if the
+  // set is still closed. The seven above each have their own case in this file;
+  // what this pins is that the eighth did not widen the net.
+  for (const error of [new Error('boom'), new TypeError('nope'), 'a string', null, undefined]) {
+    assert.equal(classifyPreSessionFailure(error, JOB), null, String(error));
+  }
+});

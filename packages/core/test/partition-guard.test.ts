@@ -149,6 +149,12 @@ const ALLOWLIST: readonly Exception[] = Object.freeze([
     reason: 'one entity by its own id; the caller that needs a project resolves it from the entity.',
   },
   {
+    where: 'repositories/external-calls.ts::jobExists',
+    class: 'GLOBAL_ID_LOOKUP',
+    reason:
+      "the owning job by id — this read is what TELLS the external-call row its project (t370, and the same shape `openSession` above already argues).",
+  },
+  {
     where: 'repositories/hooks.ts::recordHookDeliverySuccess',
     class: 'GLOBAL_ID_LOOKUP',
     reason: 'closes the one delivery row the sweep just attempted, by its own id.',

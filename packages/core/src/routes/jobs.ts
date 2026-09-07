@@ -49,6 +49,14 @@ import type { Database } from '../db/connection.ts';
 import { buildConversation, type Conversation } from '../domain/conversation.ts';
 import { buildNodeInput } from '../domain/context.ts';
 import { integerFromQuery } from '../repositories/common.ts';
+import {
+  ALREADY_COMPLETED,
+  EXTERNAL_CALL_OUTCOMES,
+  completeExternalCall,
+  createExternalCallIntent,
+  listExternalCalls,
+  type ExternalCallOutcome,
+} from '../repositories/external-calls.ts';
 import { getVersion } from '../repositories/graphs.ts';
 import { listInputRequests } from '../repositories/input-request.ts';
 import {
@@ -68,6 +76,7 @@ import {
   type Job,
 } from '../repositories/job.ts';
 import { listSessions } from '../repositories/session.ts';
+import { isObject } from '../util/is-object.ts';
 import {
   withValidation,
   refusal,
@@ -181,6 +190,119 @@ function nodeInputOf(
       entered_at: seed.created_at,
     },
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* t370 — the record of a call to an external MCP server (FR6).                */
+/* -------------------------------------------------------------------------- */
+
+/** The fields an intent body has to carry, each a `400` when it does not. */
+const INTENT_FIELDS = [
+  'node_id',
+  'name',
+  'server',
+  'tool',
+  'arguments_sha256',
+  'started_at',
+] as const;
+
+/** What a body refusal carries: which field, and one sentence about it. */
+interface FieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** A non-empty string, or the refusal that names the field. */
+function requiredText(
+  body: Record<string, unknown>,
+  field: string,
+): { value: string } | { refusal: FieldRefusal } {
+  const value = body[field];
+  if (typeof value !== 'string' || value.trim() === '') {
+    return { refusal: { field, message: `${field} has to be a non-empty string` } };
+  }
+  return { value };
+}
+
+/**
+ * Reads an intent body — the shape with no `call_id`.
+ *
+ * `direction` defaults to `'input'` and is the one field that may be absent:
+ * this ticket's only writer fetches, t371's will send, and a default that
+ * matched the only behaviour there is beats a required field every caller sets
+ * to the same value. `arguments_summary` may be absent too and reads `''`: a
+ * call with no arguments summarises to nothing, which is not a malformed body.
+ */
+function readIntent(
+  body: Record<string, unknown>,
+): { intent: Parameters<typeof createExternalCallIntent>[2] } | { refusal: FieldRefusal } {
+  const read: Record<string, string> = {};
+  for (const field of INTENT_FIELDS) {
+    const value = requiredText(body, field);
+    if ('refusal' in value) return value;
+    read[field] = value.value;
+  }
+
+  const direction = body.direction ?? 'input';
+  if (direction !== 'input' && direction !== 'output') {
+    return { refusal: { field: 'direction', message: 'direction is `input` or `output`' } };
+  }
+
+  const summary = body.arguments_summary ?? '';
+  if (typeof summary !== 'string') {
+    return { refusal: { field: 'arguments_summary', message: 'arguments_summary is text' } };
+  }
+
+  return {
+    intent: {
+      node_id: read.node_id,
+      direction,
+      name: read.name,
+      server: read.server,
+      tool: read.tool,
+      arguments_sha256: read.arguments_sha256,
+      // Truncated HERE and never on the caller's word that it already did
+      // (RF-37): a summary is a summary because this side made it one.
+      arguments_summary: summary,
+      started_at: read.started_at,
+    },
+  };
+}
+
+/** Reads a completion body — the shape carrying `call_id`. */
+function readCompletion(
+  body: Record<string, unknown>,
+):
+  | { callId: number; completion: Parameters<typeof completeExternalCall>[3] }
+  | { refusal: FieldRefusal } {
+  const callId = body.call_id;
+  if (!Number.isInteger(callId)) {
+    return { refusal: { field: 'call_id', message: 'call_id has to be an integer' } };
+  }
+
+  const finishedAt = requiredText(body, 'finished_at');
+  if ('refusal' in finishedAt) return finishedAt;
+
+  const outcome = body.outcome;
+  if (typeof outcome !== 'string' || !EXTERNAL_CALL_OUTCOMES.includes(outcome as ExternalCallOutcome)) {
+    return {
+      refusal: { field: 'outcome', message: 'outcome is `ok` or `error`' },
+    };
+  }
+
+  const summary = body.result_summary ?? null;
+  if (summary !== null && typeof summary !== 'string') {
+    return { refusal: { field: 'result_summary', message: 'result_summary is text or null' } };
+  }
+
+  return {
+    callId: callId as number,
+    completion: {
+      finished_at: finishedAt.value,
+      outcome: outcome as ExternalCallOutcome,
+      result_summary: summary,
+    },
+  };
 }
 
 /**
@@ -397,6 +519,94 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       ),
     );
   };
+
+  /**
+   * The record of one call to an external MCP server (t370, FR6; RF-37).
+   *
+   * ONE route for both phases, told apart by the body: no `call_id` opens the
+   * intent (`201`), and a `call_id` closes that row (`200`). Two routes would
+   * have been two lines in `RUNNER_SURFACE` for one act, and the raw ticket's
+   * own criterion — "the runner allowlist gains exactly the external-calls
+   * route" — is a design constraint worth honouring: an allowlist grows one
+   * decision at a time, and this is one decision.
+   *
+   * Left unscoped by `requireProject`, following this file's own documented
+   * split: the four writes above are deliberately unscoped because a job id
+   * already resolves to exactly one project through its own row, and scoping a
+   * mutation is the write-side slice of a different ticket.
+   */
+  app.post('/jobs/:id/external-calls', async (request, reply) =>
+    withValidation(reply, () => {
+      const body = isObject(request.body) ? request.body : {};
+      const jobId = routeId(request.params);
+
+      if (!('call_id' in body)) {
+        const read = readIntent(body);
+        if ('refusal' in read) {
+          return refusal(reply, 400, 'invalid_body', read.refusal.message, {
+            field: read.refusal.field,
+          });
+        }
+
+        const created = createExternalCallIntent(db, jobId, read.intent);
+        if (created === null) return notFound(reply, 'job');
+
+        reply.code(201);
+        return { external_call: created };
+      }
+
+      const read = readCompletion(body);
+      if ('refusal' in read) {
+        return refusal(reply, 400, 'invalid_body', read.refusal.message, {
+          field: read.refusal.field,
+        });
+      }
+
+      const completed = completeExternalCall(db, read.callId, jobId, read.completion);
+      // A call of ANOTHER job answers the same `404` an unknown id gets: a
+      // boundary a client can tell apart from an absence is a boundary that
+      // reports which ids are taken elsewhere (t411, t422).
+      if (completed === null) return notFound(reply, 'external call');
+      if (completed === ALREADY_COMPLETED) {
+        return refusal(
+          reply,
+          409,
+          'external_call_already_completed',
+          'this call already has an outcome; the first answer stands',
+          { call_id: read.callId },
+        );
+      }
+
+      return { external_call: completed };
+    }),
+  );
+
+  /**
+   * What was called for one job, in order (t370, FR6).
+   *
+   * Scoped with `requireProject` exactly like the job family's other GETs, and
+   * operator-only by omission: this dispatch never reads its own call history
+   * back, and t371 is the first runner-side reader — it adds its own allowlist
+   * line the day it needs one, on the one-route-at-a-time discipline t166 and
+   * t401 already set.
+   *
+   * A row with `outcome: null` and `finished_at: null` well after `started_at`
+   * is a call nobody closed: the reader concludes "unknown", and nothing in
+   * this system ever wrote that word down.
+   */
+  app.get('/jobs/:id/external-calls', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const id = routeId(request.params);
+      // The JOB is what carries the partition (D25), so it is what the scope is
+      // applied to; the listing below inherits it through the foreign key.
+      if (getJob(db, id, scope.project.id) === null) return notFound(reply, 'job');
+
+      return { external_calls: listExternalCalls(db, id) };
+    }),
+  );
 
   write('/jobs/:id/transitions', 'post', (id, body) => transitionJob(db, id, body));
   write('/jobs/:id/blocks', 'post', (id, body) => blockJob(db, id, body));

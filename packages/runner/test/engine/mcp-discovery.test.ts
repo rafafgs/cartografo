@@ -20,10 +20,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  expandEnvPlaceholders,
   mergeServerRefs,
   parseClaudeMcpListOutput,
   parseCodexMcpListJson,
   readMcpConfigToml,
+  readMcpServerConfigJsonFile,
+  readMcpServerConfigToml,
   readMcpServersJsonFile,
 } from '../../src/engine/mcp-discovery.ts';
 
@@ -207,4 +210,129 @@ test('t400 — a name repeated in a later list keeps the position the first list
 test('t400 — merging nothing, or only empty lists, is an empty list', () => {
   assert.deepEqual(mergeServerRefs(), []);
   assert.deepEqual(mergeServerRefs([], []), []);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t370 — the pure helpers that read a CONNECTION, not just a name (AT14–AT16).*/
+/*                                                                            */
+/* Discovery names servers; it does not say how to reach one. `McpServerRef`   */
+/* is `{name}` by deliberate design (see this file's header and                */
+/* `types.ts`), so the connection details — command, args, env, url — live     */
+/* only in the very config files the readers above already open, and until     */
+/* this ticket nothing exported anything but their keys.                      */
+/* -------------------------------------------------------------------------- */
+
+/** This repository's own `.mcp.json`, transcribed byte for byte. */
+const REPOSITORY_MCP_JSON = `{
+  "mcpServers": {
+    "cartografo": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["packages/mcp/bin/mcp.mjs"],
+      "env": {
+        "CARTOGRAFO_URL": "\${CARTOGRAFO_URL:-http://127.0.0.1:4317}"
+      }
+    }
+  }
+}
+`;
+
+/** Real `config.toml` written by `codex mcp add`, env sub-table and all. */
+const CODEX_CONFIG_TOML_WITH_ENV = `[mcp_servers.my-tool]
+command = "my-command"
+args = ["--flag", "--second"]
+
+[mcp_servers.my-tool.env]
+TOKEN = "a-secret"
+REGION = "eu"
+
+[mcp_servers.other]
+command = "c"
+`;
+
+test('t370 AT14 — the json reader gives the FULL entry of one server, or null', () => {
+  withFixtures((root) => {
+    const path = join(root, '.mcp.json');
+    writeFileSync(path, REPOSITORY_MCP_JSON);
+
+    assert.deepEqual(readMcpServerConfigJsonFile(path, 'cartografo'), {
+      type: 'stdio',
+      command: 'node',
+      args: ['packages/mcp/bin/mcp.mjs'],
+      env: { CARTOGRAFO_URL: '${CARTOGRAFO_URL:-http://127.0.0.1:4317}' },
+    });
+
+    // A name nobody declared is `null` and never a half-built entry: the caller
+    // turns that into "known to discovery, unreachable" rather than guessing.
+    assert.equal(readMcpServerConfigJsonFile(path, 'nobody-has-this'), null);
+    assert.equal(readMcpServerConfigJsonFile(join(root, 'nothing-here.json'), 'cartografo'), null);
+  });
+});
+
+test('t370 AT15 — the two placeholder forms this repository really uses', () => {
+  // The literal is `.mcp.json:6`, and it carries both halves of the grammar:
+  // a variable name and a default the file supplies when it is unset.
+  const literal = '${CARTOGRAFO_URL:-http://127.0.0.1:4317}';
+
+  assert.equal(
+    expandEnvPlaceholders(literal, { CARTOGRAFO_URL: 'http://control-plane:9000' }),
+    'http://control-plane:9000',
+  );
+  assert.equal(expandEnvPlaceholders(literal, {}), 'http://127.0.0.1:4317');
+  assert.equal(expandEnvPlaceholders('${TOKEN}', { TOKEN: 'a-secret' }), 'a-secret');
+  assert.equal(expandEnvPlaceholders('plain, no placeholder', {}), 'plain, no placeholder');
+  assert.equal(
+    expandEnvPlaceholders('${A}/${B:-two}', { A: 'one' }),
+    'one/two',
+    'more than one placeholder in one value is ordinary',
+  );
+});
+
+test('t370 AT15 — an unset variable with no default is a failure, never an empty string', () => {
+  // A credential placeholder that quietly became `''` is a wrong credential
+  // reaching a spawned process, which is the same silent wrongness
+  // `{{input.<path>}}` already refuses everywhere else in this package.
+  assert.throws(
+    () => expandEnvPlaceholders('${TOKEN}', {}),
+    (error: unknown) => {
+      assert.ok(error instanceof Error, String(error));
+      assert.ok(error.message.includes('TOKEN'), `the failure has to name it: ${error.message}`);
+      return true;
+    },
+  );
+});
+
+test('t370 AT16 — the toml reader gives command, args and the env sub-table', () => {
+  withFixtures((root) => {
+    const path = join(root, 'config.toml');
+    writeFileSync(path, CODEX_CONFIG_TOML_WITH_ENV);
+
+    assert.deepEqual(readMcpServerConfigToml(path, 'my-tool'), {
+      command: 'my-command',
+      args: ['--flag', '--second'],
+      env: { TOKEN: 'a-secret', REGION: 'eu' },
+    });
+
+    // The second table is a server of its own and its own answer, which is what
+    // keeps the scan from bleeding one server's keys into another's.
+    assert.deepEqual(readMcpServerConfigToml(path, 'other'), {
+      command: 'c',
+      args: [],
+      env: {},
+    });
+
+    assert.equal(readMcpServerConfigToml(path, 'nobody-has-this'), null);
+    assert.equal(readMcpServerConfigToml(join(root, 'nothing-here.toml'), 'my-tool'), null);
+  });
+});
+
+test('t370 AT16 — a table with no command at all is null, never a half connection', () => {
+  withFixtures((root) => {
+    const path = join(root, 'config.toml');
+    writeFileSync(path, '[mcp_servers.my-tool]\nstartup_timeout_sec = 10\n');
+
+    // The scanner returns `null` for what it does not recognize rather than
+    // guessing — the same discipline `readMcpConfigToml` already runs under.
+    assert.equal(readMcpServerConfigToml(path, 'my-tool'), null);
+  });
 });

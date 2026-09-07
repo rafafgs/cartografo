@@ -153,3 +153,19 @@ test('t402 AT11 — /inbox serves index.html byte for byte, and / no longer does
   // the new mapping matches the exact path, not a prefix of it.
   assert.equal(resolveStaticFile('/inbox.js'), path.join(PUBLIC_DIR, 'inbox.js'));
 });
+
+/**
+ * t458 AT3 — `/style.css` is the one stylesheet, exercised through the real
+ * static-file path (not just read off disk): the collapse (`layout()` linking
+ * it instead of inlining `STYLE`) only holds if this route keeps serving it.
+ */
+test('t458 AT3 — GET /style.css 200s as CSS and carries the token set', async () => {
+  const { serveStatic } = await loadStatic();
+
+  const served = await serveStatic('/style.css');
+  assert.equal(served.status, 200);
+  assert.match(served.headers['content-type'], /^text\/css/);
+  const body = served.body.toString('utf8');
+  assert.ok(body.includes(':root'), '/style.css has no :root token block');
+  assert.ok(body.includes('--radius'), '/style.css has no --radius token');
+});

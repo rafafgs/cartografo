@@ -16,7 +16,7 @@ It does not open the database, imports nothing from `packages/core`, declares no
 SQLite driver and does not know the file's path. It comes up on another port, in
 another process, and it can die without the control plane noticing. If it needs
 something the API does not give, the bug is the API's — that is how this layer
-was born with five new routes on the core's side, and not with five shortcuts
+was born with six new routes on the core's side, and not with six shortcuts
 on its own (§4).
 
 The rule is checked statically by
@@ -48,8 +48,8 @@ runs in `npm run lint`, and locked down by
 | `POST /settings` | Nothing: it writes `workspace_root`/`worktrees_root` for the project in the cookie and redirects (303) to `/`. A field left blank is not sent. | `PATCH /v1/settings` |
 | `GET /interview` | Above the start form, the interviews still open (t459) — every job whose `entry_node_id` is `interview` and which has not arrived yet, in the board's own attention order, cards or a table past a dozen; an explicit line when there are none. Below it, the start form itself: a title and a free-text description, and nothing else. A control plane with no `map-design` class registered says so plainly here, and points at its own startup log — and draws no still-open list, since no interview job can exist for a class that was never registered. See [`screen-interview.md`](screen-interview.md). | `GET /v1/graphs/map-design`, `GET /v1/jobs` |
 | `POST /interview` | Nothing: it creates the job on `map-design`'s current version, at `entry_node_id: "interview"`, and redirects (303) to `/interview/<the new id>`. A blank title or description is refused (400) before either call. | `GET /v1/graphs/map-design`, `POST /v1/jobs` |
-| `GET /interview/:id` | The interview in two columns: the exchange so far on the left — closed turns, then the one open question with its inline form, or "thinking", or the closing state with its two actions — and the map it is drafting on the right, through the same renderer `GET /graphs/:id` uses. The screen's only polling page (§7). | `GET /v1/jobs/:id/conversation` |
-| `GET /interview/:id/fragment` | `200 {chat, map, done}` — the two columns as the exact inner-HTML strings `GET /interview/:id` rendered, computed by the same two functions. Asked for only by that page's own script, and linked from nowhere. | `GET /v1/jobs/:id/conversation` |
+| `GET /interview/:id` | The interview in two columns: the exchange so far on the left — closed turns, then the one open question with its inline form, or "thinking", or the closing state with its two actions — and the map it is drafting on the right, through the same renderer `GET /graphs/:id` uses, with what registering that map right now would still fail on above it (t460). The screen's only polling page (§7). | `GET /v1/jobs/:id/conversation`, `POST /v1/graphs/validate` |
+| `GET /interview/:id/fragment` | `200 {chat, map, progress, done}` — `#chat`, `#map` and `#map-progress` as the exact inner-HTML strings `GET /interview/:id` rendered, computed by the same three functions. Asked for only by that page's own script, and linked from nowhere. | `GET /v1/jobs/:id/conversation`, `POST /v1/graphs/validate` |
 | `POST /interview/:id/answer` | Nothing: it answers the interview's one open question and redirects (303) to `/interview/:id`. A blank answer is refused (400) before the network. | `GET /v1/jobs/:id/conversation`, `PATCH /v1/input-requests/:id/answer` |
 | `POST /interview/:id/register` | Nothing: it re-reads the draft, closes its pins and registers the map, then redirects (303) to `/graphs/<the draft's class>`. Refused (400) before any call when the interview is not over or drew nothing; a pin that does not close is a 422, and a registry refusal keeps the registry's own status. | `GET /v1/jobs/:id/conversation`, `POST /v1/skills`, `POST /v1/graphs` |
 | `POST /interview/:id/export` | The bundle itself: `application/zip`, `content-disposition: attachment`, named after the class. Same two pre-network refusals as the row above. | `GET /v1/jobs/:id/conversation` |
@@ -62,9 +62,9 @@ itself** (§7): `/board` carries `<meta http-equiv="refresh" content="30">`
 (t416), so it is never more than 30 seconds stale without anyone reloading it —
 which is also what makes the relative durations it shows honest — and
 `/interview/:id` loads a small script that polls `/interview/:id/fragment` every
-three seconds while the interview is still running, swapping the two columns in
-place and stopping the moment it is over (t433, RNF-04). That script is pure
-progressive enhancement: with it absent, every form on the page still works and
+three seconds while the interview is still running, swapping the two columns and
+the progress panel in place and stopping the moment it is over (t433, t460,
+RNF-04). That script is pure progressive enhancement: with it absent, every form on the page still works and
 reloading is the fallback.
 
 **Which project a view shows** comes from the `cartografo_project` cookie, and
@@ -363,11 +363,11 @@ a quieter form.
 
 ---
 
-## 4. The five API gaps this layer closed
+## 4. The six API gaps this layer closed
 
 D11 orders "the screen needs something the API does not give" to be treated as a
-bug in the API. All three are additive and symmetric to filters that already
-existed:
+bug in the API. Every one of them is additive — a new listing, a new read or a
+new query — and none of them changed a route that already existed:
 
 | Route | What was missing |
 |---|---|
@@ -376,6 +376,7 @@ existed:
 | `GET /v1/input-requests?trabalho_id=` | Symmetric to the previous one, for the same reason: the end of the waits. |
 | `GET /v1/examples` | There was no way to **discover** which bundles are ready to be demonstrated. The screen opens no directory and knows no path (D11), so listing `factory-graphs/` on this side would have been the very shortcut this layer exists without. It scans an examples root — `CARTOGRAFO_EXAMPLES_ROOT`, `factory-graphs/` by default — for every subdirectory carrying a `demo/job.json`, and answers `{examples: [{class, bundle, demo_title, registered}]}` (t408). |
 | `POST /v1/examples/:class/run` | And no way to **act** on one: registering a bundle was `cartografo import` at a terminal, and creating its job needed an execution id the caller had to invent. The route registers the bundle when the project has never seen the class, allocates an unused round, and answers `201 {job, execution_id, registered}` (t408). Since t409 a bundle may also ship a `demo/repo/`, and when it does the route copies it into the project's `workspace_root` as a git repository BEFORE anything is written — the demo of `software-development` needs a real checkout to cut worktrees from. That step adds two refusals to the `409` this row already answered, both of which write nothing at all: `workspace_root_unset` (the setting points nowhere) and `workspace_not_empty` (the workspace already holds work, including the work a previous demo run put there). Neither is signalled ahead of the click: they reach the operator through the same generic failure page as any other write this route refuses. |
+| `POST /v1/graphs/validate` | There was no way to **ask** the soundness gate about a document without trying to write it: `validateGraph` ran only inside `POST /v1/graphs` and `POST /v1/proposals/:id/apply`, and both of them need a document that is already somebody's — a lineage's, or a proposal's. An interview's draft is neither, and it is precisely the document worth judging while it is still being drawn (t460). The route takes any JSON body, writes nothing, needs no project and answers `200 {valid, structure, soundness}` always: "not sound yet" is the answer here, not a refusal. |
 
 The filters add up as an **AND** with the ones that already existed, and an
 invalid filter is a **400**, never a filter ignored in silence.

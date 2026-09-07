@@ -299,6 +299,14 @@ beside the map it is drawing and reads nothing else — see
 [`screen-interview.md`](screen-interview.md). The projection's own contract is
 unchanged by that page: it was written for it.
 
+**`draft.graph` is also handed to `POST /v1/graphs/validate`** while the
+interview is still running (t460), so the page can say what registering the map
+right now would still fail on — see
+[`screen-interview.md`](screen-interview.md) §3.1. That is **presentation
+only**: the route writes nothing, the projection above is untouched, and a
+draft that fails the check is still a draft this interview goes on filling in.
+Nothing in §3 changes because of it.
+
 ---
 
 ## 4. The ladders

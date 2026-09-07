@@ -930,7 +930,7 @@ async function interviewFragment(
   // the engine and the missing-server candidates are resolved, and the page
   // calls the same function (t373). Two resolvers would be exactly the drift
   // this route's own "the two can never disagree" pin exists to catch.
-  const { conversation, suggestions, engine } = await readInterviewChat(
+  const { conversation, suggestions, engine, progress } = await readInterviewChat(
     client,
     mcpCatalog,
     interviewId,
@@ -947,6 +947,10 @@ async function interviewFragment(
       body: JSON.stringify({
         chat: renderChat(conversation, interviewId, suggestions, engine),
         map: renderMap(conversation.draft),
+        // t460's third element: the pre-rendered panel, already escaped, on the
+        // same terms as the other two — `readInterviewChat` produced it, so the
+        // page it swaps into cannot be showing a different verdict.
+        progress,
         done: conversation.done,
       }),
     },

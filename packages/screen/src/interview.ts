@@ -4,10 +4,15 @@
  *
  * Pure and framework-free, in the same spirit as `map-document.ts`: no HTTP, no
  * import from `packages/core`, no clock. It takes the conversation projection
- * (`docs/spec/interview.md` §3) and gives back two strings — which is exactly
- * what makes `GET /interview/:id` and `GET /interview/:id/fragment` incapable
- * of disagreeing about what the page says. Both call these two functions, and
- * the second one exists only so a poll can swap what the first one drew.
+ * (`docs/spec/interview.md` §3) — and, since t460, the report a control plane
+ * already answered — and gives back strings, which is exactly what makes `GET
+ * /interview/:id` and `GET /interview/:id/fragment` incapable of disagreeing
+ * about what the page says. Both call the same three functions, and the last
+ * two exist only so a poll can swap what the first one drew.
+ *
+ * The purity survives the new panel because the CALL is not here: `pages.ts`
+ * asks `POST /v1/graphs/validate` and hands the answer down, so this module
+ * still knows nothing about a network.
  *
  * ## It reads the projection, never the mechanism
  *
@@ -48,9 +53,13 @@ import type { Conversation, ConversationTurn, PendingQuestion } from './client.t
 import { renderMapDocument, type MapDocumentGraph, type MapDocumentManifest } from './map-document.ts';
 import type { McpServerSuggestion } from './mcp-catalog.ts';
 import { escapeHtml } from './pages.ts';
+import { renderReport } from './public/graph-soundness.js';
 
 /** What the map column says while the interview has drawn nothing yet. */
 const NOTHING_TO_DRAW = 'nothing to draw yet';
+
+/** The one line above the draft's remaining problems, and what it frames them as. */
+const PROGRESS_LEAD = 'If this map were registered right now:';
 
 /**
  * The engine a suggestion's command is written for when nothing recorded one.
@@ -341,4 +350,40 @@ export function renderMap(draft: unknown): string {
   const drawable = draftToDraw(draft);
   if (drawable === undefined) return `<p class="empty">${NOTHING_TO_DRAW}</p>`;
   return renderMapDocument(drawable.graph, drawable.skills);
+}
+
+/**
+ * The right column's second panel: what this draft would still fail on (t460).
+ *
+ * The interview is the only thing that shapes the map
+ * (`docs/spec/interview.md` §5), and until this ticket nothing judged what it
+ * was shaping until somebody pressed register — after sixteen answers, which is
+ * the worst possible moment to learn that four edges never got a label. So the
+ * page asks the control plane the same question the register path asks
+ * (`POST /v1/graphs/validate`) and draws the answer beside the map.
+ *
+ * **It reports and never blocks.** A draft is expected to be incomplete for
+ * most of an interview — `map-document.ts`'s whole "to be defined" posture — so
+ * this panel disables no form, hides no action and refuses nothing. It is the
+ * same information the soundness gate would give, given early.
+ *
+ * The prose is `public/graph-soundness.js`'s, unmodified: the browser already
+ * renders the identical report shape with it on the graph editor, and a second
+ * wording of the four rules would be a second thing to keep in step with the
+ * control plane. What is added here is only markup and escaping — the lines
+ * name node and edge ids that came out of an agent's draft, and they pass
+ * through `escapeHtml` like every other borrowed string on this page (D4).
+ *
+ * @param report The control plane's `{valid, structure, soundness}`, or nothing
+ *   at all when there is no draft to judge yet.
+ * @returns The panel's inner HTML, or an empty string when there is none.
+ */
+export function renderMapProgress(report: unknown): string {
+  if (report === undefined || report === null) return '';
+
+  const lines = renderReport(report)
+    .map((line) => `<p class="problem">${escapeHtml(line)}</p>`)
+    .join('');
+
+  return `<div class="problems"><p class="lead">${PROGRESS_LEAD}</p>${lines}</div>`;
 }

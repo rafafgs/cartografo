@@ -415,6 +415,23 @@ export interface Conversation {
   done: boolean;
 }
 
+/**
+ * What the control plane's soundness gate says about one document (t460).
+ *
+ * The same shape three answers carry — the `422 invalid_graph` of `POST
+ * /v1/graphs`, the `422` of `POST /v1/proposals/:id/apply`, and the plain 200
+ * of `POST /v1/graphs/validate` — which is why there is one type here and not
+ * one per route. `target` is `unknown` because it genuinely varies: a node id
+ * for three of the four rules, `{from, to}` for the fourth
+ * (`packages/core/src/domain/graph.ts`), and the renderer that turns a
+ * violation into a sentence is the one place that narrows it.
+ */
+export interface GraphReport {
+  valid: boolean;
+  structure: { valid: boolean; errors: { code: string; message: string; target: unknown }[] };
+  soundness: { valid: boolean; violations: { rule: string; target: unknown }[] };
+}
+
 /** A lineage, as `GET /v1/graphs/:id` returns it inside `{graph}` (D8: `id` IS the class). */
 export interface GraphSummary {
   id: string;
@@ -984,6 +1001,29 @@ export class ApiClient {
       `/v1/graphs${queryString(filter)}`,
       { method: 'POST', body: document },
     );
+  }
+
+  /**
+   * What the soundness gate WOULD say about a document nobody registered (t460).
+   *
+   * The one read of this class that judges instead of fetching, and the one
+   * that takes no scope: `POST /v1/graphs/validate` writes nothing and needs no
+   * project, because its answer is a pure function of the document handed to it.
+   *
+   * It never throws for an invalid document — that is the whole point of the
+   * route. `{valid: false, …}` is a normal 200, and an `ApiError` from here
+   * means the control plane could not be asked at all, which is a different
+   * fact and stays a different signal.
+   *
+   * @param document The candidate graph document, however incomplete.
+   * @returns The combined structure/soundness report.
+   * @throws {ApiError} When the control plane refuses the call itself.
+   */
+  async validateGraphDocument(document: unknown): Promise<GraphReport> {
+    return await this.#request<GraphReport>('/v1/graphs/validate', {
+      method: 'POST',
+      body: document,
+    });
   }
 
   async #get<T>(path: string): Promise<T> {

@@ -53,7 +53,7 @@ import type {
   SessionLog,
   Settings,
 } from './client.ts';
-import { renderChat, renderMap } from './interview.ts';
+import { draftToDraw, renderChat, renderMap, renderMapProgress } from './interview.ts';
 import { renderMapDocument, type MapDocumentGraph } from './map-document.ts';
 import { extractMcpHint, type McpCatalog, type McpServerSuggestion } from './mcp-catalog.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
@@ -1727,18 +1727,29 @@ mount(document, function (url) { return fetch(url); }, ${interviewId});
  *
  * The ids are the contract `/interview/:id/fragment` and `interview.js` share:
  * whatever is between `<div id="chat">` and its close is exactly the string the
- * fragment answers with, and the same for `#map`. Keeping the headings OUTSIDE
- * the two divs is what makes that true — a swap replaces the content and never
- * the furniture around it.
+ * fragment answers with, and the same for `#map` and, since t460, for
+ * `#map-progress`. Keeping the headings OUTSIDE the divs is what makes that
+ * true — a swap replaces the content and never the furniture around it.
  */
-function twoColumns(left: { title: string; html: string }, right: { title: string; html: string }): string {
+function twoColumns(
+  left: { title: string; html: string },
+  right: { title: string; html: string; progress?: string },
+): string {
+  // Rendered only for a caller that HAS a panel — the live interview — and
+  // then always, even empty: the island reads `#map-progress` once at mount,
+  // so a div that appears only when there is something to say is a div the
+  // poll can never fill. `/graphs/:class` passes nothing and gets nothing:
+  // there is no progress to report on a map that is already registered.
+  const progress =
+    right.progress === undefined ? '' : `\n    <div id="map-progress">${right.progress}</div>`;
+
   return `<div class="interview">
   <section>
     <h2>${escapeHtml(left.title)}</h2>
     <div id="chat">${left.html}</div>
   </section>
   <section class="map-document">
-    <h2>${escapeHtml(right.title)}</h2>
+    <h2>${escapeHtml(right.title)}</h2>${progress}
     <div id="map">${right.html}</div>
   </section>
 </div>`;
@@ -1970,18 +1981,56 @@ export async function readInterviewChat(
   conversation: Conversation | null;
   suggestions: McpServerSuggestion[];
   engine: string;
+  progress: string;
 }> {
   const [conversation, engine] = await Promise.all([
     client.getConversation(interviewId, { project_id: projectId }),
     interviewEngine(client, projectId),
   ]);
-  if (conversation === null) return { conversation: null, suggestions: [], engine };
+  if (conversation === null) return { conversation: null, suggestions: [], engine, progress: '' };
 
-  return {
-    conversation,
-    suggestions: await interviewSuggestions(mcpCatalog, conversation.pending),
-    engine,
-  };
+  // Both depend on the conversation and on nothing in each other, so they go out
+  // together — the same reasoning that pairs the two reads above.
+  const [suggestions, progress] = await Promise.all([
+    interviewSuggestions(mcpCatalog, conversation.pending),
+    interviewProgress(client, conversation.draft),
+  ]);
+
+  return { conversation, suggestions, engine, progress };
+}
+
+/**
+ * The draft's remaining problems, judged by the control plane (t460, FR6).
+ *
+ * Here and not in `interview.ts` because it is the CALL: that module stays
+ * pure, and this is the one place either the page or the poll asks. Both read
+ * it off {@link readInterviewChat}, which is what keeps the pinned promise of
+ * `interviewFragment` — the page and the poll cannot come to say different
+ * things — true for the panel as well as for the two columns.
+ *
+ * A draft with no graph is not judged at all: there is nothing to judge, and
+ * `renderMapProgress` draws nothing for it, exactly as `renderMap` draws its
+ * placeholder.
+ *
+ * **A control plane that will not answer costs the page nothing.** The panel is
+ * informational; an interview whose validation read failed is still an
+ * interview somebody can answer, register and export, so the failure degrades
+ * to an empty panel instead of taking the page down with it. It is the same
+ * grace `interviewSuggestions`'s catalogue already gets (t373 AT12).
+ *
+ * @param client Client of the public API.
+ * @param draft The projection's `draft`, as it came.
+ * @returns The panel's inner HTML, empty when there is nothing to show.
+ */
+async function interviewProgress(client: ApiClient, draft: unknown): Promise<string> {
+  const drawable = draftToDraw(draft);
+  if (drawable === undefined) return '';
+
+  try {
+    return renderMapProgress(await client.validateGraphDocument(drawable.graph));
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -1989,9 +2038,14 @@ export async function readInterviewChat(
  *
  * It reads the conversation projection and nothing about the mechanism: the
  * page never joins a timeline against a queue against a session listing, and it
- * never learns what is underneath. What it renders is `interview.ts`'s two
+ * never learns what is underneath. What it renders is `interview.ts`'s three
  * functions, which is also what `/interview/:id/fragment` renders — so the full
  * page and the poll cannot come to say different things.
+ *
+ * The third of them is t460's progress panel, and it is the only part of this
+ * page that asks the control plane a question about the draft rather than about
+ * the interview: `POST /v1/graphs/validate`, resolved in `readInterviewChat`
+ * with everything else the two routes share.
  *
  * @param client Client of the public API.
  * @param interviewId The interview to show.
@@ -2006,7 +2060,7 @@ export async function interviewPage(
   scope: ProjectScope = DEFAULT_SCOPE,
   mcpCatalog: McpCatalog = EMPTY_CATALOG,
 ): Promise<Page> {
-  const { conversation, suggestions, engine } = await readInterviewChat(
+  const { conversation, suggestions, engine, progress } = await readInterviewChat(
     client,
     mcpCatalog,
     interviewId,
@@ -2022,7 +2076,7 @@ export async function interviewPage(
         title: 'the exchange',
         html: renderChat(conversation, interviewId, suggestions, engine),
       },
-      { title: 'the map so far', html: renderMap(conversation.draft) },
+      { title: 'the map so far', html: renderMap(conversation.draft), progress },
     ) +
     `\n${INTERVIEW_OPTIONS_SCRIPT}\n${interviewIsland(interviewId, conversation.done)}`;
 

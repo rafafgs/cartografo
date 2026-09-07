@@ -75,6 +75,7 @@ import {
   type ContractProblem,
   type ContractReport,
   type GraphDocument,
+  type GraphReport,
   type SoundnessReport,
   type StructureReport,
 } from '../domain/graph.ts';
@@ -183,6 +184,88 @@ const REGISTER_GRAPH_SCHEMA = {
 } as const;
 
 /**
+ * The report `POST /graphs/validate` answers with, declared field by field (t460, FR3).
+ *
+ * Fastify SERIALIZES a response against its schema and drops whatever the
+ * schema does not name, so the shape below is not documentation — it is the
+ * difference between a client reading `{code, message, target}` and reading
+ * `{}`. `POST /graphs` gets away with `OPEN_OBJECT_SCHEMA` because its refusal
+ * rides inside `ERROR_RESPONSE_SCHEMA`'s open envelope; here the report IS the
+ * answer, and every key of it has to survive.
+ *
+ * `target` is left schema-open on purpose, and it is the one field that has to
+ * be: `reachable`, `terminates` and `node_with_contract` name a node with a
+ * STRING, while `edge_with_condition` names an edge with `{from, to}`
+ * (`domain/graph.ts`). Declaring either shape would coerce or silently erase
+ * the other, which is exactly the failure this constant exists to prevent.
+ */
+const GRAPH_REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    valid: { type: 'boolean' },
+    structure: {
+      type: 'object',
+      properties: {
+        valid: { type: 'boolean' },
+        errors: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { code: { type: 'string' }, message: { type: 'string' }, target: {} },
+            required: ['code', 'message'],
+            additionalProperties: true,
+          },
+        },
+      },
+      required: ['valid', 'errors'],
+      additionalProperties: true,
+    },
+    soundness: {
+      type: 'object',
+      properties: {
+        valid: { type: 'boolean' },
+        violations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { rule: { type: 'string' }, target: {} },
+            required: ['rule'],
+            additionalProperties: true,
+          },
+        },
+      },
+      required: ['valid', 'violations'],
+      additionalProperties: true,
+    },
+  },
+  required: ['valid', 'structure', 'soundness'],
+  additionalProperties: true,
+} as const;
+
+/**
+ * `POST /graphs/validate` — the same gate, asked instead of enforced (t460, FR1).
+ *
+ * One status, and only one. `POST /graphs` and `POST /proposals/:id/apply`
+ * answer `422` for an unsound document because a WRITE did not happen; this
+ * route writes nothing and is asked about a document that is still being drawn,
+ * where "not sound yet" is the ordinary answer and not a refusal. A `422` here
+ * would make the caller's error path the normal path, and the caller is a page
+ * that draws a draft's remaining problems while somebody is still answering
+ * questions (`docs/spec/screen-interview.md`).
+ *
+ * The body is open for the same reason `POST /graphs`'s is, and the description
+ * says so in the same words.
+ */
+const VALIDATE_GRAPH_SCHEMA = {
+  description: `${GRAPH_DOCUMENT_DESCRIPTION} This route only JUDGES it: it writes nothing, needs no project, and always answers 200 — an invalid document is an answer here, never a refusal.`,
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    200: GRAPH_REPORT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
  * `POST /graphs/:id/fork` — D13's branch, and the statuses it already answers.
  *
  * No `422`: forking judges the base and the body, never a document's soundness —
@@ -251,6 +334,13 @@ const READ_BY_ID_SCHEMA = {
 export function registerGraphs(app: FastifyInstance, db: Database): void {
   app.post('/graphs', { schema: REGISTER_GRAPH_SCHEMA }, (request, reply) =>
     withValidation(reply, () => create(db, request, reply)),
+  );
+
+  // Before nothing and after nothing in particular: `/graphs/validate` is a
+  // literal segment and the only other POST under `/graphs` takes `/:id/…`, so
+  // the two cannot shadow each other whatever order they are declared in.
+  app.post('/graphs/validate', { schema: VALIDATE_GRAPH_SCHEMA }, (request, reply) =>
+    withValidation(reply, () => validate(request)),
   );
 
   app.post<IdParam>('/graphs/:id/fork', { schema: FORK_GRAPH_SCHEMA }, (request, reply) =>
@@ -510,6 +600,34 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
         contracts: outcome.contracts,
       };
   }
+}
+
+/**
+ * `POST /graphs/validate` — what the gate WOULD say, asked of a draft (t460, FR1/FR2).
+ *
+ * The whole route, and it is deliberately three lines: it is
+ * {@link registerGraphDocument}'s first step with nothing after it. No `db`, no
+ * scope, no write, no event — a validation is a pure function of the document,
+ * and giving this route a project would invent a partition for an answer that
+ * does not depend on one.
+ *
+ * That is also why it takes no {@link Database}: the reason a caller wants this
+ * route is that the document is NOT in the database yet, and might never be. The
+ * one judgement `validateGraph` cannot make is the pinned-skill contract check
+ * (`validateContracts`), which needs the registry — it is not attempted here,
+ * and a draft mid-interview would fail it by construction anyway, since its pins
+ * close only at registration (`docs/spec/interview.md` §5).
+ *
+ * The report is handed back exactly as it came, under no envelope: it is the
+ * same `{valid, structure, soundness}` that rides inside the `422 invalid_graph`
+ * of `POST /graphs` and of `POST /proposals/:id/apply`, and one wire vocabulary
+ * for one judgement is what lets a client render all three with one renderer.
+ *
+ * @param request The request, whose body is the candidate document.
+ * @returns The combined report; the status is always the schema's single 200.
+ */
+function validate(request: FastifyRequest): GraphReport {
+  return validateGraph(request.body);
 }
 
 /**

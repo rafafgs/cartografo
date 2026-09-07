@@ -1,0 +1,190 @@
+{
+  "problem_class": "map-design",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Map design — the interview that draws a map",
+    "description": "Factory graph 4 (RF-14 to RF-20): somebody describes a problem they keep solving by hand, and this map interviews them into a map of their own. One question per session; every answer re-dispatches the same node with the whole exchange in the prompt; the last session hands back a draft bundle — a graph plus one manifest per node — for a person to register or export. The interview is itself a map, not special code.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-09-06",
+    "source": "written for t360, from §3.3 of the requirements (v2.7)"
+  },
+  "nodes": [
+    {
+      "id": "interview",
+      "role": "cartographer",
+      "node_type": "work",
+      "description": "Asks one question per session and reports the map under construction after every answer. It stays on this node for as long as it has something to ask: a session that asks blocks the job here, and the answer re-dispatches this same node.",
+      "escalation_policy": "always",
+      "skill_ref": {
+        "id": "interview",
+        "version": "1.0.0",
+        "hash": "sha256:bc9a1ef73e666bb4eaee6a09bde3dd72bcb9a59c0449b8e740bade0e162e2402"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "job"
+          ],
+          "properties": {
+            "job": {
+              "type": "object",
+              "description": "the problem in the person's own words"
+            },
+            "perguntas_respondidas": {
+              "type": "array",
+              "description": "every question of this interview that already came back",
+              "items": {
+                "type": "object"
+              }
+            },
+            "environment": {
+              "type": "object",
+              "description": "the MCP servers this engine reaches, and the registered classes that read like this request",
+              "properties": {
+                "mcp_servers": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "similar_classes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "done",
+            "draft"
+          ],
+          "properties": {
+            "done": {
+              "type": "boolean",
+              "description": "false while there is still something to ask; true on the last turn, which asks nothing"
+            },
+            "draft": {
+              "type": "object",
+              "required": [
+                "graph",
+                "skills"
+              ],
+              "description": "the whole map as it stands after this turn, never a patch",
+              "properties": {
+                "graph": {
+                  "type": "object"
+                },
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "produces": "interview",
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "Read the session's own output and answer both, quoting the exact text that supports each answer. 1. Does the turn end with AT MOST ONE `input-request` block, and does that block ask exactly one thing — no compound question, no list of decisions? 2. Does the reported draft still carry everything the previous turns settled, plus what this turn's answer added? Name any field that was present before and is missing now.",
+            "required_evidence": true,
+            "description": "The two ways this node fails silently: asking two things at once, which makes an answer unattributable, and reporting a draft that lost what an earlier turn had already settled."
+          }
+        ]
+      }
+    },
+    {
+      "id": "deliver",
+      "role": "cartographer",
+      "node_type": "work",
+      "description": "Writes the draft out as a bundle directory, holds it against the graph validator, and reports it as the job's result. It registers nothing: that is a person's decision, at the screen.",
+      "skill_ref": {
+        "id": "deliver-bundle",
+        "version": "1.0.0",
+        "hash": "sha256:0917952ef6c172e81c50968a42baa9a741ee8b17445bb3500425f3e4c5a73c71"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "interview"
+          ],
+          "properties": {
+            "interview": {
+              "type": "object",
+              "required": [
+                "draft"
+              ],
+              "description": "the interview's own bucket; its LAST turn is the one that survives the merge",
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "draft": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "bundle",
+            "checked",
+            "note"
+          ],
+          "properties": {
+            "bundle": {
+              "type": "object",
+              "description": "the draft written out and checked — what the next step registers or exports"
+            },
+            "checked": {
+              "type": "object",
+              "description": "what the validator answered, so a person reads a verdict and not a claim"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "one line: what the map covers, and anything the interview left rough"
+            }
+          }
+        },
+        "produces": "bundle",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "node scripts/validate-graph.mjs draft/graph.json",
+            "description": "The draft is held against the same validator that guards the bundles committed in this repository — structure and the four soundness rules. One violation is EXPECTED and is not a defect: `node_with_contract` also asks each node for a pinned `hash`, and a draft has none, because computing the pin belongs to whoever registers (D4). Report it as such; every other violation is a real one."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "interview",
+      "to": "deliver",
+      "condition": "always",
+      "description": "The only edge in the map, and there is no self-loop beside it: asking blocks the job on `interview` itself, and answering re-dispatches that same node. A session that asked nothing is a session that finished interviewing."
+    }
+  ],
+  "initial_node": "interview",
+  "final_nodes": [
+    "deliver"
+  ],
+  "custom_fields": []
+}

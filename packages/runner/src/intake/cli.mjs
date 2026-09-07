@@ -108,6 +108,7 @@ async function main() {
       adapter: probedEngine(),
       request: parsed.options.request,
       className: parsed.options.className,
+      projectId: parsed.options.projectId,
       workingDir,
       log: (message) => process.stdout.write(`intake: ${message}\n`),
     });

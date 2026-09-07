@@ -45,7 +45,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -60,7 +60,10 @@ import { createMainLineAdvancer } from '../../src/dispatch/advance-main-line.ts'
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
 import { createExecutorEnvironmentResolver } from '../../src/dispatch/resolve-executor-environment.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
-import type { WorktreeManager } from '../../src/dispatch/session-worktree.ts';
+import {
+  GitWorktreeManager,
+  type WorktreeManager,
+} from '../../src/dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
 
@@ -609,6 +612,184 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
     calls.filter((call) => call.endsWith('/unblocks') || /^PATCH \/v1\/jobs\/\d+$/.test(call)),
     [],
     'the two workarounds this ticket replaces are neither of them used here',
+  );
+});
+
+/**
+ * The demo, entered the way an operator enters it: one click on the screen
+ * (t409, AT7).
+ *
+ * Everything above this line is the crossing as a TEST wires it — three manual
+ * API calls to register the manifests, register the graph and open a job, and a
+ * pair of scratch repositories built by hand. What t409 adds is the one path a
+ * person actually has: `POST /v1/examples/software-development/run`, which
+ * registers the bundle, COPIES `demo/repo/` into the project's configured
+ * `workspace_root` as a git repository, and opens the demo job on `refine`.
+ *
+ * So this case wires the real machinery around that one call. The worktrees are
+ * cut by the real {@link GitWorktreeManager} from the provisioned workspace —
+ * not the directory-per-session stand-in the case above uses — because the
+ * whole reason this class needed a demo repository at all is that every one of
+ * its nodes is dispatched into a worktree, and an empty repository is not
+ * something `develop` could be dispatched into honestly.
+ *
+ * The bench and the repository the work is cut from are the SAME directory
+ * here, which is the deployment `cartografo up` produces: one workspace, no
+ * `--test-bench-path`, no `--bench-install-command`. `advance-main-line.ts`
+ * covers that shape explicitly — it skips the fetch when the two paths agree —
+ * and what is left to prove is that the fast-forward still lands.
+ *
+ * The commit `integrate` reports is made here, before the first tick, exactly
+ * as the case above makes its own: the engine is fake and commits nothing, and
+ * a merge commit no repository has is a commit no main line can be advanced
+ * onto. What it stands in for is the branch a real `develop` session would have
+ * left behind in this very workspace.
+ *
+ * The scope stops at `deploy` being the node the job is ON. Running it is the
+ * case above's business; what this one is about is that the demo crosses
+ * `refine → develop → integrate → test` from a click, against a repository
+ * whose `npm test` a person can run and watch pass.
+ */
+test('t409 AT7 — the demo bundle provisions its workspace and crosses it from one click', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t409-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const workspace = path.join(root, 'workspace');
+
+  // The control plane is started outside a checkout (a fresh temp cwd), so the
+  // examples root has to be named: `factory-graphs/` is a directory of this
+  // repository and not of the package.
+  const { url: baseUrl, token } = await bootCore(t, {
+    env: { CARTOGRAFO_EXAMPLES_ROOT: path.join(REPO_ROOT, 'factory-graphs') },
+  });
+
+  await api(baseUrl, token, 'PATCH', '/v1/settings', { workspace_root: workspace });
+
+  const ran = await api<{ job: Work; execution_id: number; registered: boolean }>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/examples/software-development/run',
+    undefined,
+    201,
+  );
+  assert.equal(ran.registered, true, 'the click is what registered the class');
+  assert.equal(ran.job.current_node_id, 'refine', 'and the demo job opens on the entry node');
+  assert.equal(
+    git(workspace, 'rev-parse', '--abbrev-ref', 'HEAD'),
+    'main',
+    'the provisioned workspace is on the main line the class declares',
+  );
+
+  const base = git(workspace, 'rev-parse', 'HEAD');
+
+  // The commit a real `develop` session would have left on its branch. On a
+  // branch of the workspace, and never on `main`: what this case is about is
+  // that something else moves the main line.
+  git(workspace, 'checkout', '--quiet', '-b', 'demo-integration');
+  writeFileSync(path.join(workspace, INTEGRATED_FILE), INTEGRATED_TEXT);
+  git(workspace, 'add', '-A');
+  git(workspace, 'commit', '--quiet', '-m', 'what the demo integration reconciled');
+  const integrated = git(workspace, 'rev-parse', 'HEAD');
+  git(workspace, 'checkout', '--quiet', 'main');
+  assert.notEqual(integrated, base, 'the main line really has somewhere to move');
+
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t409-demo', 'the one that crosses the shipped demo');
+
+  let currentLines = reports(REFINADO);
+  let currentRecord = path.join(root, 'refine.json');
+  const controller = new Controller({
+    client,
+    runnerId: 'runner-t409-demo',
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        executorEnvironment: createExecutorEnvironmentResolver({
+          testBenchPath: workspace,
+          referenceMode: 'ponta_do_principal',
+          mainBranch: 'main',
+        }),
+        // No `installCommand`: `up.ts` passes none, and a demo that only worked
+        // with a flag nobody types would be a demo of something else.
+        advanceMainLine: createMainLineAdvancer({
+          testBenchPath: workspace,
+          repoRoot: workspace,
+          mainBranch: 'main',
+        }),
+        engines: {
+          'claude-code': {
+            adapter: new ClaudeCodeAdapter({
+              commandBuilder: (spec) => ({
+                command: process.execPath,
+                args: [FAKE_ENGINE, ...buildCommand(spec).args],
+              }),
+              graceMs: 300,
+            }),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        // The real one, cutting real worktrees out of the provisioned
+        // workspace: that is what the copied repository is FOR.
+        worktrees: new GitWorktreeManager({
+          repoRoot: workspace,
+          worktreesRoot: path.join(root, 'worktrees'),
+        }),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: currentLines, FAKE_ENGINE_RECORD: currentRecord },
+      })(jobId),
+  });
+
+  const jobNow = async (): Promise<Work> =>
+    await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${ran.job.id}`);
+
+  assert.ok(await controller.tick(), 'refine was picked up');
+  assert.equal((await jobNow()).current_node_id, 'develop');
+
+  currentLines = reports(DESENVOLVIDO);
+  currentRecord = path.join(root, 'develop-demo.json');
+  assert.ok(await controller.tick(), 'develop was picked up');
+  assert.equal((await jobNow()).current_node_id, 'integrate');
+
+  currentLines = reports(INTEGRADO(integrated));
+  currentRecord = path.join(root, 'integrate-demo.json');
+  assert.ok(await controller.tick(), 'integrate was picked up');
+  const afterIntegrate = await jobNow();
+  assert.equal(afterIntegrate.blocked, false, afterIntegrate.block_reason ?? '');
+  assert.equal(afterIntegrate.current_node_id, 'test');
+  assert.equal(
+    git(workspace, 'rev-parse', 'main'),
+    integrated,
+    'the executor fast-forwarded the workspace’s own main line onto the reported commit',
+  );
+
+  currentLines = reports(TESTADO);
+  currentRecord = path.join(root, 'test-demo.json');
+  assert.ok(await controller.tick(), 'the gate was picked up');
+  const afterGate = await jobNow();
+  assert.equal(afterGate.blocked, false, afterGate.block_reason ?? '');
+  assert.equal(
+    afterGate.current_node_id,
+    'deploy',
+    'the gate approved, and the demo’s declared crossing is over',
+  );
+
+  // Run here and not by the runner, which executes no declared command of any
+  // class (t409's own scope note): what this pins is a fact about the FIXTURE —
+  // that the repository the demo ships really does have a test suite that
+  // passes — independently of what a session would or would not do with it.
+  const suite = spawnSync('npm', ['test'], { cwd: workspace, encoding: 'utf8' });
+  assert.equal(
+    suite.status,
+    0,
+    `\`npm test\` in the provisioned workspace failed:\n${suite.stdout ?? ''}\n${suite.stderr ?? ''}`,
   );
 });
 

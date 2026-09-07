@@ -598,6 +598,15 @@ tr.attention td:first-child {
   color: var(--soft);
 }
 
+.secondary-token {
+  color: var(--soft);
+}
+
+.map-progress {
+  font-size: .82rem;
+  color: var(--soft);
+}
+
 .empty {
   color: var(--soft);
   font-style: italic;

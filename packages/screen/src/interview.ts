@@ -50,7 +50,7 @@
  */
 
 import type { Conversation, ConversationTurn, PendingQuestion } from './client.ts';
-import { renderMapDocument, type MapDocumentGraph, type MapDocumentManifest } from './map-document.ts';
+import { renderMapDocument, renderStepProgress, type MapDocumentGraph, type MapDocumentManifest } from './map-document.ts';
 import type { McpServerSuggestion } from './mcp-catalog.ts';
 import { escapeHtml } from './pages.ts';
 import { renderReport } from './public/graph-soundness.js';
@@ -355,13 +355,15 @@ export function renderChat(
 }
 
 /**
- * The right column: the map as it stands, through the one renderer there is.
+ * The right column: how far the map is (t462), then the map itself.
  *
  * The manifests handed to `renderMapDocument` are the draft's own, and they
  * carry no `hash` while an interview is running — so RF-20's external-I/O line
  * never appears mid-interview, by construction rather than by omission
- * (`matchesPin` wants all three of id, version and hash). The same renderer
- * draws it whole on `/graphs/:class`, where the pins are closed.
+ * (`matchesPin` wants all three of id, version and hash). `renderMapDocument`
+ * also draws the map whole on `/graphs/:class`, where the pins are closed —
+ * that card has no progress line above it (t462, out of scope): it is always
+ * complete post-registration.
  *
  * @param draft The projection's `draft`, as it came.
  * @returns The column's inner HTML, ready to drop into `#map`.
@@ -369,7 +371,7 @@ export function renderChat(
 export function renderMap(draft: unknown): string {
   const drawable = draftToDraw(draft);
   if (drawable === undefined) return `<p class="empty">${NOTHING_TO_DRAW}</p>`;
-  return renderMapDocument(drawable.graph, drawable.skills);
+  return renderStepProgress(drawable.graph) + renderMapDocument(drawable.graph, drawable.skills);
 }
 
 /**

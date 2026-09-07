@@ -78,7 +78,7 @@ export interface MapDocumentCheck {
 
 /** `contract.input_schema`/`output_schema`, read only for what this document needs from it. */
 export interface MapDocumentSchema {
-  properties?: Record<string, { type?: unknown } | undefined>;
+  properties?: Record<string, { type?: unknown; title?: unknown } | undefined>;
   required?: unknown[];
 }
 
@@ -108,12 +108,15 @@ export interface MapDocumentEdge {
   from?: unknown;
   to?: unknown;
   condition?: unknown;
+  description?: unknown;
 }
 
 /** The graph document this module renders. */
 export interface MapDocumentGraph {
   nodes: MapDocumentNode[];
   edges?: MapDocumentEdge[];
+  initial_node?: unknown;
+  final_nodes?: unknown;
 }
 
 /**
@@ -169,20 +172,36 @@ function nodeHeading(node: MapDocumentNode): string {
 }
 
 /**
+ * Whether a `contract.input_schema`/`output_schema` has anything to show at
+ * all — a plain object with at least one declared property or one `required`
+ * entry. Extracted (FR8) so the step-progress count can never disagree with
+ * what `renderSchemaField` itself decides is "to be defined".
+ */
+function schemaIsFilled(schema: unknown): schema is Record<string, unknown> {
+  if (!isPlainObject(schema)) return false;
+  const properties = isPlainObject(schema.properties) ? schema.properties : {};
+  const propertyNames = Object.keys(properties);
+  const required = Array.isArray(schema.required) ? schema.required.filter(isFilledString) : [];
+  return propertyNames.length > 0 || required.length > 0;
+}
+
+/**
  * `needs`/`produces`, by the identical rule (FR3): a property list, each name
  * marked `required` when it appears in the schema's own `required`, with its
  * declared `type` shown beside it when present. "To be defined" when the
  * schema is absent, not an object, or has neither a property nor a required
  * entry to show.
+ *
+ * A property whose `title` is a filled string leads with that display name,
+ * demoting the key itself to a secondary mono token (FR2); a property with no
+ * `title` renders exactly as before — no derived label, ever (FR4).
  */
 function renderSchemaField(schema: unknown): string {
-  if (!isPlainObject(schema)) return TO_BE_DEFINED;
+  if (!schemaIsFilled(schema)) return TO_BE_DEFINED;
 
   const properties = isPlainObject(schema.properties) ? schema.properties : {};
   const propertyNames = Object.keys(properties);
   const required = Array.isArray(schema.required) ? schema.required.filter(isFilledString) : [];
-
-  if (propertyNames.length === 0 && required.length === 0) return TO_BE_DEFINED;
 
   const names = [...propertyNames, ...required.filter((name) => !propertyNames.includes(name))];
   const items = names.map((name) => {
@@ -190,7 +209,12 @@ function renderSchemaField(schema: unknown): string {
     const type = isPlainObject(propertyDef) && isFilledString(propertyDef.type) ? propertyDef.type : undefined;
     const typePart = type !== undefined ? ` <code>${escapeHtml(type)}</code>` : '';
     const requiredPart = required.includes(name) ? ' <span class="required">required</span>' : '';
-    return `<li>${escapeHtml(name)}${typePart}${requiredPart}</li>`;
+    const title = isPlainObject(propertyDef) && isFilledString(propertyDef.title) ? propertyDef.title : undefined;
+    const namePart =
+      title !== undefined
+        ? `<span class="display-name">${escapeHtml(title)}</span> <code class="secondary-token">${escapeHtml(name)}</code>`
+        : escapeHtml(name);
+    return `<li>${namePart}${typePart}${requiredPart}</li>`;
   });
   return `<ul>${items.join('')}</ul>`;
 }
@@ -214,13 +238,26 @@ function renderCheck(check: unknown): string {
   return `<li>${description}</li>`;
 }
 
+/**
+ * Whether `contract.checks` has anything to show at all. Extracted (FR8)
+ * for the same reason as `schemaIsFilled`.
+ */
+function checksAreFilled(checks: unknown): checks is unknown[] {
+  return Array.isArray(checks) && checks.length > 0;
+}
+
 /** `verified_by` ← `contract.checks`: "to be defined" when empty or absent, one line per check otherwise. */
 function renderChecks(checks: unknown): string {
-  if (!Array.isArray(checks) || checks.length === 0) return TO_BE_DEFINED;
+  if (!checksAreFilled(checks)) return TO_BE_DEFINED;
   return `<ul>${checks.map(renderCheck).join('')}</ul>`;
 }
 
-/** A gate's exits (FR4): every edge leaving this node, or the fixed placeholder when there is none. */
+/**
+ * A gate's exits (FR4): every edge leaving this node, or the fixed
+ * placeholder when there is none. An edge whose `description` is a filled
+ * string leads with that sentence, demoting `condition` to a secondary mono
+ * token (FR5); an edge with no `description` renders exactly as before (FR6).
+ */
 function renderExits(node: MapDocumentNode, edges: MapDocumentEdge[], nodesById: Map<string, MapDocumentNode>): string {
   const outgoing = edges.filter((edge) => isFilledString(edge.from) && edge.from === node.id);
 
@@ -234,7 +271,12 @@ function renderExits(node: MapDocumentNode, edges: MapDocumentEdge[], nodesById:
     const destinationIdHtml = destinationId !== undefined ? escapeHtml(destinationId) : UNKNOWN_DESTINATION;
     const destinationLabel = destinationId !== undefined ? roleDescriptionLabel(nodesById.get(destinationId)) : undefined;
     const destination = destinationLabel === undefined ? destinationIdHtml : `${destinationIdHtml} (${destinationLabel})`;
-    return `<li>${condition} → ${destination}</li>`;
+    const description = isFilledString(edge.description) ? edge.description : undefined;
+    const exitPart =
+      description !== undefined
+        ? `<span class="exit-sentence">${escapeHtml(description)}</span> <code class="secondary-token">${condition}</code> → ${destination}`
+        : `${condition} → ${destination}`;
+    return `<li>${exitPart}</li>`;
   });
   return `<div data-field="exits"><ul>${items.join('')}</ul></div>`;
 }
@@ -315,4 +357,46 @@ export function renderMapDocument(graph: MapDocumentGraph, manifests?: MapDocume
 
   const items = nodes.map((node) => renderNode(node, edges, nodesById, manifests));
   return `<ol>${items.join('')}</ol>`;
+}
+
+/**
+ * Whether a node counts as "defined" for the step-progress line (FR8): a
+ * plain-object `contract` whose `input_schema` and `output_schema` are both
+ * `schemaIsFilled` and whose `checks` is `checksAreFilled` — the identical
+ * rule the node's own three fields already use to decide "to be defined", so
+ * the count can never disagree with what the block itself shows.
+ */
+function nodeIsDefined(node: MapDocumentNode): boolean {
+  const contract = node.contract;
+  if (!isPlainObject(contract)) return false;
+  return schemaIsFilled(contract.input_schema) && schemaIsFilled(contract.output_schema) && checksAreFilled(contract.checks);
+}
+
+/**
+ * "How far it is" (FR10): a single line above the map, derived rather than
+ * asked for, so it can never disagree with what the steps themselves show.
+ *
+ * Three states, in the founder's own exact wording, no percentage anywhere:
+ * - not yet enumerated (`initial_node`/`final_nodes` not both settled) — a
+ *   bare count of steps seen so far;
+ * - enumerated but incomplete — how many of the known total are defined;
+ * - enumerated and complete — all of them are.
+ *
+ * Never throws (FR11): `graph.nodes` not being an array reads as `total = 0`,
+ * the same defensive read `renderMapDocument` itself makes.
+ */
+export function renderStepProgress(graph: MapDocumentGraph): string {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  const total = nodes.length;
+  const defined = nodes.filter(nodeIsDefined).length;
+
+  const enumerated = isFilledString(graph?.initial_node) && Array.isArray(graph?.final_nodes) && graph.final_nodes.length > 0;
+
+  if (!enumerated) {
+    return `<p class="map-progress" data-panel="step-progress">${total} steps so far</p>`;
+  }
+  if (defined < total) {
+    return `<p class="map-progress" data-panel="step-progress">step ${defined} of ${total} · ${total - defined} still to define</p>`;
+  }
+  return `<p class="map-progress" data-panel="step-progress">${total} of ${total} defined</p>`;
 }

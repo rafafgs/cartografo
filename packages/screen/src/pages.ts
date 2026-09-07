@@ -397,6 +397,20 @@ function jobMetaHtml(job: Job, now: number, renderedAt: string): string {
 }
 
 /**
+ * Where a job's own detail page lives (t459 FR1).
+ *
+ * An interview is a job like any other, but its door back is `/interview/:id`
+ * — the two-column exchange, not the job console — and it is one nobody drew
+ * until this ticket. `entry_node_id` is written once at job creation and never
+ * updated afterwards (`packages/core/src/repositories/job.ts`), so it is a
+ * durable signal for "this job is an interview" across the job's whole life,
+ * cheaper than a second API field carried for one consumer.
+ */
+function jobHref(job: Job): string {
+  return job.entry_node_id === INTERVIEW_ENTRY_NODE ? `/interview/${job.id}` : `/jobs/${job.id}`;
+}
+
+/**
  * One job, as a card — the shape a band takes at {@link ROW_MODE_THRESHOLD} or
  * under.
  *
@@ -411,7 +425,7 @@ function stateCard(job: Job, now: number, renderedAt: string): string {
     .join(' ');
   return `<article data-trabalho="${job.id}" class="${classes}">
       <div class="id">#${job.id}</div>
-      <a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}
+      <a href="${jobHref(job)}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}
       ${jobMetaHtml(job, now, renderedAt)}
       ${blockReasonHtml(job)}
       ${releaseFormHtml(job)}
@@ -432,7 +446,7 @@ function stateRow(job: Job, now: number, renderedAt: string): string {
   const duration = formatDuration(now - Date.parse(job.state_since));
   return `<tr data-trabalho="${job.id}"${rowClass}>
       <td>#${job.id}</td>
-      <td><a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}</td>
+      <td><a href="${jobHref(job)}">${escapeHtml(job.title)}</a>${demoBadgeHtml(job)}</td>
       <td>${escapeHtml(words)}</td>
       <td>${escapeHtml(job.current_node_id)}</td>
       <td>for ${escapeHtml(duration)} · as of ${escapeHtml(renderedAt)}</td>
@@ -1731,12 +1745,107 @@ function twoColumns(left: { title: string; html: string }, right: { title: strin
 }
 
 /**
- * `GET /interview` — where an interview starts (FR1).
+ * An interview still in progress (t459 FR3): its `entry_node_id` is the
+ * interview's own and it has not arrived at a final node yet.
  *
- * Two fields and no more. The class this map registers as is the interview's
- * OWN first question (RF-14, `docs/spec/interview.md` §2), so the form never
- * asks for something it is about to be asked anyway; and the class it travels
- * is not a choice at all.
+ * `entry_node_id` never changes after job creation (`jobHref`'s own doc
+ * comment), so this reads as "was this job born an interview and has it not
+ * finished" — the same cheap, durable signal `jobHref` uses.
+ */
+function isOpenInterview(job: Job): boolean {
+  return job.entry_node_id === INTERVIEW_ENTRY_NODE && !job.completed;
+}
+
+/**
+ * Still-open interviews, in the board's own order (t459 FR4): state priority
+ * first (`STATE_ORDER`), oldest wait first within a state (`sortByStateSince`)
+ * — never by creation date, the same reasoning `stateBoard` is built on.
+ */
+function orderStillOpenInterviews(jobs: Job[]): Job[] {
+  const byState = new Map<JobState, Job[]>();
+  for (const job of jobs) {
+    const group = byState.get(job.state) ?? [];
+    group.push(job);
+    byState.set(job.state, group);
+  }
+  return STATE_ORDER.flatMap((state) => sortByStateSince(byState.get(state) ?? []));
+}
+
+/**
+ * One still-open interview, as a card (t459 FR5) — `stateCard`'s shape,
+ * narrowed to what this page's own vocabulary allows: no block/unblock form
+ * and no demo badge, both job-console actions with no place here, and a link
+ * to `/interview/:id` rather than `jobHref` (every job in this list already is
+ * one, by construction).
+ */
+function interviewOpenCard(job: Job, now: number, renderedAt: string): string {
+  const classes = ['cartao', isAttentionState(job.state) ? 'attention' : null]
+    .filter((one): one is string => one !== null)
+    .join(' ');
+  return `<article data-trabalho="${job.id}" class="${classes}">
+      <div class="id">#${job.id}</div>
+      <a href="/interview/${job.id}">${escapeHtml(job.title)}</a>
+      ${jobMetaHtml(job, now, renderedAt)}
+    </article>`;
+}
+
+/** One still-open interview, as a table row past {@link ROW_MODE_THRESHOLD} (t459 FR6). */
+function interviewOpenRow(job: Job, now: number, renderedAt: string): string {
+  const rowClass = isAttentionState(job.state) ? ' class="attention"' : '';
+  return `<tr data-trabalho="${job.id}"${rowClass}>
+      <td>#${job.id}</td>
+      <td><a href="/interview/${job.id}">${escapeHtml(job.title)}</a></td>
+      <td>${jobMetaHtml(job, now, renderedAt)}</td>
+    </tr>`;
+}
+
+/**
+ * The still-open list drawn above the start form (t459 FR4-FR7): cards at or
+ * under {@link ROW_MODE_THRESHOLD}, a table past it, an explicit empty-state
+ * line rather than nothing — so a test, or a person, can tell "checked, none
+ * open" apart from "this feature isn't there".
+ *
+ * Wrapped in one `data-interviews-open="<count>"` element, the marker
+ * `docs/spec/screen.md`'s `data-*` table now documents.
+ *
+ * @param jobs Every job of the project, as `GET /v1/jobs` returned it.
+ */
+function stillOpenInterviewsHtml(jobs: Job[]): string {
+  const open = orderStillOpenInterviews(jobs.filter(isOpenInterview));
+  const now = Date.now();
+  const renderedAt = new Date(now).toISOString();
+
+  const body =
+    open.length === 0
+      ? '<p class="vazio">No interviews still open.</p>'
+      : open.length > ROW_MODE_THRESHOLD
+        ? `<table>
+    <thead><tr><th>interview</th><th>title</th><th>state</th></tr></thead>
+    <tbody>
+      ${open.map((job) => interviewOpenRow(job, now, renderedAt)).join('\n      ')}
+    </tbody>
+  </table>`
+        : open.map((job) => interviewOpenCard(job, now, renderedAt)).join('\n  ');
+
+  return `<section data-interviews-open="${open.length}">
+  <h2>interviews still open</h2>
+  ${body}
+</section>`;
+}
+
+/**
+ * `GET /interview` — where an interview starts (FR1), and, since t459, where
+ * one already running is found again.
+ *
+ * Two fields and no more in the form itself. The class this map registers as
+ * is the interview's OWN first question (RF-14, `docs/spec/interview.md` §2),
+ * so the form never asks for something it is about to be asked anyway; and the
+ * class it travels is not a choice at all.
+ *
+ * The still-open list (t459) reads `GET /v1/jobs` concurrently with the graph
+ * lookup below, rather than as a second sequential round trip — no interview
+ * job can exist for a class this control plane never registered, so the
+ * branch that reports that carries no list at all.
  *
  * @param client Client of the public API.
  * @param scope Which project is in force.
@@ -1746,7 +1855,10 @@ export async function interviewStartPage(
   client: ApiClient,
   scope: ProjectScope = DEFAULT_SCOPE,
 ): Promise<Page> {
-  const lineage = await client.getGraph(INTERVIEW_CLASS, { project_id: scope.projectId });
+  const [lineage, jobs] = await Promise.all([
+    client.getGraph(INTERVIEW_CLASS, { project_id: scope.projectId }),
+    client.listJobs({ project_id: scope.projectId }),
+  ]);
   if (lineage === null || lineage.current_version_id === null) {
     return {
       status: 200,
@@ -1763,6 +1875,7 @@ export async function interviewStartPage(
     html: layout(
       'interview',
       `<h2>describe a problem you keep solving by hand</h2>
+${stillOpenInterviewsHtml(jobs)}
 <p>Say what it is in your own words. The interview asks one question at a time, and what it draws from your answers is a map of your own.</p>
 <form method="post" action="/interview">
   <p>

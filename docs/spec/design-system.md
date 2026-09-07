@@ -12,10 +12,11 @@ because the screen was built without one: for the whole of the 2026-08/09 wave
 the only thing in this repository that described how a page should look was a
 comment in `packages/screen/src/public/style.css` saying *this file is the whole
 design system*, and every ticket that drew a page invented its own answer beside
-it. There are two stylesheets today that share nothing —
+it. There were two stylesheets then, and they shared nothing —
 [`style.css`](../../packages/screen/src/public/style.css) for the static half
 and the `STYLE` constant in [`pages.ts`](../../packages/screen/src/pages.ts) for
-the rendered half — and that is the shape of the absence, not a decision.
+the rendered half — and that was the shape of the absence, not a decision. They
+are one file now, and `STYLE` is gone: see §10.
 
 **Lineage.** FlowPilot and inbox-bot, which solve the same surface: an
 operator's console, on a laptop, for a technical person. Three rules come from

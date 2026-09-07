@@ -51,6 +51,8 @@ import type {
   SessionLog,
   Settings,
 } from './client.ts';
+import { renderChat, renderMap } from './interview.ts';
+import { renderMapDocument, type MapDocumentGraph } from './map-document.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
 
 /** A page ready to go to the browser. */
@@ -120,6 +122,32 @@ const STYLE = `
   .attention { border-left-width: 4px; padding-left: .55rem; }
   tr.attention td:first-child { border-left: 4px solid currentColor; padding-left: .45rem; }
   .demo-badge { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; border: 1px solid currentColor; border-radius: 3px; padding: .05rem .3rem; margin-left: .4rem; }
+  .interview { display: grid; grid-template-columns: minmax(20rem, 1fr) minmax(20rem, 1fr); gap: 2rem; align-items: start; }
+  @media (max-width: 60rem) { .interview { grid-template-columns: 1fr; } }
+  .interview .turn, .interview .asking, .interview .closing, .interview .thinking { border: 1px solid currentColor; border-radius: 6px; padding: .7rem .9rem; margin-bottom: .6rem; }
+  .interview .asking { border-width: 2px; }
+  .interview .thinking { opacity: .7; font-style: italic; }
+  .interview .asked { margin: 0 0 .35rem; font-weight: 600; }
+  .interview .said { margin: 0; }
+  .interview .signature { margin: .35rem 0 0; font-size: .75rem; opacity: .6; }
+  .interview dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .5rem 0; font-size: .9rem; }
+  .interview dt { opacity: .6; }
+  .interview dd { margin: 0; }
+  .interview .options { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
+  .interview .closing form { display: inline-block; margin: .5rem .5rem 0 0; }
+  .map-document ol { list-style: decimal; padding-left: 1.4rem; margin: 0; }
+  .map-document li { border: 1px solid currentColor; border-radius: 6px; padding: .6rem .8rem; margin-bottom: .6rem; }
+  .map-document h3 { font-size: .95rem; margin: 0 0 .4rem; }
+  .map-document ul { margin: .2rem 0; padding-left: 1.2rem; }
+  .map-document [data-field] { font-size: .85rem; margin-top: .3rem; }
+  .map-document [data-field]::before { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; opacity: .6; }
+  .map-document [data-field="needs"]::before { content: "needs"; }
+  .map-document [data-field="produces"]::before { content: "produces"; }
+  .map-document [data-field="verified_by"]::before { content: "verified by"; }
+  .map-document [data-field="exits"]::before { content: "exits"; }
+  .map-document [data-field="network"]::before { content: "reaches outside"; }
+  .map-document .required, .map-document .agentic-note { font-size: .72rem; opacity: .65; }
+  .empty { opacity: .6; font-style: italic; }
   .log-header { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; overflow: auto; max-height: 32rem; border: 1px solid currentColor; border-radius: 6px; padding: .5rem .6rem; white-space: pre-wrap; word-break: break-word; }
   .log-line { padding-left: .4rem; }
@@ -225,6 +253,7 @@ ${autoRefresh ? '<meta http-equiv="refresh" content="30">\n' : ''}<title>${escap
   <nav>
     <a href="/">check</a>
     <a href="/board">board</a>
+    <a href="/interview">interview</a>
     <a href="/examples">examples</a>
     <a href="/executions">executions</a>
     <a href="/input-requests">questions</a>
@@ -1669,6 +1698,252 @@ export async function sessionLogPage(
 ${body}
 </div>
 ${transcriptCutNotice(log, project_id)}`,
+      scope,
+    ),
+  };
+}
+
+/**
+ * The class the interview travels, and the node it starts on (t433).
+ *
+ * Both read straight off `factory-graphs/map-design/graph.json`, and both are
+ * the only values this screen may ever send: letting the start form target
+ * another class, or another version of this one, is Out of Scope by decision —
+ * there is no fork or variant entry point here.
+ */
+export const INTERVIEW_CLASS = 'map-design';
+export const INTERVIEW_ENTRY_NODE = 'interview';
+
+/**
+ * What the start page says when the interview class is not registered (FR1).
+ *
+ * The honest diagnosis and not the generic 404: `cartografo up` imports that
+ * bundle on the first startup of a database that does not have it, before it
+ * announces itself, so a class missing here means the import failed — and the
+ * one place that says why is the control plane's own first lines on stderr.
+ */
+const NO_INTERVIEW_CLASS =
+  'The interview is not registered on this control plane. It is imported at the first startup, so the reason it is missing was printed on the control plane’s own startup log — read it there, then start the control plane again.';
+
+/**
+ * The one script `/interview/:id` needs, and the whole of it: clicking an
+ * option puts it in the field.
+ *
+ * A copy of `OPTIONS_SCRIPT`'s idea in this page's own vocabulary (D24: nothing
+ * new is born in Portuguese, and `data-opcao`/`resposta` are the other page's
+ * frozen DOM contract). It is a listener on the DOCUMENT and not on the card,
+ * which is what keeps it working after the polling island has replaced the
+ * column's contents — a `<script>` inside swapped HTML never runs.
+ *
+ * Real progressive enhancement, like its neighbour: without it, typing the
+ * answer keeps working, and nothing else on the page depends on it.
+ */
+const INTERVIEW_OPTIONS_SCRIPT = `<script>
+document.addEventListener('click', function (event) {
+  var target = event.target;
+  if (target === null || target.dataset === undefined || target.dataset.option === undefined) return;
+  var form = target.closest('form');
+  var field = form === null ? null : form.querySelector('textarea[name="answer"]');
+  if (field !== null) { field.value = target.dataset.option; field.focus(); }
+});
+</script>`;
+
+/**
+ * The two-line bootstrap that starts the polling island (FR5).
+ *
+ * Emitted ONLY while the interview is still running: a finished one has nothing
+ * left to poll for, and a page that kept asking would be a page that never
+ * stops. Everything the island does is an auto-refresh — with the script absent,
+ * or failing to load, reloading is the fallback and every form still works.
+ *
+ * @param interviewId The interview to poll for.
+ * @returns The `<script type="module">`, or an empty string.
+ */
+function interviewIsland(interviewId: number, done: boolean): string {
+  if (done) return '';
+  return `<script type="module">
+import { mount } from '/interview.js';
+mount(document, function (url) { return fetch(url); }, ${interviewId});
+</script>`;
+}
+
+/**
+ * The two columns, in the one layout both `/interview/:id` and `/graphs/:class`
+ * draw (t433).
+ *
+ * The ids are the contract `/interview/:id/fragment` and `interview.js` share:
+ * whatever is between `<div id="chat">` and its close is exactly the string the
+ * fragment answers with, and the same for `#map`. Keeping the headings OUTSIDE
+ * the two divs is what makes that true — a swap replaces the content and never
+ * the furniture around it.
+ */
+function twoColumns(left: { title: string; html: string }, right: { title: string; html: string }): string {
+  return `<div class="interview">
+  <section>
+    <h2>${escapeHtml(left.title)}</h2>
+    <div id="chat">${left.html}</div>
+  </section>
+  <section class="map-document">
+    <h2>${escapeHtml(right.title)}</h2>
+    <div id="map">${right.html}</div>
+  </section>
+</div>`;
+}
+
+/**
+ * `GET /interview` — where an interview starts (FR1).
+ *
+ * Two fields and no more. The class this map registers as is the interview's
+ * OWN first question (RF-14, `docs/spec/interview.md` §2), so the form never
+ * asks for something it is about to be asked anyway; and the class it travels
+ * is not a choice at all.
+ *
+ * @param client Client of the public API.
+ * @param scope Which project is in force.
+ * @returns The start page — with the form, or with the reason there is none.
+ */
+export async function interviewStartPage(
+  client: ApiClient,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const lineage = await client.getGraph(INTERVIEW_CLASS, { project_id: scope.projectId });
+  if (lineage === null || lineage.current_version_id === null) {
+    return {
+      status: 200,
+      html: layout(
+        'interview',
+        `<h2>describe a problem you keep solving by hand</h2>\n<p>${escapeHtml(NO_INTERVIEW_CLASS)}</p>`,
+        scope,
+      ),
+    };
+  }
+
+  return {
+    status: 200,
+    html: layout(
+      'interview',
+      `<h2>describe a problem you keep solving by hand</h2>
+<p>Say what it is in your own words. The interview asks one question at a time, and what it draws from your answers is a map of your own.</p>
+<form method="post" action="/interview">
+  <p>
+    <label for="interview-title">what you would call it</label>
+    <input id="interview-title" name="title" required maxlength="200">
+  </p>
+  <p>
+    <label for="interview-body">how you do it today</label>
+    <textarea id="interview-body" name="body" required rows="6"></textarea>
+  </p>
+  <p><button type="submit">start</button></p>
+</form>`,
+      scope,
+    ),
+  };
+}
+
+/**
+ * `GET /interview/:id` — the interview itself, in two columns (FR3).
+ *
+ * One read, and it is the conversation projection: the page never joins a
+ * timeline against a queue against a session listing, and it never learns what
+ * is underneath. What it renders is `interview.ts`'s two functions, which is
+ * also what `/interview/:id/fragment` renders — so the full page and the poll
+ * cannot come to say different things.
+ *
+ * @param client Client of the public API.
+ * @param interviewId The interview to show.
+ * @param scope Which project is in force.
+ * @returns The page, or 404 when the control plane does not know it.
+ */
+export async function interviewPage(
+  client: ApiClient,
+  interviewId: number,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const conversation = await client.getConversation(interviewId, { project_id: scope.projectId });
+  if (conversation === null) {
+    return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
+  }
+
+  const body =
+    twoColumns(
+      { title: 'the exchange', html: renderChat(conversation, interviewId) },
+      { title: 'the map so far', html: renderMap(conversation.draft) },
+    ) +
+    `\n${INTERVIEW_OPTIONS_SCRIPT}\n${interviewIsland(interviewId, conversation.done)}`;
+
+  return { status: 200, html: layout('interview', body, scope) };
+}
+
+/**
+ * `GET /graphs/:class` — an already-registered map, read only (FR9, RF-22/23).
+ *
+ * The same renderer the live column uses, with one difference that is the whole
+ * point of it being a different page: here the pins are CLOSED, so every step's
+ * manifest can be resolved and RF-20's external-I/O line can actually be drawn.
+ * A pin that resolves to nothing degrades to "no manifest for that step" rather
+ * than failing the page — the grace `map-document.ts` already documents.
+ *
+ * The manifest reads go out in parallel: they are independent of each other,
+ * and a map of a dozen steps should not cost a dozen round trips in sequence.
+ *
+ * @param client Client of the public API.
+ * @param className The class, which is also its lineage's id (D8).
+ * @param scope Which project is in force.
+ * @returns The page, or 404 when no such class has a current version.
+ */
+export async function graphPage(
+  client: ApiClient,
+  className: string,
+  scope: ProjectScope = DEFAULT_SCOPE,
+): Promise<Page> {
+  const project_id = scope.projectId;
+  const lineage = await client.getGraph(className, { project_id });
+  if (lineage === null || lineage.current_version_id === null) {
+    return errorPage(404, 'map not found', `No map is registered as "${className}".`);
+  }
+
+  const version = await client.getGraphVersion(lineage.current_version_id, { project_id });
+  if (version === null) {
+    return errorPage(404, 'map not found', `No map is registered as "${className}".`);
+  }
+
+  const document = version.snapshot as unknown as MapDocumentGraph;
+  const nodes = Array.isArray(document.nodes) ? document.nodes : [];
+  const pins = nodes
+    .map((node) => node.skill_ref)
+    .filter(
+      (pin): pin is { id: string; version?: string; hash?: string } =>
+        pin !== undefined && typeof pin.id === 'string',
+    );
+
+  const resolved = await Promise.all(
+    pins.map(async (pin) => {
+      try {
+        return await client.getSkill(
+          pin.id,
+          { hash: typeof pin.hash === 'string' ? pin.hash : undefined },
+          { project_id },
+        );
+      } catch {
+        // A pin nobody can resolve is one line missing from one step, never a
+        // page that refuses to draw the other eleven.
+        return null;
+      }
+    }),
+  );
+  const manifests = resolved.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return {
+    status: 200,
+    html: layout(
+      'map',
+      twoColumns(
+        {
+          title: 'this map',
+          html: `<p>Registered as <strong>${escapeHtml(className)}</strong>, version <code>${escapeHtml(version.id)}</code>.</p>`,
+        },
+        { title: 'the steps, in order', html: renderMapDocument(document, manifests) },
+      ),
       scope,
     ),
   };

@@ -26,7 +26,7 @@ runs in `npm run lint`, and locked down by
 
 ---
 
-## 1. The sixteen routes
+## 1. The twenty-four routes
 
 | Route | What it shows | What it reads from the API |
 |---|---|---|
@@ -46,13 +46,26 @@ runs in `npm run lint`, and locked down by
 | `POST /project` | Nothing: it sets the `cartografo_project` cookie and redirects (302) back to the referrer. | Nothing — the choice is this browser's, and it never leaves it (t354). |
 | `POST /runners/:id/rechecks` | Nothing: it asks one runner to report about its machine again and redirects (303) to `/`. The runner serves the request on its next loop tick; reloading is what shows the new probe. | `POST /v1/runners/:id/rechecks` |
 | `POST /settings` | Nothing: it writes `workspace_root`/`worktrees_root` for the project in the cookie and redirects (303) to `/`. A field left blank is not sent. | `PATCH /v1/settings` |
+| `GET /interview` | The start form of an interview: a title and a free-text description, and nothing else. A control plane with no `map-design` class registered says so plainly here, and points at its own startup log. See [`screen-interview.md`](screen-interview.md). | `GET /v1/graphs/map-design` |
+| `POST /interview` | Nothing: it creates the job on `map-design`'s current version, at `entry_node_id: "interview"`, and redirects (303) to `/interview/<the new id>`. A blank title or description is refused (400) before either call. | `GET /v1/graphs/map-design`, `POST /v1/jobs` |
+| `GET /interview/:id` | The interview in two columns: the exchange so far on the left — closed turns, then the one open question with its inline form, or "thinking", or the closing state with its two actions — and the map it is drafting on the right, through the same renderer `GET /graphs/:id` uses. The screen's only polling page (§7). | `GET /v1/jobs/:id/conversation` |
+| `GET /interview/:id/fragment` | `200 {chat, map, done}` — the two columns as the exact inner-HTML strings `GET /interview/:id` rendered, computed by the same two functions. Asked for only by that page's own script, and linked from nowhere. | `GET /v1/jobs/:id/conversation` |
+| `POST /interview/:id/answer` | Nothing: it answers the interview's one open question and redirects (303) to `/interview/:id`. A blank answer is refused (400) before the network. | `GET /v1/jobs/:id/conversation`, `PATCH /v1/input-requests/:id/answer` |
+| `POST /interview/:id/register` | Nothing: it re-reads the draft, closes its pins and registers the map, then redirects (303) to `/graphs/<the draft's class>`. Refused (400) before any call when the interview is not over or drew nothing; a pin that does not close is a 422, and a registry refusal keeps the registry's own status. | `GET /v1/jobs/:id/conversation`, `POST /v1/skills`, `POST /v1/graphs` |
+| `POST /interview/:id/export` | The bundle itself: `application/zip`, `content-disposition: attachment`, named after the class. Same two pre-network refusals as the row above. | `GET /v1/jobs/:id/conversation` |
+| `GET /graphs/:id` | One registered map, read only: the same vertical procedure document, with the pins closed — so a step whose manifest declares `permissions.network.allowed` shows the external-I/O line. The `:id` is the class, which is its lineage's id (D8). | `GET /v1/graphs/:id`, `GET /v1/graph-versions/:id`, `GET /v1/skills/:id?hash=` |
 
-Every view renders **on the request**. There is no polling, no websocket and no
-auto-refresh: reloading the page is the update, and the screen's state is always
-the state the API has just reported. **`/board` alone is the exception** (t416):
-it carries `<meta http-equiv="refresh" content="30">`, so it is never more than
-30 seconds stale without anyone reloading it — which is also what makes the
-relative durations it shows honest (§7).
+Every view renders **on the request**. There is no websocket and no SSE, and
+reloading the page is the update: the screen's state is always the state the API
+has just reported. **Two pages are the exception, and each one only refreshes
+itself** (§7): `/board` carries `<meta http-equiv="refresh" content="30">`
+(t416), so it is never more than 30 seconds stale without anyone reloading it —
+which is also what makes the relative durations it shows honest — and
+`/interview/:id` loads a small script that polls `/interview/:id/fragment` every
+three seconds while the interview is still running, swapping the two columns in
+place and stopping the moment it is over (t433, RNF-04). That script is pure
+progressive enhancement: with it absent, every form on the page still works and
+reloading is the fallback.
 
 **Which project a view shows** comes from the `cartografo_project` cookie, and
 from nowhere else (D25, t354). Every GET above reads it — defaulting to project
@@ -86,7 +99,7 @@ between them, in this order:
 |---|---|
 | `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | A file from `src/public/` — `/inbox`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
-| Anything else | The sixteen routes of this specification, rendered on the server. |
+| Anything else | The twenty-four routes of this specification, rendered on the server. |
 
 The order is the contract. The static half comes before the render because
 `resolveStaticFile` only returns a path for a known extension, and it is
@@ -487,8 +500,13 @@ Every item is another ticket's declared scope, not an oversight:
   inventing that surface is not `/board`'s ticket to do (t416).
 - **Pagination** — no route of the API paginates today, and it is not this ticket
   that invents what the API does not have.
-- **Live updates by any mechanism other than `/board`'s own refresh** (polling,
-  websocket, SSE) — every other view renders on the request alone.
+- **Live updates by any mechanism other than the two named in §1** — a
+  websocket, SSE, or polling anywhere else. Two pages refresh themselves and no
+  others do: `/board`'s 30-second `<meta refresh>` (t416) and
+  `/interview/:id`'s three-second poll of its own fragment (t433). The second
+  one is the narrower of the two — it is one script, loaded only by that page,
+  only while the interview is still running, and it swaps the inner HTML of two
+  elements and nothing else. Every other view renders on the request alone.
 - **Relative time** ("3 minutes ago") on `/runners` or on any other date: the
   screen shows the raw instant the API recorded. A relative label computed at
   render time, on a page with no auto-refresh, starts lying the next second.

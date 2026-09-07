@@ -1,12 +1,20 @@
 /**
- * The interview, crossed LIVE: four sessions, four turns, one bundle (t360).
+ * The interview, crossed LIVE: three sessions, three turns, one bundle (t360).
  *
  * `factory-graphs/map-design` is the fourth factory bundle, and the only one
  * whose subject is the product itself: a person describes a problem, the map
- * asks them one question at a time, and the last session hands back a draft
- * bundle — a graph plus one manifest per node — for somebody to register. §1.2
- * of the requirements is the whole claim: *the interview is itself a map, not
- * special code*, and this file is what proves the claim mechanically.
+ * asks them one thing per turn, and the last session hands back a draft bundle
+ * — a graph plus one manifest per node — for somebody to register. §1.2 of the
+ * requirements is the whole claim: *the interview is itself a map, not special
+ * code*, and this file is what proves the claim mechanically.
+ *
+ * **One thing per turn is not one QUESTION per turn since t482.** A single
+ * decision is still one question with a flat list of labels; a whole step is
+ * one FORM — the five things that settle a step (`needs`, `produces`, `checks`,
+ * `goes_wrong`, `reach`) asked at once as the `Field[]` `options` t480 put on
+ * the wire, and answered as one JSON document keyed by those five ids. Both
+ * shapes block the job on exactly ONE row, which is the invariant this file
+ * measures across both of them.
  *
  * ## What makes this crossing different from the other three
  *
@@ -15,14 +23,14 @@
  * `input-request` block blocks the job **on its own node**, and answering
  * re-dispatches that same node with the whole exchange already written into the
  * prompt (`docs/spec/human-escalation.md` §5, `prompt.ts`'s
- * `## What you already asked, and what came back`). So four turns of one
- * interview are four dispatches of ONE node, and the graph needs no edge to say
- * so. What this file measures is exactly that: the job does not move for three
- * turns, and each turn's draft differs from the one before it.
+ * `## What you already asked, and what came back`). So three turns of one
+ * interview are three dispatches of ONE node, and the graph needs no edge to
+ * say so. What this file measures is exactly that: the job does not move for
+ * two turns, and each turn's draft differs from the one before it.
  *
  * ## What is scripted, and what is not
  *
- * The four sessions are scripted, like every other factory crossing here: what
+ * The three sessions are scripted, like every other factory crossing here: what
  * a model would decide is not what this test is about. Everything else is real
  * — the two committed manifests, the committed graph, a real `Controller`
  * taking real leases, the control plane's own `POST /v1/input-requests` writing
@@ -57,6 +65,7 @@ import { ControlPlaneClient } from '../../src/controller/control-plane-client.ts
 import { Controller } from '../../src/controller/controller.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
 import { createExecutorEnvironmentResolver } from '../../src/dispatch/resolve-executor-environment.ts';
+import type { Field } from '../../src/dispatch/parse-input-request.ts';
 import { createSkillSourceResolver } from '../../src/dispatch/resolve-skill-source.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 import type { WorktreeManager } from '../../src/dispatch/session-worktree.ts';
@@ -108,8 +117,25 @@ interface Question {
   id: number;
   question: string;
   recommendation: string | null;
-  options: string[] | null;
+  /** A flat list of labels for one decision, or a form's fields (t480, t482). */
+  options: string[] | Field[] | null;
+  default_answer: string | null;
   status: string;
+}
+
+/** Whether a question came back as a whole step's form rather than one decision. */
+function isFieldList(options: Question['options']): options is Field[] {
+  return (
+    Array.isArray(options) && options.length > 0 && options.every((item) => typeof item === 'object')
+  );
+}
+
+/** One scripted turn's question, in either of the two shapes a turn may ask in. */
+interface ScriptedQuestion extends Record<string, unknown> {
+  question: string;
+  context: string;
+  options: string[] | Field[];
+  recommendation: string;
 }
 
 /**
@@ -301,8 +327,39 @@ const DRAFTS: readonly Draft[] = Object.freeze([
   },
 ]);
 
-/** The three questions the scripted sessions ask, one per turn. */
-const QUESTIONS = Object.freeze([
+/**
+ * The five controls one step is settled by, asked in ONE turn (t482, FR1).
+ *
+ * The ids are the skill's own — `needs`, `produces`, `checks`, `goes_wrong`,
+ * `reach` — because they are the keys of the document the answer comes back as,
+ * and the interview, this crossing and `docs/spec/interview.md` all have to cite
+ * the same five names for the round trip to mean anything.
+ *
+ * `reach` is the only one that is not free text: what a step reaches through is
+ * picked off `environment.mcp_servers` plus the way out of that list, and it is
+ * the field that carries the `recommended` the whole form's default is derived
+ * from (`report.ts`'s `deriveDefaultAnswer`).
+ */
+const TRIAGE_FIELDS: readonly Field[] = Object.freeze([
+  { id: 'needs', label: 'What does triage need before it can start?', kind: 'free_text' },
+  {
+    id: 'produces',
+    label: 'What does it produce, and how is each way out of it labelled?',
+    kind: 'free_text',
+  },
+  { id: 'checks', label: 'How do you know it went well?', kind: 'free_text' },
+  { id: 'goes_wrong', label: 'What usually goes wrong there?', kind: 'free_text' },
+  {
+    id: 'reach',
+    label: 'Does it reach outside this machine, and through which server?',
+    kind: 'choice',
+    options: ['no external reach'],
+    recommended: 'no external reach',
+  },
+]);
+
+/** The two questions the scripted sessions ask: one decision, then one step. */
+const QUESTIONS: readonly ScriptedQuestion[] = Object.freeze([
   {
     question: 'What do you call this class of problem?',
     context: 'You described support tickets that the first line could not close.',
@@ -311,20 +368,50 @@ const QUESTIONS = Object.freeze([
     default: 'support-escalation',
   },
   {
-    question: 'What does the first step need before it can start?',
-    context: 'Every step declares what it needs (RF-19).',
-    options: ['the ticket alone', 'the ticket and the customer history'],
-    recommendation: 'the ticket and the customer history',
-    default: 'the ticket and the customer history',
-  },
-  {
-    question: 'What usually goes wrong at `triage`?',
-    context: 'Whatever you answer becomes this step`s checks (RF-18).',
-    options: ['it triages the wrong ticket', 'it misses the customer history'],
-    recommendation: 'it misses the customer history',
-    default: 'it misses the customer history',
+    question: 'Tell me about triage, the first step of the work.',
+    context:
+      'Five things settle a step, and they are one turn`s worth (RF-18, RF-19, RF-20). ' +
+      'This engine discovered no server, so the last one offers the way out of the list alone.',
+    options: TRIAGE_FIELDS as Field[],
+    recommendation: 'Take the five values already filled in below.',
   },
 ]);
+
+/**
+ * What the batched form comes back as: one document, one key per field id.
+ *
+ * Posted on the same `answer` field a one-click label is posted on — that is
+ * what keeps both shapes on one route and one write (design-system §7.2).
+ */
+const TRIAGE_ANSWER = Object.freeze({
+  needs: 'the ticket and the customer history',
+  produces: 'a triaged ticket, leaving as `escalate` or as `close`',
+  checks: 'it names an owner and the next action',
+  goes_wrong: 'it misses the customer history',
+  reach: 'no external reach',
+});
+
+/** What a person hands back each turn, in the shape that turn asked in. */
+const ANSWERS: readonly string[] = Object.freeze([
+  'support-escalation',
+  JSON.stringify(TRIAGE_ANSWER),
+]);
+
+/**
+ * The one genuine follow-up an answer may open, mid-step (t482, FR3).
+ *
+ * Plain, not batched: the five-field template did not anticipate it, so it is
+ * one decision and it is asked as one — which is exactly what makes it worth
+ * pinning beside the form, since the two shapes have to interleave on one job's
+ * timeline without either of them being special.
+ */
+const FOLLOW_UP: ScriptedQuestion = {
+  question: 'You said the history is often missing — who is supposed to attach it?',
+  context: 'Nothing in the five fields asked this, and the answer changes what triage needs.',
+  options: ['the first line, before escalating', 'triage itself, from the CRM'],
+  recommendation: 'the first line, before escalating',
+  default: 'the first line, before escalating',
+};
 
 /** A bare directory per session — an interview has nothing to look for on disk. */
 function directoryWorktrees(root: string): WorktreeManager {
@@ -464,7 +551,7 @@ async function startCrossing(t: TestContext, runnerId: string): Promise<Crossing
   };
 }
 
-test('t360 — the interview is a traversal: four turns, one node, one bundle at the end', async (t) => {
+test('t360 — the interview is a traversal: three turns, one node, one bundle at the end', async (t) => {
   assert.ok(existsSync(BUNDLE), 'artifact does not exist yet: factory-graphs/map-design');
   const { baseUrl, token, dispatched, run, root } = await startCrossing(t, 'runner-t360');
 
@@ -547,7 +634,13 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
       )
     ).input_requests;
 
-  /** Answers the single open question, exactly as a person at the screen would. */
+  /**
+   * Answers the single open question, exactly as a person at the screen would.
+   *
+   * ONE row either way (AT2): a form is several decisions, and still one
+   * question — so what changes with the shape is only what is posted on
+   * `answer`, a label for one decision and a whole JSON document for a step.
+   */
   const answer = async (turn: number): Promise<void> => {
     const pending = await pendingNow();
     assert.equal(pending.length, 1, `turn ${String(turn)}: exactly one question is waiting`);
@@ -557,14 +650,23 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
       QUESTIONS[turn].recommendation,
       'every question carries the value a person can accept in one click (RF-16)',
     );
+    assert.deepEqual(
+      pending[0].options,
+      QUESTIONS[turn].options,
+      `turn ${String(turn)}: the question came back in the shape it was asked in`,
+    );
     await api(baseUrl, token, 'PATCH', `/v1/input-requests/${String(pending[0].id)}/answer`, {
-      answer: QUESTIONS[turn].recommendation,
+      answer: ANSWERS[turn],
       answered_by: 'rafael',
     });
   };
 
-  // --- AT1. three turns, each one question, each a draft further along -------
-  for (const turn of [0, 1, 2]) {
+  // --- AT1. two turns — one decision, one whole step — each a draft further on
+  //
+  // Three interview turns until t482, because `triage` cost two of them: what
+  // it needs, then what goes wrong there. Both now ride in the one form of turn
+  // 1, and the turn that is gone is the whole point of the ticket.
+  for (const turn of [0, 1]) {
     // The FIRST turn is the one that receives the class name and, with it, the
     // answer to "do you already have skills for this, and where" (t440, FR1/FR2).
     await run(
@@ -593,10 +695,9 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
   const reported = (await sessionsNow())
     .filter((session) => session.status === 'completed')
     .map((session) => ({ graph: session.output?.graph, skills: session.output?.skills }));
-  assert.equal(reported.length, 3, 'three sessions asked, and all three reported');
-  assert.deepEqual(reported, [DRAFTS[0], DRAFTS[1], DRAFTS[2]], 'each turn`s map is its own');
+  assert.equal(reported.length, 2, 'two sessions asked, and both reported');
+  assert.deepEqual(reported, [DRAFTS[0], DRAFTS[1]], 'each turn`s map is its own');
   assert.notDeepEqual(reported[0], reported[1], 'a turn that changed nothing asked for nothing');
-  assert.notDeepEqual(reported[1], reported[2]);
 
   // --- t440. the source somebody named survives, and becomes drafts ---------
   //
@@ -610,13 +711,11 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
     undefined,
     'nothing was named before the first answer came back',
   );
-  for (const turn of [1, 2]) {
-    assert.deepEqual(
-      (dispatched[turn].projection.interview as Record<string, unknown>).skill_source,
-      { kind: 'path', location: SKILL_SOURCE },
-      `turn ${String(turn)}: reported once, carried into every dispatch after it`,
-    );
-  }
+  assert.deepEqual(
+    (dispatched[1].projection.interview as Record<string, unknown>).skill_source,
+    { kind: 'path', location: SKILL_SOURCE },
+    'turn 1: reported once, carried into every dispatch after it',
+  );
 
   // ...and the turn immediately after the one that named it opened with the
   // draft derived from the fixture's own SKILL.md — the whole wiring, from a
@@ -799,7 +898,7 @@ test('t464 AT7 — a turn that omits `skills` still dispatches `deliver` with ev
   );
 
   // --- turn 1. the manifests are settled, and reported ----------------------
-  await run(asksWith(DRAFTS[2], QUESTIONS[2]));
+  await run(asksWith(DRAFTS[2], QUESTIONS[1]));
   const { input_requests: pending } = await api<{ input_requests: Question[] }>(
     baseUrl,
     token,
@@ -808,7 +907,7 @@ test('t464 AT7 — a turn that omits `skills` still dispatches `deliver` with ev
   );
   assert.equal(pending.length, 1, 'the turn asked exactly one thing');
   await api(baseUrl, token, 'PATCH', `/v1/input-requests/${String(pending[0].id)}/answer`, {
-    answer: QUESTIONS[2].recommendation,
+    answer: ANSWERS[1],
     answered_by: 'rafael',
   });
 
@@ -851,4 +950,101 @@ test('t464 AT7 — a turn that omits `skills` still dispatches `deliver` with ev
     DRAFTS[2].skills,
     'and the manifests are the ones an EARLIER turn settled: omitting them lost nothing',
   );
+});
+
+
+test('t482 AT-followup — a batched step can still open one genuine follow-up question', async (t) => {
+  assert.ok(existsSync(BUNDLE), 'artifact does not exist yet: factory-graphs/map-design');
+  const { baseUrl, token, run } = await startCrossing(t, 'runner-t482');
+
+  const { classes } = await api<{ classes: { class: string; current_version_id: string | null }[] }>(
+    baseUrl,
+    token,
+    'GET',
+    '/v1/classes',
+  );
+  const registered = classes.find((entry) => entry.class === 'map-design');
+  assert.ok(registered?.current_version_id != null, 'the startup imported the interview');
+
+  const job = await api<Work>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/jobs',
+    {
+      title: 'a map for support tickets the first line could not close',
+      body: 'They pile up, nobody knows who owns them, and the customer asks twice.',
+      entry_node_id: 'interview',
+      execution_id: EXECUTION_ID,
+      graph_version_id: registered.current_version_id,
+    },
+    201,
+  );
+
+  const questionsOf = async (status: string): Promise<Question[]> =>
+    (
+      await api<{ input_requests: Question[] }>(
+        baseUrl,
+        token,
+        'GET',
+        `/v1/input-requests?job_id=${String(job.id)}${status === '' ? '' : `&status=${status}`}`,
+      )
+    ).input_requests;
+
+  const reply = async (id: number, answer: string): Promise<void> => {
+    await api(baseUrl, token, 'PATCH', `/v1/input-requests/${String(id)}/answer`, {
+      answer,
+      answered_by: 'rafael',
+    });
+  };
+
+  // --- turn 1. the whole step, as one form ----------------------------------
+  await run(asksWith(DRAFTS[1], QUESTIONS[1]));
+
+  const batched = await questionsOf('pending');
+  assert.equal(batched.length, 1, 'a form is several decisions and still ONE question: one row');
+  assert.equal((await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${String(job.id)}`)).blocked, true);
+  assert.deepEqual(
+    batched[0].options,
+    TRIAGE_FIELDS,
+    'the five controls crossed the wire as the turn declared them, in order',
+  );
+  assert.equal(
+    batched[0].default_answer,
+    JSON.stringify({ reach: 'no external reach' }),
+    'the default of a form is derived from the fields` own `recommended`, never written by hand',
+  );
+  await reply(batched[0].id, ANSWERS[1]);
+
+  // --- turn 2. ONE plain follow-up the template did not anticipate (FR3) ----
+  await run(asksWith(DRAFTS[2], FOLLOW_UP));
+
+  const followUp = await questionsOf('pending');
+  assert.equal(followUp.length, 1, 'a follow-up blocks the job the same way the form did');
+  assert.deepEqual(
+    followUp[0].options,
+    FOLLOW_UP.options,
+    'and it is one decision: a flat list of labels, not a second form',
+  );
+  assert.equal(followUp[0].default_answer, FOLLOW_UP.default, 'one decision keeps its own default');
+  await reply(followUp[0].id, FOLLOW_UP.recommendation);
+
+  // --- both shapes, on ONE job`s timeline, neither of them special ----------
+  const asked = (await questionsOf('')).sort((left, right) => left.id - right.id);
+  assert.deepEqual(
+    asked.map((question) => (isFieldList(question.options) ? 'form' : 'question')),
+    ['form', 'question'],
+    'a step asked as a form and a follow-up asked as a question, in that order',
+  );
+  assert.deepEqual(
+    asked.map((question) => question.status),
+    ['answered', 'answered'],
+    'and both were answered through the one route both shapes are answered on',
+  );
+
+  // --- and the interview moves on, exactly as it did before -----------------
+  await run(delivers(DRAFTS[3]));
+  const routed = await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${String(job.id)}`);
+  assert.equal(routed.blocked, false, routed.block_reason ?? '');
+  assert.equal(routed.current_node_id, 'deliver', 'a session that asked nothing routed');
 });

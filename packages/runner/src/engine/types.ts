@@ -540,6 +540,41 @@ export interface McpDiscovery {
   readonly resolvedAt: string;
 }
 
+/**
+ * How to REACH one MCP server — the question discovery deliberately does not
+ * answer (t370, FR1).
+ *
+ * {@link McpServerRef} is `{name}` and nothing else, on purpose: `claude mcp
+ * list` has no machine-readable mode, so the discovery format promises only
+ * what every source can agree on. The connection details are real all the same
+ * — they live in the engine's own configuration files, which the file fallback
+ * of `discoverMcpServers()` already opens to read the KEYS of. This type is
+ * what comes out when the VALUE under one of those keys is read too.
+ *
+ * A union and not one shape with optional fields: a stdio server has no `url`
+ * and an http one has no `command`, and a caller that had to check which half
+ * of a half-empty object was filled in is a caller that will one day spawn
+ * `undefined`.
+ *
+ * **The `env` here is a credential.** It is expanded from the RUNNER's own
+ * environment (RNF-12/RNF-13: the secrets live beside the runner, never in the
+ * control plane), it is handed to the transport, and it goes no further —
+ * nothing downstream of `resolveExternalInputs` ever sees it, which is RF-34
+ * stated as a type-level habit rather than a rule somebody has to remember.
+ */
+export type McpServerConnection =
+  | {
+      readonly transport: 'stdio';
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly env: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly transport: 'http';
+      readonly url: string;
+      readonly headers?: Readonly<Record<string, string>>;
+    };
+
 export interface EngineAdapter {
   /** Stable identifier, persisted on the session row. */
   readonly engineName: string;
@@ -615,6 +650,33 @@ export interface EngineAdapter {
    * nothing here calls one.
    */
   discoverMcpServers?(): Promise<McpDiscovery>;
+
+  /**
+   * How to reach ONE of those servers, by the name discovery gave it (t370).
+   *
+   * The second, symmetric half of {@link discoverMcpServers}, under the same
+   * growth discipline and for the same compatibility reason: optional on the
+   * METHOD, not merely on its fields, so a third-party adapter written before
+   * this existed keeps compiling after the v1 freeze. A caller checks
+   * `typeof adapter.resolveMcpServerConnection === 'function'` before calling
+   * it, and treats its absence as "this engine cannot say", never as "there is
+   * no such server".
+   *
+   * The two are deliberately NOT merged. They answer different questions —
+   * which servers exist, and how to reach one — and folding the second into
+   * {@link McpDiscovery} would widen a frozen, carefully narrow format for a
+   * reason that applies to exactly one caller.
+   *
+   * `null` is the honest answer for a name no source of this engine declares.
+   * A REJECTION means the sources were found and could not be turned into a
+   * connection — an environment placeholder with no value and no default is
+   * the case this ticket met — and it is a rejection rather than `null`
+   * because a credential that quietly became an empty string is worse than no
+   * credential at all.
+   *
+   * Resolution, never invocation: nothing here opens a connection.
+   */
+  resolveMcpServerConnection?(name: string): Promise<McpServerConnection | null>;
 }
 
 export class EngineError extends Error {}

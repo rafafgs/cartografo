@@ -29,6 +29,35 @@
  * (`DECISIONS.md`, D18 amendment).
  */
 
+/**
+ * One external input a node declares, as t369's format writes it (t370, FR4).
+ *
+ * The runner is the first and only consumer of this field — t369's own conflict
+ * surface never reaches this package — so declaring it here is this ticket's
+ * job. It is typed LOOSELY on the free-text halves, the same posture `engine`
+ * and `model` already take one screen below: what refuses a malformed
+ * declaration is the registration gate, and this layer reads a snapshot that
+ * has already been through it.
+ *
+ * `arguments` carries `{{input.<path>}}` placeholders and is interpolated
+ * against the node's own input before the call, by the same `interpolate()`
+ * every other placeholder in this package goes through. `as` is the path,
+ * relative to the session's working directory, the fetched bytes are written
+ * to.
+ */
+export interface ExternalInputDeclaration {
+  /** The key this input appears under, at `input.external.<name>`. */
+  name?: string;
+  /** The MCP server, by the name discovery gives it. */
+  server?: string;
+  /** The tool to call on that server. */
+  tool?: string;
+  /** The arguments of the call, before interpolation. */
+  arguments?: Record<string, unknown>;
+  /** Where the result lands, relative to the session's working directory. */
+  as?: string;
+}
+
 /** The pin a node carries to a registry skill (D4). */
 export interface SkillPin {
   id: string;
@@ -96,6 +125,15 @@ export interface GraphNode {
    * malformed snapshot degrades instead of throwing a type error. */
   skill_ref?: SkillPin;
   contract?: NodeContract;
+  /**
+   * What this node needs from outside, fetched before the session (t370, FR4).
+   *
+   * Optional, and absence means the node declares none — which is every graph
+   * written before the field existed, and which resolves `input.external` to an
+   * empty object rather than to a refusal. Optional on `inputs` too, for the
+   * same reason: a drawer somebody opened and left empty is not a defect.
+   */
+  external?: { inputs?: ExternalInputDeclaration[] };
 }
 
 /** One transition of a graph snapshot. */

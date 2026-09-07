@@ -1,0 +1,35 @@
+/**
+ * Types of the fake MCP server (t370).
+ *
+ * Hand-written beside the fixture rather than inferred, because the fixture is
+ * a `.mjs` on purpose: it is SPAWNED as a child process by the stdio transport
+ * tests, so it has to be a file `node` runs with nothing in front of it — and
+ * `tsc` will not read an untyped JavaScript module from a `.ts` test (this
+ * package compiles with `allowJs` off). Declaring the surface here is what lets
+ * one fixture be both the spawned server and the module the in-process HTTP
+ * double borrows `handle` from.
+ */
+
+/** The suffix every `read_file` answer carries, whatever it was asked for. */
+export declare const FIXED_TEXT: string;
+
+/** The bytes `read_blob` hands back, base64 inside a `resource` entry. */
+export declare const FIXED_BLOB: Buffer;
+
+/** What `read_file` answers for a given `path` argument. */
+export declare function readFileText(path: unknown): string;
+
+/** The two tools this server publishes, in the order `tools/list` gives them. */
+export declare const TOOLS: readonly { readonly name: string }[];
+
+/** The revision this fake speaks. */
+export declare const PROTOCOL_VERSION: string;
+
+/** The sentinel {@link handle} answers with when the mode is to say nothing. */
+export declare const HANGS: symbol;
+
+/**
+ * Answers one message: the response, `null` for a notification, or
+ * {@link HANGS} for the modes whose whole point is that nothing comes back.
+ */
+export declare function handle(message: unknown, mode?: string): object | null | symbol;

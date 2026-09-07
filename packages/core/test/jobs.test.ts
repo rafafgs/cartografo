@@ -2311,6 +2311,358 @@ test('t410 AT6 — POST /v1/jobs refuses a graph version of another project', as
 });
 
 /* -------------------------------------------------------------------------- */
+/* t370 — the record of a call to an external MCP server (AT23–AT28).          */
+/*                                                                            */
+/* RF-37's input half: every call the runner makes to an MCP server on a       */
+/* node's behalf leaves a row — which server, when, with what arguments, with  */
+/* what summarised result. Two phases and ONE row: an intent written before    */
+/* the call, completed after it, the same posture `lease` already takes for    */
+/* "append-only" meaning never deleted rather than never updated.              */
+/*                                                                            */
+/* The crash-safety property is the reason the phases are separate at all: a   */
+/* runner that dies mid-call leaves `finished_at` and `outcome` NULL, and      */
+/* "unknown" is what a READER concludes from that. Nothing ever writes the     */
+/* string.                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** The artifacts this ticket's own cases need on disk. */
+const T370_ARTIFACTS = Object.freeze({
+  migration: 'migrations/0033_external_calls.sql',
+  repository: 'src/repositories/external-calls.ts',
+  routes: 'src/routes/jobs.ts',
+  auth: 'src/auth.ts',
+});
+
+/** One row of `external_call`, as `/v1` publishes it. */
+interface ExternalCall {
+  id: number;
+  job_id: number;
+  node_id: string;
+  direction: 'input' | 'output';
+  name: string;
+  server: string;
+  tool: string;
+  arguments_sha256: string;
+  arguments_summary: string;
+  started_at: string;
+  finished_at: string | null;
+  outcome: 'ok' | 'error' | null;
+  result_summary: string | null;
+}
+
+/** The body an intent is written with, minus whatever a case overrides. */
+function intentBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    node_id: 'collect-fundamentals',
+    direction: 'input',
+    name: 'report',
+    server: 'reports',
+    tool: 'read_file',
+    arguments_sha256: 'f'.repeat(64),
+    arguments_summary: '{"path":"notes/report.md"}',
+    started_at: '2026-09-06T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** Creates a job with no graph behind it — every case below only needs an id. */
+async function jobForCalls(ctx: TestContext, title: string): Promise<Job> {
+  return await createJob(ctx, { title, entry_node_id: 'collect-fundamentals' });
+}
+
+test('t370 AT23 — an intent body answers 201 with the outcome still open', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job whose node calls an MCP server');
+
+  const created = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    intentBody(),
+  );
+
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const call = created.body.external_call;
+  assert.equal(call.job_id, job.id);
+  assert.equal(call.node_id, 'collect-fundamentals');
+  assert.equal(call.direction, 'input');
+  assert.equal(call.server, 'reports');
+  assert.equal(call.tool, 'read_file');
+  assert.equal(call.started_at, '2026-09-06T12:00:00.000Z');
+  assert.equal(call.outcome, null, 'an intent has no outcome yet, and says so with null');
+  assert.equal(call.finished_at, null);
+  assert.equal(call.result_summary, null);
+  assert.ok(Number.isInteger(call.id), 'and it has an id, which is what completes it');
+});
+
+test('t370 AT23 — a body missing a field is a 400 that names it', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job with a malformed record');
+
+  for (const field of ['node_id', 'name', 'server', 'tool', 'arguments_sha256', 'started_at']) {
+    const body = intentBody();
+    delete body[field];
+
+    const refused = await request<{ error: string; field?: string }>(
+      ctx,
+      'POST',
+      `/v1/jobs/${job.id}/external-calls`,
+      body,
+    );
+    assert.equal(refused.status, 400, `${field}: ${JSON.stringify(refused.body)}`);
+    assert.equal(refused.body.error, 'invalid_body', field);
+    assert.equal(refused.body.field, field, 'the refusal names the field, not just the fact');
+  }
+
+  const unknownJob = await request<{ error: string }>(
+    ctx,
+    'POST',
+    '/v1/jobs/9999/external-calls',
+    intentBody(),
+  );
+  assert.equal(unknownJob.status, 404);
+  assert.equal(unknownJob.body.error, 'not_found');
+});
+
+test('t370 AT24 — completing answers 200; completing twice is a 409', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job whose call completes');
+
+  const created = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    intentBody(),
+  );
+  assert.equal(created.status, 201);
+  const callId = created.body.external_call.id;
+
+  const completion = {
+    call_id: callId,
+    finished_at: '2026-09-06T12:00:01.000Z',
+    outcome: 'ok',
+    result_summary: 'text/plain, 1 240 bytes, sha256 a1b2',
+  };
+
+  const completed = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    completion,
+  );
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  assert.equal(completed.body.external_call.id, callId, 'one row, updated — never a second row');
+  assert.equal(completed.body.external_call.outcome, 'ok');
+  assert.equal(completed.body.external_call.finished_at, '2026-09-06T12:00:01.000Z');
+  assert.equal(
+    completed.body.external_call.result_summary,
+    'text/plain, 1 240 bytes, sha256 a1b2',
+  );
+
+  const again = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    completion,
+  );
+  assert.equal(again.status, 409, JSON.stringify(again.body));
+  assert.equal(
+    again.body.error,
+    'external_call_already_completed',
+    'completing twice is a conflict, never an overwrite of the first answer',
+  );
+
+  const listed = await request<{ external_calls: ExternalCall[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/external-calls`,
+  );
+  assert.equal(listed.body.external_calls.length, 1, 'and the refusal wrote nothing');
+});
+
+test('t370 AT25 — an error outcome is stored, and both summaries are capped at 1 KiB', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job whose call failed, verbosely');
+
+  const created = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    intentBody({ arguments_summary: 'a'.repeat(5_000) }),
+  );
+  assert.equal(created.status, 201);
+  assert.equal(
+    created.body.external_call.arguments_summary.length,
+    1_024,
+    'the cap is the server\'s, never the caller\'s promise that it already capped',
+  );
+
+  const completed = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    {
+      call_id: created.body.external_call.id,
+      finished_at: '2026-09-06T12:00:02.000Z',
+      outcome: 'error',
+      result_summary: 'b'.repeat(5_000),
+    },
+  );
+  assert.equal(completed.status, 200, JSON.stringify(completed.body));
+  assert.equal(completed.body.external_call.outcome, 'error');
+  assert.equal(completed.body.external_call.result_summary?.length, 1_024);
+
+  // What was STORED, read back through the listing rather than echoed: a route
+  // that truncated only on the way out would still be keeping the whole payload.
+  const listed = await request<{ external_calls: ExternalCall[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/external-calls`,
+  );
+  assert.equal(listed.body.external_calls[0]?.arguments_summary.length, 1_024);
+  assert.equal(listed.body.external_calls[0]?.result_summary?.length, 1_024);
+
+  const refused = await request<{ error: string; field?: string }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/external-calls`,
+    { call_id: created.body.external_call.id, finished_at: 'x', outcome: 'maybe' },
+  );
+  assert.equal(refused.status, 400, JSON.stringify(refused.body));
+  assert.equal(refused.body.field, 'outcome', 'a third outcome is not a vocabulary this has');
+});
+
+test('t370 AT26 — an intent nobody completed reads as NULL, never as "unknown"', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job whose runner died mid-call');
+
+  // The crash, simulated as what a crash actually leaves behind: the intent was
+  // written and the completion never arrived.
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/external-calls`, intentBody());
+
+  const listed = await request<{ external_calls: ExternalCall[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/external-calls`,
+  );
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.external_calls.length, 1);
+  assert.equal(listed.body.external_calls[0]?.outcome, null);
+  assert.equal(listed.body.external_calls[0]?.finished_at, null);
+
+  const stored = ctx.db.prepare('SELECT * FROM external_call').all() as Record<string, unknown>[];
+  assert.equal(
+    JSON.stringify(stored).includes('unknown'),
+    false,
+    '"unknown" is a reading of two NULLs, and this system never writes it down',
+  );
+});
+
+test('t370 AT27 — a call_id of another job is the same 404 an unknown id gets', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const mine = await jobForCalls(ctx, 'the job that made the call');
+  const theirs = await jobForCalls(ctx, 'a different job entirely');
+
+  const created = await request<{ external_call: ExternalCall }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${mine.id}/external-calls`,
+    intentBody(),
+  );
+  assert.equal(created.status, 201);
+
+  const completion = {
+    finished_at: '2026-09-06T12:00:03.000Z',
+    outcome: 'ok',
+    result_summary: 'text/plain',
+  };
+
+  const crossJob = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${theirs.id}/external-calls`,
+    { ...completion, call_id: created.body.external_call.id },
+  );
+  assert.equal(crossJob.status, 404, JSON.stringify(crossJob.body));
+  assert.equal(crossJob.body.error, 'not_found');
+
+  const unknownId = await request<{ error: string }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${mine.id}/external-calls`,
+    { ...completion, call_id: 987_654 },
+  );
+  assert.equal(unknownId.status, 404, 'a boundary a client can tell apart is a boundary it maps');
+  assert.equal(unknownId.body.error, 'not_found');
+
+  // And nothing changed on the row the cross-job attempt was pointing at.
+  const listed = await request<{ external_calls: ExternalCall[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${mine.id}/external-calls`,
+  );
+  assert.equal(listed.body.external_calls[0]?.outcome, null);
+  assert.deepEqual(
+    (
+      await request<{ external_calls: ExternalCall[] }>(
+        ctx,
+        'GET',
+        `/v1/jobs/${theirs.id}/external-calls`,
+      )
+    ).body.external_calls,
+    [],
+    'the listing is scoped through the job, so the other one shows nothing',
+  );
+});
+
+test('t370 AT28 — the runner writes the record and may not read the history back', async (t) => {
+  requireArtifacts(...Object.values(T370_ARTIFACTS));
+  const ctx = await startControlPlane(t);
+  const job = await jobForCalls(ctx, 'a job a runner reports a call for');
+
+  const paired = await request<{ token: string | null }>(ctx, 'POST', '/v1/runners', {
+    id: 'runner-t370',
+  });
+  assert.equal(paired.status, 201);
+  const runnerToken = paired.body.token ?? '';
+  assert.notEqual(runnerToken, '', 'pairing is where a runner credential comes from');
+
+  const asRunner = async (
+    method: string,
+    routePath: string,
+    body?: unknown,
+  ): Promise<{ status: number; body: { error?: string } }> => {
+    const headers: Record<string, string> = { authorization: `Bearer ${runnerToken}` };
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    const response = await fetch(`${ctx.url}${routePath}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await response.text();
+    return { status: response.status, body: (text === '' ? {} : JSON.parse(text)) as { error?: string } };
+  };
+
+  // Writing the record IS what a runner is for on this route: it is the only
+  // side that knows a call happened.
+  const written = await asRunner('POST', `/v1/jobs/${job.id}/external-calls`, intentBody());
+  assert.equal(written.status, 201, JSON.stringify(written.body));
+
+  // Reading the history back is the operator's, by omission — this dispatch
+  // never reads its own calls, and a route enters `RUNNER_SURFACE` the day
+  // something really calls it, one route at a time.
+  const denied = await asRunner('GET', `/v1/jobs/${job.id}/external-calls`);
+  assert.equal(denied.status, 403, JSON.stringify(denied.body));
+  assert.equal(denied.body.error, 'out_of_scope_credential');
+});
+
+/* -------------------------------------------------------------------------- */
 /* t415 — the six states of a job, derived from the log (RF-30, AT9–AT17).     */
 /*                                                                             */
 /* No column stores any of them: `state` and `state_since` are computed at read */
@@ -3043,5 +3395,4 @@ test('t360 AT2 — the conversation is scoped by project, and an unknown job is 
     elsewhere.status,
     404,
     'a job of another project answers the same 404 an unknown id gets (t410)',
-  );
-});
+  );});

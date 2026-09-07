@@ -2575,3 +2575,139 @@ test('t424 AT4 — project scope is checked before the artifact is ever touched'
   assert.equal(fromTheirs.status, 200, JSON.stringify(fromTheirs.body));
   assert.equal(fromTheirs.body.transcript, original);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t368 — the decoded session log (RF-39/RF-40).                               */
+/* -------------------------------------------------------------------------- */
+
+/** The domain module this ticket ports the decoders into. */
+const T368_ARTIFACTS = Object.freeze(['src/domain/session-log.ts']);
+
+/** Body of `GET /v1/sessions/:id/log` (t368). */
+interface SessionLog {
+  session_id: number;
+  node_id: string | null;
+  engine: string;
+  exit_code: number | null;
+  text: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+  transcript_artifact_id: number | null;
+}
+
+test('t368 — a claude-code session decodes its stream-json frames to plain text', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T368_ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, {
+    title: 'a note about the numbers',
+    entry_node_id: 'conferir-numeros',
+  });
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    job_id: job.id,
+    node_id: 'conferir-numeros',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'check the numbers',
+  });
+  assert.equal(opened.status, 201, JSON.stringify(opened.body));
+
+  // The same shape of frame `packages/runner/test/dispatch/session-text.test.ts`
+  // pins for this engine — an assistant text block, then the final result.
+  const lines = [
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Checking the numbers.' }] },
+    }),
+    JSON.stringify({ type: 'result', result: 'They add up.' }),
+  ].join('\n');
+
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+    status: 'failed',
+    exit_code: 1,
+    transcript: lines,
+  });
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+
+  const log = await request<SessionLog>(ctx, 'GET', `/v1/sessions/${opened.body.id}/log`);
+  assert.equal(log.status, 200, JSON.stringify(log.body));
+  assert.equal(log.body.session_id, opened.body.id);
+  assert.equal(log.body.node_id, 'conferir-numeros');
+  assert.equal(log.body.engine, 'claude-code');
+  assert.equal(log.body.exit_code, 1);
+  assert.equal(log.body.text, 'Checking the numbers.\nThey add up.');
+  assert.equal(log.body.transcript_truncated, false);
+  assert.equal(log.body.transcript_original_size, Buffer.byteLength(lines, 'utf8'));
+  assert.equal(log.body.transcript_artifact_id, null);
+});
+
+test('t368 — the round-trip carries the artifact id and the cut, when the cap bit (t424)', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T368_ARTIFACTS, ...T424_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  const original = overCapTranscript();
+
+  const finished = await request<SessionWithArtifact>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'failed', exit_code: 1, transcript: original },
+  );
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+
+  const log = await request<SessionLog>(ctx, 'GET', `/v1/sessions/${session.id}/log`);
+  assert.equal(log.status, 200, JSON.stringify(log.body));
+  assert.equal(log.body.transcript_truncated, true);
+  assert.equal(log.body.transcript_original_size, original.length);
+  assert.equal(
+    log.body.transcript_artifact_id,
+    finished.body.transcript_artifact_id,
+    'the log forwards the SAME reference the row carries, it does not resolve it',
+  );
+  // The capped tail here has no embedded newline at all (it is one run of
+  // `b`s), so it is not a recognized frame of any engine and passes through raw
+  // — the decoder changes nothing about ITS size, only about frames it finds.
+  assert.equal(Buffer.byteLength(log.body.text ?? '', 'utf8'), TRANSCRIPT_CAP_BYTES);
+});
+
+test('t368 — a session with no transcript recorded answers 200 with text: null', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T368_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  const log = await request<SessionLog>(ctx, 'GET', `/v1/sessions/${session.id}/log`);
+  assert.equal(log.status, 200, JSON.stringify(log.body));
+  assert.equal(log.body.text, null);
+  assert.equal(log.body.transcript_truncated, false);
+  assert.equal(log.body.transcript_original_size, null);
+  assert.equal(log.body.transcript_artifact_id, null);
+});
+
+test('t368 — an unknown session id, and one of another project, both answer 404', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T368_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const second = await declareSecondProject(ctx);
+
+  const theirs = await openSessionWith(ctx, { project_id: second, execution_id: 7 });
+
+  const crossed = await request<{ error: string }>(ctx, 'GET', `/v1/sessions/${theirs.id}/log`);
+  assert.equal(crossed.status, 404, JSON.stringify(crossed.body));
+  assert.equal(crossed.body.error, 'not_found');
+
+  const scoped = await request<SessionLog>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id}/log?project_id=${second}`,
+  );
+  assert.equal(scoped.status, 200, JSON.stringify(scoped.body));
+
+  const missing = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${theirs.id + 999999}/log`,
+  );
+  assert.equal(missing.status, 404, JSON.stringify(missing.body));
+  assert.equal(missing.body.error, 'not_found');
+  assert.deepEqual(missing.body, crossed.body, 'the same refusal, word for word (t411)');
+});

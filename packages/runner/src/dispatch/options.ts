@@ -126,6 +126,17 @@ export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
 export interface Job {
   id: number;
   title: string;
+  /**
+   * The request in the person's own words, when it carries one (t360).
+   *
+   * Optional and nullable because the column already is: a work born with a
+   * title and nothing else reads `null` (t122), and every dispatch written
+   * before this field ignored it. It is declared here because
+   * `createClassPrecedentsResolver` scores it — the problem as somebody
+   * described it is the richer half of the signal, and a resolver reading it
+   * off an untyped cast would be a resolver nobody can check.
+   */
+  body?: string | null;
   current_node_id: string;
   blocked: boolean;
   execution_id: number | null;

@@ -31,6 +31,7 @@ import {
   freePort,
   firstHash,
   runCli,
+  SHIPPED_CLASS,
   startControlPlane,
 } from './cli-support.ts';
 
@@ -90,11 +91,29 @@ test('AT8 — status --json against an empty control plane has a pinned shape', 
   });
 
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
-  assert.equal(
-    result.stdout.trim(),
-    '{"server":"ok","classes":[],"projects":[{"id":1,"name":"default"}],' +
-      '"jobs":0,"pendingInputRequests":0}',
+
+  // "Empty" is one class short of empty since t360: `up` registers the
+  // interview before it announces itself, so a control plane nobody has
+  // imported anything into still knows `map-design`. What this case pins is the
+  // SHAPE — five keys, both counts `0` rather than `null` — so the class list is
+  // read for the one entry that is there rather than for being absent.
+  const report = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(report), [
+    'server',
+    'classes',
+    'projects',
+    'jobs',
+    'pendingInputRequests',
+  ]);
+  assert.equal(report.server, 'ok');
+  assert.deepEqual(
+    (report.classes as { class: string }[]).map((entry) => entry.class),
+    [SHIPPED_CLASS],
+    'the interview that ships in the box, and nothing anybody imported',
   );
+  assert.deepEqual(report.projects, [{ id: 1, name: 'default' }]);
+  assert.equal(report.jobs, 0, '`0` is "queried, and empty"; `null` would be "not queried"');
+  assert.equal(report.pendingInputRequests, 0);
 });
 
 test('AT9 — after importing, status --json lists the class with its current version', { timeout: 180_000 }, async (t) => {
@@ -124,7 +143,11 @@ test('AT9 — after importing, status --json lists the class with its current ve
     pendingInputRequests: number | null;
   };
   assert.equal(report.server, 'ok');
-  assert.deepEqual(report.classes, [{ class: FACTORY_CLASS, current_version_id: version }]);
+  assert.deepEqual(
+    report.classes.filter((entry) => entry.class !== SHIPPED_CLASS),
+    [{ class: FACTORY_CLASS, current_version_id: version }],
+    'beside the interview `up` registered on its own (t360)',
+  );
   assert.deepEqual(report.projects, [{ id: 1, name: 'default' }]);
   assert.equal(report.jobs, 1, 'the job created through the API is counted');
   assert.equal(report.pendingInputRequests, 1, 'the pending question is counted');

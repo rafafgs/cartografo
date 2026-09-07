@@ -67,13 +67,29 @@ test('t124 AT — --token and CARTOGRAFO_TOKEN both authenticate, with --token w
   // `classes` is the graph classes and `projects` is the projects since t354:
   // the field used to be called `projects` and held the classes, which stopped
   // being merely loose the moment D25 made a project a real row.
-  assert.deepEqual(JSON.parse(withFlag.stdout.trim()), {
-    server: 'ok',
-    classes: [],
-    projects: [{ id: 1, name: 'default' }],
-    jobs: 0,
-    pendingInputRequests: 0,
-  });
+  // `classes` carries one entry and not none: `up` registers the interview
+  // before it announces itself (t360), so it is there on a control plane nobody
+  // has imported anything into. Its `current_version_id` is a content hash no
+  // fixture can spell, so the entry is read by name and the rest of the report
+  // is compared as it always was.
+  const report = JSON.parse(withFlag.stdout.trim()) as {
+    server: string;
+    classes: { class: string }[];
+    projects: { id: number; name: string }[];
+    jobs: number;
+    pendingInputRequests: number;
+  };
+  assert.deepEqual(report.classes.map((entry) => entry.class), ['map-design']);
+  assert.deepEqual(
+    { ...report, classes: [] },
+    {
+      server: 'ok',
+      classes: [],
+      projects: [{ id: 1, name: 'default' }],
+      jobs: 0,
+      pendingInputRequests: 0,
+    },
+  );
 
   const withEnv = await runCli(['status', '--json', '--url', controlPlane.url], {
     env: { CARTOGRAFO_TOKEN: token },

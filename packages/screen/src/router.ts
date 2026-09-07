@@ -1502,7 +1502,7 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
 
         // 2. A file from `src/public/` — the inbox page and its modules.
         if (resolveStaticFile(pathname) !== null) {
-          const file = await serveStatic(pathname);
+          const file = await serveStatic(pathname, request.headers);
           response.writeHead(file.status, file.headers);
           response.end(file.body);
           return;

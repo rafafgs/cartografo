@@ -241,6 +241,49 @@ test('AT3 — a path outside /v1/* is served from the static page, not proxied',
   assert.deepEqual(upstream.requests, [], 'static paths never touch the control plane');
 });
 
+/**
+ * t484 AC1 (end-to-end) — the wiring at `router.ts`'s one `serveStatic` call
+ * site, not just the function: a real browser sends `If-None-Match` as a
+ * request header, and only the router (not the unit-level test above) proves
+ * that header actually reaches `serveStatic`.
+ */
+test('t484 AC1 — a real If-None-Match round trip gets a 304 from the router', async (t) => {
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(500, { 'content-type': 'text/plain' });
+    response.end('the upstream should never see this');
+  });
+
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
+
+  const first = await fetch(`${screen.url}/style.css`);
+  assert.equal(first.status, 200);
+  const etag = first.headers.get('etag');
+  assert.ok(etag, '/style.css has no etag header');
+
+  const revalidated = await fetch(`${screen.url}/style.css`, {
+    headers: { 'if-none-match': etag },
+  });
+  assert.equal(revalidated.status, 304);
+  assert.equal(await revalidated.text(), '', '304 must carry an empty body');
+});
+
+/**
+ * t484 AC4 — a rendered route is untouched by this ticket: it must keep
+ * answering `cache-control: no-store`, never the new `no-cache` this ticket
+ * gives the static branch.
+ */
+test('t484 AC4 — a rendered route still answers cache-control: no-store', async (t) => {
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{}');
+  });
+
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
+
+  const response = await fetch(`${screen.url}/`);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
 test('AT4 — the screen listens on CARTOGRAFO_SCREEN_PORT, and on 4318 when it is unset', async (t) => {
   const { resolveScreenPort, DEFAULT_SCREEN_PORT, SCREEN_PORT_ENV } = await loadServer();
 

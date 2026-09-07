@@ -310,13 +310,16 @@ says *interview*, *map*, *step*, *question*, *answer* — never *job*, *runner* 
 
 Named here rather than left to be rediscovered:
 
-- **The two stylesheets.** `public/style.css` and `pages.ts`'s `STYLE` share no
-  token. Until they do, this document describes a system with two
-  implementations.
+- **The two stylesheets are one.** `pages.ts`'s `STYLE` constant is gone
+  (t458): `layout()` links `public/style.css` instead of inlining it, every
+  selector `STYLE` declared was merged into that file, and both halves of the
+  screen now read the same `:root` token set.
 - **Dark mode's five remaining tokens** (§1).
-- **A conformance check.** Nothing in `npm run lint` fails on a literal hex, a
-  shadow, a second radius or an `opacity` used as a text grade. Until one
-  exists, this document is a convention and not a gate.
+- **A conformance check exists.** `scripts/check-design-tokens.mjs` (t458),
+  wired into `npm run lint`, fails on a literal colour, `currentColor`, a
+  non-`var(--radius)` radius, an `opacity` declaration, a `box-shadow` outside
+  a floating element, or a missing `:focus-visible` rule — with zero
+  exclusions.
 
 ---
 

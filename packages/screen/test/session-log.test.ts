@@ -150,10 +150,14 @@ test('t368 AT — the log container and the stylesheet both declare overflow: au
 
   const response = await fetch(`${screen.url}/sessions/148/log`);
   const html = await response.text();
-
   assert.match(html, /<div class="log">/, 'the log has no container to scroll on its own');
-  assert.match(html, /\.log\s*\{[^}]*overflow:\s*auto/s, `the stylesheet has no overflow: auto:\n${html}`);
-  assert.match(html, /\.log\s*\{[^}]*max-height:/s, `the stylesheet has no max-height:\n${html}`);
+
+  // The stylesheet is a linked file since t458, not an inline <style> block —
+  // read the same document a browser would fetch alongside this page.
+  const styleResponse = await fetch(`${screen.url}/style.css`);
+  const stylesheet = await styleResponse.text();
+  assert.match(stylesheet, /\.log\s*\{[^}]*overflow:\s*auto/s, `the stylesheet has no overflow: auto:\n${stylesheet}`);
+  assert.match(stylesheet, /\.log\s*\{[^}]*max-height:/s, `the stylesheet has no max-height:\n${stylesheet}`);
 });
 
 test('t368 AT — the top bar carries the session id, node and exit code', async (t) => {

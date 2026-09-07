@@ -389,6 +389,7 @@ them is this section's whole subject: who answers for each key.
 | `input.job`, `input.project`, the `produces` buckets, `input.perguntas_respondidas`, `input.traversal` | the **control plane**, through `GET /v1/jobs/:id/context` | All of it is a projection of tables only the single writer writes (D1). |
 | `input.project.aplicacao`, `input.project.arquivos_de_registro` | the graph's **`project`** | The class's **static** configuration: versioned with the document, proposable and reversible like any other part of it ([graph.md](graph.md)). |
 | `input.banco_de_testes.*`, `input.referencia.*` | the **runner**, through [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | A file-system path and a live commit. Neither of the two is graph data, and neither survives being stored. |
+| `input.environment.*` | the **runner**, through the same module | What this machine can reach, and what this installation already knows. Same argument one step further (t360). |
 
 The third row arrived last. `banco_de_testes.caminho` names a
 directory on **one** machine — written into a graph version, it would be wrong
@@ -426,6 +427,38 @@ Four flags configure all of that, none of them mandatory: `--test-bench-path`
 (default: the same `--working-dir`), `--reference-mode` (default
 `ponta_do_principal`), `--reference-repo` (default: the bench) and
 `--main-branch` (default `main`).
+
+**`input.environment` arrived last, with t360**, and it is the same argument
+applied to two values the [interview](interview.md) reads. Neither is
+configured by a flag: both are discovered by the runner itself.
+
+- **`environment.mcp_servers`** — the MCP servers this engine names (RF-20), so
+  that the interview can ask *which* server a step reaches outside through
+  instead of asking the person to remember. A `string[]`, or **`null`**. The
+  `null` is load-bearing and is not "empty": it means this engine's adapter
+  implements no discovery at all, which a session has to be able to tell apart
+  from an engine that looked and found none — the same distinction
+  [`engine/types.ts`](../../packages/runner/src/engine/types.ts) draws for
+  `discoverMcpServers?()` itself. It is discovered **once per runner process**,
+  by the very call `buildProbeReport` already makes for the operator page
+  ([`cli/run.ts`](../../packages/runner/src/cli/run.ts)): one CLI spawn, one
+  answer, and no way for the page and the session to describe the same machine
+  differently.
+- **`environment.similar_classes`** — the registered classes whose current
+  version's `metadata.name` + `metadata.description` read like THIS job's title
+  and body, best first, scored with
+  [`synthesizer/similarity.ts`](../../packages/runner/src/synthesizer/similarity.ts).
+  It is the one value of this seam computed **per dispatch** and not per
+  process, for the obvious reason: it is a fact about the job, not about the
+  machine. It is a suggestion and never a decision — [D8](../../DECISIONS.md)
+  puts the class name in the user's hands, and the interview offers the
+  precedent as its `recommendation`.
+
+  Nothing here refuses: a class with no current version, a version that will not
+  read, a `GET /v1/classes` that answers 500 — each is skipped, and a listing
+  that fails entirely is an empty list. An interview that could not open because
+  a suggestion could not be computed would have broken the thing the suggestion
+  was meant to help.
 
 **Reading, and only reading — from this layer.** Nothing in
 `resolve-executor-environment.ts` writes to the test bench, advances a branch or
@@ -707,9 +740,11 @@ sees the whole fleet is the operator (a `usuario` credential), and the runner
 only reaches the four routes of its own dispatch, `GET /v1/jobs`, the three
 through which it reports what its own machine is — the model catalogue
 (`POST /v1/engines/:name/models`, t166) and the probe pair
-(`POST /v1/runners/:id/probes` and `GET /v1/runners/:id/rechecks`, t401) — and
-the one on which it records a call to an external MCP server
-(`POST /v1/jobs/:id/external-calls`, t370): nine routes in all. The
+(`POST /v1/runners/:id/probes` and `GET /v1/runners/:id/rechecks`, t401) — the
+one on which it records a call to an external MCP server
+(`POST /v1/jobs/:id/external-calls`, t370) and the one on which it uploads the
+file a session's contract declared as its output
+(`POST /v1/sessions/:id/artifacts`, t423): ten routes in all. The
 runner's route list is literal
 ([`auth.ts`](../../packages/core/src/auth.ts)): a new route is born outside it,
 and that is how `GET /v1/runners` is the operator's without anything having been

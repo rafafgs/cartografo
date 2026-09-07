@@ -32,6 +32,7 @@ import type { GraphDocument, GraphNode } from '../src/domain/graph.ts';
 import type * as HashModule from '../src/domain/hash.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as OperationsModule from '../src/domain/operations.ts';
+import type * as ProposalsModule from '../src/repositories/proposals.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
 import { manifestHash } from '../src/domain/manifest.ts';
@@ -69,6 +70,8 @@ interface GraphVersion {
 
 interface Proposal {
   id: number;
+  /** The partition the proposal and its whole subject live in (D25, t412). */
+  project_id: number;
   graph_id: string;
   target_version: string;
   operations: unknown[];
@@ -133,7 +136,18 @@ async function loadOperations(): Promise<typeof OperationsModule> {
   return operationsCache;
 }
 
-async function startApp(t: TestHook): Promise<string> {
+/**
+ * The same control plane, handing back the database it runs on (t412).
+ *
+ * Only the partition cases below use it, and only to WRITE the row a route is
+ * then asked to refuse: a proposal that belongs to project 2 has no API path
+ * into project 2 unless the route being tested already works, so the fixture has
+ * to go in underneath it. Everything else in this file keeps calling
+ * {@link startApp} and never sees a handle.
+ */
+async function startAppWithDatabase(
+  t: TestHook,
+): Promise<{ address: string; db: ConnectionModule.Database }> {
   assert.ok(
     existsSync(path.join(PACKAGE_ROOT, 'src', 'routes', 'proposals.ts')),
     'artifact does not exist yet: packages/core/src/routes/proposals.ts',
@@ -168,7 +182,11 @@ async function startApp(t: TestHook): Promise<string> {
     rmSync(base, { recursive: true, force: true });
   });
 
-  return address;
+  return { address, db };
+}
+
+async function startApp(t: TestHook): Promise<string> {
+  return (await startAppWithDatabase(t)).address;
 }
 
 async function post(address: string, route: string, body: unknown): Promise<Response> {
@@ -454,6 +472,102 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
     parent.graph_version.snapshot,
     document,
     'the parent version has to be byte-for-byte what it always was',
+  );
+});
+
+/**
+ * t369 — "not safe to repeat" is node data, and it travels the same road.
+ *
+ * The flag is what a later ticket reads in the retry path and in the escalation
+ * ladder (RF-36), so declaring it has to be a versioned decision with a way
+ * back: AT11's assertions on the way in — the new snapshot carries it, the
+ * parent is byte-for-byte what it always was — and AT12's on the way out.
+ */
+test('t369 — a proposal that marks a node unsafe_to_retry applies and reverts with the field intact', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  assert.ok(
+    !Object.hasOwn(requireNode(document, 'revisar'), 'unsafe_to_retry'),
+    'the base fixture declares nothing: absent is the default, which means false',
+  );
+
+  const proposal = await createProposal(address, graph.id, version.id, [
+    {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'unsafe_to_retry',
+      from: false,
+      to: true,
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'unsafe_to_retry',
+        from: true,
+        to: false,
+      },
+    },
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.graph_version !== undefined);
+  assert.notEqual(body.graph_version.id, version.id, 'marking a node is a new version');
+  assert.equal(body.graph_version.parent_version, version.id);
+
+  const changed = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
+  );
+  assert.equal(
+    (requireNode(changed.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    true,
+    'the new snapshot carries the flag',
+  );
+
+  // Append-only: the version somebody already ran under does not learn the flag
+  // retroactively (D15).
+  const parent = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+  assert.deepEqual(
+    parent.graph_version.snapshot,
+    document,
+    'the parent version has to be byte-for-byte what it always was',
+  );
+
+  // And AT12's half: reverting moves the pointer back, and the abandoned
+  // version stays whole — flag included, because nothing is ever deleted.
+  const reversion = await post(address, `/v1/proposals/${proposal.id}/revert`, {
+    reason: 'the delivery turned out to be idempotent after all',
+  });
+  const reverted = await jsonBody<ApplyResponse>(reversion);
+  assert.equal(reversion.status, 200, JSON.stringify(reverted));
+  assert.equal(reverted.proposal.status, 'reverted');
+
+  const after = await getGraph(address, graph.id);
+  assert.equal(after.current_version_id, version.id, 'the pointer goes back to the target version');
+
+  const current = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+  assert.equal(
+    (requireNode(current.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    undefined,
+    'back on the version that never declared it, absence is the default again',
+  );
+
+  const abandoned = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
+  );
+  assert.equal(
+    (requireNode(abandoned.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .unsafe_to_retry,
+    true,
+    'append-only: the abandoned version keeps the flag it was written with',
   );
 });
 
@@ -1922,4 +2036,313 @@ test('t283 — an applied proposal whose result is resolved and invalid is store
 
   // The pointer moved, like any other applied proposal.
   assert.equal((await getGraph(address, graph.id)).current_version_id, body.graph_version.id);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t412 — every proposal read takes the project and filters by it (D25).        */
+/*                                                                            */
+/* t354 gave `proposal` its `project_id` and moved the pending-uniqueness index */
+/* to `(project_id, dedupe_key)`; the reads never caught up. `getProposal` read  */
+/* `WHERE id = ?` alone, `listProposals` had no project in its filter at all,    */
+/* `findPendingProposalByDedupeKey` looked a key up across the whole database,   */
+/* and `create()` resolved its graph and version — and wrote its row — always in */
+/* the default project, whatever scope the caller declared.                     */
+/*                                                                            */
+/* The shape of every refusal here is the one `routes/graphs.ts` already chose   */
+/* for `unknown_origin_proposal`: from inside this project, another project's    */
+/* row is not a row that exists. Same `404 unknown_proposal` an unknown id gets, */
+/* because two codes would leak which ids are taken elsewhere and would make a   */
+/* partition read as a permission problem.                                      */
+/* -------------------------------------------------------------------------- */
+
+/** Declares a project and returns its id — the same call `graph-routes` makes. */
+async function declareProject(address: string, name: string): Promise<number> {
+  const response = await post(address, '/v1/projects', { name });
+  const body = await jsonBody<{ id: number }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return body.id;
+}
+
+/**
+ * Registers the SAME document in a second project, and hands back its lineage.
+ *
+ * The version hash is content-addressed, so it comes out identical in both
+ * projects (D25, and `test/graph-routes.test.ts` pins it): that is exactly what
+ * makes the dedupe key of AT31 identical on both sides, which is the whole
+ * reason a cross-project merge was possible at all.
+ */
+async function registerIn(
+  address: string,
+  document: GraphDocument,
+  projectId: number,
+): Promise<{ graph: Graph; version: GraphVersion }> {
+  const response = await post(address, '/v1/graphs', { ...document, project_id: projectId });
+  const body = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return { graph: body.graph, version: body.graph_version };
+}
+
+/** `GET /v1/proposals/:id` with the querystring already assembled. */
+async function readProposal(
+  address: string,
+  id: number,
+  query = '',
+): Promise<{ status: number; body: { proposal?: Proposal; error?: string; project_id?: number } }> {
+  const response = await fetch(`${address}/v1/proposals/${id}${query}`);
+  return {
+    status: response.status,
+    body: await jsonBody<{ proposal?: Proposal; error?: string; project_id?: number }>(response),
+  };
+}
+
+test('t412 AT28 — a proposal of another project reads as a proposal that does not exist', async (t) => {
+  const address = await startApp(t);
+  await declareProject(address, 'second');
+
+  const { graph, version } = await registerBase(address);
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+  assert.equal(proposal.project_id, 1, 'written with no scope, so it is the default project');
+
+  const crossed = await readProposal(address, proposal.id, '?project_id=2');
+  assert.equal(crossed.status, 404);
+  assert.equal(
+    crossed.body.error,
+    'unknown_proposal',
+    'the same code an unknown id gets: a boundary is not a permission problem',
+  );
+
+  // And the very same id, asked for from its own project, is there — so the 404
+  // above is about the boundary and not about the proposal being unreadable.
+  const own = await readProposal(address, proposal.id, '?project_id=1');
+  assert.equal(own.status, 200, JSON.stringify(own.body));
+  assert.equal(own.body.proposal?.id, proposal.id);
+
+  const unscoped = await readProposal(address, proposal.id);
+  assert.equal(unscoped.status, 200, 'no scope still means the default project');
+  assert.equal(unscoped.body.proposal?.id, proposal.id);
+});
+
+test('t412 AT29 — GET /v1/proposals lists one project and never leaks another', async (t) => {
+  const { address, db } = await startAppWithDatabase(t);
+  await declareProject(address, 'second');
+
+  const { document, graph, version } = await registerBase(address);
+  const mine = await createProposal(address, graph.id, version.id, passingOperations());
+
+  // The same lineage in project 2, so the row written below satisfies the
+  // composite foreign keys `migrations/0026_project_partition.sql` put on
+  // `proposal` — a proposal may only point at a graph of its own project.
+  const second = await registerIn(address, document, 2);
+
+  const { createProposal: writeProposal } = (await import(
+    new URL('../src/repositories/proposals.ts', import.meta.url).href
+  )) as typeof ProposalsModule;
+  const theirs = writeProposal(db, {
+    project_id: 2,
+    graph_id: second.graph.id,
+    target_version: second.version.id,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  });
+  assert.equal(theirs.project_id, 2);
+
+  assert.deepEqual(
+    (await listProposals(address)).map((proposal) => proposal.id),
+    [mine.id],
+    'the default project lists its own and nothing else',
+  );
+  assert.deepEqual(
+    (await listProposals(address, '?project_id=1')).map((proposal) => proposal.id),
+    [mine.id],
+    'saying the default out loud is the same listing',
+  );
+  assert.deepEqual(
+    (await listProposals(address, '?project_id=2')).map((proposal) => proposal.id),
+    [theirs.id],
+    'and project 2 sees exactly its own',
+  );
+
+  // The other filters still cut inside the project rather than across it.
+  assert.deepEqual(
+    (await listProposals(address, '?project_id=2&status=pending')).map((p) => p.id),
+    [theirs.id],
+  );
+  assert.deepEqual(await listProposals(address, '?project_id=1&status=applied'), []);
+});
+
+test('t412 AT30 — approve and apply refuse a proposal of another project and change nothing', async (t) => {
+  const address = await startApp(t);
+  await declareProject(address, 'second');
+
+  const { graph, version } = await registerBase(address);
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+
+  const crossedApprove = await post(
+    address,
+    `/v1/proposals/${proposal.id}/approve?project_id=2`,
+    {},
+  );
+  const approveBody = await jsonBody<{ error: string }>(crossedApprove);
+  assert.equal(crossedApprove.status, 404, JSON.stringify(approveBody));
+  assert.equal(approveBody.error, 'unknown_proposal');
+  assert.equal(
+    (await getProposal(address, proposal.id)).status,
+    'pending',
+    'the human gate of another project may not move this one',
+  );
+
+  // Approved from its own project, so `apply` below fails for the boundary and
+  // not for a precondition it never met.
+  await approve(address, proposal.id);
+
+  const crossedApply = await post(address, `/v1/proposals/${proposal.id}/apply?project_id=2`, {});
+  const applyBody = await jsonBody<{ error: string }>(crossedApply);
+  assert.equal(crossedApply.status, 404, JSON.stringify(applyBody));
+  assert.equal(applyBody.error, 'unknown_proposal');
+  assert.equal(
+    (await getProposal(address, proposal.id)).status,
+    'approved',
+    'nothing was applied, so nothing moved',
+  );
+  assert.equal(
+    (await getGraph(address, graph.id)).current_version_id,
+    version.id,
+    'and the lineage still holds the version it held',
+  );
+});
+
+test('t412 AT31 — the same signal in two projects opens two hypotheses, never one merged', async (t) => {
+  const address = await startApp(t);
+  await declareProject(address, 'second');
+
+  const { document, graph, version } = await registerBase(address);
+  const second = await registerIn(address, document, 2);
+  assert.equal(
+    second.version.id,
+    version.id,
+    'the snapshot is content-addressed, so both projects key on the same target',
+  );
+
+  const signal = {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: passingOperations(),
+    evidence: COST_EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  const inSecond = await postProposal(address, { ...signal, project_id: 2 });
+  assert.equal(inSecond.status, 201, 'the first signal opens the hypothesis of project 2');
+  assert.equal(inSecond.proposal.project_id, 2);
+
+  // The identical signal, replayed in project 1. Before this ficha the dedupe
+  // lookup read `WHERE dedupe_key = ? AND status = 'pending'` with no project,
+  // so this call answered 200 and quietly appended its evidence to project 2's
+  // still-pending proposal.
+  const inDefault = await postProposal(address, signal);
+  assert.equal(
+    inDefault.status,
+    201,
+    'a repeat is only a repeat inside one project (migration 0026 keys on (project_id, dedupe_key))',
+  );
+  assert.notEqual(inDefault.proposal.id, inSecond.proposal.id);
+  assert.equal(inDefault.proposal.project_id, 1);
+
+  assert.deepEqual(
+    (await readProposal(address, inSecond.proposal.id, '?project_id=2')).body.proposal?.evidence,
+    COST_EVIDENCE,
+    'project 2 keeps exactly one occurrence: one occurrence is not a list',
+  );
+  assert.deepEqual(
+    (await getProposal(address, inDefault.proposal.id)).evidence,
+    COST_EVIDENCE,
+    'and so does the one project 1 just opened',
+  );
+
+  // Inside one project the merge still happens, so the fix narrowed the lookup
+  // rather than turning deduplication off.
+  const repeat = await postProposal(address, signal);
+  assert.equal(repeat.status, 200);
+  assert.equal(repeat.proposal.id, inDefault.proposal.id);
+});
+
+test('t412 AT32 — a scope that answers to no project is refused before any proposal is touched', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+
+  const read = await readProposal(address, proposal.id, '?project_id=99');
+  assert.equal(read.status, 404);
+  assert.equal(
+    read.body.error,
+    'unknown_project',
+    '"there is nothing here" and "there is no here" are different answers',
+  );
+  assert.equal(read.body.project_id, 99, 'and the refusal names the scope nobody answers to');
+
+  const listed = await fetch(`${address}/v1/proposals?project_id=99`);
+  const listedBody = await jsonBody<{ error: string }>(listed);
+  assert.equal(listed.status, 404, JSON.stringify(listedBody));
+  assert.equal(listedBody.error, 'unknown_project');
+
+  const approved = await post(address, `/v1/proposals/${proposal.id}/approve?project_id=99`, {});
+  assert.equal(approved.status, 404);
+  assert.equal((await jsonBody<{ error: string }>(approved)).error, 'unknown_project');
+  assert.equal(
+    (await getProposal(address, proposal.id)).status,
+    'pending',
+    'refused before the proposal was touched',
+  );
+
+  const created = await post(address, '/v1/proposals?project_id=99', {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  });
+  assert.equal(created.status, 404);
+  assert.equal((await jsonBody<{ error: string }>(created)).error, 'unknown_project');
+  assert.deepEqual(
+    (await listProposals(address)).map((entry) => entry.id),
+    [proposal.id],
+    'and nothing was written',
+  );
+});
+
+test('t412 AT33 — POST /v1/proposals resolves its graph inside the project the caller declared', async (t) => {
+  const address = await startApp(t);
+  await declareProject(address, 'second');
+
+  // The lineage exists in project 2 and NOWHERE else, which is what tells a
+  // handler that resolves inside its scope apart from one that always looks in
+  // the default project.
+  const document = minimalGraph();
+  await resolvePinsOver(document as unknown as Record<string, unknown>, apiOf(address));
+  const second = await registerIn(address, document, 2);
+
+  const body = {
+    graph_id: second.graph.id,
+    target_version: second.version.id,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  const scoped = await postProposal(address, { ...body, project_id: 2 });
+  assert.equal(scoped.status, 201);
+  assert.equal(scoped.proposal.project_id, 2, 'the row lands in the project that was declared');
+  assert.equal(scoped.proposal.graph_id, second.graph.id);
+
+  const unscoped = await post(address, '/v1/proposals', body);
+  const unscopedBody = await jsonBody<{ error: string; graph_id: string }>(unscoped);
+  assert.equal(unscoped.status, 400, JSON.stringify(unscopedBody));
+  assert.equal(
+    unscopedBody.error,
+    'unknown_graph',
+    'from inside project 1 a lineage of project 2 is a lineage that does not exist',
+  );
+
+  assert.deepEqual(await listProposals(address), [], 'and the default project wrote nothing');
 });

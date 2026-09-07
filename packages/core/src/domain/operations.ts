@@ -59,6 +59,14 @@ import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
  * other field on this list. A mutation path of their own would have been a
  * second way to change a node, with its own rules about what gets versioned.
  *
+ * `external` and `unsafe_to_retry` are here since t369, and for the reason that
+ * put `escalation_policy` here: what a step reaches for outside, and whether it
+ * may be run twice, are node DATA — so a change to either is a versioned
+ * mutation with an inverse and evidence, revalidated whole (D15), and not a
+ * second mutation path with rules of its own. The carrier needs nothing new:
+ * `contract` already proves `change_node_field` moves an object, and a boolean
+ * rides it just as well.
+ *
  * What stays out is unchanged and deliberate: `id` and `node_type` are the
  * node's identity, and swapping either is an operation of its own — edges,
  * telemetry and past proposals all point at an id.
@@ -70,6 +78,8 @@ export const CHANGEABLE_FIELDS = Object.freeze([
   'model',
   'skill_ref',
   'contract',
+  'external',
+  'unsafe_to_retry',
   'escalation_policy',
   'escalation_recipient',
 ]);
@@ -82,6 +92,8 @@ export type ChangeableField =
   | 'model'
   | 'skill_ref'
   | 'contract'
+  | 'external'
+  | 'unsafe_to_retry'
   | 'escalation_policy'
   | 'escalation_recipient';
 

@@ -53,6 +53,19 @@ const T142_ARTIFACTS = Object.freeze({
   routes: 'src/routes/webhooks.ts',
 });
 
+/**
+ * What t359 adds on top: the claim that decides who sends (RF-06).
+ *
+ * The repository and the dispatcher are t142's files, listed again because a
+ * missing `claimDelivery` has to fail by NAME here too, not as an `undefined is
+ * not a function` three frames deep.
+ */
+const T359_ARTIFACTS = Object.freeze({
+  migration: 'migrations/0029_delivery_claim.sql',
+  repository: 'src/repositories/webhooks.ts',
+  dispatcher: 'src/webhooks/dispatcher.ts',
+});
+
 /** Header the delivery carries; HTTP header names are case-insensitive. */
 const SIGNATURE_HEADER = 'x-cartografo-signature';
 
@@ -109,6 +122,8 @@ type FetchLike = (
 /** The clocks and the transport the dispatcher accepts (FR4, FR5, FR8). */
 interface DispatcherOptions {
   tickIntervalMs?: number;
+  /** How long one attempt may take — and, since t359, how long a claim holds. */
+  deliveryTimeoutMs?: number;
   now?: () => string;
   fetchImpl?: FetchLike;
 }
@@ -624,4 +639,325 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
     [pushed.id],
     'and the fan-out never enqueues anything else for it',
   );
+});
+
+/* -------------------------------------------------------------------------- *
+ * t359 — the claim: two dispatchers on one queue, one outbound call (RF-06)
+ * -------------------------------------------------------------------------- */
+
+/**
+ * How long a claim holds the row, injected so it is not a backoff step.
+ *
+ * `DELIVERY_TIMEOUT_MS` and `BACKOFF_MS[0]` are both 10 seconds in production,
+ * which would make "the claim expired" and "the first backoff step elapsed"
+ * indistinguishable in an assertion. 45 seconds is neither, so every date below
+ * names exactly one reason.
+ */
+const CLAIM_TIMEOUT_MS = 45_000;
+
+/** How many deliveries the two dispatchers race over. */
+const RACED_DELIVERIES = 10;
+
+/** Everything the claim writes, beside everything it must not touch. */
+interface ClaimedRow {
+  id: number;
+  status: string;
+  attempts: number;
+  next_attempt_at: string;
+  claimed_at: string | null;
+  delivered_at: string | null;
+  last_error: string | null;
+}
+
+/** The slice of `src/repositories/webhooks.ts` the claim tests call directly. */
+interface WebhookRepositoryModule {
+  claimDelivery: (
+    db: Database,
+    table: 'webhook_delivery' | 'hook_delivery',
+    id: number,
+    moment: string,
+    attemptTimeoutMs: number,
+    options?: { now?: () => string },
+  ) => boolean;
+  createSubscription: (
+    db: Database,
+    data: { project_id: number; url: string; secret: string; filter_types: string[] | null },
+    options?: { now?: () => string },
+  ) => Subscription;
+  enqueueDeliveries: (
+    db: Database,
+    subscriptionId: number,
+    eventIds: readonly number[],
+    options?: { now?: () => string },
+  ) => number;
+}
+
+/** The claim's own view of a delivery row, `claimed_at` included. */
+function claimRow(db: Database, id: number): ClaimedRow {
+  const row = db
+    .prepare(
+      `SELECT id, status, attempts, next_attempt_at, claimed_at, delivered_at, last_error
+         FROM webhook_delivery WHERE id = ?`,
+    )
+    .get(id) as ClaimedRow | undefined;
+  assert.ok(row !== undefined, `delivery ${id} has to be in the table`);
+  return row;
+}
+
+/**
+ * TWO dispatchers over ONE database file — the shape RF-06 is about.
+ *
+ * Two things make this different from {@link startDispatcher}, and both are the
+ * point:
+ *
+ * - the file path is real and each app gets its own `openDatabase()` over it,
+ *   never `:memory:`. Two handles on one memory database are two databases;
+ *   two handles on one file are what a hosted second control plane would be;
+ * - the two apps share ONE mocked `setInterval`, so a single
+ *   `t.mock.timers.tick()` fires both dispatchers' timers in the same turn.
+ *   That IS the `Promise.all` over both ticks: `better-sqlite3` is synchronous,
+ *   so the first tick's claims land before the second tick reads what is due,
+ *   and if the claim were missing the second tick would read the very same rows
+ *   the first is already sending — which is exactly the race being asserted
+ *   away.
+ *
+ * Only the first app carries the subscription routes and listens: the second is
+ * a dispatcher and nothing else, because a second HTTP surface would prove
+ * nothing here.
+ *
+ * @param t Test context, used to register the shutdown.
+ * @param options How the transport answers, and how long a claim holds.
+ * @returns The FIRST app's database, its base URL, the attempts BOTH
+ *   dispatchers made, and the one clock they share.
+ */
+async function startDispatcherPair(
+  t: TestContext,
+  options: { respond: Responder; deliveryTimeoutMs?: number },
+): Promise<DispatchContext> {
+  requireArtifacts(
+    T142_ARTIFACTS.migration,
+    T142_ARTIFACTS.repository,
+    T142_ARTIFACTS.routes,
+    T359_ARTIFACTS.migration,
+    T359_ARTIFACTS.dispatcher,
+  );
+  const { registerWebhooks } = (await import('../src/routes/webhooks.ts')) as WebhookRoutesModule;
+  const { registerWebhookDispatcher } = (await import(
+    '../src/webhooks/dispatcher.ts'
+  )) as DispatcherModule;
+
+  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t359-'));
+  const file = path.join(base, 'cartografo.db');
+
+  const first = openDatabase(file);
+  applyPragmas(first);
+  migrate(first, MIGRATIONS_DIR);
+
+  // The second routine's own connection to the same file. It does NOT migrate:
+  // the schema is already there, and a second `migrate()` is a different
+  // ticket's assertion.
+  const second = openDatabase(file);
+  applyPragmas(second);
+
+  const calls: DeliveryCall[] = [];
+  const clock = { value: START };
+
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  const apps: FastifyInstance[] = [];
+  for (const db of [first, second]) {
+    const app = Fastify({ logger: false });
+    if (db === first) app.register(async (scope) => registerWebhooks(scope, db), { prefix: '/v1' });
+    registerWebhookDispatcher(app, db, {
+      tickIntervalMs: TICK_INTERVAL_MS,
+      deliveryTimeoutMs: options.deliveryTimeoutMs ?? CLAIM_TIMEOUT_MS,
+      now: () => clock.value,
+      fetchImpl: async (url, init) => {
+        const call: DeliveryCall = {
+          url,
+          method: init.method,
+          headers: init.headers,
+          body: init.body,
+        };
+        calls.push(call);
+        return await options.respond(call);
+      },
+    });
+    apps.push(app);
+  }
+
+  const url = await apps[0].listen({ port: 0, host: '127.0.0.1' });
+  await apps[1].ready();
+
+  t.after(async () => {
+    for (const app of apps) await app.close();
+    first.close();
+    second.close();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  return { db: first, url, calls, clock };
+}
+
+test('t359 — two dispatchers over one queue make exactly one call per delivery', async (t) => {
+  const ctx = await startDispatcherPair(t, { respond: async () => ({ status: 200 }) });
+
+  const subscription = await subscribe(ctx, {
+    url: 'https://example.invalid/hook',
+    secret: SECRET,
+  });
+  for (let job = 1; job <= RACED_DELIVERIES; job += 1) {
+    recordJobCreated(ctx.db, job, `fact number ${job}`);
+  }
+
+  await waitFor(
+    t,
+    () => deliveries(ctx.db, subscription.id).length === RACED_DELIVERIES,
+    'the ten deliveries to be enqueued',
+  );
+  await waitFor(
+    t,
+    () =>
+      deliveries(ctx.db, subscription.id).every((delivery) => delivery.status === 'delivered'),
+    'every delivery to be closed',
+  );
+  await drive(t);
+
+  assert.equal(
+    ctx.calls.length,
+    RACED_DELIVERIES,
+    'ten deliveries, ten outbound calls: whoever lost each race called nothing',
+  );
+
+  const rows = deliveries(ctx.db, subscription.id);
+  assert.equal(rows.length, RACED_DELIVERIES);
+  for (const row of rows) {
+    assert.equal(row.attempts, 1, `delivery ${row.id} was attempted exactly once`);
+    assert.equal(row.last_error, null, `delivery ${row.id} recorded no failure`);
+  }
+});
+
+test('t359 — a claim whose routine never comes back is claimed again, and only once more', async (t) => {
+  // The first attempt hangs and never resolves: a process that crashed after
+  // winning the claim and before writing the outcome. `release` exists only so
+  // the teardown is not left waiting on it forever.
+  let release: (() => void) | undefined;
+  const hang = new Promise<{ status: number }>((resolve) => {
+    release = () => resolve({ status: 200 });
+  });
+  // Registered BEFORE the harness's own shutdown hook, and `after` hooks run in
+  // registration order: whatever this test asserts, the crashed attempt is let
+  // go before `app.close()` waits on the tick that is holding it.
+  t.after(() => release?.());
+
+  let seen = 0;
+  const ctx = await startDispatcherPair(t, {
+    respond: async () => {
+      seen += 1;
+      return seen === 1 ? await hang : { status: 200 };
+    },
+  });
+
+  const subscription = await subscribe(ctx, {
+    url: 'https://example.invalid/hook',
+    secret: SECRET,
+  });
+  recordJobCreated(ctx.db, 1, 'the delivery whose routine dies mid-attempt');
+
+  await waitFor(t, () => ctx.calls.length >= 1, 'the first attempt to go out');
+  const claimed = only(deliveries(ctx.db, subscription.id));
+  assert.equal(claimed.attempts, 1, 'the claim counted the attempt before the call went out');
+  assert.equal(claimed.status, 'pending', 'nothing was recorded: the routine never came back');
+
+  // Not yet: the claim still holds the row, so neither routine may touch it.
+  advance(ctx.clock, CLAIM_TIMEOUT_MS - 1000);
+  await drive(t, LONG_SETTLE_TICKS);
+  assert.equal(ctx.calls.length, 1, 'a live claim is not stolen by the other dispatcher');
+
+  // Past `claimedAt + deliveryTimeoutMs` the row is a due candidate again.
+  advance(ctx.clock, 1000);
+  await waitFor(
+    t,
+    () => only(deliveries(ctx.db, subscription.id)).status === 'delivered',
+    'the expired claim to be taken again and delivered',
+  );
+  await drive(t, LONG_SETTLE_TICKS);
+
+  assert.equal(ctx.calls.length, 2, 'exactly one more attempt: not none, and not a stampede');
+  const delivered = only(deliveries(ctx.db, subscription.id));
+  assert.equal(delivered.attempts, 2, 'the re-claim costs one more attempt, and only one');
+  assert.equal(delivered.last_error, null);
+
+  // The crashed routine finally answers. Its outcome write finds a row that is
+  // no longer `pending`, so it changes nothing.
+  release?.();
+  await drive(t);
+  assert.equal(ctx.calls.length, 2);
+  assert.deepEqual(only(deliveries(ctx.db, subscription.id)), delivered);
+});
+
+test('t359 — a lost claim leaves the row exactly as the winner left it', async (t) => {
+  requireArtifacts(T142_ARTIFACTS.repository, T359_ARTIFACTS.migration);
+  const repository = (await import(
+    '../src/repositories/webhooks.ts'
+  )) as WebhookRepositoryModule;
+  assert.equal(
+    typeof repository.claimDelivery,
+    'function',
+    'src/repositories/webhooks.ts has to export claimDelivery',
+  );
+
+  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t359u-'));
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  applyPragmas(db);
+  migrate(db, MIGRATIONS_DIR);
+  t.after(() => {
+    db.close();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  const subscription = repository.createSubscription(
+    db,
+    { project_id: 1, url: 'https://example.invalid/hook', secret: SECRET, filter_types: null },
+    { now: () => START },
+  );
+  const event = recordJobCreated(db, 1, 'the one delivery two routines reach for');
+  assert.equal(
+    repository.enqueueDeliveries(db, subscription.id, [event.id], { now: () => START }),
+    1,
+  );
+  const queued = only(deliveries(db, subscription.id));
+
+  const won = repository.claimDelivery(db, 'webhook_delivery', queued.id, START, CLAIM_TIMEOUT_MS, {
+    now: () => START,
+  });
+  assert.equal(won, true, 'the first routine over a due row wins the claim');
+
+  const winner = claimRow(db, queued.id);
+  assert.equal(winner.attempts, 1, 'the claim counts the attempt it authorises');
+  assert.equal(winner.claimed_at, START, 'and records when it took the row');
+  assert.equal(
+    winner.next_attempt_at,
+    after(CLAIM_TIMEOUT_MS),
+    'and holds the row for one attempt timeout',
+  );
+
+  // The loser runs a full second later, so any write it made would be visible.
+  const lost = repository.claimDelivery(db, 'webhook_delivery', queued.id, START, CLAIM_TIMEOUT_MS, {
+    now: () => after(1000),
+  });
+  assert.equal(lost, false, 'the second routine over the same row loses the race');
+
+  const afterLoss = claimRow(db, queued.id);
+  assert.equal(afterLoss.status, winner.status, 'a lost claim does not move the status');
+  assert.equal(afterLoss.attempts, winner.attempts, 'a lost claim counts no attempt');
+  assert.equal(
+    afterLoss.next_attempt_at,
+    winner.next_attempt_at,
+    'a lost claim does not push the schedule',
+  );
+  assert.equal(afterLoss.claimed_at, winner.claimed_at, 'a lost claim does not restamp the claim');
+  assert.equal(afterLoss.last_error, winner.last_error, 'a lost claim records no failure');
+  assert.equal(afterLoss.delivered_at, winner.delivered_at, 'a lost claim records no delivery');
+  assert.deepEqual(afterLoss, winner, 'and nothing else on the row moved either');
 });

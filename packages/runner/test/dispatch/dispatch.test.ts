@@ -7587,3 +7587,427 @@ test("t370 — external inputs are fetched before the session and land as files"
     },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t423 — a declared artifact leaves the worktree before the worktree does     */
+/* -------------------------------------------------------------------------- */
+
+/** The skill of the artifact suite, and the file its sessions declare. */
+const ARTIFACT_SKILL_ID = "artifact-crossing";
+const ARTIFACT_FILE = "report.md";
+const ARTIFACT_ID = "artifact-42";
+const ARTIFACT_BYTES = "what the step was asked to produce";
+
+/**
+ * `do-crossing` with one property of its `output` marked as an artifact.
+ *
+ * The manifest is the fixture's, edited in the one place this ticket is about:
+ * `relatorio` is a string the session fills with a worktree-relative PATH, and
+ * `x-artifact: true` is what tells the runner to replace that path with an id
+ * before anybody stores the report. Everything else is left alone, so what the
+ * cases below measure is the upload and nothing else.
+ */
+function artifactSkillManifest(): Record<string, unknown> {
+  const base = manifest(WORK_SKILL);
+  const skill: Record<string, unknown> = {
+    ...base,
+    id: ARTIFACT_SKILL_ID,
+    description:
+      "Produces the artifact the step declares, as a file, and names it in the report.",
+    output: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      required: ["nota", "relatorio"],
+      properties: {
+        nota: { type: "string", minLength: 1 },
+        relatorio: { type: "string", minLength: 1, "x-artifact": true },
+      },
+    },
+  };
+  skill.hash = manifestContentHash(skill);
+  return skill;
+}
+
+/**
+ * The traversal graph with `implementar` pinned to the artifact skill.
+ *
+ * The node's own `contract.output_schema` carries the keyword too, because that
+ * is the document the RUNNER reads: `resolve-node.ts` hands it the pinned node's
+ * contract off the graph-version read the dispatch already makes, and no second
+ * round trip is spent finding out what a step declared.
+ */
+function artifactGraph(
+  className: string,
+  hash: string,
+): Record<string, unknown> {
+  const document = traversalGraph(className);
+  const nodes = (document.nodes as Array<Record<string, unknown>>).map((node) =>
+    node.id === "implementar"
+      ? {
+          ...node,
+          skill_ref: { id: ARTIFACT_SKILL_ID, version: "1.0.0", hash },
+          contract: {
+            ...(node.contract as Record<string, unknown>),
+            output_schema: {
+              type: "object",
+              required: ["nota"],
+              properties: {
+                nota: { type: "string", minLength: 1 },
+                relatorio: { type: "string", minLength: 1, "x-artifact": true },
+              },
+            },
+          },
+        }
+      : node,
+  );
+  return { ...document, nodes };
+}
+
+/** The lines a fake session prints when it declares an artifact by path. */
+function linesDeclaringArtifact(declared: unknown): string {
+  return JSON.stringify([
+    { stream: "stdout", text: "I produced what the step asked for." },
+    { stream: "stdout", text: "```resultado" },
+    {
+      stream: "stdout",
+      text: JSON.stringify({ nota: "the artifact is ready", relatorio: declared }),
+    },
+    { stream: "stdout", text: "```" },
+  ]);
+}
+
+/**
+ * The declared output of a step stops being a path and becomes an id (t423).
+ *
+ * Rafael's 2026-09-05 rule, end to end: an artifact is only what a step's
+ * contract declares as output, never everything a session touched. A session
+ * writes the file it promised, names it in its closing block, and the runner
+ * gets it out of the worktree — BEFORE `release()` discards that worktree, and
+ * off the disk afterwards, so the file does not then trip the uncommitted-work
+ * guard that same release feeds.
+ *
+ * **One route is stubbed, and only one.** `POST /v1/sessions/:id/artifacts` is
+ * the sibling ficha t422's to build, and it had not landed when this suite was
+ * written: the control plane below is the real one, booted the same way every
+ * other case here boots it, and the injected `doFetch` answers that ONE route
+ * and delegates every other call untouched. So what is proved is the whole of
+ * this ticket's own surface — when the upload happens, what it sends, what the
+ * report becomes, what the worktree keeps — with the store's own behaviour left
+ * to the ficha that owns it. Point the stub at the real route once t422 is in.
+ */
+test("t423 — a declared artifact is uploaded, the report carries its id, and the job moves on", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+  const artifactSkill = artifactSkillManifest();
+  await api(baseUrl, "POST", "/v1/skills", artifactSkill, 201, token);
+
+  /** One call the dispatch made, as the stub in front of `fetch` saw it. */
+  interface Traced {
+    method: string;
+    route: string;
+    headers: Record<string, string>;
+    body: unknown;
+  }
+
+  /**
+   * A `fetch` that answers the artifact route itself and delegates the rest.
+   *
+   * The upload's body is RAW bytes, not JSON, so it is kept as text rather than
+   * parsed: this is the one call of the dispatch that is not an envelope.
+   */
+  function stubArtifacts(): { doFetch: typeof fetch; calls: Traced[] } {
+    const calls: Traced[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      const route = String(input).slice(baseUrl.length);
+      const headers: Record<string, string> = {};
+      for (const [name, value] of new Headers(init?.headers)) headers[name] = value;
+      const raw = init?.body;
+      calls.push({
+        method: init?.method ?? "GET",
+        route,
+        headers,
+        body:
+          typeof raw === "string"
+            ? JSON.parse(raw)
+            : raw === undefined || raw === null
+              ? undefined
+              : Buffer.from(raw as Uint8Array).toString("utf8"),
+      });
+
+      if (/^\/v1\/sessions\/\d+\/artifacts$/.test(route)) {
+        return new Response(JSON.stringify({ id: ARTIFACT_ID }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return await fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** A job standing on the artifact-producing node, in a class of its own. */
+  async function jobOnImplementar(
+    className: string,
+    executionId: number,
+  ): Promise<Work> {
+    const versionId = await registerGraph(
+      baseUrl,
+      token,
+      artifactGraph(className, artifactSkill.hash as string),
+    );
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: `ticket whose step declares an artifact (${className})`,
+        entry_node_id: "implementar",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  /** The uploads the dispatch made, in order. */
+  function uploads(calls: Traced[]): Traced[] {
+    return calls.filter(
+      (call) => call.method === "POST" && call.route.endsWith("/artifacts"),
+    );
+  }
+
+  /** The blocks it posted for one job, as the reasons they carry. */
+  function blockReasons(calls: Traced[], jobId: number): string[] {
+    return calls
+      .filter(
+        (call) =>
+          call.method === "POST" && call.route === `/v1/jobs/${jobId}/blocks`,
+      )
+      .map((call) => String((call.body as { reason: unknown }).reason));
+  }
+
+  /** The transitions it posted, in order, as `to_node_id` values. */
+  function transitions(calls: Traced[]): string[] {
+    return calls
+      .filter(
+        (call) => call.method === "POST" && call.route.endsWith("/transitions"),
+      )
+      .map((call) => (call.body as { to_node_id: string }).to_node_id);
+  }
+
+  /** The sessions the job has, as the control plane projects them. */
+  async function sessionsOf(
+    jobId: number,
+  ): Promise<Array<{ id: number; output: unknown }>> {
+    const { sessions } = await api<{
+      sessions: Array<{ id: number; output: unknown }>;
+    }>(baseUrl, "GET", `/v1/sessions?job_id=${jobId}`, undefined, 200, token);
+    return sessions;
+  }
+
+  /** The dispatch every case below runs, with its own lines and its own dir. */
+  function runDispatch(
+    createClaudeCodeDispatch: typeof DispatchModule.createClaudeCodeDispatch,
+    workDir: string,
+    doFetch: typeof fetch,
+    lines: string,
+    writeFiles?: Record<string, string>,
+  ): (jobId: number) => Promise<DispatchModule.DispatchOutcome> {
+    return createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      resolveInput: () => Promise.resolve({ pedido: "produce the artifact" }),
+      timeoutSeconds: 60,
+      envOverrides: {
+        FAKE_ENGINE_LINES: lines,
+        ...(writeFiles === undefined
+          ? {}
+          : { FAKE_ENGINE_WRITE_FILES: JSON.stringify(writeFiles) }),
+      },
+    });
+  }
+
+  await parent.test(
+    "t423 AT — the file the session declared goes up once, and the report carries the id",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-ok-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-ok", 4231);
+      const { doFetch, calls } = stubArtifacts();
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact(ARTIFACT_FILE),
+        { [ARTIFACT_FILE]: ARTIFACT_BYTES },
+      )(job.id);
+
+      const sent = uploads(calls);
+      assert.equal(sent.length, 1, "one declared artifact is one upload");
+      const [session] = await sessionsOf(job.id);
+      assert.equal(sent[0].route, `/v1/sessions/${String(session.id)}/artifacts`);
+      assert.equal(sent[0].headers["content-type"], "application/octet-stream");
+      assert.equal(
+        sent[0].headers["x-artifact-name"],
+        "relatorio",
+        "the name is the contract's own property key",
+      );
+      assert.equal(sent[0].headers.authorization, `Bearer ${token}`);
+      assert.equal(
+        sent[0].body,
+        ARTIFACT_BYTES,
+        "the bytes of the file the session actually wrote",
+      );
+
+      assert.deepEqual(
+        session.output,
+        { nota: "the artifact is ready", relatorio: ARTIFACT_ID },
+        "the control plane accepted the report, and it names an artifact id, never a local path",
+      );
+      assert.ok(
+        !existsSync(path.join(workDir, ARTIFACT_FILE)),
+        "the uploaded file leaves the worktree, or it trips the uncommitted-work guard",
+      );
+
+      assert.deepEqual(blockReasons(calls, job.id), [], "nothing stopped this work");
+      assert.deepEqual(transitions(calls), ["conferir"], "and it moved off the node");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "conferir");
+      assert.equal(after.blocked, false);
+    },
+  );
+
+  await parent.test(
+    "t423 AT — a declared artifact the session never wrote blocks the work on its node",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-gone-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-gone", 4232);
+      const { doFetch, calls } = stubArtifacts();
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact("never-written.md"),
+      )(job.id);
+
+      assert.deepEqual(
+        uploads(calls),
+        [],
+        "a declaration that failed its checks never reaches the network",
+      );
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "and a report that was never stored may not move the work",
+      );
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1, "exactly one block, posted by exactly one owner");
+      assert.ok(
+        reasons[0].includes("never-written.md"),
+        `the file the session named has to be quoted: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("relatorio"),
+        `...and the property that declared it: ${reasons[0]}`,
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.equal(
+        session.output,
+        null,
+        "the control plane was never handed a report carrying a bare worktree path",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "implementar", "the work stays where it failed");
+      assert.equal(after.blocked, true);
+    },
+  );
+
+  await parent.test(
+    "t423 AT — a declared path that escapes the worktree blocks the work, naming the escape",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t423-escape-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnImplementar("travessia-t423-escape", 4233);
+      const { doFetch, calls } = stubArtifacts();
+      const escape = "../../etc/passwd";
+
+      await runDispatch(
+        createClaudeCodeDispatch,
+        workDir,
+        doFetch,
+        linesDeclaringArtifact(escape),
+        { [ARTIFACT_FILE]: ARTIFACT_BYTES },
+      )(job.id);
+
+      assert.deepEqual(uploads(calls), [], "nothing outside the worktree is ever read");
+      assert.deepEqual(transitions(calls), []);
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1);
+      assert.ok(
+        reasons[0].includes(escape),
+        `the path that escaped has to be quoted: ${reasons[0]}`,
+      );
+      assert.ok(
+        reasons[0].includes("relatorio"),
+        `...and the property that declared it: ${reasons[0]}`,
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.current_node_id, "implementar");
+      assert.equal(after.blocked, true);
+    },
+  );
+});

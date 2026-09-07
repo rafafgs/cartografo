@@ -1,12 +1,14 @@
--- 0032_external_calls — every call this system makes to an MCP server, and what
+-- 0033_external_calls — every call this system makes to an MCP server, and what
 -- came back (t370, FR6; RF-37, input half).
 --
--- Number checked against the queue rather than assumed: `0029_delivery_claim`
--- is claimed by ticket-359, `0030_artifacts` by t422 and
--- `0031_transcript_artifact` by t424, each in its own ticket's declared conflict
--- surface. `0032` is the next nobody has spoken for. Renumber at the merge if
--- one of those three lands differently — `src/db/migrate.ts` fails loudly on a
--- repeated number, which is the check this comment exists to survive.
+-- Numbered 0033 at the merge with main, not 0032 as the ticket asked. The
+-- refinement checked the queue and found `0029_delivery_claim` claimed by
+-- ticket-359, `0030_artifacts` by t422 and `0031_transcript_artifact` by t424,
+-- leaving 0032 free; by the time this branch merged, main already carried
+-- 0029–0031 plus `0032_transcript_artifact` (t424 landed one number later than
+-- it had declared). Re-parented onto that head: 0033 is the next free number.
+-- `src/db/migrate.ts` fails loudly on a repeated number, which is the check
+-- this comment exists to survive.
 --
 -- **One row per call, updated once.** The intent is written BEFORE the call and
 -- completed after it, and that is the crash-safety property the whole shape

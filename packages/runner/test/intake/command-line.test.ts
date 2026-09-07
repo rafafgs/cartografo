@@ -168,6 +168,24 @@ test('AT2 — the token precedence is --token, then CARTOGRAFO_TOKEN, then none'
   );
 });
 
+test('AT2 — --project defaults to 1, accepts a positive integer, and refuses anything else', async () => {
+  const { parseArguments } = await loadCommandLine();
+
+  const bare = runnable(parseArguments([REQUEST, '--class', 'nota-curta'], EMPTY_ENV));
+  assert.equal(bare.projectId, 1, 'the same default the runner itself resolves to');
+
+  const scoped = runnable(
+    parseArguments([REQUEST, '--class', 'nota-curta', '--project', '2'], EMPTY_ENV),
+  );
+  assert.equal(scoped.projectId, 2);
+
+  assert.match(
+    refusal(parseArguments([REQUEST, '--class', 'nota-curta', '--project', 'abc'], EMPTY_ENV)),
+    new RegExp('--project'),
+    'the message names the flag that failed to parse',
+  );
+});
+
 test('AT2 — an unknown flag, and a flag with no value, are both refused', async () => {
   const { parseArguments, HELP } = await loadCommandLine();
 
@@ -184,6 +202,7 @@ test('AT2 — an unknown flag, and a flag with no value, are both refused', asyn
 
   assert.ok(HELP.includes('--class'), `the help text does not mention --class:\n${HELP}`);
   assert.ok(HELP.includes('--token'), `the help text does not mention --token:\n${HELP}`);
+  assert.ok(HELP.includes('--project'), `the help text does not mention --project:\n${HELP}`);
 
   // D20 §5.2: `--classe` became `--class`, and nothing was left behind under
   // the old spelling — an alias here would be the migration keeping two
@@ -222,13 +241,14 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
 
   await createReader(options, recordingFetch(seen)).fetchClasses();
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].url, 'http://127.0.0.1:9999/v1/classes');
+  assert.equal(seen[0].url, 'http://127.0.0.1:9999/v1/classes?project_id=1');
   assert.equal(seen[0].authorization, 'Bearer abc');
 
   await createClient(options, recordingFetch(seen, 201, { draft: { id: 1 } })).createIntake({
     class: 'nota-curta',
     request: REQUEST,
     items: [{ ref: 'a', title: 'One' }],
+    project_id: options.projectId,
   });
   assert.equal(seen.length, 2);
   assert.equal(seen[1].url, 'http://127.0.0.1:9999/v1/intake');
@@ -240,6 +260,18 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
   await createReader(anonymous, recordingFetch(seen)).fetchClasses();
   assert.equal(seen.length, 3);
   assert.equal(seen[2].authorization, null);
+});
+
+test('AT2 — createReader scopes the class check to the resolved project', async () => {
+  const { parseArguments, createReader, DEFAULT_URL } = await loadCommandLine();
+  const seen: SeenRequest[] = [];
+
+  const scoped = runnable(
+    parseArguments([REQUEST, '--class', 'nota-curta', '--project', '2'], EMPTY_ENV),
+  );
+  await createReader(scoped, recordingFetch(seen)).fetchClasses();
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, `${DEFAULT_URL}/v1/classes?project_id=2`);
 });
 
 test('AT2 — a refused credential becomes one actionable line, not the status code', async () => {

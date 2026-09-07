@@ -275,7 +275,11 @@ test('t106 — PATCH /answer unblocks the job, with the actor of whoever answere
     ['job.created', 'job.blocked', 'job.unblocked'],
   );
   const unblock = jobEvents[2];
-  assert.deepEqual(unblock.data, {}, 'the fact is the fall of the flag itself');
+  // t339 widened `job.unblocked` with an OPTIONAL `reason`, for the human
+  // override the screen now offers. This path states none — there is no reason
+  // to invent when the answer itself is the fact — so it records the explicit
+  // `null` every unstated optional field gets.
+  assert.deepEqual(unblock.data, { reason: null }, 'the system states no reason of its own');
   assert.equal(
     unblock.actor.type,
     'user',

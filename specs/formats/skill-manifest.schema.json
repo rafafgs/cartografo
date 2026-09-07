@@ -51,7 +51,7 @@
     },
     "output": {
       "type": "object",
-      "description": "a valid JSON Schema document; for role=gate it has to include an outcome field with the enum [\"pass\",\"fail\",\"escalate_human\"]"
+      "description": "a valid JSON Schema document; for role=gate it has to include an outcome field with the enum [\"pass\",\"fail\",\"escalate_human\"]. A top-level property marked \"x-artifact\": true is a FILE: the session writes its worktree-relative path there as a string and the runner replaces it with an artifact id before the report is stored (t423)"
     },
     "preconditions": {
       "type": "array",

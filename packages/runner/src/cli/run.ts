@@ -67,10 +67,13 @@ import {
 import { Controller } from '../controller/controller.ts';
 import { createMainLineAdvancer } from '../dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
+import { createDispatchControlPlaneClient } from '../dispatch/control-plane-client.ts';
 import {
   createExecutorEnvironmentResolver,
+  type McpDiscoveryResult,
   type ReferenceMode,
 } from '../dispatch/resolve-executor-environment.ts';
+import { createClassPrecedentsResolver } from '../dispatch/resolve-input.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
@@ -665,26 +668,63 @@ export async function buildProbeReport(
  *   flags carries `undefined` there, and a probe reporting `undefined` for the
  *   workspace is exactly the page an operator opened to read the paths on.
  * @param adapter The adapter to ask.
+ * @returns The report that was built, whether or not the control plane took it;
+ *   `null` when building it threw. The startup reads its `mcp` half and hands
+ *   it to the dispatch (t360, FR4), which is the whole reason this stopped
+ *   being a `void`: the discovery inside it costs one CLI spawn, and a second
+ *   resolver calling `discoverMcpServers()` again would spend one more per
+ *   session for an answer that cannot have changed inside a process.
  */
 async function reportProbe(
   client: ControlPlaneClient,
   options: RunnerOptions,
   resolved: ResolvedRunnerPaths,
   adapter: EngineAdapter,
-): Promise<void> {
+): Promise<ProbeReport | null> {
+  let report: ProbeReport;
   try {
-    const report = await buildProbeReport(
+    report = await buildProbeReport(
       adapter,
       resolved.engine,
       resolved.repoRoot,
       resolved.worktreesRoot,
     );
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: could not build the probe of "${options.runnerId}" — ${describeError(error)}\n`,
+    );
+    return null;
+  }
+
+  try {
     await client.reportProbe(options.runnerId, report);
   } catch (error) {
     process.stderr.write(
       `cartografo-runner: could not report the probe of "${options.runnerId}" — ${describeError(error)}\n`,
     );
   }
+  return report;
+}
+
+/**
+ * The probe's MCP half, in the shape the executor environment declares (t360).
+ *
+ * A mapper and nothing else, and it exists so that the honesty rule survives the
+ * translation: `{supported: false}` stays `{supported: false}` — never an empty
+ * list — because an adapter that implements no discovery knows no more about
+ * this machine than one that found nothing, and the session has to be able to
+ * tell those apart (`engine/types.ts`, t400 FR7).
+ *
+ * A report that could not be built at all reads the same way, which is why the
+ * `null` case lands here too: nothing was discovered, and nothing is claimed.
+ *
+ * @param report What the startup probe found, or `null`.
+ * @returns The discovery, as the dispatch's seam takes it.
+ */
+function mcpDiscoveryOf(report: ProbeReport | null): McpDiscoveryResult {
+  const mcp = report?.mcp;
+  if (mcp === undefined || mcp.supported !== true) return { supported: false };
+  return { supported: true, servers: mcp.servers.map((server) => server.name) };
 }
 
 /**
@@ -851,7 +891,23 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // servers this engine names, and the two directories this process was pointed
   // at (t401, FR7). Unconditional, unlike the catalogue above: a CLI that did
   // not answer is exactly the fact worth reporting.
-  await reportProbe(client, options, resolved, route.adapter);
+  //
+  // Kept, since t360, rather than discarded: the discovery inside it is also
+  // what a dispatched session is told at `input.environment.mcp_servers`, and
+  // computing it twice would be two CLI spawns and two answers about one
+  // machine.
+  const probe = await reportProbe(client, options, resolved, route.adapter);
+
+  // The client the precedent resolver speaks through: the same address, the
+  // same credential and the same deadline the dispatch itself uses. Built here
+  // because `executorEnvironment` is an OPTION of the dispatch and is therefore
+  // assembled before the dispatch exists — there is no earlier moment at which
+  // its own internal client could be borrowed.
+  const precedentsClient = createDispatchControlPlaneClient({
+    urlBase: options.url,
+    token: options.token,
+    ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+  });
 
   const controller = new Controller({
     client,
@@ -889,6 +945,10 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
         referenceMode: options.referenceMode ?? 'ponta_do_principal',
         ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
         ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+        // A VALUE for the one that is a fact about this process, and a FUNCTION
+        // for the one that is a fact about each job (t360, FR4).
+        mcpDiscovery: mcpDiscoveryOf(probe),
+        classPrecedents: createClassPrecedentsResolver(precedentsClient, options.projectId),
       }),
       // ...and the half that WRITES to that same bench (t273). Built once too,
       // out of the same two paths: the bench to advance, and the repository the

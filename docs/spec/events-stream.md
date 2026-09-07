@@ -58,20 +58,37 @@ path. The worst a stalled client causes is its own delay.
 
 ---
 
-## 3. Filters
+## 3. The scope, and the filter
 
-Both are optional and they **add up** (AND, never OR).
+`project_id` is the **scope** and `type` is a **filter**, and the difference is
+not cosmetic: a filter you leave off widens what you receive, and a scope you
+leave off does not.
 
 | Parameter | Format | What it does |
 |---|---|---|
-| `projeto_id` | integer | Only that project's events. A non-integer value is a `400`. |
-| `tipo` | a comma-separated list | Only the types cited, matching the exact string. An unknown type is a `400`. |
+| `project_id` | integer | The project whose events this connection reads. **Always applied**: left off, it is project `1`, the default partition — never "every project". A non-integer value is a `400`; a well-formed id that names no project is a `404`. |
+| `type` | a comma-separated list | Only the types cited, matching the exact string. Optional; left off, every type. An unknown type is a `400`. |
 
 ```
 GET /v1/events/stream?project_id=1&type=job.transitioned,job.blocked
 ```
 
-The values accepted in `tipo` are the types the control plane writes today:
+A stream is one project's, and there is no way to ask for two. That is the same
+rule the rest of `/v1` follows — `GET /v1/jobs`, `GET /v1/executions/:id/events`
+and `GET /v1/graphs` all resolve a project before they read anything — and it is
+D25's: a partition that one route lets you out of is not a partition. If you
+watch several projects, open one connection per project; each carries its own
+cursor, which is what you want anyway, because the `id` sequence is global and a
+merged stream would give you no way to resume one of them alone.
+
+The refusal for an unknown project arrives **before any byte of the stream**,
+like every other refusal in §7:
+
+```json
+{"error": "unknown_project", "message": "no project answers to this scope", "project_id": 4242}
+```
+
+The values accepted in `type` are the types the control plane writes today:
 
 ```
 job.created                session.opened               input_request.created
@@ -213,6 +230,13 @@ connection **never** becomes `text/event-stream` at all:
 
 `details` carries the whole list of problems, not only the first.
 
+A `?project_id=` that is well formed but names no project is a `404` in the same
+place, for the same reason — a scope that does not exist is not an empty stream:
+
+```json
+{"error": "unknown_project", "message": "no project answers to this scope", "project_id": 4242}
+```
+
 Before the filters comes the credential (§2). Without it, or with one that does
 not resolve, the answer is a `401` — also `application/json`, also without
 becoming `text/event-stream`:
@@ -336,6 +360,7 @@ an SSE body does not end, so that path is listed in §10.
 | Latency | up to ~300ms: the connection *polls* the table at that rhythm, and is not coupled to the write |
 | A bounded burst | at most 500 events per read, chained until it catches up with the present |
 | A dead consumer affects nobody | the connection dies with the socket; its clocks are disarmed with it |
+| One connection sees one project | the scope is resolved before the stream opens and applied to every read it makes, the first and every poll after it (D25) |
 
 What does **not** exist in this version: guaranteed delivery (if nobody is
 connected, nobody receives — the log is what is the source of truth, and it is

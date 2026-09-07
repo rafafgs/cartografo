@@ -79,93 +79,6 @@ export interface Page {
  */
 export const DEFAULT_ANSWERED_BY = 'tela';
 
-const STYLE = `
-  :root { color-scheme: light dark; --remove: #b3261e; }
-  * { box-sizing: border-box; }
-  body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 1.5rem 2rem 4rem; }
-  header.topo { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
-  header.topo h1 { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
-  nav a { margin-right: 1rem; }
-  form.project-switcher { display: flex; align-items: baseline; gap: .4rem; font-size: .8rem; margin-left: auto; }
-  form.project-switcher label { opacity: .6; letter-spacing: .02em; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; opacity: .7; margin: 1.75rem 0 .6rem; }
-  .quadro { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
-  .grupo { flex: 1 1 16rem; min-width: 15rem; }
-  .cartao { border: 1px solid currentColor; border-radius: 6px; padding: .6rem .7rem; margin-bottom: .5rem; opacity: .95; }
-  .cartao .id { font-size: .75rem; opacity: .6; }
-  .bloqueado { border-width: 2px; }
-  .motivo { font-size: .8rem; margin-top: .35rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid currentColor; font-variant-numeric: tabular-nums; }
-  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
-  .pergunta { border: 1px solid currentColor; border-radius: 6px; padding: .8rem 1rem; margin-bottom: 1rem; max-width: 52rem; }
-  .pergunta dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .5rem 0; font-size: .9rem; }
-  .pergunta dt { opacity: .6; }
-  .pergunta dd { margin: 0; }
-  form textarea { width: 100%; min-height: 3.5rem; font: inherit; padding: .4rem; }
-  form label[for] { display: block; font-size: .8rem; letter-spacing: .02em; opacity: .7; margin-bottom: .2rem; }
-  form .opcoes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
-  form.action { margin-top: .5rem; max-width: 52rem; }
-  form.action p { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin: .4rem 0 0; font-size: .8rem; }
-  .linha-do-tempo { list-style: none; padding: 0; max-width: 52rem; }
-  .segmento { display: grid; grid-template-columns: 11rem 1fr; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid currentColor; }
-  .segmento .balde { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
-  .vazio { opacity: .6; font-style: italic; }
-  .verificacao { border: 1px solid currentColor; border-radius: 6px; padding: .7rem .9rem; margin-bottom: .6rem; max-width: 52rem; }
-  .verificacao[data-estado="met"] { opacity: .7; }
-  .verificacao[data-estado="unmet"] { border-width: 2px; }
-  .verificacao .titulo { margin: 0; font-weight: 600; }
-  .verificacao p { margin: .4rem 0 0; font-size: .9rem; }
-  .verificacao pre { overflow-x: auto; margin: .5rem 0 0; padding: .5rem .6rem; border: 1px dashed currentColor; border-radius: 4px; }
-  .verificacao code { font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
-  .verificacao form { margin-top: .5rem; }
-  .verificacao form input { font: inherit; padding: .3rem .4rem; min-width: 20rem; max-width: 100%; }
-  .pronto { border: 2px solid currentColor; border-radius: 6px; padding: 1rem 1.2rem; max-width: 52rem; }
-  .suporte { margin-top: 2.5rem; font-size: .85rem; opacity: .7; }
-  .attention { border-left-width: 4px; padding-left: .55rem; }
-  tr.attention td:first-child { border-left: 4px solid currentColor; padding-left: .45rem; }
-  .demo-badge { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; border: 1px solid currentColor; border-radius: 3px; padding: .05rem .3rem; margin-left: .4rem; }
-  .interview { display: grid; grid-template-columns: minmax(20rem, 1fr) minmax(20rem, 1fr); gap: 2rem; align-items: start; }
-  @media (max-width: 60rem) { .interview { grid-template-columns: 1fr; } }
-  .interview .turn, .interview .asking, .interview .closing, .interview .thinking { border: 1px solid currentColor; border-radius: 6px; padding: .7rem .9rem; margin-bottom: .6rem; }
-  .interview .asking { border-width: 2px; }
-  .interview .thinking { opacity: .7; font-style: italic; }
-  .interview .asked { margin: 0 0 .35rem; font-weight: 600; }
-  .interview .said { margin: 0; }
-  .interview .signature { margin: .35rem 0 0; font-size: .75rem; opacity: .6; }
-  .interview dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .5rem 0; font-size: .9rem; }
-  .interview dt { opacity: .6; }
-  .interview dd { margin: 0; }
-  .interview .options { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
-  .interview .closing form { display: inline-block; margin: .5rem .5rem 0 0; }
-  .mcp-suggestions { margin: .6rem 0; padding: .5rem .6rem; border: 1px dashed currentColor; border-radius: 6px; }
-  .mcp-suggestions .lead { margin: 0 0 .5rem; font-size: .82rem; opacity: .75; }
-  .mcp-suggestion { border-top: 1px solid currentColor; padding-top: .5rem; margin-top: .5rem; }
-  .mcp-suggestion:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
-  .mcp-suggestion h3 { font-size: .9rem; margin: 0 0 .25rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .mcp-suggestion p { margin: .25rem 0 0; font-size: .85rem; }
-  .mcp-suggestion pre { overflow-x: auto; margin: .35rem 0 0; padding: .4rem .5rem; border: 1px dashed currentColor; border-radius: 4px; }
-  .mcp-suggestion code { font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
-  .mcp-suggestion .no-command, .mcp-suggestion .caveat { font-size: .75rem; opacity: .7; }
-  .map-document ol { list-style: decimal; padding-left: 1.4rem; margin: 0; }
-  .map-document li { border: 1px solid currentColor; border-radius: 6px; padding: .6rem .8rem; margin-bottom: .6rem; }
-  .map-document h3 { font-size: .95rem; margin: 0 0 .4rem; }
-  .map-document ul { margin: .2rem 0; padding-left: 1.2rem; }
-  .map-document [data-field] { font-size: .85rem; margin-top: .3rem; }
-  .map-document [data-field]::before { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; opacity: .6; }
-  .map-document [data-field="needs"]::before { content: "needs"; }
-  .map-document [data-field="produces"]::before { content: "produces"; }
-  .map-document [data-field="verified_by"]::before { content: "verified by"; }
-  .map-document [data-field="exits"]::before { content: "exits"; }
-  .map-document [data-field="network"]::before { content: "reaches outside"; }
-  .map-document .required, .map-document .agentic-note { font-size: .72rem; opacity: .65; }
-  .empty { opacity: .6; font-style: italic; }
-  .log-header { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; overflow: auto; max-height: 32rem; border: 1px solid currentColor; border-radius: 6px; padding: .5rem .6rem; white-space: pre-wrap; word-break: break-word; }
-  .log-line { padding-left: .4rem; }
-  .log-line-failed { border-left: 3px solid var(--remove); padding-left: calc(.4rem - 3px); }
-`;
-
 /** Everything that goes into HTML passes through here. With no exception. */
 export function escapeHtml(value: unknown): string {
   return String(value)
@@ -257,7 +170,7 @@ function layout(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${autoRefresh ? '<meta http-equiv="refresh" content="30">\n' : ''}<title>${escapeHtml(title)} · cartografo</title>
-<style>${STYLE}</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header class="topo">

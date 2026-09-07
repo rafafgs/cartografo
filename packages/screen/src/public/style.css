@@ -1,31 +1,48 @@
 /*
- * Minimal style for the inbox: three columns, one system font, no assets.
+ * The one stylesheet the screen serves (t458).
  *
- * The screen has no build step and no dependency (RNF-04), so this file is
- * plain CSS — but it is NOT the design system. That is
- * `docs/spec/design-system.md`, and this file is one of its two incomplete
- * implementations: the static half serves `/inbox`, while the twenty-four
- * rendered routes are styled by the `STYLE` constant in `../pages.ts`. The two
- * share no token, which is a known divergence recorded in §10 of the spec and
- * not a licence to add a third answer here.
+ * Until this ticket there were two: this file styled the static half
+ * (`/inbox`, `/graph-editor.html`) and a `STYLE` template literal inside
+ * `../pages.ts` styled the twenty-four server-rendered routes, and the two
+ * shared no token — the divergence `docs/spec/design-system.md` §10 recorded
+ * as open. `layout()` now links this file instead of inlining `STYLE`, every
+ * selector `STYLE` declared was merged in below, and both halves read the same
+ * `:root` token set. That merge is what `docs/spec/design-system.md` is: read
+ * it before touching a rule here, not after.
  *
- * What this file is really for is legibility of the diff — the person reading
- * it is deciding whether a change enters the graph.
+ * One real collision came out of the merge and one did not, which is worth
+ * recording because it is easy to reintroduce by accident:
  *
- * The tokens below predate the spec and do not yet match it (§1): they are hex
- * rather than the HSL token set, and there is no focus style. Aligning them is
- * a deliberate delivery, not a drive-by edit — it moves the look of the inbox
- * at once.
+ * - `body` was declared bare in both files, with different rules. Resolved in
+ *   favour of the rendered pages' padding (`1.5rem 2rem 4rem`, needed for long
+ *   tables and logs), keeping this file's `background`/`color`, and raising the
+ *   base size to the 15.5px §5 sets as the console-density floor.
+ * - `h2` was ALSO declared bare in both files, which the ticket that ordered
+ *   this merge did not flag. Both `/inbox` and `/graph-editor.html` only ever
+ *   use `<h2>` inside `<section class="column">`, so this file's half of that
+ *   rule is scoped to `.column h2` instead of staying bare — a CSS-only fix
+ *   (no markup touched) that keeps both halves looking exactly as they did
+ *   before the merge, at higher specificity than the rendered pages' bare
+ *   `h2` rather than fighting it for the cascade.
+ *
+ * `docs/getting-started`'s RNF-04 is still why this is plain CSS: no build
+ * step, no dependency, one file a browser fetches as-is.
  */
 
 :root {
-  --ink: #1c1c1c;
-  --muted: #6b6b6b;
-  --line: #dcdcdc;
-  --bg: #fbfaf8;
-  --add: #1a7f37;
-  --remove: #b3261e;
-  --change: #8a5a00;
+  --background: hsl(0 0% 100%);
+  --surface: hsl(0 0% 100%);
+  --ink: hsl(240 6% 10%);
+  --soft: hsl(240 4% 46%);
+  --muted: hsl(240 5% 96%);
+  --line: hsl(240 6% 90%);
+  --success: hsl(152 72% 42%);
+  --success-text: hsl(154 75% 24%);
+  --warning: hsl(30 95% 50%);
+  --warning-text: hsl(27 90% 30%);
+  --error: hsl(0 76% 52%);
+  --error-text: hsl(0 72% 38%);
+  --radius: 8px;
 }
 
 * {
@@ -34,23 +51,543 @@
 
 body {
   margin: 0;
-  padding: 1.5rem;
-  background: var(--bg);
+  padding: 1.5rem 2rem 4rem;
+  background: var(--background);
   color: var(--ink);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15.5px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
+/*
+ * The first focus style either half of the screen has ever had (§3). One rule,
+ * shared: an ink outline with offset, never a coloured shadow, on every
+ * interactive element both stylesheets carry — buttons, links, form fields and
+ * the project switcher's `<select>`.
+ */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------- rendered pages' chrome */
+
+header.topo {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+header.topo h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  letter-spacing: .02em;
+}
+
+nav a {
+  margin-right: 1rem;
+}
+
+form.project-switcher {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  font-size: .8rem;
+  margin-left: auto;
+}
+
+form.project-switcher label {
+  color: var(--soft);
+  letter-spacing: .02em;
+}
+
+h2 {
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--soft);
+  margin: 1.75rem 0 .6rem;
+}
+
+/* ------------------------------------------------------------------- the board */
+
+.quadro {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.grupo {
+  flex: 1 1 16rem;
+  min-width: 15rem;
+}
+
+.cartao {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .6rem .7rem;
+  margin-bottom: .5rem;
+}
+
+.cartao .id {
+  font-size: .75rem;
+  color: var(--soft);
+}
+
+.bloqueado {
+  border-width: 2px;
+}
+
+.motivo {
+  font-size: .8rem;
+  margin-top: .35rem;
+}
+
+/* ------------------------------------------------------------------------ tables */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: .35rem .6rem;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--soft);
+}
+
+/* --------------------------------------------------------------------- questions */
+
+.pergunta {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin-bottom: 1rem;
+  max-width: 52rem;
+}
+
+.pergunta dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .2rem .8rem;
+  margin: .5rem 0;
+  font-size: .9rem;
+}
+
+.pergunta dt {
+  color: var(--soft);
+}
+
+.pergunta dd {
+  margin: 0;
+}
+
+form textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  font: inherit;
+  padding: .4rem;
+}
+
+form label[for] {
+  display: block;
+  font-size: .8rem;
+  letter-spacing: .02em;
+  color: var(--soft);
+  margin-bottom: .2rem;
+}
+
+form .opcoes {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+  margin: .4rem 0;
+}
+
+form.action {
+  margin-top: .5rem;
+  max-width: 52rem;
+}
+
+form.action p {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin: .4rem 0 0;
+  font-size: .8rem;
+}
+
+/* ---------------------------------------------------------------------- timeline */
+
+.linha-do-tempo {
+  list-style: none;
+  padding: 0;
+  max-width: 52rem;
+}
+
+.segmento {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: .8rem;
+  padding: .35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.segmento .balde {
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.vazio {
+  color: var(--soft);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------- the check */
+
+.verificacao {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .7rem .9rem;
+  margin-bottom: .6rem;
+  max-width: 52rem;
+}
+
+/*
+ * `[data-estado="met"]` used to fade the whole card with `opacity: .7` — a
+ * non-text opacity site (Design Requirement 5). Its only visible effect was
+ * "not the unmet state's 2px border", which survives on its own now that the
+ * unmet border stopped being an opacity trick and became width-based below.
+ */
+.verificacao[data-estado="unmet"] {
+  border-width: 2px;
+}
+
+.verificacao .titulo {
+  margin: 0;
+  font-weight: 600;
+}
+
+.verificacao p {
+  margin: .4rem 0 0;
+  font-size: .9rem;
+}
+
+.verificacao pre {
+  overflow-x: auto;
+  margin: .5rem 0 0;
+  padding: .5rem .6rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.verificacao code {
+  font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+.verificacao form {
+  margin-top: .5rem;
+}
+
+.verificacao form input {
+  font: inherit;
+  padding: .3rem .4rem;
+  min-width: 20rem;
+  max-width: 100%;
+}
+
+.pronto {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  max-width: 52rem;
+}
+
+.suporte {
+  margin-top: 2.5rem;
+  font-size: .85rem;
+  color: var(--soft);
+}
+
+/*
+ * The left-edge bar (§8): the one state signal that survives monochrome,
+ * printing and colour blindness. `tr.attention td:first-child` carries it at
+ * `--line` rather than a state token today, which is a pre-existing choice
+ * this ticket's Functional Requirement 4 carries over unchanged — giving it a
+ * state colour is a decision for whichever ticket next touches this markup,
+ * not a token rename.
+ */
+.attention {
+  border-left-width: 4px;
+  padding-left: .55rem;
+}
+
+tr.attention td:first-child {
+  border-left: 4px solid var(--line);
+  padding-left: .45rem;
+}
+
+.demo-badge {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .05rem .3rem;
+  margin-left: .4rem;
+}
+
+/* --------------------------------------------------------------------- interview */
+
+.interview {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1fr) minmax(20rem, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .interview {
+    grid-template-columns: 1fr;
+  }
+}
+
+.interview .turn,
+.interview .asking,
+.interview .closing,
+.interview .thinking {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .7rem .9rem;
+  margin-bottom: .6rem;
+}
+
+.interview .asking {
+  border-width: 2px;
+}
+
+.interview .thinking {
+  color: var(--soft);
+  font-style: italic;
+}
+
+.interview .asked {
+  margin: 0 0 .35rem;
+  font-weight: 600;
+}
+
+.interview .said {
+  margin: 0;
+}
+
+.interview .signature {
+  margin: .35rem 0 0;
+  font-size: .75rem;
+  color: var(--soft);
+}
+
+.interview dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .2rem .8rem;
+  margin: .5rem 0;
+  font-size: .9rem;
+}
+
+.interview dt {
+  color: var(--soft);
+}
+
+.interview dd {
+  margin: 0;
+}
+
+.interview .options {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+  margin: .4rem 0;
+}
+
+.interview .closing form {
+  display: inline-block;
+  margin: .5rem .5rem 0 0;
+}
+
+.mcp-suggestions {
+  margin: .6rem 0;
+  padding: .5rem .6rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.mcp-suggestions .lead {
+  margin: 0 0 .5rem;
+  font-size: .82rem;
+  color: var(--soft);
+}
+
+.mcp-suggestion {
+  border-top: 1px solid var(--line);
+  padding-top: .5rem;
+  margin-top: .5rem;
+}
+
+.mcp-suggestion:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.mcp-suggestion h3 {
+  font-size: .9rem;
+  margin: 0 0 .25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mcp-suggestion p {
+  margin: .25rem 0 0;
+  font-size: .85rem;
+}
+
+.mcp-suggestion pre {
+  overflow-x: auto;
+  margin: .35rem 0 0;
+  padding: .4rem .5rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.mcp-suggestion code {
+  font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+.mcp-suggestion .no-command,
+.mcp-suggestion .caveat {
+  font-size: .75rem;
+  color: var(--soft);
+}
+
+/* ----------------------------------------------------------------- map document */
+
+.map-document ol {
+  list-style: decimal;
+  padding-left: 1.4rem;
+  margin: 0;
+}
+
+.map-document li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .6rem .8rem;
+  margin-bottom: .6rem;
+}
+
+.map-document h3 {
+  font-size: .95rem;
+  margin: 0 0 .4rem;
+}
+
+.map-document ul {
+  margin: .2rem 0;
+  padding-left: 1.2rem;
+}
+
+.map-document [data-field] {
+  font-size: .85rem;
+  margin-top: .3rem;
+}
+
+.map-document [data-field]::before {
+  display: block;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--soft);
+}
+
+.map-document [data-field="needs"]::before {
+  content: "needs";
+}
+
+.map-document [data-field="produces"]::before {
+  content: "produces";
+}
+
+.map-document [data-field="verified_by"]::before {
+  content: "verified by";
+}
+
+.map-document [data-field="exits"]::before {
+  content: "exits";
+}
+
+.map-document [data-field="network"]::before {
+  content: "reaches outside";
+}
+
+.map-document .required,
+.map-document .agentic-note {
+  font-size: .72rem;
+  color: var(--soft);
+}
+
+.empty {
+  color: var(--soft);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------- session log */
+
+.log-header {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .82rem;
+  overflow: auto;
+  max-height: 32rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .5rem .6rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line {
+  padding-left: .4rem;
+}
+
+.log-line-failed {
+  border-left: 3px solid var(--error);
+  padding-left: calc(.4rem - 3px);
+}
+
+/* --------------------------------------------------------- inbox / graph editor */
 
 h1 {
   margin: 0 0 0.25rem;
   font-size: 1.35rem;
-}
-
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
 }
 
 h3 {
@@ -63,13 +600,13 @@ h4 {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .lead {
   max-width: 60ch;
   margin: 0 0 0.75rem;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .controls {
@@ -87,10 +624,23 @@ main {
 }
 
 .column {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 1rem;
+}
+
+/*
+ * The static half's own `h2`: scoped to `.column`, where every `<h2>` in
+ * `/inbox` and `/graph-editor.html` actually lives, so it does not fight the
+ * bare `h2` rule above for the rendered pages' cascade (see the file header).
+ */
+.column h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--soft);
 }
 
 .proposals {
@@ -120,14 +670,14 @@ main {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .version,
 .message {
   margin: 0.25rem 0 0;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--soft);
   word-break: break-all;
 }
 
@@ -157,7 +707,7 @@ main {
 .reason-label {
   flex: 1 0 100%;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .reason-input {
@@ -165,7 +715,7 @@ main {
   min-width: 10rem;
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius);
   font: inherit;
 }
 
@@ -177,8 +727,8 @@ button {
 button.action {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--line);
-  border-radius: 4px;
-  background: #fff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -187,7 +737,7 @@ button.action:hover:not(:disabled) {
 }
 
 button.action:disabled {
-  color: var(--muted);
+  color: var(--soft);
   cursor: not-allowed;
 }
 
@@ -201,16 +751,16 @@ button.link {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .error {
-  color: var(--remove);
+  color: var(--error-text);
 }
 
 .notice {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .detail .field {
@@ -219,7 +769,7 @@ button.link {
 }
 
 .detail .label {
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .diff {
@@ -233,19 +783,19 @@ button.link {
 }
 
 .op.add {
-  color: var(--add);
+  color: var(--success-text);
 }
 
 .op.remove {
-  color: var(--remove);
+  color: var(--error-text);
 }
 
 .op.change {
-  color: var(--change);
+  color: var(--warning-text);
 }
 
 .op.unknown {
-  color: var(--muted);
+  color: var(--soft);
 }
 
 /*
@@ -266,10 +816,10 @@ button.link {
 
 .card {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 0.6rem 0.75rem;
   margin-bottom: 0.75rem;
-  background: #fff;
+  background: var(--surface);
 }
 
 /* A node that does not exist in the loaded snapshot yet. */
@@ -290,14 +840,14 @@ button.link {
   display: block;
   font-size: 0.8rem;
   letter-spacing: 0.02em;
-  color: var(--muted);
+  color: var(--soft);
 }
 
 .field-input {
   width: 100%;
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius);
   font: inherit;
 }
 
@@ -306,7 +856,7 @@ button.link {
   min-width: 16rem;
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius);
   font: inherit;
 }
 
@@ -321,7 +871,7 @@ textarea.field-input {
   margin: 0.5rem 0;
   padding: 0.4rem 0.5rem;
   border-left: 3px solid var(--line);
-  background: var(--bg);
+  background: var(--muted);
 }
 
 .frozen-block .field {
@@ -356,20 +906,20 @@ textarea.field-input {
 
 .result .ok {
   margin: 0;
-  color: var(--add);
+  color: var(--success-text);
   word-break: break-all;
 }
 
 .version .label {
-  color: var(--muted);
+  color: var(--soft);
 }
 
 pre {
   margin: 0;
   padding: 0.5rem;
-  background: var(--bg);
+  background: var(--muted);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius);
   overflow-x: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;

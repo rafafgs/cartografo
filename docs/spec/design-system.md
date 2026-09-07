@@ -237,6 +237,30 @@ the person needs to see (RF-23). Rendered by
 A value that is accepted in one click (RF-15, RF-16). The suggested answer is
 the button's own label.
 
+**A step asks more than one thing, and then the turn is a form.** Measured at
+seventeen turns for four of the interview's seven steps, so it is not a rare
+shape. Such a question arrives carrying a list of *fields* instead of a list of
+labels (t480) — `{id, label, kind}`, where the kind is `choice`, `multi` or
+`free_text` — and it draws one named control per decision: a radio group, a
+checkbox group, a box to type in. Each carries a visible name, a `<legend>` for
+a group and a `<label>` tied by `for`/`id` for a single control (§6).
+
+**Every offered list also carries the way out of itself**: one more control of
+the same kind, labelled *something else*, paired with a text box. A list of
+five options is five of somebody else's guesses at what this person would say,
+and an operator with a sixth answer needs somewhere to put it.
+
+**What the agent would take is pre-selected, and says so in text** — the suffix
+`(recommended)` at the supporting grade, never a colour and never an icon.
+Colour is reserved for state (§1), and *already ticked* is not a state.
+
+**The whole form is answered as one document**, posted on the same single field
+a one-click answer posts on, keyed by each field's `id`. That is what keeps
+both shapes on one route and one write. The cost is recorded here so that
+nobody rediscovers it as a bug: a batched form needs JavaScript to put the
+document together, and says so in a `<noscript>` notice. Every question shape
+that existed before it still works with scripting off.
+
 ### 7.3 The check line
 
 The first screen (RF-10, RF-11). **What is missing carries the attention bar and
@@ -256,6 +280,20 @@ The board (RF-30): where it is, for how long, and whether it waits on somebody.
 
 **The recommendation comes first, because it is the text of the button that
 accepts it.** The situation comes after, and is **never truncated**.
+
+This was written down before it was true. Both cards that draw a question —
+`pendingHtml` on `/interview/:id` and `questionCard` on `/input-requests` —
+stated the situation first until t481, which is the delivery that made the rule
+and the pages agree. The order on both is now:
+
+1. **what I would take** / *recommendation* — the action, in the imperative
+2. **why it matters** / *context* — the situation, whole
+3. **if you just accept** / *default answer* — what applies to a click on nothing
+
+The third line belongs to a single decision only. A question that asks a whole
+step at once (§7.2) leaves it out: every field already shows its own
+pre-selected value, and the question-level default of a batched question is a
+JSON document with no single line worth reading aloud.
 
 ### 7.6 A session's log
 

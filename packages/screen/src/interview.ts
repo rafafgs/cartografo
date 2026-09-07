@@ -49,7 +49,7 @@
  * rule `pages.ts` and `map-document.ts` state for their own content (D4).
  */
 
-import type { Conversation, ConversationTurn, PendingQuestion } from './client.ts';
+import type { Conversation, ConversationTurn, Field, PendingQuestion } from './client.ts';
 import { renderMapDocument, renderStepProgress, type MapDocumentGraph, type MapDocumentManifest } from './map-document.ts';
 import type { McpServerSuggestion } from './mcp-catalog.ts';
 import { escapeHtml } from './pages.ts';
@@ -199,6 +199,226 @@ function suggestionsHtml(suggestions: McpServerSuggestion[], engine: string): st
   return `<div class="mcp-suggestions"><p class="lead">${MCP_INTRO}</p>${cards}</div>`;
 }
 
+/* ------------------------------------------- a question asked as a form (t481) */
+
+/** What a batched form says it needs, where a script cannot run. */
+const NEEDS_SCRIPT =
+  'This question asks several things at once, and the page puts them together with a script before sending. With scripting off, nothing here can be sent.';
+
+/** The two halves of the way out of an offered list. */
+const SOMETHING_ELSE = 'something else';
+const SOMETHING_ELSE_IS = 'and it is';
+
+/** What marks the pre-selected option, in text — never in colour (§1). */
+const RECOMMENDED_MARK = '<span class="recommended">(recommended)</span>';
+
+/**
+ * Is this a whole step's worth of controls, rather than one decision's labels?
+ *
+ * The same test `parse-input-request.ts` and `prompt.ts` make, for the same
+ * reason: the two shapes share one key and are told apart by what the items
+ * are. Deliberately requires EVERY item to be field-shaped and the list to be
+ * non-empty — an empty `options` is a list of labels with nothing in it, never
+ * a form with no fields, and one string among fields is a payload nobody can
+ * draw either way.
+ *
+ * @param options The question's `options`, as it came.
+ * @returns Whether it is a list of fields.
+ */
+export function isFieldList(options: string[] | Field[] | null): options is Field[] {
+  return (
+    Array.isArray(options) &&
+    options.length > 0 &&
+    options.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as Field).id === 'string' &&
+        typeof (item as Field).label === 'string' &&
+        typeof (item as Field).kind === 'string',
+    )
+  );
+}
+
+/** What the agent would pick, always as a list — `recommended` may be either. */
+function recommendedValues(field: Field): string[] {
+  if (typeof field.recommended === 'string') return [field.recommended];
+  if (Array.isArray(field.recommended)) return field.recommended;
+  return [];
+}
+
+/**
+ * One option of a `choice` or a `multi`, as a control behind its own label.
+ *
+ * The label both wraps the control and points at it: wrapping is what makes the
+ * words clickable, and the explicit `for` is what keeps the pair readable to
+ * anything that resolves the name by id (`questions-answer-field.test.ts`).
+ */
+function optionHtml(
+  option: string,
+  control: string,
+  group: string,
+  id: string,
+  checked: boolean,
+  required: boolean,
+): string {
+  return (
+    `<label class="option" for="${id}">` +
+    `<input type="${control}" id="${id}" name="${group}" value="${escapeHtml(option)}"` +
+    `${checked ? ' checked' : ''}${required ? ' required' : ''}>` +
+    ` ${escapeHtml(option)}${checked ? ` ${RECOMMENDED_MARK}` : ''}</label>`
+  );
+}
+
+/**
+ * A field with a list to pick from: the list, and the way out of it (FR2).
+ *
+ * Every offered answer is somebody else's guess at what this person would say,
+ * so each group carries one more pair — a control of its own kind, plus a box
+ * to write in. Without it a list of five options is a list of five options and
+ * an operator with a sixth answer has nowhere to put it.
+ *
+ * A `choice` is `required` and a `multi` is not: picking none of several boxes
+ * is itself an answer, and there is no way to tell it from an unanswered field
+ * except by asking for one (FR6).
+ *
+ * A `recommended` value that is not on the list is not dropped — it pre-fills
+ * the way out and ticks it, which is the only place it could honestly go.
+ */
+function listFieldHtml(field: Field, id: string): string {
+  const control = field.kind === 'choice' ? 'radio' : 'checkbox';
+  const required = field.kind === 'choice';
+  const options = field.options ?? [];
+  const recommended = recommendedValues(field);
+
+  const boxes = options
+    .map((option, index) =>
+      optionHtml(option, control, id, `${id}-o${index}`, recommended.includes(option), required),
+    )
+    .join('');
+
+  const unlisted = recommended.find((value) => !options.includes(value)) ?? '';
+  const otherId = `${id}-other`;
+  const other =
+    `<div class="other">` +
+    `<label class="option" for="${otherId}">` +
+    `<input type="${control}" id="${otherId}" name="${id}" data-other` +
+    `${unlisted === '' ? '' : ' checked'}${required ? ' required' : ''}> ${SOMETHING_ELSE}</label>` +
+    `<label for="${otherId}-text">${SOMETHING_ELSE_IS}</label>` +
+    `<input type="text" id="${otherId}-text" data-other-text value="${escapeHtml(unlisted)}">` +
+    `</div>`;
+
+  return (
+    `<fieldset class="question-field" data-field="${escapeHtml(field.id)}" data-kind="${field.kind}">` +
+    `<legend>${escapeHtml(field.label)}</legend>${boxes}${other}</fieldset>`
+  );
+}
+
+/** A field with nothing to pick from: its name, and the box to write it in. */
+function freeTextFieldHtml(field: Field, id: string): string {
+  const recommended = recommendedValues(field).join(', ');
+  return (
+    `<div class="question-field" data-field="${escapeHtml(field.id)}" data-kind="free_text">` +
+    `<label for="${id}-text">${escapeHtml(field.label)}</label>` +
+    `<textarea id="${id}-text" required>${escapeHtml(recommended)}</textarea>` +
+    `</div>`
+  );
+}
+
+/**
+ * The inside of the form of a question that asks a whole step at once (FR1).
+ *
+ * Shared by `/interview/:id` and by `/input-requests`, which is the whole point
+ * of it living here: two pages drawing the same component out of two renderers
+ * is how they came to disagree about everything else. What each page keeps for
+ * itself is only what its own DOM contract owns — the `<form>` around this, its
+ * submit button, and the NAME of the one field the assembled document travels
+ * on (`answer` here, `resposta` there).
+ *
+ * That name is the only thing that makes this shape need no route of its own:
+ * `router.ts` reads exactly one field today, and one JSON document keyed by
+ * each field's `id` is what lands in it (FR4). The price is that a batched form
+ * needs a script — hence the `<noscript>` beside it (FR11) — while every
+ * question shape that existed before this ticket keeps working without one.
+ *
+ * @param fields The controls, in the order the question declared them.
+ * @param idPrefix Unique per question, so ids never collide on a page of cards.
+ * @param documentField The one field name the assembled document is posted under.
+ * @returns The controls, the notice and the hidden carrier.
+ */
+export function renderAnswerFields(
+  fields: Field[],
+  idPrefix: string,
+  documentField: string,
+): string {
+  const drawn = fields
+    .map((field, index) => {
+      const id = `${idPrefix}-${index}`;
+      return field.kind === 'free_text'
+        ? freeTextFieldHtml(field, id)
+        : listFieldHtml(field, id);
+    })
+    .join('');
+
+  return (
+    drawn +
+    `<noscript><p class="needs-script">${NEEDS_SCRIPT}</p></noscript>` +
+    `<input type="hidden" name="${escapeHtml(documentField)}" data-document>`
+  );
+}
+
+/**
+ * The one script a batched form needs: several controls into one document.
+ *
+ * A listener on the DOCUMENT and not on the card, exactly like the two
+ * click-to-fill scripts it sits beside — a `<script>` inside the polling
+ * island's swapped HTML never runs, and the interview replaces its whole left
+ * column every few seconds.
+ *
+ * Emitted by BOTH pages and written once, unlike its two neighbours, because
+ * the only thing that differed between their copies was the name of the field
+ * to fill in — and the hidden carrier already marks itself with
+ * `data-document`, so there is nothing page-specific left to duplicate.
+ *
+ * Only a field with a value enters the document: an untouched `multi` with
+ * nothing ticked and nothing typed contributes no key at all, which is the same
+ * reading the runner's own `renderAnswer` makes of what comes back (FR5).
+ */
+export const ANSWER_DOCUMENT_SCRIPT = `<script>
+document.addEventListener('submit', function (event) {
+  var form = event.target;
+  if (form === null || form.dataset === undefined || form.dataset.batched === undefined) return;
+  var carrier = form.querySelector('[data-document]');
+  if (carrier === null) return;
+  var answer = {};
+  var blocks = form.querySelectorAll('[data-field]');
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    var typed = block.querySelector('[data-other-text]');
+    var written = typed === null ? '' : typed.value.trim();
+    if (block.dataset.kind === 'free_text') {
+      var area = block.querySelector('textarea');
+      var text = area === null ? '' : area.value.trim();
+      if (text !== '') answer[block.dataset.field] = text;
+      continue;
+    }
+    var picked = [];
+    var boxes = block.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+    for (var j = 0; j < boxes.length; j++) {
+      if (boxes[j].checked !== true) continue;
+      if (boxes[j].dataset.other !== undefined) {
+        if (written !== '') picked.push(written);
+      } else {
+        picked.push(boxes[j].value);
+      }
+    }
+    if (picked.length === 0) continue;
+    answer[block.dataset.field] = block.dataset.kind === 'multi' ? picked : picked[0];
+  }
+  carrier.value = JSON.stringify(answer);
+});
+</script>`;
+
 /**
  * The open question, with everything it takes to decide and the form to answer.
  *
@@ -217,6 +437,20 @@ function suggestionsHtml(suggestions: McpServerSuggestion[], engine: string): st
  * pattern — with the script outside this fragment, in the page, so that a swap
  * of the column's contents never takes it away.
  *
+ * Since t481 the card draws one of TWO shapes, told apart by what `options`
+ * holds. A flat list of labels is one decision and renders exactly as it always
+ * has, buttons and one shared field, working with no script at all. A list of
+ * fields is a whole step asked at once, and renders as a form of named controls
+ * whose values a script assembles into the one JSON document the same route
+ * already reads.
+ *
+ * The `<dl>` states what the agent would take BEFORE why it matters (§7.5 of
+ * the design system: the recommendation comes first, because it is the text of
+ * the button that accepts it). "If you just accept" follows it for a single
+ * decision and is left out of a batched one, where each field already shows its
+ * own pre-selected answer and the question-level default is a document with no
+ * one line worth showing.
+ *
  * Since t373 the card can carry a fourth thing, and only ever between the `<dl>`
  * and the form: the candidates for a server the question asks for and this
  * machine does not have. They arrive already resolved — this module still makes
@@ -234,10 +468,12 @@ function pendingHtml(
       ? ''
       : `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`;
 
+  const batched = isFieldList(pending.options);
+
   const options =
-    pending.options === null || pending.options.length === 0
+    batched || pending.options === null || pending.options.length === 0
       ? ''
-      : `<div class="options">${pending.options
+      : `<div class="options">${(pending.options as string[])
           .map(
             (option) =>
               `<button type="button" data-option="${escapeHtml(option)}">${escapeHtml(option)}</button>`,
@@ -246,15 +482,20 @@ function pendingHtml(
 
   const fieldId = `answer-${pending.id}`;
 
+  const inside = isFieldList(pending.options)
+    ? renderAnswerFields(pending.options, `field-${pending.id}`, 'answer')
+    : options +
+      `<label for="${fieldId}">your answer</label>` +
+      `<textarea id="${fieldId}" name="answer" required>${escapeHtml(pending.default ?? '')}</textarea>`;
+
   return (
     `<article class="asking" data-state="asking" data-question="${pending.id}">` +
     `<p class="asked">${escapeHtml(pending.question)}</p>` +
-    `<dl>${field('why it matters', pending.context)}${field('what I would take', pending.recommendation)}${field('if you just accept', pending.default)}</dl>` +
+    `<dl>${field('what I would take', pending.recommendation)}${field('why it matters', pending.context)}` +
+    `${batched ? '' : field('if you just accept', pending.default)}</dl>` +
     suggestionsHtml(suggestions, engine) +
-    `<form method="post" action="/interview/${interviewId}/answer">` +
-    options +
-    `<label for="${fieldId}">your answer</label>` +
-    `<textarea id="${fieldId}" name="answer" required>${escapeHtml(pending.default ?? '')}</textarea>` +
+    `<form method="post" action="/interview/${interviewId}/answer"${batched ? ' data-batched' : ''}>` +
+    inside +
     `<p><button type="submit">send</button></p>` +
     `</form>` +
     `</article>`

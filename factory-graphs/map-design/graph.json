@@ -19,8 +19,8 @@
       "escalation_policy": "always",
       "skill_ref": {
         "id": "interview",
-        "version": "1.2.0",
-        "hash": "sha256:e28ff0fc65b8841715bead7a7d51fe8650ba2894200d7391a130fc0aace65f76"
+        "version": "1.3.0",
+        "hash": "sha256:e1d45edfee7970fe515d7d6b505a33f0b6f42837a25f70b162d053b6c4c233b5"
       },
       "contract": {
         "input_schema": {

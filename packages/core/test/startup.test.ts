@@ -50,6 +50,8 @@ interface Startup {
   child: CommandChild;
   readiness: ReadinessLine;
   shutdown: () => Promise<void>;
+  /** Everything the command has written to stderr so far, as one string. */
+  stderrSoFar: () => string;
 }
 
 let indexCache: typeof IndexModule | null = null;
@@ -156,7 +158,12 @@ async function start(options: {
       .map((text) => text.trim())
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) {
-      return { child, readiness: JSON.parse(line) as ReadinessLine, shutdown };
+      return {
+        child,
+        readiness: JSON.parse(line) as ReadinessLine,
+        shutdown,
+        stderrSoFar: () => stderr,
+      };
     }
     await sleep(100);
   }
@@ -854,6 +861,70 @@ test(
         return response.status;
       });
       assert.equal(screenStatus, 200, 'the screen answers on CARTOGRAFO_SCREEN_PORT');
+    } finally {
+      await startup.shutdown();
+    }
+  },
+);
+
+/**
+ * The system `PATH` with every `node_modules` segment taken out of it.
+ *
+ * Not an empty `PATH` and not a fabricated one: `ensureDefaultWorkspace` shells
+ * out to `git`, so the point is to remove exactly what `npm` adds — the
+ * `node_modules/.bin` directories that made the old, `PATH`-based spawner work
+ * everywhere except where a person actually runs the command.
+ */
+function pathWithoutNodeModules(): string {
+  return (process.env.PATH ?? '')
+    .split(path.delimiter)
+    .filter((segment) => segment.length > 0 && !segment.includes('node_modules'))
+    .join(path.delimiter);
+}
+
+test(
+  't449 AT3 — the screen and the runner still come up when `node_modules` is nowhere on `PATH`',
+  { timeout: 300_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t449-nopath-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const home = cleanHome(base);
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+    const screenPort = await freePort();
+
+    const scrubbed = pathWithoutNodeModules();
+    assert.ok(!scrubbed.includes('node_modules'), 'fixture broken: a node_modules segment survived');
+
+    // This is the reported bug, reproduced: `./node_modules/.bin/cartografo up`
+    // from a development checkout is exactly a `cartografo.mjs` started by path
+    // with no `node_modules/.bin` on the child's `PATH`.
+    const startup = await start({
+      cwd: base,
+      databasePath,
+      port,
+      args: ['--no-browser'],
+      env: { HOME: home, PATH: scrubbed, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+    });
+    try {
+      const token = startup.readiness.bootstrapToken ?? '';
+      assert.ok(token.length > 0, 'a brand-new database still prints its operator credential');
+
+      const runners = await awaitPairedRunner(startup.readiness.url, token);
+      assert.equal(runners.length, 1, 'the runner paired, with no `PATH` to be found on');
+
+      const screenStatus = await eventually('the spawned screen answers', async () => {
+        const response = await fetch(`http://127.0.0.1:${screenPort}/board`);
+        return response.status;
+      });
+      assert.equal(screenStatus, 200, 'and the screen answers, likewise');
+
+      const errors = startup.stderrSoFar();
+      assert.ok(!errors.includes('ENOENT'), `nothing failed to resolve:\n${errors}`);
+      assert.ok(!errors.includes('could not start'), `and no child was reported as unstartable:\n${errors}`);
     } finally {
       await startup.shutdown();
     }

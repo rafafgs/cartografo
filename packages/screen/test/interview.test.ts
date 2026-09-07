@@ -34,12 +34,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { FakeDocument, FakeElement } from './fake-dom.ts';
+import {
+  NO_HOMEPAGE_ENTRY,
+  NPM_ENTRY,
+  PYPI_ENTRY,
+  startRegistryFixture,
+} from './fakes/registry-server.mjs';
 import type * as ClientModule from '../src/client.ts';
 import type * as ExportBundleModule from '../src/export-bundle.ts';
 import type * as InterviewModule from '../src/interview.ts';
+import type * as McpCatalogModule from '../src/mcp-catalog.ts';
 import type * as MapDocumentModule from '../src/map-document.ts';
 import type * as PagesModule from '../src/pages.ts';
 import type * as RegisterMapModule from '../src/register-map.ts';
+import type * as RouterModule from '../src/router.ts';
 import {
   api,
   createJob,
@@ -989,3 +997,267 @@ test('t433 AT18 — the island keeps a typed answer, and stops the moment it is 
  * unchanged. Restating them here would be a second pin to keep agreeing with
  * the first.
  * ------------------------------------------------------------------------- */
+
+/* ===========================================================================
+ * t373 — the RF-20 extension: when no discovered server covers what the step
+ * needs, the open question carries up to three candidates from the official
+ * registry, and never a button that installs one.
+ *
+ * The registry is `fakes/registry-server.mjs` on a loopback port, wired in
+ * through `ScreenOptions.mcpRegistryUrl`. Nothing here reaches the real
+ * registry, and nothing here runs a command it renders.
+ * ======================================================================== */
+
+/** The line every suggestion carries, verbatim. */
+const MCP_DISCLAIMER =
+  'not reviewed by anyone on your side; configure its credentials on the engine, not here.';
+
+/** What a suggestion says instead of a command when none is evidenced. */
+const NO_COMMAND_LINE = 'no known add command; see its homepage';
+
+/** A `context` that asks for a server the machine does not have (FR1's line). */
+const HINTED_CONTEXT =
+  'You said this step reaches into your calendar, and nothing this engine reports covers it.\nNEEDS_MCP_SERVER: calendar';
+
+/**
+ * The screen, up, with knobs `support.ts`'s `startScreen` does not expose.
+ *
+ * Deliberately local rather than a third parameter on the shared helper: the
+ * catalogue seam is this ticket's, four tests in this file use it, and every
+ * other suite in the package starts its screen unchanged.
+ */
+async function startScreenWith(
+  t: { after: (fn: () => void | Promise<void>) => void },
+  cp: RunningControlPlane,
+  extra: Partial<RouterModule.ScreenOptions>,
+): Promise<ScreenUnderTest> {
+  requireArtifacts('src/router.ts');
+  const { startScreenRouter } = (await import(
+    new URL('../src/router.ts', import.meta.url).href
+  )) as typeof RouterModule;
+
+  const screen = await startScreenRouter({
+    controlPlaneUrl: cp.url,
+    token: cp.token,
+    port: 0,
+    ...extra,
+  });
+  t.after(async () => {
+    await screen.close();
+  });
+  return { url: screen.url };
+}
+
+/**
+ * The suggestion block of a page, or `null` when the page drew none.
+ *
+ * Depth-counted over `<div>` for the same reason `columnOf` is: the block sits
+ * inside the chat column, and a slice cut at the first `</div>` would compare a
+ * prefix and call it the whole thing.
+ */
+function suggestionBlock(html: string): string | null {
+  const opening = '<div class="mcp-suggestions">';
+  const start = html.indexOf(opening);
+  if (start < 0) return null;
+
+  const cursor = start + opening.length;
+  const pattern = /<(\/?)div\b/g;
+  pattern.lastIndex = cursor;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    depth += match[1] === '' ? 1 : -1;
+    if (depth === 0) return html.slice(cursor, match.index);
+  }
+  assert.fail(`the suggestion block is never closed:\n${html}`);
+}
+
+/** How many suggestion cards a page drew. */
+function countSuggestions(html: string): number {
+  return (html.match(/class="mcp-suggestion"/g) ?? []).length;
+}
+
+/** Seeds an open interview whose one question asks for a server nobody has. */
+async function seedHintedQuestion(cp: RunningControlPlane): Promise<number> {
+  const jobId = await seedOpenInterview(cp);
+  await createQuestion(cp, {
+    job_id: jobId,
+    question: 'Which server does the scheduling step reach through?',
+    context: HINTED_CONTEXT,
+    recommendation: 'Name the one you already use, or install one of the three below.',
+    default_answer: 'none of them yet',
+  });
+  return jobId;
+}
+
+/* ================================================================ AT10 */
+
+test('t373 AT10 — a question that needs a server nobody has offers three candidates', async (t) => {
+  const cp = await startControlPlane(t);
+  const registry = await startRegistryFixture(t, {
+    servers: [NPM_ENTRY, PYPI_ENTRY, NO_HOMEPAGE_ENTRY],
+  });
+  const screen = await startScreenWith(t, cp, { mcpRegistryUrl: registry.url });
+  const jobId = await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+  const block = suggestionBlock(page.html);
+  assert.ok(block !== null, `the page drew no suggestions at all:\n${page.html}`);
+  assert.equal(countSuggestions(block), 3, `three candidates:\n${block}`);
+
+  // The names, the descriptions and — for the default engine — the add command.
+  assert.ok(block.includes('io.example/calendar'), 'the npm candidate is named');
+  assert.ok(block.includes('Reads and writes a calendar.'), 'and described');
+  assert.ok(
+    block.includes('claude mcp add io.example/calendar -- npx -y calendar-mcp-server'),
+    `the npm candidate carries its add command:\n${block}`,
+  );
+  assert.ok(
+    block.includes('claude mcp add io.example/calendar-python -- uvx calendar-mcp'),
+    `the pypi candidate carries its add command:\n${block}`,
+  );
+  assert.ok(
+    block.includes('href="https://example.com/calendar"'),
+    `the candidate with a homepage links to it:\n${block}`,
+  );
+
+  const disclaimers = block.split(MCP_DISCLAIMER).length - 1;
+  assert.equal(disclaimers, 3, `the disclaimer appears once per candidate:\n${block}`);
+
+  assertSaysNothingForbidden(page.html, 'a question carrying suggestions');
+});
+
+/* ================================================================ AT11 */
+
+test('t373 AT11 — the suggestion block installs nothing and links nowhere else', async (t) => {
+  const cp = await startControlPlane(t);
+  const registry = await startRegistryFixture(t, {
+    servers: [NPM_ENTRY, PYPI_ENTRY, NO_HOMEPAGE_ENTRY],
+  });
+  const screen = await startScreenWith(t, cp, { mcpRegistryUrl: registry.url });
+  const jobId = await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  const block = suggestionBlock(page.html);
+  assert.ok(block !== null, 'the page drew suggestions');
+
+  assert.ok(!block.includes('<form'), `there is no form in the block:\n${block}`);
+  assert.ok(!block.includes('<button'), `and no button:\n${block}`);
+
+  // The ONLY addresses this block may point at are the candidates' own.
+  const allowed = new Set([
+    'https://example.com/calendar',
+    'https://github.com/example/calendar-python',
+  ]);
+  for (const link of block.matchAll(/<a\b[^>]*href="([^"]*)"/g)) {
+    assert.ok(allowed.has(link[1]), `the block links somewhere that is not a homepage: ${link[1]}`);
+  }
+});
+
+/* ================================================================ AT12 */
+
+test('t373 AT12 — a registry that hangs costs the question nothing at all', async (t) => {
+  const cp = await startControlPlane(t);
+  const registry = await startRegistryFixture(t, {
+    servers: [NPM_ENTRY],
+    delayMs: 60_000,
+  });
+  const screen = await startScreenWith(t, cp, { mcpRegistryUrl: registry.url });
+  const jobId = await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+
+  assert.equal(page.status, 200, 'a slow registry is not an error page');
+  const chat = columnOf(page.html, 'chat');
+  assert.ok(chat.includes('Which server does the scheduling step reach through?'), 'the question');
+  assert.ok(chat.includes('NEEDS_MCP_SERVER: calendar'), 'the context, whole');
+  assert.ok(chat.includes('Name the one you already use'), 'the recommendation');
+  assert.ok(chat.includes(`action="/interview/${jobId}/answer"`), 'the answer form');
+  assert.equal(countSuggestions(page.html), 0, `no candidate was drawn:\n${chat}`);
+  assert.equal(suggestionBlock(page.html), null, 'and no empty block either');
+  assertSaysNothingForbidden(page.html, 'a question whose registry hung');
+});
+
+/* ================================================================ AT13 */
+
+test('t373 AT13 — an ordinary question never touches the catalogue', async (t) => {
+  const cp = await startControlPlane(t);
+
+  const searched: string[] = [];
+  const counting: McpCatalogModule.McpCatalog = {
+    async search(query) {
+      searched.push(query);
+      return [];
+    },
+  };
+  const screen = await startScreenWith(t, cp, { mcpCatalog: counting });
+
+  const jobId = await seedOpenInterview(cp);
+  await createQuestion(cp, {
+    job_id: jobId,
+    question: 'What do you call this class of problem?',
+    context: 'The name is the address every later map is filed under.',
+  });
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+  assert.equal(countSuggestions(page.html), 0);
+  assert.equal(suggestionBlock(page.html), null);
+
+  await fetch(`${screen.url}/interview/${jobId}/fragment`);
+  assert.deepEqual(searched, [], 'a question with no hint costs no registry call');
+});
+
+/* ================================================================ AT14 */
+
+test('t373 AT14 — the fragment carries the same suggestions the page rendered', async (t) => {
+  const cp = await startControlPlane(t);
+  const registry = await startRegistryFixture(t, {
+    servers: [NPM_ENTRY, PYPI_ENTRY, NO_HOMEPAGE_ENTRY],
+  });
+  const screen = await startScreenWith(t, cp, { mcpRegistryUrl: registry.url });
+  const jobId = await seedHintedQuestion(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  const fragment = await fetch(`${screen.url}/interview/${jobId}/fragment`);
+  assert.equal(fragment.status, 200);
+  const body = (await fragment.json()) as { chat: string };
+
+  assert.equal(body.chat, columnOf(page.html, 'chat'));
+  assert.equal(countSuggestions(body.chat), 3, 'and the suggestions are in it');
+});
+
+/* ================================================================ AT15 */
+
+test('t373 AT15 — the command shown is the one for the engine actually recorded', async (t) => {
+  const cp = await startControlPlane(t);
+  const registry = await startRegistryFixture(t, { servers: [NPM_ENTRY] });
+  const screen = await startScreenWith(t, cp, { mcpRegistryUrl: registry.url });
+  const jobId = await seedHintedQuestion(cp);
+
+  const claude = 'claude mcp add io.example/calendar -- npx -y calendar-mcp-server';
+  const codex = 'codex mcp add io.example/calendar -- npx -y calendar-mcp-server';
+
+  const withClaude = await openPage(screen, `/interview/${jobId}`);
+  assert.ok(withClaude.html.includes(claude), 'the default engine is claude-code');
+  assert.ok(!withClaude.html.includes(codex), 'and the other engine is not shown beside it');
+
+  const toCodex = await api(cp, 'PATCH', '/v1/settings', { engine: 'codex' });
+  assert.equal(toCodex.status, 200, 'the engine was recorded');
+
+  const withCodex = await openPage(screen, `/interview/${jobId}`);
+  assert.ok(withCodex.html.includes(codex), `the codex command is shown:\n${withCodex.html}`);
+  assert.ok(!withCodex.html.includes(claude), 'and not the claude one');
+
+  const toStrange = await api(cp, 'PATCH', '/v1/settings', { engine: 'some-other-cli' });
+  assert.equal(toStrange.status, 200);
+
+  const withStrange = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(countSuggestions(withStrange.html), 1, 'the candidate is still offered');
+  assert.ok(!withStrange.html.includes(' mcp add '), 'but no command is invented for it');
+  assert.ok(
+    withStrange.html.includes(NO_COMMAND_LINE),
+    `it says so plainly instead:\n${withStrange.html}`,
+  );
+});

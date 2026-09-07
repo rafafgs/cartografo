@@ -109,15 +109,23 @@ import {
   untrustedOriginResponse,
   type ProxiedResponse,
 } from './proxy.ts';
+import { buildBundleZip } from './export-bundle.ts';
+import { draftToDraw, renderChat, renderMap } from './interview.ts';
+import { registerMap, type MapDraft, type PinProblem } from './register-map.ts';
 import { resolveStaticFile, serveStatic } from './static.ts';
 import {
   DEFAULT_ANSWERED_BY,
+  INTERVIEW_CLASS,
+  INTERVIEW_ENTRY_NODE,
   boardPage,
   checkPage,
   errorPage,
   examplesPage,
   executionPage,
   executionsPage,
+  graphPage,
+  interviewPage,
+  interviewStartPage,
   jobPage,
   questionsPage,
   runnersPage,
@@ -393,8 +401,10 @@ async function readScope(client: ApiClient, request: IncomingMessage): Promise<P
  */
 function rendersAView(pathname: string): boolean {
   return (
-    ['/', '/board', '/examples', '/executions', '/input-requests', '/runners'].includes(pathname) ||
-    /^\/(executions|jobs)\/[^/]+$/.test(pathname)
+    ['/', '/board', '/examples', '/executions', '/input-requests', '/interview', '/runners'].includes(
+      pathname,
+    ) ||
+    /^\/(executions|graphs|interview|jobs)\/[^/]+$/.test(pathname)
   );
 }
 
@@ -428,7 +438,17 @@ async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
 }
 
-/** A route's answer: a page, or a redirect. */
+/**
+ * A route's answer: a page, a redirect, or something that is not HTML at all.
+ *
+ * The third one arrived with t433 and stays deliberately narrow. Two routes of
+ * this screen answer with bytes rather than with a document — the interview's
+ * poll fragment, which is JSON, and its bundle download, which is a zip — and
+ * neither is a `Page`: one would be a lie about the content type, and the other
+ * would put a `Buffer` through `escapeHtml`. Everything else still goes through
+ * the two shapes above, and `failurePage` still covers all three, because a
+ * route that fails has failed as a page whatever it meant to answer with.
+ */
 type RouteResult =
   | Page
   | {
@@ -437,6 +457,10 @@ type RouteResult =
       cookie?: string;
       /** `303` by default — the way back from a POST is a GET. */
       status?: number;
+    }
+  | {
+      /** Answered verbatim: status, headers and body, with nothing added. */
+      raw: { status: number; headers: Record<string, string>; body: string | Buffer };
     };
 
 /**
@@ -519,7 +543,36 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     if (pathname === '/examples') return await examplesPage(client, scope);
     if (pathname === '/executions') return await executionsPage(client, scope);
     if (pathname === '/input-requests') return await questionsPage(client, scope);
+    // Where an interview starts (t433). The only page of this screen that
+    // creates something out of nothing but two typed fields.
+    if (pathname === '/interview') return await interviewStartPage(client, scope);
     if (pathname === '/runners') return await runnersPage(client, scope);
+
+    // Before `/interview/:id`, and it has to be: the fragment is a THIRD
+    // segment, so the two patterns cannot both match — but reading it first is
+    // what says out loud that this path is the poll's and never a page's.
+    const fragmentMatch = /^\/interview\/([^/]+)\/fragment$/.exec(pathname);
+    if (fragmentMatch !== null) {
+      const id = routeId(fragmentMatch[1]);
+      return id === null
+        ? errorPage(404, 'invalid interview', 'An interview id is an integer.')
+        : await interviewFragment(client, id, request);
+    }
+
+    const interviewMatch = /^\/interview\/([^/]+)$/.exec(pathname);
+    if (interviewMatch !== null) {
+      const id = routeId(interviewMatch[1]);
+      return id === null
+        ? errorPage(404, 'invalid interview', 'An interview id is an integer.')
+        : await interviewPage(client, id, scope);
+    }
+
+    // A lineage's id IS its class (D8), so this `:id` is a name and never an
+    // integer — the same reading `POST /examples/:id/run` already takes.
+    const graphMatch = /^\/graphs\/([^/]+)$/.exec(pathname);
+    if (graphMatch !== null) {
+      return await graphPage(client, decodeURIComponent(graphMatch[1]), scope);
+    }
 
     const executionMatch = /^\/executions\/([^/]+)$/.exec(pathname);
     if (executionMatch !== null) {
@@ -616,6 +669,35 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
         return errorPage(404, 'invalid question', 'A question id is an integer.');
       }
       return await submitAnswer(client, id, request);
+    }
+
+    // The interview's four writes (t433). Every one of them carries the origin
+    // gate BEFORE the id is read, exactly like the ones above: a request from
+    // somewhere else gets one answer, and not a 404 that says which ids exist.
+    if (pathname === '/interview') {
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'untrusted origin',
+          'This form only accepts submissions that started on this page. Reload and try again.',
+        );
+      }
+      return await startInterview(client, request);
+    }
+
+    const answerInterviewMatch = /^\/interview\/([^/]+)\/answer$/.exec(pathname);
+    if (answerInterviewMatch !== null) {
+      return await interviewWrite(client, request, answerInterviewMatch[1], answerInterview);
+    }
+
+    const registerMatch = /^\/interview\/([^/]+)\/register$/.exec(pathname);
+    if (registerMatch !== null) {
+      return await interviewWrite(client, request, registerMatch[1], registerInterviewMap);
+    }
+
+    const exportMatch = /^\/interview\/([^/]+)\/export$/.exec(pathname);
+    if (exportMatch !== null) {
+      return await interviewWrite(client, request, exportMatch[1], exportInterviewMap);
     }
 
     // Two routes and not one `(block|unblock)` alternation: `spec-routes.test.ts`
@@ -802,6 +884,293 @@ async function submitAnswer(
   // 303 and not 302: after a POST the way back is a GET — that is what stops
   // the browser from resending the answer when someone reloads the page.
   return { redirect: '/input-requests' };
+}
+
+/**
+ * `GET /interview/:id/fragment` — what the polling island asks for (t433, FR4).
+ *
+ * Pre-escaped HTML and not the raw conversation, which is the decision that
+ * keeps `escapeHtml` on this side of the wire: the island assigns what comes
+ * back to `innerHTML`, and it must never be the one assembling markup out of an
+ * agent's words (D4). It is also why the two columns come from the SAME two
+ * functions `interviewPage` calls — the page and the poll cannot disagree about
+ * what the interview says, because there is only one thing saying it.
+ *
+ * It takes the project off the cookie directly rather than through
+ * `rendersAView`: what the fragment needs is the partition, and the switcher's
+ * listing — the other half of a scope — draws nothing here.
+ */
+async function interviewFragment(
+  client: ApiClient,
+  interviewId: number,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const conversation = await client.getConversation(interviewId, {
+    project_id: projectFromCookie(request.headers.cookie),
+  });
+  if (conversation === null) {
+    return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
+  }
+
+  return {
+    raw: {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      body: JSON.stringify({
+        chat: renderChat(conversation, interviewId),
+        map: renderMap(conversation.draft),
+        done: conversation.done,
+      }),
+    },
+  };
+}
+
+/**
+ * `POST /interview` — one form, and an interview is running (t433, FR2).
+ *
+ * Two decisions the screen makes here, and neither is a choice offered to
+ * whoever filled the form: the class (`map-design`) and the node it starts on
+ * (`interview`), both read off the bundle the control plane registers for
+ * itself. The version is the class's CURRENT one, asked for at submit time —
+ * so an interview always starts on the map the control plane is actually
+ * serving, and never on one this page remembered.
+ *
+ * A blank field is refused before either network call, the same convention
+ * `submitAnswer` already uses: an interview with no description is an interview
+ * whose first question has nothing to work from.
+ */
+async function startInterview(
+  client: ApiClient,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const fields = await readForm(request);
+  const title = (fields.get('title') ?? '').trim();
+  const body = (fields.get('body') ?? '').trim();
+
+  if (title === '' || body === '') {
+    return errorPage(
+      400,
+      'nothing to work from',
+      'Give it a name and say how you do it today, then start again.',
+    );
+  }
+
+  const projectId = projectFromCookie(request.headers.cookie);
+  const lineage = await client.getGraph(INTERVIEW_CLASS, { project_id: projectId });
+  if (lineage === null || lineage.current_version_id === null) {
+    return errorPage(
+      502,
+      'the interview is not registered',
+      'This control plane has no interview to start. It is imported at the first startup; the reason it is missing was printed on its own startup log.',
+    );
+  }
+
+  const created = await client.createJob(
+    {
+      title,
+      body,
+      entry_node_id: INTERVIEW_ENTRY_NODE,
+      graph_version_id: lineage.current_version_id,
+    },
+    { project_id: projectId },
+  );
+
+  // 303 and not 302, the same reason every other write of this screen gives:
+  // after a POST the way back is a GET, and a reload must not start a second
+  // interview.
+  return { redirect: `/interview/${created.id}` };
+}
+
+/**
+ * What all three of the interview's per-id writes do first: the gate, then the
+ * id (t433, FR6–FR8).
+ *
+ * The same shape `flagRoute` already gives the two job flags, and for the same
+ * reason: the origin check runs BEFORE the id is parsed, so a request from
+ * somewhere else gets one answer and never a 404 that reports which interviews
+ * exist.
+ */
+async function interviewWrite(
+  client: ApiClient,
+  request: IncomingMessage,
+  rawId: string,
+  write: (
+    client: ApiClient,
+    interviewId: number,
+    request: IncomingMessage,
+  ) => Promise<RouteResult>,
+): Promise<RouteResult> {
+  if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+    return errorPage(
+      403,
+      'untrusted origin',
+      'This form only accepts submissions that started on this page. Reload and try again.',
+    );
+  }
+
+  const id = routeId(rawId);
+  if (id === null) return errorPage(404, 'invalid interview', 'An interview id is an integer.');
+  return await write(client, id, request);
+}
+
+/**
+ * `POST /interview/:id/answer` — the answer, inline, from the page itself (FR6).
+ *
+ * The question is not named in the form and does not have to be: an interview
+ * has at most one open question by construction (`createInputRequest` blocks
+ * the traveller in the same transaction), so the route re-reads the projection
+ * and answers whatever is open. That is also what makes a stale tab harmless —
+ * it can only ever answer the question that is actually being asked.
+ *
+ * A blank answer is refused before the network, the same convention
+ * `submitAnswer` uses: an answer with no content decides nothing and would land
+ * in the audit trail as a fact that says nothing.
+ */
+async function answerInterview(
+  client: ApiClient,
+  interviewId: number,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const fields = await readForm(request);
+  const answer = (fields.get('answer') ?? '').trim();
+  if (answer === '') {
+    return errorPage(
+      400,
+      'blank answer',
+      'Write the answer (or click one of the options) before sending.',
+    );
+  }
+
+  const conversation = await client.getConversation(interviewId, {
+    project_id: projectFromCookie(request.headers.cookie),
+  });
+  if (conversation === null) {
+    return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
+  }
+  if (conversation.pending === null) {
+    return errorPage(400, 'nothing was asked', 'This interview has no open question right now.');
+  }
+
+  await client.answerQuestion(conversation.pending.id, answer, DEFAULT_ANSWERED_BY);
+
+  // 303 and back to the interview, which is reread from the API: the question
+  // disappears because the state changed, not because the form hid it.
+  return { redirect: `/interview/${interviewId}` };
+}
+
+/**
+ * Reads the draft to act on, or the page saying why there is none (FR7, FR8).
+ *
+ * The draft is re-read from the control plane at write time and never taken
+ * from the POST body. Two reasons, and the second is the one that matters: it
+ * can be arbitrarily large, and it is not this form's to edit — the interview
+ * is the only way to shape the map (`docs/spec/interview.md` §5), so a draft
+ * arriving from a browser would be a second, forgeable author of the one write
+ * this screen makes with real consequences.
+ *
+ * Both refusals happen before any further network call, which is what makes
+ * "nothing was registered" a fact about the control plane and not a hope.
+ */
+async function readDraftToAct(
+  client: ApiClient,
+  interviewId: number,
+  request: IncomingMessage,
+): Promise<{ draft: MapDraft; projectId: number } | Page> {
+  const projectId = projectFromCookie(request.headers.cookie);
+  const conversation = await client.getConversation(interviewId, { project_id: projectId });
+  if (conversation === null) {
+    return errorPage(404, 'interview not found', `There is no interview #${interviewId}.`);
+  }
+  if (!conversation.done) {
+    return errorPage(
+      400,
+      'the interview is not over',
+      'There are still questions to answer before this map can be kept.',
+    );
+  }
+
+  const drawable = draftToDraw(conversation.draft);
+  if (drawable === undefined) {
+    return errorPage(400, 'there is no map', 'This interview left no map behind.');
+  }
+  return {
+    draft: conversation.draft as MapDraft,
+    projectId,
+  };
+}
+
+/** A list of refusals, as the ad hoc error page renders them (FR7, FR8). */
+function problemsPage(status: number, title: string, problems: PinProblem[]): Page {
+  return errorPage(status, title, problems.map((problem) => problem.message).join(' · '));
+}
+
+/**
+ * `POST /interview/:id/register` — the map goes into the registry (FR7, RF-24).
+ *
+ * `register-map.ts` does the work, and the only thing decided here is what an
+ * HTTP answer makes of each way it can stop. The statuses MIRROR what actually
+ * failed rather than collapsing onto one code: a pin that does not close is
+ * this draft being unregistrable (422, with every problem), while a manifest or
+ * a graph the registry refused is the REGISTRY's verdict, and forcing it to a
+ * code of our own would hide which of the two happened.
+ *
+ * On success the browser lands on the map it just registered — this ticket's
+ * other half — which is where somebody who registered something wants to be.
+ */
+async function registerInterviewMap(
+  client: ApiClient,
+  interviewId: number,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const found = await readDraftToAct(client, interviewId, request);
+  if ('status' in found) return found;
+
+  const outcome = await registerMap(client, found.draft, { project_id: found.projectId });
+  if (outcome.ok) {
+    const className = String(found.draft.graph.problem_class);
+    return { redirect: `/graphs/${encodeURIComponent(className)}` };
+  }
+
+  if (outcome.stage === 'pin') {
+    return problemsPage(422, 'this map does not close', outcome.problems);
+  }
+  return errorPage(
+    outcome.status,
+    'the registry refused this map',
+    `${outcome.stage === 'skill' ? `step "${outcome.skillId}": ` : ''}${JSON.stringify(outcome.body)}`,
+  );
+}
+
+/**
+ * `POST /interview/:id/export` — the map as a bundle, downloaded (FR8, RF-25).
+ *
+ * A form POST that answers bytes, so the download needs no script at all: the
+ * `content-disposition` is what turns the answer into a file, and the name is
+ * the class's own, which is also the directory name `cartografo import` expects.
+ */
+async function exportInterviewMap(
+  client: ApiClient,
+  interviewId: number,
+  request: IncomingMessage,
+): Promise<RouteResult> {
+  const found = await readDraftToAct(client, interviewId, request);
+  if ('status' in found) return found;
+
+  const bundle = buildBundleZip(found.draft);
+  if (!bundle.ok) return problemsPage(422, 'this map does not close', bundle.problems);
+
+  return {
+    raw: {
+      status: 200,
+      headers: {
+        'content-type': 'application/zip',
+        'content-disposition': `attachment; filename="${bundle.filename}"`,
+        'content-length': String(bundle.bytes.length),
+        'cache-control': 'no-store',
+      },
+      body: Buffer.from(bundle.bytes),
+    },
+  };
 }
 
 /**
@@ -1092,6 +1461,15 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
           // spend the failure without telling anyone it happened.
           if (error instanceof ClientAbortedError) throw error;
           result = failurePage(error, controlPlaneUrl);
+        }
+
+        // Before the redirect and the page, because it is neither: the poll's
+        // JSON and the bundle's bytes carry their own content type, and running
+        // them through the HTML answer below would mislabel both (t433).
+        if ('raw' in result) {
+          response.writeHead(result.raw.status, result.raw.headers);
+          response.end(result.raw.body);
+          return;
         }
 
         if ('redirect' in result) {

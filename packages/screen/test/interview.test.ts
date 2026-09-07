@@ -330,7 +330,19 @@ function closingDraft(network: Network = { allowed: false }): RegisterMapModule.
       ],
       initial_node: 'triage',
       final_nodes: ['review'],
-      custom_fields: [],
+      // Declared, and not empty: `widget` is what both steps need before they
+      // can start, and a class whose first step asks for something no step
+      // produces and no field declares is one the registry refuses outright
+      // (`unproduced_input`). The interview asks for exactly this, so a draft
+      // that reaches the register button carries it.
+      custom_fields: [
+        {
+          name: 'widget',
+          type: 'string',
+          required_at: 'triage',
+          description: 'The widget that came in.',
+        },
+      ],
     },
     skills: [
       {

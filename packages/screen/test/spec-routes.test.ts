@@ -49,7 +49,10 @@ const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
  * failed on "no counts found" instead of on the count. Growing the dictionary
  * is what keeps the pin reading the document; the numbers themselves are still
  * read off §1 and never written here. t339's two job-flag writes pushed the
- * count on again, to fifteen, without this list needing to move.
+ * count on again, to fifteen, without this list needing to move. t433 is the
+ * first ficha to push it past twenty, which the dictionary did not cover: the
+ * three hyphenated keys below are that growth, and `SPELLED_COUNT`'s
+ * alternation reads them with no further edit.
  */
 const NUMERALS = new Map([
   ['one', 1],
@@ -72,6 +75,9 @@ const NUMERALS = new Map([
   ['eighteen', 18],
   ['nineteen', 19],
   ['twenty', 20],
+  ['twenty-one', 21],
+  ['twenty-two', 22],
+  ['twenty-three', 23],
 ]);
 
 /** A spelled-out count of routes, anywhere in the prose. */

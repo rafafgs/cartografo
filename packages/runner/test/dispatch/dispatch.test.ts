@@ -8311,14 +8311,22 @@ test("t371 — a node's declared output is delivered once, after the report is a
         { folder: `clients/${String(job.id)}`, nota: "the step left saida.md ready" },
       );
 
+      // ONE row per call, written in two phases and updated once — t370's own
+      // shape, and not the two rows this ticket's acceptance criteria assumed
+      // (`docs/spec/mcp-client.md` §6: "the row is updated once rather than
+      // duplicated"). The two phases are still observable, and that is what is
+      // asserted: an opening instant and a closing one, in that order.
       const calls = await callsOf(job.id);
-      assert.equal(calls.length, 2, JSON.stringify(calls));
+      assert.equal(calls.length, 1, JSON.stringify(calls));
       assert.equal(calls[0].direction, "output");
       assert.equal(calls[0].name, "delivered_note");
       assert.equal(calls[0].server, "reports");
       assert.equal(calls[0].tool, MCP_DELIVER_TOOL);
-      assert.equal(calls[0].outcome, null, "the intent is written before the call");
-      assert.equal(calls[1].outcome, "ok", "and the outcome after it");
+      assert.equal(calls[0].outcome, "ok");
+      assert.ok(
+        calls[0].finished_at !== null && calls[0].started_at <= calls[0].finished_at,
+        `the intent is written before the call and completed after it: ${JSON.stringify(calls[0])}`,
+      );
 
       const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
       assert.equal(after.current_node_id, "conferir", "and only then does the work move");
@@ -8326,7 +8334,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
 
       // The ordering, asserted rather than assumed: the transition is recorded
       // no earlier than the delivery it depends on.
-      const { events } = await api<{ events: { type: string; created_at: string }[] }>(
+      const { events } = await api<{ events: { type: string; occurred_at: string }[] }>(
         baseUrl,
         "GET",
         `/v1/jobs/${job.id}/events`,
@@ -8337,9 +8345,9 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const moved = events.find((event) => event.type === "job.transitioned");
       assert.ok(moved !== undefined, JSON.stringify(events.map((event) => event.type)));
       assert.ok(
-        String(calls[1].finished_at) <= moved.created_at,
-        `the transition (${moved.created_at}) may not precede the delivery ` +
-          `(${String(calls[1].finished_at)})`,
+        String(calls[0].finished_at) <= moved.occurred_at,
+        `the transition (${moved.occurred_at}) may not precede the delivery ` +
+          `(${String(calls[0].finished_at)})`,
       );
     },
   );
@@ -8407,7 +8415,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const calls = await callsOf(job.id);
       assert.deepEqual(
         calls.map((call) => call.outcome),
-        [null, "ok", null, "skipped_duplicate"],
+        ["ok", "skipped_duplicate"],
         "the skip is recorded as a skip, never as an `ok` nobody made",
       );
     },
@@ -8445,8 +8453,8 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const calls = await callsOf(job.id);
       assert.deepEqual(
         calls.map((call) => call.outcome),
-        [null, "error", null, "error", null, "ok"],
-        "every attempt has its own pair of phases: the log is what happened",
+        ["error", "error", "ok"],
+        "every attempt has its own row: the log is what happened, not what worked",
       );
 
       const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);

@@ -136,6 +136,11 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
     recommendation: FULL_BODY.recommendation,
     default_answer: FULL_BODY.default_answer,
     auto_approvable: true,
+    // Which MECHANISM raised it (t371). Absent from the body, so `null` — which
+    // is what every ordinary question reads and what every question written
+    // before the column reads too. Its own tests are at the end of this file;
+    // here it only keeps the payload whole.
+    origin: null,
     // Stamped by the server from the job's position, never sent by the caller
     // (t167). Its own test is below; here it only keeps the payload whole.
     node_id: 'entrada',
@@ -1259,10 +1264,16 @@ test('t371 AT-C7 — GET /v1/input-requests?origin= filters, and adds up with th
 test('t371 AT-C8 — the column is added, not rebuilt, and nothing is backfilled', async () => {
   requireArtifacts(...ARTIFACTS, ...T371_ORIGIN_ARTIFACTS);
 
+  // The prose is stripped first: the migration's header explains why there is no
+  // CHECK and no rebuild, and a scan that read the comment would conclude the
+  // opposite of what the file does.
   const sql = readFileSync(
     path.join(path.resolve(import.meta.dirname, '..'), 'migrations/0035_input_request_origin.sql'),
     'utf8',
-  );
+  )
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
 
   assert.ok(
     /ALTER TABLE input_request\s+ADD COLUMN origin TEXT/i.test(sql),

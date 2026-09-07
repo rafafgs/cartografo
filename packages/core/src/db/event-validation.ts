@@ -389,6 +389,13 @@ const RULES: Record<string, TypeRule> = {
       recommendation: optional('string'),
       default_answer: optional('string'),
       auto_approvable: required('boolean'),
+      // WHICH mechanism raised this question (t371). Open text, unlike `kind`'s
+      // closed list right above it, and for the reason the column itself carries
+      // no CHECK: a tag is added by whoever starts raising a new kind of
+      // question, and an enum here would make that a migration. Optional, and
+      // absent is every question that exists today — nobody tagged them, because
+      // until this ticket there was nothing to tag.
+      origin: optional('string'),
     },
   },
   'input_request.answered': {

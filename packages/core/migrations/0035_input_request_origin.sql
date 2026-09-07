@@ -1,0 +1,36 @@
+-- 0035_input_request_origin — which mechanism raised this question (t371, FR6).
+--
+-- One column, nullable, unconstrained, unindexed, with no backfill. Every
+-- question that exists today reads NULL, and that is exactly what it is: nobody
+-- tagged it, because until this ticket there was nothing to tag.
+--
+-- **What it is for.** An `unsafe_to_retry` step whose delivery did not finish
+-- cleanly asks a person "retry, skip this output, or mark as done?" (RF-36).
+-- Two of those three answers must NOT reopen the step's session — reopening it
+-- is exactly the repeat the flag exists to prevent — so the runner has to
+-- recognise its own question BEFORE it acquires a worktree, out of a listing,
+-- with no session and no graph read. `origin` is what makes that a filter
+-- (`GET /v1/input-requests?job_id=&status=answered&origin=`) instead of a
+-- string match against the question's own prose.
+--
+-- **Why not a fourth `kind`.** `input_request.kind` carries
+-- `CHECK (kind IN ('question','approval'))` from `0003`, mirrored by a closed
+-- `values` list in `src/db/event-validation.ts`. Widening it is a full table
+-- rebuild for a fact that is not the KIND of escalation at all: this IS a
+-- question, asked of a person, answered like any other. What differs is who
+-- raised it and what the runner does with the answer.
+--
+-- **Why no CHECK on this one either.** `setting.key`'s posture, and t371's
+-- sibling migration `0034` records the same reasoning from the other side: an
+-- enum in SQL is an enum that costs a table rebuild per new word. The one value
+-- this ticket writes is `external_output_write`; whatever tags itself next adds
+-- no migration.
+--
+-- No index: the filter always rides with `job_id`, which is the selective half,
+-- and a queue that is small by construction does not earn one.
+--
+-- English top to bottom (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE input_request ADD COLUMN origin TEXT;

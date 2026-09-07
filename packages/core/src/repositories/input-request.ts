@@ -72,6 +72,21 @@ export interface InputRequest {
    * same two words, so this field is the column, passed through.
    */
   source: string | null;
+  /**
+   * Which MECHANISM raised this question, when one tagged itself (t371).
+   *
+   * `null` for every question that exists today and for every ordinary one:
+   * a session that got stuck and a node with two exits and no decision are the
+   * two doors this system has always had, and neither of them tags itself.
+   * The one value written today is `external_output_write` — the runner asking
+   * about a declared output it already tried to deliver — and the whole point of
+   * it is that the runner can recognise ITS OWN question, before a worktree is
+   * acquired, out of a listing.
+   *
+   * Open text and never an enum: whatever tags itself next adds no migration
+   * (`0035_input_request_origin.sql`, `setting.key`'s own posture).
+   */
+  origin: string | null;
   created_at: string;
   answered_at: string | null;
 }
@@ -88,7 +103,7 @@ const COLUMNS = `
   node_id, kind, question, context,
   options, recommendation,
   default_answer, auto_approvable, status,
-  answer, answered_by, source,
+  answer, answered_by, source, origin,
   created_at, answered_at
 `;
 
@@ -168,6 +183,8 @@ export interface CreateInputRequestInput {
   recommendation?: unknown;
   default_answer?: unknown;
   auto_approvable?: unknown;
+  /** The tag the runner puts on a question it raised itself (t371). */
+  origin?: unknown;
   actor?: unknown;
 }
 
@@ -203,6 +220,7 @@ export function createInputRequest(
     recommendation: input.recommendation,
     default_answer: input.default_answer,
     auto_approvable: input.auto_approvable,
+    origin: input.origin,
   });
 
   const jobId = data.job_id as number;
@@ -237,8 +255,8 @@ export function createInputRequest(
         `INSERT INTO input_request (
            job_id, session_id, execution_id, node_id, kind, question, context,
            options, recommendation, default_answer, auto_approvable, status, answer,
-           answered_by, source, created_at, answered_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, NULL)`,
+           answered_by, source, origin, created_at, answered_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL)`,
       )
       .run(
         jobId,
@@ -252,6 +270,7 @@ export function createInputRequest(
         data.recommendation as string | null,
         data.default_answer as string | null,
         asInteger(data.auto_approvable as boolean),
+        (data.origin ?? null) as string | null,
         timestamp,
       );
 
@@ -467,12 +486,18 @@ export function autoResolveInputRequest(
  * job-less ones. Here there is no such case.)
  *
  * @param db Open handle.
- * @param filter Optional slices by status, execution, job and project.
+ * @param filter Optional slices by status, execution, job, project and origin.
  * @returns Input requests in id order.
  */
 export function listInputRequests(
   db: Database,
-  filter: { status?: string; execution_id?: number; job_id?: number; project_id?: number } = {},
+  filter: {
+    status?: string;
+    execution_id?: number;
+    job_id?: number;
+    project_id?: number;
+    origin?: string;
+  } = {},
 ): InputRequest[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -484,6 +509,15 @@ export function listInputRequests(
   if (filter.execution_id !== undefined) {
     conditions.push('p.execution_id = ?');
     values.push(filter.execution_id);
+  }
+  // t371's own filter, and the reason the column exists: the runner reads back
+  // the question IT raised — job, answered, this origin — before it acquires a
+  // worktree, so that `skip`/`mark as done` can settle the job with no session
+  // at all. An origin nobody publishes matches no row, which is the honest
+  // answer and the same posture `status` above already takes.
+  if (filter.origin !== undefined) {
+    conditions.push('p.origin = ?');
+    values.push(filter.origin);
   }
   if (filter.job_id !== undefined) {
     conditions.push('p.job_id = ?');

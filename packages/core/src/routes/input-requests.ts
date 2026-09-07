@@ -148,6 +148,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         status?: string;
         execution_id?: string;
         job_id?: string;
+        origin?: string;
       };
       // A status nobody publishes is passed through rather than dropped: the
       // repository turns an unknown value into an empty result, which is the
@@ -162,6 +163,11 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         status,
         execution_id: executionId,
         job_id: jobId,
+        // Passed through untranslated and unvalidated, the same way `status`
+        // above is: an origin nobody publishes narrows to an empty result, which
+        // is the honest answer, and there is no closed list here to check
+        // against — that is the whole point of the column (t371).
+        ...(query.origin === undefined ? {} : { origin: query.origin }),
         // The scope is the owning job's project (t411, D25): `input_request`
         // has no `project_id` of its own, and inherits the partition through
         // the FK it already has.

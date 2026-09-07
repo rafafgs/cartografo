@@ -17,9 +17,14 @@
  * orchestrator's type — structural typing does the rest.
  *
  * **And the writes that STOP a work live next door since t265** (`blocks.ts`),
- * re-exported below so that no caller had to move with them. What is left here
- * is what a work that keeps going owes: the transition, the escalations, the
- * denials and the closure.
+ * re-exported below so that no caller had to move with them. **And the routing
+ * decisions live next door since t371** (`routing.ts`), re-exported the same
+ * way: the transition, the escalation raised when a node with two exits named
+ * neither, and the choice between them. That cut was not about size — it is that
+ * the delivery step this ficha adds needs to publish a transition of ITS own,
+ * from a person's answer and with no session, and a second caller is exactly
+ * when a decision stops being a detail of its first one. What is left here is
+ * the ORDER: what a work that keeps going owes, and in which sequence.
  *
  * **Who signs each write, and why it differs.** Everything the wiring does on
  * its own account is signed `sistema/runner`: the transition, every block and
@@ -45,18 +50,15 @@
  */
 
 import type { SessionFinishDetail, SessionStatus } from '../engine/types.ts';
+import type { ExternalOutputWriter } from '../mcp/write-external-outputs.ts';
 import { advanceMainLineForReport, type MainLineAdvancer } from './advance-main-line.ts';
-import { blockWithNobodyToAsk, RUNNER_ACTOR_REF, type JobRef } from './blocks.ts';
+import { RUNNER_ACTOR_REF, type JobRef } from './blocks.ts';
 import type { ControlPlaneCall } from './control-plane-client.ts';
 import type { InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
 import type { PermissionDenial } from './parse-permission-denial.ts';
-import {
-  resolveEscalationPolicy,
-  type EscalationPolicy,
-  type GraphEdge,
-  type ResolvedNode,
-} from './resolve-node.ts';
+import type { ResolvedNode } from './resolve-node.ts';
+import { selectAndTransition } from './routing.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -95,6 +97,7 @@ const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.
  */
 export {
   blockForEngineRefusal,
+  blockForExternalOutputFailure,
   blockForMainLineAdvanceFailure,
   blockForOutputSchemaRefusal,
   blockForPreSessionFailure,
@@ -102,6 +105,15 @@ export {
   blockWithNobodyToAsk,
   type JobRef,
 } from './blocks.ts';
+
+/**
+ * The routing decisions, re-exported from the module that owns them now (t371).
+ *
+ * Both were declared here from t202 until this ficha, and they move under the
+ * same rule every earlier split ran under: a refactor that renames nothing may
+ * not make anybody edit an import.
+ */
+export { escalateRouting, selectAndTransition, transition } from './routing.ts';
 
 /** What the session reported when it ended. */
 export interface Outcome {
@@ -138,107 +150,6 @@ export interface Outcome {
 }
 
 /**
- * Moves the work along the edge the traversal chose (t161, FR10).
- *
- * The one write of this module that PROPAGATES on failure, and the asymmetry
- * with the denial and the closure is deliberate: those are telemetry the runner
- * owes after the fact, and a work that keeps moving with a gap in its log is
- * recoverable. A transition that was not recorded is a work that stopped,
- * standing on a node it already finished, with nobody able to tell that from a
- * work that is merely slow. That is the single failure mode t161 exists to
- * close, so it may not be swallowed into a report at the end.
- *
- * @param call The dispatch's control-plane client.
- * @param job The work being dispatched.
- * @param edge The edge to take.
- */
-export async function transition(
-  call: ControlPlaneCall,
-  job: JobRef,
-  edge: GraphEdge,
-): Promise<void> {
-  await call(`/v1/jobs/${job.id}/transitions`, 'POST', {
-    to_node_id: edge.to,
-    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
-  });
-}
-
-
-/**
- * Asks a human which way the work goes (t161, FR9).
- *
- * Reached when a node with more than one way out finished without naming one
- * of them: no block, a malformed block, or a result that matches no edge —
- * the last of which is a real case and not a defect. The reference graph's own
- * gate declares `escala` in its `saida_schema` and has no edge for it, on
- * purpose: some outcomes are not the machine's to route.
- *
- * `ator.tipo` is `sistema` and not `agente`, which is the only thing that
- * tells this question apart from one the SESSION wrote: that one is a model
- * asking for a decision, this one is the wiring reporting that it has no rule
- * to apply. Two spellings for two different facts, in a log somebody has to be
- * able to group.
- *
- * At a `never` node it stops the work instead of asking (t167, FR6). The
- * missing routing decision is just as real, and the work stops just as hard —
- * what changes is that nobody is called for it, which is what the node
- * declared.
- *
- * @param call The dispatch's control-plane client.
- * @param job The work being dispatched.
- * @param sessionId The session that just finished, for the question's trail.
- * @param edges The edges leaving the node, in document order.
- * @param observed What the session named as its result, or `null`.
- * @param policy The escalation policy the node runs under.
- */
-export async function escalateRouting(
-  call: ControlPlaneCall,
-  job: JobRef,
-  sessionId: number,
-  edges: readonly GraphEdge[],
-  observed: string | null,
-  policy: EscalationPolicy,
-): Promise<void> {
-  const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
-  const seen = observed === null ? 'none' : `"${observed}"`;
-  // Built with concatenation and not with a nested template literal: the D18
-  // sweep's masking scanner reads one backtick at a time, and a template
-  // inside a `${…}` silently desyncs it for the whole rest of the file
-  // — one backtick in a comment can swallow the quoted strings that follow it.
-  const routes = edges
-    .map((edge) => '`' + (edge.condition ?? '') + '` → `' + edge.to + '`')
-    .join(', ');
-
-  const question =
-    `Node \`${job.current_node_id}\` has more than one way out and the session ` +
-    `chose none of them: the result observed was ${seen}, and it matches no edge ` +
-    'of this node. Which edge does the work follow?';
-
-  if (policy === 'never') {
-    await blockWithNobodyToAsk(call, job, `${question} This node has nobody to ask.`);
-    return;
-  }
-
-  await call('/v1/input-requests', 'POST', {
-    job_id: job.id,
-    session_id: sessionId,
-    kind: 'question',
-    question,
-    context:
-      `Edges leaving \`${job.current_node_id}\`: ${routes}. ` +
-      'The session ended without failing; what is missing is the routing decision.',
-    options: labels,
-    recommendation: null,
-    default_answer: null,
-    // Written as `true` since t102, and nothing reads it to answer on its own:
-    // a routing escalation is resolved by a person, same as every other
-    // pending question today.
-    auto_approvable: true,
-    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
-  });
-}
-
-/**
  * Advances the BENCH and then the work, or asks (t161, FR8/FR9; t273, FR1).
  *
  * Only ever called for a session that ended `completed` AND asked nothing:
@@ -261,13 +172,30 @@ export async function escalateRouting(
  * @param resolved Its node and the edges leaving it.
  * @param sessionId The session that just finished, for the question's trail.
  * @param output Everything the session printed, decoded.
+ * **And the declared outputs leave in the middle** (t371). A node may say, in
+ * the map, that what it produces is handed over to a tool on a server; that
+ * delivery happens HERE, between the bench and the edges, for exactly the reason
+ * the bench moves here — the position is the guarantee. Above it is a report the
+ * control plane already accepted, which is what makes the delivery reviewable at
+ * all (RF-33); below it is the transition, which may not be published while a
+ * declared output is still unwritten. And a report the control plane REFUSED
+ * never reaches this function at all (`dispatch.ts`'s five conditions), so
+ * "nothing leaves this machine on the back of a refused report" is structural
+ * rather than careful.
+ *
  * @param advanceMainLine What moves the bench, when this runner has one.
  *   Absent is ordinary — a bets runner has no bench — and then this behaves
  *   exactly as it did before t273.
- * @returns `null` when the work moved, or had nowhere to move to; the block's
- *   own reason when the bench could not be advanced and the work was stopped on
- *   the node instead. The transition itself still THROWS on failure, which is
- *   the asymmetry this module has had since t161.
+ * @param writeExternalOutputs What delivers the node's declared outputs, when
+ *   this dispatch has an MCP window. Absent is ordinary — every dispatch wired
+ *   before t371 — and then this behaves exactly as it did before it. Injected
+ *   rather than imported, on `advanceMainLine`'s own precedent: the ORDER is
+ *   this function's and the delivery is not.
+ * @returns `null` when the work moved, had nowhere to move to, or called a
+ *   person about a delivery; the block's own reason when the bench could not be
+ *   advanced or a declared output could not be delivered, and the work was
+ *   stopped on the node instead. The transition itself still THROWS on failure,
+ *   which is the asymmetry this module has had since t161.
  */
 export async function advance(
   call: ControlPlaneCall,
@@ -276,6 +204,7 @@ export async function advance(
   sessionId: number,
   output: string,
   advanceMainLine?: MainLineAdvancer,
+  writeExternalOutputs?: ExternalOutputWriter,
 ): Promise<string | null> {
   // Before every branch below, the final node included: what triggers it is the
   // SHAPE of the report and not the topology, so a node that reports an
@@ -283,32 +212,22 @@ export async function advance(
   const stale = await advanceMainLineForReport(call, job, output, advanceMainLine);
   if (stale !== null) return stale;
 
-  const { edges } = resolved;
+  // Decoded ONCE and read twice from here on: the delivery reads the property
+  // its node declares at `from`, and the routing reads the label. Decoding it
+  // again would let the two disagree about what the session said — the same rule
+  // `dispatch.ts` already applies to its own four readers of this text.
+  const report = parseNodeResult(output) ?? null;
 
-  // Nothing to do: a node with no way out is a final node by the graph's own
-  // `termina` rule, and there is nowhere to move the work to. What marks it
-  // finished is `concluido`, derived by the control plane (t152) — and since
-  // t262 that is not arrival: a final node with a skill needs its own report.
-  if (edges.length === 0) return null;
+  // ...and then the outward write, before anything is published. A delivery that
+  // could not be made stops the work exactly as a stale bench does; one that
+  // called a person returns `null`, so the caller's own "asking is a successful
+  // dispatch" ending applies unchanged and the job is blocked by the write of
+  // the input request itself.
+  const delivered = await writeExternalOutputs?.(call, job, resolved, sessionId, report);
+  if (delivered?.kind === 'blocked') return delivered.reason;
+  if (delivered?.kind === 'asked') return null;
 
-  // Deterministic by construction: one way out is taken whatever the label
-  // says. Every non-gate node of the reference graph labels it `sempre`, and
-  // that string is not special-cased — a node with a single edge has no
-  // decision to report, so asking it for one would invent a decision and then
-  // escalate for the lack of an answer to it.
-  if (edges.length === 1) {
-    await transition(call, job, edges[0]);
-    return null;
-  }
-
-  const observed = parseNodeResult(output)?.resultado ?? null;
-  const chosen = edges.find((edge) => edge.condition === observed);
-  if (chosen === undefined) {
-    await escalateRouting(call, job, sessionId, edges, observed, resolveEscalationPolicy(resolved));
-    return null;
-  }
-
-  await transition(call, job, chosen);
+  await selectAndTransition(call, job, resolved, sessionId, report);
   return null;
 }
 

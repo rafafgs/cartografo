@@ -238,10 +238,17 @@ test(
       // on a node's behalf — written as `0032` and renumbered here at the merge
       // for the tenth instance of exactly that collision, because t424 had
       // already taken it.
+      // ...and t371 moved it twice at once, which is a first: widening
+      // `external_call.outcome` is a table rebuild SQLite cannot do with an
+      // ALTER (`0034_external_call_outcomes.sql`), and `input_request.origin`
+      // is the one ADD COLUMN that saves the OTHER table from the same fate
+      // (`0035_input_request_origin.sql`). Both numbers were free at the merge,
+      // which is the first time in ten instances that this comment has nothing
+      // to record about a collision.
       assert.equal(
         first.readiness.migrationsApplied,
-        33,
-        'a brand-new database applies the thirty-three migrations the package ships',
+        35,
+        'a brand-new database applies the thirty-five migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

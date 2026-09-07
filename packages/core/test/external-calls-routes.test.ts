@@ -41,6 +41,14 @@ import {
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
+/** One migration's SQL, with every `--` comment line taken out. */
+function statementsOf(filePath: string): string {
+  return readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+}
+
 /** The artifacts these cases need on disk. */
 const ARTIFACTS = Object.freeze({
   t370Migration: 'migrations/0033_external_calls.sql',
@@ -235,7 +243,10 @@ test('t371 AT-C3 — the three new outcomes round-trip through the completion ro
 test('t371 AT-C4 — widening the outcome vocabulary is a migration, and it keeps the two indexes', async () => {
   requireArtifacts(...Object.values(ARTIFACTS));
 
-  const sql = readFileSync(path.join(PACKAGE_ROOT, ARTIFACTS.outcomeMigration), 'utf8');
+  // The prose is stripped first: this migration's header QUOTES the constraint
+  // it removes, and a scan that read the comment would conclude the constraint
+  // is still there.
+  const sql = statementsOf(path.join(PACKAGE_ROOT, ARTIFACTS.outcomeMigration));
 
   // The column carried `CHECK (outcome IN ('ok','error'))` from t370's own
   // migration, which SQLite cannot ALTER: widening it is a table rebuild, and

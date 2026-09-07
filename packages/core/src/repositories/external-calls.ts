@@ -35,14 +35,48 @@ import type { Database } from '../db/connection.ts';
 /** Which way a call went: fetching a node's input, or writing its output back. */
 export type ExternalCallDirection = 'input' | 'output';
 
-/** How a call ended, once it has ended. */
-export type ExternalCallOutcome = 'ok' | 'error';
+/**
+ * How a call ended, once it has ended.
+ *
+ * Two of these are a CALL's own fate and three are a DECISION not to make one
+ * (t371) — and they share the column because they answer one question: how did
+ * this delivery end? What none of the three is, is `ok`: reading them that way
+ * would make the log claim a call that never left the machine.
+ *
+ * - `skipped_duplicate` — an identical delivery for this job, this node and this
+ *   name had already succeeded, so nothing was sent (RF-35);
+ * - `skipped_by_person` — the person who was asked said to abandon this output;
+ * - `marked_done_by_person` — the person said the delivery had in fact landed,
+ *   and the row this closes is the attempt itself. No second row invents a call
+ *   nobody made.
+ */
+export type ExternalCallOutcome =
+  | 'ok'
+  | 'error'
+  | 'skipped_duplicate'
+  | 'skipped_by_person'
+  | 'marked_done_by_person';
 
 /** The two values `direction` accepts, as the migration's CHECK spells them. */
 export const EXTERNAL_CALL_DIRECTIONS: readonly ExternalCallDirection[] = ['input', 'output'];
 
-/** ...and the two `outcome` accepts. */
-export const EXTERNAL_CALL_OUTCOMES: readonly ExternalCallOutcome[] = ['ok', 'error'];
+/**
+ * ...and the five `outcome` accepts, which the schema no longer spells at all.
+ *
+ * The `CHECK` was dropped in `0034_external_call_outcomes.sql` and the
+ * vocabulary lives HERE from now on, on `setting.key`'s precedent: a value list
+ * in SQL costs a full table rebuild every time somebody adds a word to it, and
+ * t371 was the second ticket in a row to pay for that. This list is what the
+ * route validates against, so the column is exactly as closed as it ever was —
+ * it is just closed somewhere a diff can widen.
+ */
+export const EXTERNAL_CALL_OUTCOMES: readonly ExternalCallOutcome[] = [
+  'ok',
+  'error',
+  'skipped_duplicate',
+  'skipped_by_person',
+  'marked_done_by_person',
+];
 
 /**
  * The ceiling on either summary, in characters.
@@ -194,19 +228,59 @@ export function completeExternalCall(
 }
 
 /**
- * Every call recorded for one job, oldest first.
+ * The three coordinates that identify ONE delivery of one job (t371).
+ *
+ * Every filter is optional and they add up as AND. Absent is "every row", which
+ * is the shape the listing had when t370 wrote it and is still what the operator
+ * page asks for.
+ */
+export interface ExternalCallFilter {
+  node_id?: string;
+  name?: string;
+  direction?: string;
+}
+
+/**
+ * Every call recorded for one job, oldest first, optionally narrowed.
  *
  * Scoped through the job exactly as `listSessions` and `getSessionTranscript`
  * are: `external_call` carries no `project_id` of its own and inherits the
  * partition through its foreign key (D25), so the scope is applied by confirming
  * the JOB first — which is what the route does before it calls this.
  *
+ * **The filters are t371's, and they are the whole of RF-35's mechanism.**
+ * Before a node's declared output is sent, the runner asks whether this job, on
+ * this node, has already delivered that name; a client that had to fetch the
+ * job's entire history and filter it in memory would be re-deriving, once per
+ * attempt, the answer `idx_external_call_lookup (job_id, node_id, name,
+ * direction)` was declared to give directly. `direction` is taken as free text
+ * rather than as the narrowed type: a value the column cannot hold matches no
+ * row, which is the honest answer, and refusing it here would make the listing
+ * validate a vocabulary the WRITE side already owns.
+ *
  * @param db Open database.
  * @param jobId The job to list.
+ * @param filter Optional slices by node, name and direction.
  * @returns The rows, in insertion order.
  */
-export function listExternalCalls(db: Database, jobId: number): ExternalCall[] {
+export function listExternalCalls(
+  db: Database,
+  jobId: number,
+  filter: ExternalCallFilter = {},
+): ExternalCall[] {
+  const conditions = ['job_id = ?'];
+  const values: unknown[] = [jobId];
+
+  for (const column of ['node_id', 'name', 'direction'] as const) {
+    const value = filter[column];
+    if (value === undefined) continue;
+    conditions.push(`${column} = ?`);
+    values.push(value);
+  }
+
   return db
-    .prepare(`SELECT ${COLUMNS} FROM external_call WHERE job_id = ? ORDER BY id`)
-    .all(jobId) as ExternalCall[];
+    .prepare(
+      `SELECT ${COLUMNS} FROM external_call WHERE ${conditions.join(' AND ')} ORDER BY id`,
+    )
+    .all(...values) as ExternalCall[];
 }

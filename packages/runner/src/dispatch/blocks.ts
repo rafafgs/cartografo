@@ -1,6 +1,6 @@
 /**
- * The seven writes that STOP a work, on the runner's own account (t265, t268,
- * t273, t423).
+ * The eight writes that STOP a work, on the runner's own account (t265, t268,
+ * t273, t423, t371).
  *
  * They were four closures in `dispatch.ts` until t202, then four exports of
  * `report.ts` until this ficha, which added the fourth and pushed that module
@@ -25,6 +25,12 @@
  * finished cleanly and named, as the artifact its node's contract declares, a
  * path that escapes its worktree or a file nobody ever wrote. Unlike the fifth,
  * the control plane was never handed that report at all.
+ *
+ * The eighth arrived with t371, and its fact is about something that was
+ * supposed to LEAVE this system: a report the control plane accepted, whose
+ * node declares that what it produces is handed over to a named tool on a named
+ * server, and the handing over never landed. It is the first of the eight whose
+ * subject is outside the machine entirely.
  *
  * `POST /v1/jobs/:id/blocks` is an unconditional, reason-carrying block that has
  * existed since t102, and every write here uses it unchanged. What the dispatch
@@ -427,6 +433,64 @@ export async function blockForArtifactRefusal(
     'whose session directory is already gone: the session has to write the file it ' +
     'promises, inside the directory it was given, and name it by a relative path — or ' +
     'the node\'s contract has to stop declaring it. Fix one of the two and unblock.';
+
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+
+  return reason;
+}
+
+/**
+ * Stops the work because a declared output could not be delivered (t371, FR4).
+ *
+ * The eighth block of this module, and the first one about something that was
+ * supposed to leave this system entirely. The node declared, in the map, that
+ * what it produces is handed over to a named tool on a named server; the report
+ * was accepted, the ladder ran, and the delivery never landed.
+ *
+ * A block and not a throw, on exactly the reasoning t252, t265 and t273 already
+ * recorded: what refuses here — a folder that is read-only, a server nobody's
+ * engine names, a tool that is not published, a credential that expired —
+ * refuses identically on the next tick, so a throw would buy the same answer
+ * every couple of seconds forever with nothing in anybody's inbox.
+ *
+ * **And it is a block rather than a question**, which is the line between this
+ * and the delivery step's own escalation. A SAFE node's failed delivery is a
+ * fact about the external system, and nobody has to decide anything: fix it and
+ * unblock. An `unsafe_to_retry` node's is a decision — the write may already
+ * have happened, and only a person can look — so that one calls a person
+ * instead (`src/mcp/write-external-outputs.ts`, RF-36).
+ *
+ * The reason names the four things a person needs before they can go and look:
+ * which node, which delivery, where it was going, and what the last attempt
+ * said.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param job The work being dispatched.
+ * @param entry The declared output that did not land — its name, its server and
+ *   its tool, as the node's map spells them.
+ * @param detail What went wrong, as the step that tried it reported. It is the
+ *   whole of what a person acts on, so it is quoted and never summarized away.
+ * @returns The reason that was posted, so the caller can hand it back to the
+ *   controller as the block's own — the runner may not tell the API one story
+ *   and its caller another.
+ */
+export async function blockForExternalOutputFailure(
+  call: ControlPlaneCall,
+  job: JobRef,
+  entry: { name: string; server: string; tool: string },
+  detail: string,
+): Promise<string> {
+  const reason =
+    `The session of node \`${job.current_node_id}\` was accepted, but the output the node ` +
+    `declares as \`${entry.name}\` could NOT be delivered to \`${entry.tool}\` on server ` +
+    `\`${entry.server}\`: ${detail}. ` +
+    'The work stays on this node instead of moving on, because the map says this step ' +
+    'hands its result over outside and it did not: a transition published now would ' +
+    'record the delivery as made. Check the external system — the server, the tool, the ' +
+    'credential the engine holds for it — or fix what the node declares, and unblock.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,

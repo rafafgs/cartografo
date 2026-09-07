@@ -132,6 +132,28 @@ export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
 export const DEFAULT_MCP_CALL_TIMEOUT_MS = 30_000;
 
 /**
+ * Attempts a SAFE node's declared output gets, in total (t371, FR4).
+ *
+ * Re-exported from where the ladder is written (`src/mcp/write-external-outputs.ts`)
+ * so that the two constants a wiring may override sit beside every other default
+ * this file holds. The value and the reasoning live with the ladder: a delivery
+ * that failed three times in a couple of seconds failed for a reason a fourth
+ * attempt will not fix.
+ *
+ * This ladder is emphatically NOT
+ * {@link DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES}'s and not the control
+ * plane's `max_consecutive_failures`. Those two count SESSIONS — dispatch
+ * attempts, and failed sessions across leases — and this one counts HTTP calls
+ * inside a single dispatch that already succeeded. Three axes, three ceilings,
+ * and collapsing any two of them would make one number answer a question it was
+ * never measured for.
+ */
+export {
+  DEFAULT_MAX_OUTPUT_WRITE_ATTEMPTS,
+  DEFAULT_OUTPUT_WRITE_BACKOFF_MS,
+} from '../mcp/write-external-outputs.ts';
+
+/**
  * What `GET /v1/jobs/:id` gives back, in the part the dispatch reads.
  *
  * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
@@ -414,6 +436,30 @@ export interface ClaudeCodeDispatchOptions {
    * dispatch its latency and never an engine its quota.
    */
   mcpCallTimeoutMs?: number;
+  /**
+   * Attempts a SAFE node's declared output gets, in total (t371, FR4).
+   * Default: {@link DEFAULT_MAX_OUTPUT_WRITE_ATTEMPTS}.
+   *
+   * The same standing `quotaBackoffMs` and `mcpCallTimeoutMs` above have: an
+   * option, no flag of its own, and a value that bounds ONE delivery — a node
+   * declaring three of them gets three ladders, because what this is about is a
+   * server that refused and not a budget for the node.
+   *
+   * It applies to a safe node and to nothing else. An `unsafe_to_retry` node
+   * gets exactly one attempt whatever is configured here, and no setting widens
+   * that: the flag is the map saying the step may not be repeated, and an
+   * operator's dispatch configuration does not get to overrule a graph.
+   */
+  maxOutputWriteAttempts?: number;
+  /**
+   * What that ladder waits between attempts, rung by rung (t371, FR4).
+   * Default: {@link DEFAULT_OUTPUT_WRITE_BACKOFF_MS}.
+   *
+   * One entry fewer than there are attempts, which is what "between" means. A
+   * ladder shorter than the attempt count simply stops waiting once it runs out
+   * — the ATTEMPTS are the policy and the waits are the courtesy.
+   */
+  outputWriteBackoffMs?: readonly number[];
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
   /**

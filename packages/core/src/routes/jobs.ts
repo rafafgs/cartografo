@@ -285,8 +285,16 @@ function readCompletion(
 
   const outcome = body.outcome;
   if (typeof outcome !== 'string' || !EXTERNAL_CALL_OUTCOMES.includes(outcome as ExternalCallOutcome)) {
+    // The list moved out of the schema and into the repository with t371
+    // (`0034_external_call_outcomes.sql`), so this refusal is now the ONLY thing
+    // standing between the caller and the column. It names the whole vocabulary
+    // rather than the two it used to, because a refusal that lists the wrong
+    // half of the options is worse than one that lists none.
     return {
-      refusal: { field: 'outcome', message: 'outcome is `ok` or `error`' },
+      refusal: {
+        field: 'outcome',
+        message: `outcome is one of: ${EXTERNAL_CALL_OUTCOMES.join(', ')}`,
+      },
     };
   }
 
@@ -604,7 +612,20 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       // applied to; the listing below inherits it through the foreign key.
       if (getJob(db, id, scope.project.id) === null) return notFound(reply, 'job');
 
-      return { external_calls: listExternalCalls(db, id) };
+      // Three filters, added by t371, and they are the whole of RF-35's
+      // mechanism: "has this job already delivered THIS output of THIS node?" is
+      // the question the runner asks before every attempt, and it is the exact
+      // shape `idx_external_call_lookup` was declared for. Absent means every
+      // row, which is what the operator page still asks for.
+      const query = request.query as { node_id?: string; name?: string; direction?: string };
+
+      return {
+        external_calls: listExternalCalls(db, id, {
+          ...(query.node_id === undefined ? {} : { node_id: query.node_id }),
+          ...(query.name === undefined ? {} : { name: query.name }),
+          ...(query.direction === undefined ? {} : { direction: query.direction }),
+        }),
+      };
     }),
   );
 

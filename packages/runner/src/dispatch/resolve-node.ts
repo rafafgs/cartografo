@@ -58,6 +58,34 @@ export interface ExternalInputDeclaration {
   as?: string;
 }
 
+/**
+ * One external OUTPUT a node declares, as t369's format writes it (t371, FR2).
+ *
+ * The mirror image of {@link ExternalInputDeclaration}, typed with the same
+ * looseness and for the same reason: what refuses a malformed declaration is
+ * the registration gate, and this layer reads a snapshot that has already been
+ * through it.
+ *
+ * `from` names a property of the PINNED SKILL's `output` — the value that is
+ * sent — and `arguments` carries `{{input.<path>}}` placeholders resolved
+ * against the delivery's own context rather than against the node's input:
+ * `{{input.job.id}}` and `{{input.output.<property>}}`, which is what
+ * `docs/spec/mcp-client.md` §9 spells out. There is no `as`: nothing lands on
+ * disk on the way out.
+ */
+export interface ExternalOutputDeclaration {
+  /** What this delivery is called, unique within `outputs`. */
+  name?: string;
+  /** The MCP server, by the name discovery gives it. */
+  server?: string;
+  /** The tool to call on that server. */
+  tool?: string;
+  /** The arguments of the call, before interpolation. */
+  arguments?: Record<string, unknown>;
+  /** Which property of the accepted report is delivered. */
+  from?: string;
+}
+
 /** The pin a node carries to a registry skill (D4). */
 export interface SkillPin {
   id: string;
@@ -133,7 +161,22 @@ export interface GraphNode {
    * empty object rather than to a refusal. Optional on `inputs` too, for the
    * same reason: a drawer somebody opened and left empty is not a defect.
    */
-  external?: { inputs?: ExternalInputDeclaration[] };
+  external?: { inputs?: ExternalInputDeclaration[]; outputs?: ExternalOutputDeclaration[] };
+  /**
+   * Whether repeating this step is safe (t369; read here by t371).
+   *
+   * Absent means `false`, which is every graph written before the field and
+   * every step whose effects stay inside this system. `true` says the step has
+   * an effect outside that cannot be deferred — a delivery already made is not
+   * undone by running the node again — and what ACTS on it is the delivery step
+   * (`src/mcp/write-external-outputs.ts`): one attempt, no ladder, and a person
+   * asked rather than a second call made.
+   *
+   * `unknown` for the reason `engine` and `model` above are: the schema is what
+   * refuses a non-boolean, and this layer reads a snapshot rather than vouching
+   * for one. {@link isUnsafeToRetry} is what turns it into an answer.
+   */
+  unsafe_to_retry?: unknown;
 }
 
 /** One transition of a graph snapshot. */
@@ -281,4 +324,22 @@ export async function resolveNode(
   const edges = (version.snapshot?.edges ?? []).filter((edge) => edge.from === job.current_node_id);
 
   return { versionId: version.id, node, edges };
+}
+
+/**
+ * Whether the node a work is standing on may simply be run again (t369, t371).
+ *
+ * Named and exported for {@link resolveEscalationPolicy}'s reason, one step
+ * stronger: the default here is the permissive one, so a reader who assumed it
+ * would be reading the safe answer has to be shown that it is not. Absent is
+ * `false` — every graph written before the field, and every step whose effects
+ * stay inside this system — and anything that is not the literal `true` is
+ * `false` too, because the schema refuses a non-boolean on the way in and the
+ * answer to a snapshot that changed shape underneath us is today's behaviour.
+ *
+ * @param resolved The node the work is standing on, or `null`.
+ * @returns `true` only when the map says so, in the one spelling it accepts.
+ */
+export function isUnsafeToRetry(resolved: ResolvedNode | null): boolean {
+  return resolved?.node.unsafe_to_retry === true;
 }

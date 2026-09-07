@@ -83,6 +83,14 @@
  * side's own parse of the same block — two readings of one report, never
  * compared.
  *
+ * **And a work can now settle with no session at all** (t371). A person asked
+ * about a declared output that did not land can answer `skip this output` or
+ * `mark as done`, and both move the work on from the report the ORIGINAL session
+ * already had stored — re-running the step is exactly the repeat
+ * `unsafe_to_retry` exists to prevent. It is decided at the very top of a tick,
+ * before a graph is read or a tree is cut, and it is the third ending this
+ * callback has beside "opened a session" and "stopped before one could".
+ *
  * **And a failure BEFORE the session is a block, not a throw** (t252, t270,
  * t272, t370). Eight of the ways the window below can fail reproduce identically
  * on every retry — a dangling `graph_version_id`, an engine with no route, an
@@ -142,6 +150,7 @@ import { blockForArtifactRefusal } from './blocks.ts';
 import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
+  DEFAULT_MCP_CALL_TIMEOUT_MS,
   DEFAULT_SILENCE_SECONDS,
   DEFAULT_TIMEOUT_SECONDS,
   type ClaudeCodeDispatchOptions,
@@ -165,6 +174,10 @@ import {
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy } from './resolve-node.ts';
 import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
+import {
+  createExternalOutputWriter,
+  settleAnsweredOutputWrite,
+} from '../mcp/write-external-outputs.ts';
 import { createSessionCollector } from './session-collector.ts';
 import { openSession, type Session } from './open-session.ts';
 import { buildSessionSpec } from './session-spec.ts';
@@ -230,6 +243,22 @@ export function createClaudeCodeDispatch(
     // Every scoped read of this dispatch names the SAME project (t410): a work
     // read in one partition and a graph read in another are two different works.
     const job = await call<Job>(withProject(`/v1/jobs/${jobId}`, options.projectId), 'GET');
+
+    // The third ending a dispatch can have, and the narrowest (t371, FR6). A
+    // person was asked about a declared output that did not land, and answered
+    // `skip this output` or `mark as done`: both mean the work moves on WITHOUT
+    // the step running again, because re-opening the session of a step marked
+    // `unsafe_to_retry` is exactly the repeat that flag exists to prevent.
+    //
+    // Here, and not below, for one reason: everything after this line resolves a
+    // graph, fetches the node's external inputs, renders a skill and cuts a
+    // worktree — the whole cost of a session, for a job that is not going to
+    // open one. `retry`, an unrecognised answer, and the case that is nearly all
+    // of them — no such question at all — cost one listing and fall through
+    // unchanged (`src/mcp/write-external-outputs.ts` argues the carve-out).
+    if (await settleAnsweredOutputWrite(call, job, { projectId: options.projectId })) {
+      return { blocked: false };
+    }
 
     let plan: SessionPlan;
 
@@ -551,7 +580,30 @@ export function createClaudeCodeDispatch(
         !dirtyDespiteCompleted &&
         !refusedReport &&
         !refusedArtifacts
-          ? await advance(call, job, resolved, session.id, output, options.advanceMainLine)
+          ? await advance(
+              call,
+              job,
+              resolved,
+              session.id,
+              output,
+              options.advanceMainLine,
+              // The MCP window's OUT direction (t371). Built here because this
+              // is where the engine route is known, and handed to `advance()`
+              // because that is where the order is guaranteed: between the
+              // bench and the transition, and only for a report the control
+              // plane accepted — which is the condition list right above.
+              createExternalOutputWriter({
+                adapter: route.adapter,
+                callTimeoutMs: options.mcpCallTimeoutMs ?? DEFAULT_MCP_CALL_TIMEOUT_MS,
+                ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
+                ...(options.maxOutputWriteAttempts === undefined
+                  ? {}
+                  : { maxAttempts: options.maxOutputWriteAttempts }),
+                ...(options.outputWriteBackoffMs === undefined
+                  ? {}
+                  : { backoffMs: options.outputWriteBackoffMs }),
+              }),
+            )
           : null;
 
       // A write that could not be made is not the session's fault, but it is a

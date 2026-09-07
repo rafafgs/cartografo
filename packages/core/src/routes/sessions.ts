@@ -19,6 +19,7 @@
 
 import type { FastifyInstance } from 'fastify';
 
+import type { ArtifactStore } from '../artifacts/store.ts';
 import type { Database } from '../db/connection.ts';
 import { integerFromQuery } from '../repositories/common.ts';
 import {
@@ -52,8 +53,14 @@ const FINISH_BODY_LIMIT_BYTES = 32 * 1_048_576;
  *
  * @param app Already prefixed scope.
  * @param db Open database.
+ * @param store Where a transcript over the cap is kept whole, and read back
+ *   from (t424) — the same instance `routes/artifacts.ts` is given.
  */
-export function registerSessions(app: FastifyInstance, db: Database): void {
+export function registerSessions(
+  app: FastifyInstance,
+  db: Database,
+  store: ArtifactStore,
+): void {
   app.post('/sessions', async (request, reply) =>
     withValidation(reply, () => {
       const session = openSession(db, (request.body ?? {}) as Record<string, unknown>);
@@ -68,7 +75,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // first time — the only cost record the PoC keeps — so a session that is no
   // longer open is a 409, decided here, before the repository is called.
   app.patch('/sessions/:id/finish', { bodyLimit: FINISH_BODY_LIMIT_BYTES }, async (request, reply) =>
-    withValidation(reply, () => {
+    withValidation(reply, async () => {
       const id = routeId(request.params);
       const current = getSession(db, id);
       if (current === null) return notFound(reply, 'session');
@@ -76,7 +83,12 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         return conflict(reply, `session ${id} is already "${current.status}"`);
       }
 
-      const result = finishSession(db, id, (request.body ?? {}) as Record<string, unknown>);
+      const result = await finishSession(
+        db,
+        id,
+        (request.body ?? {}) as Record<string, unknown>,
+        store,
+      );
       if (result === null) return notFound(reply, 'session');
 
       // The one response that says whether the report was TAKEN (t268), and the
@@ -127,12 +139,24 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // both. There is no second branch here on purpose — one refusal, so a
   // boundary never reads as a permission problem nor says which ids exist
   // elsewhere (`routes/graphs.ts` makes the same reading).
+  //
+  // Since t424 it also answers MORE than the row. A transcript that overflowed
+  // `TRANSCRIPT_CAP_BYTES` was stored whole through the artifact store when the
+  // session closed, and this is where it is read back: what comes out is the
+  // original text, not the tail the column kept (RF-40). Nothing about the route
+  // changed for a caller — same path, same three fields — which is why the store
+  // arrives as an argument here and not as a second endpoint.
   app.get('/sessions/:id/transcript', async (request, reply) =>
-    withValidation(reply, () => {
+    withValidation(reply, async () => {
       const scope = requireProject(db, request, reply);
       if (scope.project === undefined) return scope.refusal;
 
-      const transcript = getSessionTranscript(db, routeId(request.params), scope.project.id);
+      const transcript = await getSessionTranscript(
+        db,
+        routeId(request.params),
+        store,
+        scope.project.id,
+      );
       return transcript === null ? notFound(reply, 'session') : transcript;
     }),
   );

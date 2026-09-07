@@ -134,6 +134,10 @@
 
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import { SessionStartError } from '../engine/types.ts';
+// Straight from `blocks.ts` and not through `report.ts`'s re-export, the way
+// `advance-main-line.ts` already imports its own block: it keeps `report.ts`
+// untouched by this ficha, which is the surface a sibling one is editing.
+import { blockForArtifactRefusal } from './blocks.ts';
 import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
@@ -163,6 +167,7 @@ import { resolveSessionPlan, type SessionPlan } from './resolve-session-plan.ts'
 import { createSessionCollector } from './session-collector.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
+import { uploadArtifacts } from './upload-artifacts.ts';
 
 /**
  * The surface this module has always had, whole, from the file that lists it
@@ -388,6 +393,41 @@ export function createClaudeCodeDispatch(
       // never called again (FR3): what is left is telemetry the runner owes, and
       // each write is attempted even when the one before it failed.
 
+      // Decoded ONCE and read four times: the escalation block, the routing
+      // block, the report that rides on the closure (t259) and — since t423 —
+      // the declared artifacts of that report. Decoding it again would let them
+      // disagree about what the session said.
+      //
+      // It happens HERE, above the release, and that position is the ficha: the
+      // release below DISCARDS a completed session's whole worktree, so the file
+      // an `x-artifact` property names exists on disk only until that line. The
+      // decode and the parse never depended on the tree; what now sits between
+      // them and the release does.
+      const output = route.decodeSessionText(lines);
+      const parsedResult = parseNodeResult(output) ?? undefined;
+
+      // A declared output that is a FILE leaves the worktree on its own (t423,
+      // FR2). Only for a session that COMPLETED: anything else reported nothing
+      // to move, and its tree is kept for diagnosis anyway. The report comes
+      // back with an artifact id where the session wrote a local path — or with
+      // the reasons it was refused, and then the control plane is handed no
+      // report at all.
+      const artifacts =
+        outcome.status === 'completed'
+          ? await uploadArtifacts(
+              {
+                urlBase: options.urlBase,
+                token: options.token,
+                doFetch: options.doFetch,
+                requestTimeoutMs: options.requestTimeoutMs,
+              },
+              session.id,
+              worktree.path,
+              resolved?.node.contract?.output_schema,
+              parsedResult,
+            )
+          : { output: parsedResult };
+
       // The tree goes back HERE, the moment the outcome is known and before a
       // single decision is taken on top of it (t207-B). It used to happen at the
       // very end, after the advance, and the order was not neutral: what the
@@ -417,12 +457,6 @@ export function createClaudeCodeDispatch(
       // incident may not cost the session its closure nor its question.
       await denials.drain();
 
-      // Decoded ONCE and read three times: the escalation block, the routing
-      // block and — since t259 — the report that rides on the closure. Decoding
-      // it again would let the three disagree about what the session said, and
-      // it happens BEFORE the closure now because the closure is one of them.
-      const output = route.decodeSessionText(lines);
-
       // Captured rather than thrown, exactly as the denials' failure already is:
       // a closure the control plane refused may not cancel the question that
       // comes after it. "Asking is not failing" is not a rule about happy paths
@@ -437,7 +471,11 @@ export function createClaudeCodeDispatch(
         // what the session reported INSIDE it (t259) — absent when it printed
         // no usable block. Both arguments are argued in `report.ts`.
         lines.join('\n'),
-        parseNodeResult(output) ?? undefined,
+        // Absent whenever the artifacts were refused (t423): the two keys are
+        // exclusive, so this is "no output argument at all", read by the control
+        // plane as "nothing structured was reported" — never a report carrying a
+        // bare path into a worktree that no longer exists.
+        artifacts.output,
       );
 
       const request: InputRequest | null = parseInputRequest(output);
@@ -470,8 +508,17 @@ export function createClaudeCodeDispatch(
       // fundamental fact — there is no result to have committed anything about —
       // and the same rule that forbids a second owner forbids posting both.
       // `blocks.ts` argues each write, next to the write itself.
+      //
+      // And the artifacts come FIRST of the three (t423), on the same argument
+      // the refusal already carries over the dirty check and one step stronger:
+      // the control plane was never even handed an output to accept or refuse,
+      // so `refusedReport` cannot independently be true for the same session —
+      // `outputAccepted` reads vacuously `true` when there is no `output`.
+      const refusedArtifacts = outcome.status === 'completed' && artifacts.problems !== undefined;
       const refusedReport = outcome.status === 'completed' && verdict.outputAccepted === false;
-      if (request === null && refusedReport) {
+      if (request === null && refusedArtifacts) {
+        await blockForArtifactRefusal(call, job, session.id, artifacts.problems ?? []);
+      } else if (request === null && refusedReport) {
         await blockForOutputSchemaRefusal(call, job, session.id, verdict.outputSchemaError ?? []);
       } else if (request === null && dirtyDespiteCompleted) {
         await blockForUncommittedWork(call, job, worktree.path);
@@ -502,7 +549,8 @@ export function createClaudeCodeDispatch(
         outcome.status === 'completed' &&
         request === null &&
         !dirtyDespiteCompleted &&
-        !refusedReport
+        !refusedReport &&
+        !refusedArtifacts
           ? await advance(call, job, resolved, session.id, output, options.advanceMainLine)
           : null;
 

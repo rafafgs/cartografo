@@ -84,7 +84,10 @@ column ([`packages/core/src/repositories/session.ts`](packages/core/src/reposito
 keeps the output whole, under a byte ceiling, and nothing redacts, scrubs or
 masks it on the way in: if a command echoed a credential, that credential is at
 rest in `.cartografo/cartografo.db`. Treat that file the way you treat a shell
-history or a CI log.
+history or a CI log. The same goes for a file a session uploads: an artifact is
+stored exactly as it was received, under no redaction of any kind
+([`docs/spec/artifacts.md`](docs/spec/artifacts.md)), and nothing ever deletes
+one.
 
 Neither is closed by a list of allowed tool names.
 [`packages/runner/src/engine/permission-policy.ts`](packages/runner/src/engine/permission-policy.ts)

@@ -258,8 +258,11 @@ test('t180 — the 403 of a runner outside its surface names the surface in Engl
   // `GET /v1/runners/:id/rechecks` in t401 — the two through which a machine
   // reports what it is and picks up a request to report again. The third route
   // of that pair, `POST /v1/runners/:id/rechecks`, is deliberately absent.
+  // `POST /v1/sessions/:id/artifacts` joined it in t423: a runner uploading the
+  // file a session's contract declared as its output is the same class of act
+  // as reporting that session's end.
   assert.equal(
     denied.body.message,
-    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models, POST /v1/runners/:id/probes, GET /v1/runners/:id/rechecks — "POST /v1/jobs" requires a user credential',
+    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models, POST /v1/runners/:id/probes, GET /v1/runners/:id/rechecks, POST /v1/sessions/:id/artifacts — "POST /v1/jobs" requires a user credential',
   );
 });

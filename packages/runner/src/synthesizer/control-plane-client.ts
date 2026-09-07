@@ -33,6 +33,7 @@
  * format, not of the wire, as its comment records.
  */
 
+import { withProject } from '../dispatch/control-plane-client.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS, requestJson } from '../controller/http-client.ts';
 
 /** A registered class, as `GET /v1/classes` returns it. */
@@ -173,10 +174,11 @@ export async function fetchClasses(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs?: number,
+  projectId?: number,
 ): Promise<ClassEntry[]> {
   const { classes } = await getJson<{ classes: ClassEntry[] }>(
     baseUrl,
-    '/v1/classes',
+    withProject('/v1/classes', projectId),
     fetchImpl,
     timeoutMs,
   );
@@ -197,10 +199,11 @@ export async function fetchClassVersion(
   versionId: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs?: number,
+  projectId?: number,
 ): Promise<GraphVersion> {
   const { graph_version: version } = await getJson<{ graph_version: GraphVersion }>(
     baseUrl,
-    `/v1/graph-versions/${encodeURIComponent(versionId)}`,
+    withProject(`/v1/graph-versions/${encodeURIComponent(versionId)}`, projectId),
     fetchImpl,
     timeoutMs,
   );
@@ -218,10 +221,11 @@ export async function fetchSkills(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs?: number,
+  projectId?: number,
 ): Promise<RegisteredSkill[]> {
   const { skills } = await getJson<{ skills: RegisteredSkill[] }>(
     baseUrl,
-    '/v1/skills',
+    withProject('/v1/skills', projectId),
     fetchImpl,
     timeoutMs,
   );
@@ -255,6 +259,15 @@ export interface ControlPlaneReaderOptions {
    * prompt that never came back.
    */
   requestTimeoutMs?: number;
+  /**
+   * Project to scope every read to (D25, t420).
+   *
+   * Absent means "say nothing" — the server's own default project — never a
+   * `1` this reader invents on its behalf. This is a second, independent axis
+   * of scoping from {@link token}: one says who is reading, the other says
+   * which project's partition the read is scoped to.
+   */
+  projectId?: number;
 }
 
 /**
@@ -293,11 +306,12 @@ export function createControlPlaneReader(
 ): ControlPlaneReader {
   const fetchImpl = withAuthorization(options.fetchImpl ?? fetch, options.token);
   const timeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const projectId = options.projectId;
 
   return {
-    fetchClasses: async () => await fetchClasses(baseUrl, fetchImpl, timeoutMs),
+    fetchClasses: async () => await fetchClasses(baseUrl, fetchImpl, timeoutMs, projectId),
     fetchClassVersion: async (versionId: string) =>
-      await fetchClassVersion(baseUrl, versionId, fetchImpl, timeoutMs),
-    fetchSkills: async () => await fetchSkills(baseUrl, fetchImpl, timeoutMs),
+      await fetchClassVersion(baseUrl, versionId, fetchImpl, timeoutMs, projectId),
+    fetchSkills: async () => await fetchSkills(baseUrl, fetchImpl, timeoutMs, projectId),
   };
 }

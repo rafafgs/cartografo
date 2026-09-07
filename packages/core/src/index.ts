@@ -13,12 +13,14 @@ import path from 'node:path';
 
 import type { FastifyInstance } from 'fastify';
 
+import { artifactRootFor, LocalArtifactStore } from './artifacts/local-store.ts';
 import { openDatabase, applyPragmas, databasePath, type Database } from './db/connection.ts';
 import { acquireLock } from './db/lock.ts';
 import { migrate } from './db/migrate.ts';
 import { DEFAULT_PROJECT } from './repositories/common.ts';
 import { hasLiveCredential, issueCredential } from './repositories/credentials.ts';
 import { seedDefaultSettings } from './repositories/settings.ts';
+import { DEFAULT_ARTIFACT_SIZE_CAP_BYTES } from './routes/artifacts.ts';
 import { DEFAULT_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_RUNNER } from './routes/leases.ts';
 import { createApp } from './server.ts';
 
@@ -47,6 +49,9 @@ export const ENV_LEASE_CAP_RUNNER = 'CARTOGRAFO_LEASE_CAP_RUNNER';
 
 /** Environment variable that overrides the per-project lease ceiling (t157, FR1). */
 export const ENV_LEASE_CAP_PROJECT = 'CARTOGRAFO_LEASE_CAP_PROJECT';
+
+/** Environment variable that overrides the artifact upload ceiling (t422, FR7). */
+export const ENV_ARTIFACT_SIZE_CAP_BYTES = 'CARTOGRAFO_ARTIFACT_SIZE_CAP_BYTES';
 
 /** Environment variable that overrides the log level (t197, FR1). */
 export const ENV_LOG_LEVEL = 'CARTOGRAFO_LOG_LEVEL';
@@ -188,6 +193,21 @@ export function leaseCapProject(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * Resolves the ceiling of an artifact upload, in bytes (t422, FR7).
+ *
+ * Same shape as the two lease ceilings above, failure included: a value that is
+ * not a positive integer stops the startup instead of quietly becoming the
+ * default. An operator who typed a cap and got 32 MiB anyway would go on
+ * believing the number in the environment is the one being enforced.
+ *
+ * @param env Environment to read `CARTOGRAFO_ARTIFACT_SIZE_CAP_BYTES` from.
+ * @returns The largest upload the control plane will read.
+ */
+export function artifactSizeCapBytes(env: NodeJS.ProcessEnv = process.env): number {
+  return leaseCap(env, ENV_ARTIFACT_SIZE_CAP_BYTES, DEFAULT_ARTIFACT_SIZE_CAP_BYTES);
+}
+
+/**
  * Resolves the level the control plane logs at (t197, FR1).
  *
  * Same shape as `serverPort` and `leaseCap`, failure included: unset or blank
@@ -263,6 +283,13 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
       // does not have to opt out of the production configuration.
       logger: { level: logLevel(env) },
       leaseCeilings: { runner: leaseCapRunner(env), projeto: leaseCapProject(env) },
+      // Built here and passed down, for the same reason the handle above is:
+      // whoever decides where things live is the startup, and the app is handed
+      // the result (t422, FR3). It goes beside the database file — an operator
+      // who moves `CARTOGRAFO_DB_PATH` moves the artifacts with it, and a backup
+      // of the directory is a backup of both halves.
+      artifactStore: new LocalArtifactStore(artifactRootFor(file)),
+      artifactSizeCapBytes: artifactSizeCapBytes(env),
     });
     await app.listen({ port: serverPort(env), host });
   } catch (error) {

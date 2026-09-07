@@ -93,6 +93,13 @@ const RUNNER_SURFACE: ReadonlySet<string> = new Set([
   // `GET /v1/engines` above already states: ordering a machine to re-probe is
   // fleet management, and a runner credential that could do it would turn one
   // compromised machine into a lever on every other one.
+  // t423. Uploading what a session's own contract declared as its output — the
+  // file an `x-artifact` property names — is the same class of act as reporting
+  // that session's end: the runner is writing down what the work produced, on
+  // the session it is holding a lease for. It is a WRITE and nothing else; the
+  // read routes of the artifact store stay off this list, on the reasoning
+  // `GET /v1/engines` above already states.
+  'POST /v1/sessions/:id/artifacts',
 ]);
 
 declare module 'fastify' {

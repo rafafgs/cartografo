@@ -45,10 +45,16 @@
  * "not said" has one meaning on this wire, and it is project 1
  * (`routes/common.ts`, `declaredProject`).
  *
- * `POST /webhooks` is deliberately untouched: its `readProject` still accepts
- * any integer, including one no project answers to. Closing that write-side gap
- * is a ticket of its own, and doing it here would have widened a read fix into
- * a change to what registrations are accepted.
+ * ## And since t417 the write takes it too
+ *
+ * t412 left `POST /webhooks` accepting any integer as its `project_id`, and
+ * named closing that a ticket of its own. This is that ticket: the body's shape
+ * is still read by `readProject` (integer-ness, defaulting to project 1), and
+ * then the resolved scope has to name a project that exists — otherwise the
+ * same `404 unknown_project` the two reads above already answer. The read and
+ * the write now refuse the same scope for the same reason, which is the whole
+ * point: a subscription written into a partition `GET /webhooks` cannot hand
+ * back is a row nothing can read.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -56,13 +62,14 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { KNOWN_TYPES, ValidationError } from '../db/event-validation.ts';
 import { DEFAULT_PROJECT } from '../repositories/common.ts';
+import { getProject } from '../repositories/projects.ts';
 import {
   createSubscription,
   deactivateSubscription,
   listSubscriptions,
   type NewSubscription,
 } from '../repositories/webhooks.ts';
-import { notFound, requireProject, routeId, withValidation } from './common.ts';
+import { notFound, refusal, requireProject, routeId, withValidation } from './common.ts';
 
 /** Schemes a delivery can be sent over. */
 const SCHEMES = ['http:', 'https:'];
@@ -167,7 +174,20 @@ function readSubscription(raw: unknown): NewSubscription {
 export function registerWebhooks(app: FastifyInstance, db: Database): void {
   app.post('/webhooks', async (request, reply) =>
     withValidation(reply, () => {
-      const subscription = createSubscription(db, readSubscription(request.body));
+      const declared = readSubscription(request.body);
+
+      // The shape was right; now the scope has to name something (t417, FR5).
+      // `readProject` above checks integer-ness and stops there, which is how a
+      // subscription came to be written into a partition the scoped listing has
+      // no way to hand back. Same code, same message, same sibling field as
+      // every other scope refusal of this API.
+      if (getProject(db, declared.project_id) === undefined) {
+        return refusal(reply, 404, 'unknown_project', 'no project answers to this scope', {
+          project_id: declared.project_id,
+        });
+      }
+
+      const subscription = createSubscription(db, declared);
       reply.code(201);
       return subscription;
     }),

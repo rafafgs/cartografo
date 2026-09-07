@@ -206,6 +206,8 @@ contract; what changes is the role — **doing, checking, routing**.
 | `model` | no | Which model of that engine executes this node. Absent = the engine's own default. See below. |
 | `escalation_policy` | no | When this node calls a person: `always`, `on_uncertainty`, `never`. Absent = `on_uncertainty`. See below. |
 | `escalation_recipient` | no | Who ought to be called when this node escalates. Free text. See below. |
+| `external` | no | What this step needs from outside and what it hands over outside. Absent = `{inputs: [], outputs: []}`. See below. |
+| `unsafe_to_retry` | no | Whether repeating this step is safe. Absent = `false`. See below. |
 | `skill_ref` | yes | A pinned pointer to the registry's skill. |
 | `contract` | yes | Input, output and verifications. |
 
@@ -388,6 +390,140 @@ The field is kept in the graph and returned by the snapshot
 an oversight: notification and roles are a future ticket, and the field exists now
 so that the policy and the recipient are born together instead of the graph
 having to be rewritten when delivery arrives. It is not even read by the runner.
+
+### `external`: what the step needs from outside, and what it hands over
+
+The premise is **"nothing undeclared", not "no reach"**. A step that needs a
+file from a server is an ordinary step; a step that reaches for one nobody wrote
+down is the problem. So the map says it, per node, in the same document
+everything else about the node lives in.
+
+The shape of the promise, in the founder's own example: the map says this step
+needs `prices.xlsx` from the Drive server; the runner fetches it **before the
+agent starts** and drops it in the working directory; the step produces
+`proposal.docx`, and the map says "deliver it to folder X on Drive"; only **after
+the checks pass** does the runner upload it. The agent sees files, never the
+server and never the credential.
+
+```json
+{
+  "id": "propose",
+  "role": "writer",
+  "node_type": "work",
+  "unsafe_to_retry": true,
+  "external": {
+    "inputs": [
+      {
+        "name": "prices",
+        "server": "drive",
+        "tool": "download_file",
+        "arguments": { "path": "finance/prices.xlsx" },
+        "as": "prices.xlsx"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "delivered_proposal",
+        "server": "drive",
+        "tool": "upload_file",
+        "arguments": { "folder": "clients/{{input.job.id}}" },
+        "from": "proposal"
+      }
+    ]
+  },
+  "skill_ref": { "id": "write-proposal", "version": "1.0.0", "hash": "sha256:2df09e…" },
+  "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
+}
+```
+
+| Field | Where | What it is |
+|---|---|---|
+| `name` | both | On an input, the input path this entry satisfies on the **pinned skill's** `input`, in §6.1's own grammar (one level of nesting). On an output, what the delivery is called. Unique within its own list. |
+| `server` | both | Which server holds it or receives it. Free text. |
+| `tool` | both | Which tool of that server is called. Free text. |
+| `arguments` | both | What the call is given. Optional; string values may carry `{{input.<path>}}`. |
+| `as` | inputs | The **worktree-relative** file name the fetched result is written to. |
+| `from` | outputs | Which property of the **pinned skill's** `output` is sent. |
+
+Five things the field decides, and that are worth writing down rather than
+inferring:
+
+- **Absence has a name, and so does half-absence.** A node with no `external`
+  fetches nothing and delivers nothing; an `external` that declares only
+  `inputs` delivers nothing, and one that declares only `outputs` fetches
+  nothing. Every graph written before this field is still valid and still
+  behaves exactly as before — the same non-breaking posture as `engine`, `hooks`
+  and `max_consecutive_failures`.
+- **The resolution is at dispatch, never at validation.** `server` and `tool` are
+  free text for `engine`'s reason: an enum would force a schema edit per server,
+  and this file has no way of knowing which servers that machine can reach. A
+  node that names a server the runner has no route for **fails the dispatch**,
+  which is `UnknownEngineError`'s own precedent
+  ([`resolve-engine.ts`](../../packages/runner/src/dispatch/resolve-engine.ts)).
+  The refusal is the runner's; the declaration is the schema's.
+- **What is fetched lands in the step's working directory, and nowhere else.**
+  That is what `as` is: a relative path, with no `..` segment and no leading `/`.
+  A declaration that breaks the rule is `invalid_external_as` in
+  `validateStructure`/`validarEstrutura`, and the schema carries a coarser
+  `pattern` beside it as a second line of defence — the same split
+  `hook_raw_secret` already lives with, because `POST /v1/graphs` runs no ajv.
+  Two entries answering to one `name` are `duplicate_external_name`, on
+  `duplicate_node_id`'s reasoning: one of them wins and the document does not
+  say which.
+- **`from` names the pinned skill's output, not the node's.** §2 already draws
+  that line — [`output_schema` documents; the skill is what
+  validates](#output_schema-documents-the-skill-is-what-validates) — and the
+  delivery is held to the same one: a `from` that names nothing in the resolved
+  `output.properties` is `external_output_unknown_property` (§6.1). It is the
+  one of the three checks that needs a skill lookup, so it is the one the two
+  DB-less reference validators do not carry.
+- **Fetching is before, delivering is after.** The input is resolved and
+  materialised before the session opens; the output is sent only once the node's
+  `checks` have passed. That ordering is the whole reason a delivery is
+  reviewable at all — a step whose verification failed has produced nothing
+  worth sending.
+
+**Nothing here runs yet.** This ticket is the FORMAT: the runner actually calling
+a server, resolving `{{input.<path>}}` inside `arguments`, materialising `as` and
+sending `outputs` are the runtime tickets that follow. What is real today is that
+the document can say it, that the gates check it, and that changing it is a
+proposal like any other.
+
+The complete example:
+[`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json).
+
+### `unsafe_to_retry`: whether the step may simply be run again
+
+An ordinary failed step is re-run and nobody is worse off. A step that already
+uploaded the proposal is not: the effect is outside, it cannot be deferred, and
+running the node again makes a second one. `unsafe_to_retry` is where the map
+says which kind of step this is.
+
+```json
+{
+  "unsafe_to_retry": true
+}
+```
+
+Three things the field decides:
+
+- **Absence has a name, and the name is `false`.** A node that says nothing is
+  a node that may be run again, which is what every node did before this field
+  existed. The same convention as `engine`, `model` and `escalation_policy`.
+- **It composes with the two policies already here; it does not duplicate
+  either.** `escalation_policy` says when a person is called and
+  `max_consecutive_failures` says how many failures in a row stop the job. This
+  says something neither can: that the retry itself is the danger. Where the
+  three meet — a `true` node overriding both — is the retry path's decision, in
+  the ticket that reads the flag, not this one's.
+- **The declaration is versioned like any other.** `change_node_field` with
+  `field: "unsafe_to_retry"` goes down the road every other node field goes
+  down: apply, revalidate the whole document, write a new `grafo_versao`, move
+  the pointer (D15), with an inverse and with evidence.
+
+The example that carries it:
+[`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json),
+on the node that delivers.
 
 ### `node_type`: why a gate is a node
 
@@ -748,6 +884,24 @@ omits the key when it is absent, and a skill that requires it is refused even at
 the initial node. `resultado` is never counted as produced: it is the routing
 label, stripped before storage.
 
+**And a fourth source, which is node-local and belongs in no row of that
+table.** A node's own [`external.inputs`](#external-what-the-step-needs-from-outside-and-what-it-hands-over)
+satisfies its own required keys: the runner resolves the entry and materialises
+the result in that step's working directory before the session opens (RF-32), so
+the data really is there when the node runs. What it is **not** is something a
+descendant can count on — nothing publishes it into `input`, and a node after it
+that required the same key would be counting on a file in somebody else's
+worktree. So it is unioned in at the moment the node's own `required` is compared
+against the fixed point, and it is deliberately kept out of `produced` and out of
+the propagating `available` set: the three rows above are global, this one is not,
+and the meet over predecessors goes on being a statement about what the traversal
+carries.
+
+Its mirror image is the delivery: `external.outputs[].from` names a property of
+the **pinned skill's** `output`, and one that names nothing there is
+`external_output_unknown_property` — the same mistake as `unproduced_input`,
+read in the other direction.
+
 **A node is judged on every path into it, not on some path.** A node can have
 more than one incoming edge — a rework loop, three edges into one final node — so
 availability is a meet over predecessors:
@@ -777,6 +931,7 @@ survives the check.
 |---|---|
 | `unproduced_input` | The node requires this key path and no path into it supplies one. Carries `node_id`, `key` and `produced_elsewhere_by`. |
 | `skill_ref_unresolved` | The pin resolved to nothing, so this node's contract could not be read. It is not availability-checked, and it contributes nothing to its descendants. |
+| `external_output_unknown_property` | The node delivers `from` outside and its pinned skill's `output` declares no such property, so there would be nothing to send. Carries `node_id` and `from`. Checked only when the pin resolves, the guard `unproduced_input` already has. |
 | `produced_elsewhere_by` | Node ids whose skill output would place this exact path *somewhere* — under a bucket the reader does not open, or on a path that does not always reach it. Empty means the key exists nowhere in the document. |
 
 **Where it runs, and where it does not.** `cartografo import` runs it offline
@@ -912,6 +1067,7 @@ exercised by `tests/schema-grafo.test.mjs`.
 | [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json) | **The master example.** See below. |
 | [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
 | [`graph-valid-shell-engine.json`](../../schema/examples/graph-valid-shell-engine.json) | The same shape with `"engine": "shell"`: the smallest document that puts a deterministic node — a command, no session, no model — inside the trail (§2). |
+| [`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json) | Two work nodes on one edge, the second declaring `external` and `unsafe_to_retry`: the smallest document that says what a step fetches from outside, what it hands over, and that the handing over cannot be taken back (§2). |
 | `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
 
 ### The master example: flowpilot's flow

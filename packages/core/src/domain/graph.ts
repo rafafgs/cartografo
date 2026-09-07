@@ -80,8 +80,64 @@ export interface GraphNode {
   escalation_policy?: string;
   /** Who should be called when this node escalates (t167). Free text. */
   escalation_recipient?: string;
+  /**
+   * What this node needs from outside and what it hands over outside (t369).
+   *
+   * Absent = `{inputs: [], outputs: []}`, and so is either list on its own.
+   * Named here for `model`'s reason: it is PROPOSABLE (`CHANGEABLE_FIELDS`), and
+   * `validateContracts` reads `inputs[].name` and `outputs[].from` out of it.
+   */
+  external?: GraphExternal;
+  /**
+   * Whether repeating this step is safe (t369). Absent = `false`.
+   *
+   * `true` says the step has an effect outside that cannot be deferred — a
+   * delivery already made is not undone by running the node again. What COMPOSES
+   * it with `escalation_policy` and `max_consecutive_failures` is the retry path,
+   * at the moment a session fails, and never this file: validation says only that
+   * the map is allowed to declare it.
+   */
+  unsafe_to_retry?: boolean;
   skill_ref: unknown;
   contract: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * One thing fetched from outside before the step runs (t369, RF-32).
+ *
+ * `server` and `tool` are free text and are resolved by the RUNNER at dispatch,
+ * on `engine`'s precedent (`UnknownEngineError`): a closed enum would force a
+ * schema edit per server, and the refusal belongs where the servers are known.
+ */
+export interface GraphExternalInput {
+  /** The input path of the pinned skill's `input` this entry satisfies. */
+  name: string;
+  server: string;
+  tool: string;
+  /** What the call is given; string values may carry `{{input.<path>}}`. */
+  arguments?: Record<string, unknown>;
+  /** The worktree-relative file name the fetched result is written to. */
+  as: string;
+  [key: string]: unknown;
+}
+
+/** One thing delivered outside after the step's checks pass (t369, RF-33). */
+export interface GraphExternalOutput {
+  /** What this delivery is called, unique within `outputs`. */
+  name: string;
+  server: string;
+  tool: string;
+  arguments?: Record<string, unknown>;
+  /** The property of the PINNED SKILL's `output` whose value is sent. */
+  from: string;
+  [key: string]: unknown;
+}
+
+/** A node's whole external surface (t369). Either list absent means empty. */
+export interface GraphExternal {
+  inputs?: GraphExternalInput[];
+  outputs?: GraphExternalOutput[];
   [key: string]: unknown;
 }
 
@@ -240,6 +296,109 @@ function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+/** How a rule records what it found: the closure `validateStructure` builds. */
+type Note = (code: string, message: string, target?: unknown) => void;
+
+/**
+ * Whether an `as` names a place inside the step's own working directory (t369).
+ *
+ * Relative, with no `..` SEGMENT and no leading `/` — which is the whole of what
+ * RF-32 promises about a fetched file: it lands in the step's worktree and
+ * nowhere else. `schema/graph.schema.json` carries a coarser regex beside this
+ * one (`^(?!/)(?!.*\.\.).+$`, which also refuses a `..` merely embedded in a
+ * name); the named, authoritative check is this one, because `POST /v1/graphs`
+ * compiles no ajv against that file — the same split `hook_raw_secret` already
+ * lives with.
+ */
+function isWorktreeRelative(value: unknown): value is string {
+  return isFilledText(value) && !value.startsWith('/') && !value.split('/').includes('..');
+}
+
+/** How a message names a node: by its id, or by its position when it has none. */
+function nodeLabel(node: PlainObject, index: number): string {
+  return isFilledText(node.id) ? node.id : `#${index}`;
+}
+
+/**
+ * Checks a node's external surface and its retry flag (t369).
+ *
+ * Two named rules, and each one is a mistake somebody makes by hand:
+ *
+ * - a `name` repeated within `inputs` (or within `outputs`) makes the
+ *   materialisation ambiguous — one entry wins and the document does not say
+ *   which, which is `duplicate_node_id`'s own reasoning;
+ * - an `as` that climbs out of the working directory is a fetch writing wherever
+ *   it likes on the runner's machine, which is exactly what RF-32 promises it
+ *   will not do.
+ *
+ * Everything else about the shape reuses `invalid_field`, the choice already
+ * made for `hooks`, `nodes` and `edges`: a wrong TYPE is not a rule of its own.
+ *
+ * Kept byte-for-byte in `scripts/validate-graph.mjs`'s `validarEstrutura`, like
+ * every other rule here — `test/domain-graph.test.ts` compares the two reports.
+ */
+function checkExternalSurface(node: PlainObject, index: number, note: Note): void {
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+
+  if (node.unsafe_to_retry !== undefined && typeof node.unsafe_to_retry !== 'boolean') {
+    note(
+      'invalid_field',
+      `"unsafe_to_retry" of node "${label}" has to be a boolean`,
+      target,
+    );
+  }
+
+  const external = node.external;
+  if (external === undefined || external === null) return;
+  if (!isObject(external)) {
+    note('invalid_field', `"external" of node "${label}" has to be an object`, target);
+    return;
+  }
+
+  for (const side of ['inputs', 'outputs'] as const) {
+    const declared = external[side];
+    if (declared === undefined || declared === null) continue;
+    if (!Array.isArray(declared)) {
+      note('invalid_field', `"external.${side}" of node "${label}" has to be a list`, target);
+      continue;
+    }
+
+    const knownNames = new Set<string>();
+    const alreadyReportedNames = new Set<string>();
+
+    for (const entry of declared) {
+      if (!isObject(entry)) continue;
+
+      const name = entry.name;
+      if (isFilledText(name)) {
+        if (knownNames.has(name)) {
+          if (!alreadyReportedNames.has(name)) {
+            note(
+              'duplicate_external_name',
+              `duplicate name in "external.${side}" of node "${label}": "${name}"`,
+              target,
+            );
+            alreadyReportedNames.add(name);
+          }
+        } else {
+          knownNames.add(name);
+        }
+      }
+
+      // Only an input carries an `as`: it is the name the fetched file takes in
+      // the worktree, and an output sends a value the session already produced.
+      if (side === 'inputs' && !isWorktreeRelative(entry.as)) {
+        note(
+          'invalid_external_as',
+          `node "${label}" declares in "external.inputs" an "as" that is not a path inside the step's working directory (relative, no ".." segment, no leading "/"): ${JSON.stringify(entry.as)}`,
+          target,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Checks the document's shape and referential integrity.
  *
@@ -305,6 +464,11 @@ export function validateStructure(doc: unknown): StructureReport {
         );
       }
     }
+    // What this node reaches for outside, and whether it may be run twice
+    // (t369). Checked whatever the id turns out to be, on the hooks loop's
+    // posture: the rules are about what the runner would DO with the
+    // declaration, and a node with a broken id carries a broken one all the same.
+    checkExternalSurface(node, index, note);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —
@@ -736,7 +900,28 @@ export interface UnresolvedSkillProblem {
   message: string;
 }
 
-export type ContractProblem = UnproducedInputProblem | UnresolvedSkillProblem;
+/**
+ * An `external.outputs[].from` that names nothing the node produces (t369).
+ *
+ * The property is looked for in the PINNED SKILL's `output.properties`, never in
+ * the node's own `output_schema` — the line §2 draws for output in general
+ * ("`output_schema` documents; the skill is what validates"), and the same
+ * reason pins are resolved rather than read literally everywhere else in §6.1.
+ * A `from` that names nothing is a delivery discovered empty at the end of a
+ * session somebody already paid for.
+ */
+export interface UnknownExternalOutputProblem {
+  code: 'external_output_unknown_property';
+  node_id: string;
+  /** The `from` that names nothing, as the document declares it. */
+  from: string;
+  message: string;
+}
+
+export type ContractProblem =
+  | UnproducedInputProblem
+  | UnresolvedSkillProblem
+  | UnknownExternalOutputProblem;
 
 /** The contract report — the `contracts` key of the 422 (t278). */
 export interface ContractReport {
@@ -792,6 +977,38 @@ interface NodeContract {
   placed: Set<string>;
   /** Paths this node's own input demands, in the order the schema declares them. */
   required: string[];
+  /**
+   * Paths this node's own `external.inputs` materialise for it alone (t369).
+   *
+   * NOT part of {@link NodeContract.produced}, and that is the whole point: the
+   * fetch lands in THIS step's working directory (RF-32) and publishes nothing
+   * into anybody's `input`.
+   */
+  externalInputs: string[];
+  /** The `from` of each `external.outputs` entry, as the document declares it. */
+  externalOutputs: string[];
+}
+
+/** The declared `external.inputs[].name` list of a node, filtered to filled text. */
+function externalInputNamesOf(node: PlainObject): string[] {
+  return externalEntriesOf(node, 'inputs')
+    .map((entry) => entry.name)
+    .filter(isFilledText);
+}
+
+/** The declared `external.outputs[].from` list of a node, same filtering. */
+function externalOutputSourcesOf(node: PlainObject): string[] {
+  return externalEntriesOf(node, 'outputs')
+    .map((entry) => entry.from)
+    .filter(isFilledText);
+}
+
+/** One side of a node's external surface, defensively: a malformed one is empty. */
+function externalEntriesOf(node: PlainObject, side: 'inputs' | 'outputs'): PlainObject[] {
+  const external = node.external;
+  if (!isObject(external)) return [];
+  const declared = external[side];
+  return Array.isArray(declared) ? declared.filter(isObject) : [];
 }
 
 /** The `required` list of a JSON Schema object, or an empty one. */
@@ -944,6 +1161,8 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
     const bucket = bucketOf(node);
     const pin = pinOf(node);
     const skill = pin === null ? undefined : resolveSkill(pin);
+    const externalInputs = externalInputNamesOf(node);
+    const externalOutputs = externalOutputSourcesOf(node);
 
     if (pin === null || skill === undefined) {
       problems.push({
@@ -961,6 +1180,8 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
         produced: new Set(),
         placed: new Set(),
         required: [],
+        externalInputs,
+        externalOutputs,
       });
       continue;
     }
@@ -972,6 +1193,8 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
       produced: producedPaths(skill.output, bucket),
       placed: producedPaths(skill.output, null),
       required: requiredPaths(skill.input),
+      externalInputs,
+      externalOutputs,
     });
   }
 
@@ -1065,7 +1288,15 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
 
   for (const contract of contracts) {
     if (contract.skill === null) continue;
-    const reaching = available.get(contract.id) ?? new Set<string>();
+    // The fixed point, plus the fourth source: what THIS node fetches from
+    // outside (t369). It is unioned in here and nowhere else on purpose — an
+    // external input is materialised in this step's working directory (RF-32)
+    // and published into nobody's `input`, so putting it in `producedOf` or in
+    // `available` would promise a descendant a file in somebody else's worktree.
+    const reaching = new Set([
+      ...(available.get(contract.id) ?? new Set<string>()),
+      ...contract.externalInputs,
+    ]);
 
     for (const key of contract.required) {
       if (reaching.has(key)) continue;
@@ -1088,6 +1319,24 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
             ? `node "${contract.id}" requires the input path "${key}", which nothing supplies: it is not in the control plane's projection, not provided by the executor, not a key of the document's "project" or "custom_fields", and no node's skill output places it`
             : `node "${contract.id}" requires the input path "${key}", which is not guaranteed on every path into it — ${where.join('; ')}`,
         produced_elsewhere_by: producers.map((producer) => producer.id),
+      });
+    }
+
+    // And the other direction: what this node hands over outside has to be
+    // something it really produces. Only the top-level property names, the same
+    // one level of nesting the rest of this check declares.
+    const properties = propertiesOf(contract.skill.output);
+    for (const from of contract.externalOutputs) {
+      if (Object.hasOwn(properties, from)) continue;
+      const declared = Object.keys(properties);
+      problems.push({
+        code: 'external_output_unknown_property',
+        node_id: contract.id,
+        from,
+        message:
+          declared.length === 0
+            ? `node "${contract.id}" delivers "${from}" outside, and its pinned skill's "output" declares no property at all: there is nothing to send`
+            : `node "${contract.id}" delivers "${from}" outside, which its pinned skill's "output" does not declare (it declares "${declared.join('", "')}")`,
       });
     }
   }

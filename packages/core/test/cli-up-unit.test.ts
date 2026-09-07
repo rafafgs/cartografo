@@ -21,7 +21,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -34,7 +34,7 @@ import type { ChildHandle, UpControlPlane, UpFlags } from '../src/cli/up.ts';
 import { UsageError } from '../src/cli/url.ts';
 import { verifyToken } from '../src/repositories/credentials.ts';
 import { capture } from './cli-unit-support.ts';
-import { MIGRATIONS_DIR, requireArtifacts } from './support.ts';
+import { MIGRATIONS_DIR, requireArtifacts, startControlPlane } from './support.ts';
 
 /** The module under test, relative to the root of `packages/core`. */
 const UP_MODULE = 'src/cli/up.ts';
@@ -355,13 +355,22 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
     '--no-screen spawns no screen',
   );
 
-  // Nobody to hand a credential to is nobody to mint one for (FR3).
+  // A control-plane-only startup spawns nothing — and, since t360, still mints
+  // a credential, because the auto-import of the interview bundle is a client
+  // of this control plane like any other and is not gated by either flag (FR1).
+  // t405's own rule ("nobody to hand it to is nobody to mint it for") was about
+  // a table that stayed empty; what it was really protecting is that nothing
+  // outlives the process, and that is what is asserted here now.
   const neither = await runSeamed(t, { browser: false, runner: false, screen: false });
   assert.deepEqual(neither.spawned, [], 'control-plane-only startup spawns nothing');
   assert.equal(
-    (neither.db.prepare('SELECT COUNT(*) AS total FROM credential').get() as { total: number }).total,
+    (
+      neither.db
+        .prepare('SELECT COUNT(*) AS total FROM credential WHERE revoked_at IS NULL')
+        .get() as { total: number }
+    ).total,
     0,
-    '--no-runner --no-screen mints no internal credential: there is nobody to hand it to',
+    'and it leaves no live credential behind: whatever the import used died with the startup',
   );
 });
 
@@ -404,4 +413,124 @@ test('t405 FR2 — a leading `--…` is `up`\'s own flag, and a bad one is exit 
     );
     assert.equal(run.stdout, '', 'nothing was started, so nothing announced itself');
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* The interview bundle, imported at the first start (t360, FR1 / AT5)        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The same startup, but against a control plane that really answers.
+ *
+ * The seamed helper above hands `runUp` a URL nobody is listening on, which is
+ * exactly right for the decisions it measures — which children, with which
+ * environment — and useless for the one thing this ficha adds: an import that
+ * goes out over HTTP, through the very pipeline `cartografo import` uses (D1).
+ * So these cases start a real server over a real database and hand `runUp` the
+ * two facts it needs about it.
+ *
+ * @param t Test context.
+ * @param ctx A control plane already listening.
+ * @param env Environment `up` reads; the bundle root travels in it.
+ * @returns What the startup printed, and how often it shut down.
+ */
+async function runAgainstServer(
+  t: TestHook,
+  ctx: { db: Database; url: string },
+  env: NodeJS.ProcessEnv,
+): Promise<{ stdout: string; stderr: string; shutdowns: number }> {
+  const { runUp } = await loadUp();
+  const base = temporaryArea(t, 'cartografo-t360-up-');
+
+  let shutdowns = 0;
+  const controlPlane: UpControlPlane = {
+    db: ctx.db,
+    databasePath: path.join(base, 'cartografo.db'),
+    migrationsApplied: [],
+    url: ctx.url,
+    bootstrapToken: null,
+    shutdown: async () => {
+      shutdowns += 1;
+    },
+  };
+
+  const run = await capture(async () => {
+    await runUp(
+      { browser: false, runner: false, screen: false },
+      {
+        env,
+        start: async () => controlPlane,
+        spawnChild: () => ({ kill: () => undefined, exited: Promise.resolve() }),
+        openBrowser: () => undefined,
+        listenForStop: (onStop) => {
+          onStop();
+          return () => undefined;
+        },
+      },
+    );
+    return 0;
+  });
+
+  return { stdout: run.stdout, stderr: run.stderr, shutdowns };
+}
+
+/** How many versions of one lineage the database holds. */
+function versionsOf(db: Database, graphId: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS total FROM graph_version WHERE graph_id = ?')
+    .get(graphId) as { total: number };
+  return row.total;
+}
+
+test('t360 AT5 — the first start imports map-design, and the second imports nothing', async (t) => {
+  const { MAP_DESIGN_CLASS, mapDesignBundle } = await loadUp();
+  const ctx = await startControlPlane(t);
+
+  assert.equal(MAP_DESIGN_CLASS, 'map-design', 'the class the interview travels on');
+  assert.ok(
+    existsSync(path.join(mapDesignBundle({}), 'graph.json')),
+    `artifact does not exist yet: ${path.join(mapDesignBundle({}), 'graph.json')}`,
+  );
+  assert.equal(versionsOf(ctx.db, MAP_DESIGN_CLASS), 0, 'a brand-new database knows no map');
+
+  const first = await runAgainstServer(t, ctx, {});
+  assert.equal(
+    versionsOf(ctx.db, MAP_DESIGN_CLASS),
+    1,
+    `the interview has to be there before anybody can start one: ${first.stderr}`,
+  );
+  assert.equal(first.shutdowns, 1, 'and the startup still finished cleanly');
+
+  const skills = ctx.db
+    .prepare('SELECT COUNT(*) AS total FROM skill WHERE id IN (?, ?)')
+    .get('interview', 'deliver-bundle') as { total: number };
+  assert.ok(skills.total >= 2, 'the bundle`s manifests are registered by the same import');
+
+  // Second startup, same database: the check is `getGraph`, so there is nothing
+  // to do and nothing is sent.
+  const second = await runAgainstServer(t, ctx, {});
+  assert.equal(
+    versionsOf(ctx.db, MAP_DESIGN_CLASS),
+    1,
+    `a second start must not fork a second version of the same map: ${second.stderr}`,
+  );
+});
+
+test('t360 AT5 — a bundle `up` cannot read is a line on stderr, never a failed startup', async (t) => {
+  const { EXAMPLES_ROOT_ENV, MAP_DESIGN_CLASS } = await loadUp();
+  const ctx = await startControlPlane(t);
+
+  const root = temporaryArea(t, 'cartografo-t360-broken-');
+  mkdirSync(path.join(root, MAP_DESIGN_CLASS), { recursive: true });
+  writeFileSync(path.join(root, MAP_DESIGN_CLASS, 'graph.json'), '{ this is not json');
+
+  const run = await runAgainstServer(t, ctx, { [EXAMPLES_ROOT_ENV]: root });
+
+  assert.equal(run.shutdowns, 1, 'a broken bundle in a future release may not stop the product');
+  assert.match(
+    run.stderr,
+    /map-design/,
+    `the failure is reported, and it names the bundle: ${run.stderr}`,
+  );
+  assert.equal(versionsOf(ctx.db, MAP_DESIGN_CLASS), 0, 'and nothing was registered');
 });

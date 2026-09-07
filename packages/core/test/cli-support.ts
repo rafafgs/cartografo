@@ -275,3 +275,49 @@ export function firstHash(text: string): string {
 export function looksLikeStackTrace(text: string): boolean {
   return /\n\s+at\s+\S+/.test(text) || text.includes('TypeError:');
 }
+
+/**
+ * The class every startup registers on a database that does not have it (t360).
+ *
+ * `up` imports `factory-graphs/map-design` — the interview — before it announces
+ * itself, because nobody can ask for a map by name before they know the bundle
+ * exists (t360, FR1). Every control plane these suites spawn is the REAL binary,
+ * so every one of them holds it, and "a brand-new control plane is empty"
+ * stopped being true the day that shipped.
+ *
+ * The two helpers below are what lets each suite go on saying what it meant —
+ * "the class I imported", "the skills my bundle registered" — without either
+ * listing the interview in a dozen expectations or blinding the suite to a
+ * startup step the product really performs.
+ */
+export const SHIPPED_CLASS = 'map-design';
+
+/** ...and the two manifests its two nodes pin. */
+export const SHIPPED_SKILL_IDS: readonly string[] = Object.freeze([
+  'deliver-bundle',
+  'interview',
+]);
+
+/**
+ * The classes of one project, minus the one that ships in the box.
+ *
+ * @param url Base URL of a control plane.
+ * @param projectId Project to read; omitted means the default one.
+ * @returns Class ids in the order the route sent them.
+ */
+export async function importedClasses(url: string, projectId?: number): Promise<string[]> {
+  const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
+  const response = await fetch(`${url}/v1/classes${scope}`);
+  const body = (await response.json()) as { classes: { class: string }[] };
+  return body.classes.map((entry) => entry.class).filter((name) => name !== SHIPPED_CLASS);
+}
+
+/**
+ * The same subtraction over a list of skill ids.
+ *
+ * @param ids Every id the registry answered with.
+ * @returns The ones that did not arrive with the interview.
+ */
+export function importedSkillIds(ids: readonly string[]): string[] {
+  return ids.filter((id) => !SHIPPED_SKILL_IDS.includes(id));
+}

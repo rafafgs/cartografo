@@ -193,6 +193,46 @@ results the executor knows how to interpret. That rule is verified at the
 registry's door, along with the validation of `input`/`output` as JSON Schema;
 this format's schema does not enforce it structurally (see *Known limits*).
 
+#### `x-artifact`: an output property that is a FILE (t423)
+
+A step sometimes produces something that is not a value: a report, a diff, a
+build log. `x-artifact` is how a contract says so, and it lives **on a property
+inside the embedded `output` document** — never as a top-level field of the
+manifest:
+
+```json
+"output": {
+  "type": "object",
+  "required": ["note", "report"],
+  "properties": {
+    "note": { "type": "string", "minLength": 1 },
+    "report": { "type": "string", "minLength": 1, "x-artifact": true }
+  }
+}
+```
+
+The convention has two halves, and the session only owes the first one:
+
+- **The session writes the file and puts its worktree-relative path in the
+  property**, as a plain string — `"report": "out/report.md"`. It uploads
+  nothing and knows no route; what it declared is a path in the directory it was
+  given, which is the only write scope it has.
+- **The runner replaces that path with an artifact id before the report is
+  stored.** It reads the property out of the session's closing result block,
+  resolves it against the worktree, uploads the bytes to the control plane's
+  artifact store and rewrites the property to the id that came back — then
+  removes the file from the worktree, which is scratch by construction and would
+  otherwise read as uncommitted work. So what any later node reads in that
+  property is an id, never a path on a machine that no longer has the directory.
+
+A path that resolves outside the worktree, a file that was never written, and a
+property that carries something other than a string are all **refused**: the
+whole report is dropped and the job stops on its node with the reason, rather
+than being stored with a bare local path in it. A declared artifact simply
+ABSENT from the report is not an error — it is an optional output this run did
+not produce, and whether it was required at all is the `output` schema's own
+question.
+
 ### `preconditions`
 
 A list of sentences: what has to be true of the state **before** dispatching the
@@ -624,6 +664,12 @@ registry's door or left to another ticket:
   against", and the report is stored as it came. The alternative — refusing the
   report — would throw away a legitimate self-report because of somebody else's
   manifest.
+- **`x-artifact` anywhere but at the top.** The runner reads the keyword only on
+  the TOP-LEVEL properties of `output`; a nested schema location and the `items`
+  of an array are not walked, so a declaration there is read by nobody and
+  refused by nobody. It is the limit above seen from the other side: the format
+  treats that document as an opaque object, so what reads it walks one level and
+  no further.
 - **The assembled `input` checked against the `input` schema.** The projection has
   existed since `t253` (`GET /v1/jobs/:id/context`), and "invalid input does not
   become a session" is still the eventual behaviour: it is the same ajv pointed at

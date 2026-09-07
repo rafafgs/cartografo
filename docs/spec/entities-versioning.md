@@ -685,6 +685,39 @@ course. `input_requests_by_node` on the metrics route is the one figure not yet
 scoped: it is counted in `repositories/input-request.ts`, which is another
 ticket's slice.
 
+**And the writes that declare a project refuse one that does not exist (t417).**
+`POST /v1/jobs`, `POST /v1/intake` and `POST /v1/webhooks` let the caller name
+the partition a NEW row is born in, and until this ticket each of them took any
+integer. The paired reads had already begun refusing an undeclared one, so the
+combination wrote rows nothing could read back. All three now answer
+`404 unknown_project` with `project_id` as a sibling field — the same code, the
+same message and the same shape the scoped reads answer, because it is the same
+question asked from the other side. For `POST /v1/jobs` the check lives in
+`createJob` itself rather than on the route, which is what also closes the
+second door into it: `POST /v1/intake/:id/confirmations` creates one job per
+item under the draft's own `project_id`, and a draft born under a phantom
+project would otherwise have produced exactly the rows this refusal exists to
+stop.
+
+`POST /v1/leases` and `PATCH /v1/settings` are deliberately NOT part of that,
+and the reason is the asymmetry itself: `GET /v1/leases`'s `?project_id=` is a
+non-validating filter and `GET /v1/settings` defaults an absent scope to `1`
+and refuses no unknown one, so on those two tables read and write are equally
+lenient and there is nothing to bring back into line. Scoping either table for
+the first time — write AND read together — is a decision of its own.
+`test/write-scope-guard.test.ts` is where that audit is written down, so a
+future write route on a partitioned table cannot land unclassified.
+
+**The rows the gap already produced are reassigned, never deleted.**
+`migrations/0031_reassign_orphan_projects.sql` moves every `job`,
+`webhook_subscription` and `intake_draft` row whose `project_id` matches no
+`project` onto project `1` (`default`, seeded by `0026` and removable by no
+route). An `UPDATE` and never a `DELETE`: nothing is ever removed (D2, D15).
+`intake_draft` is included even though its own reads stay unscoped, because
+`confirmDraft` hands `draft.project_id` to `createJob` — leaving those drafts
+alone would have made them newly unconfirmable, a regression caused by the fix
+rather than by the bug.
+
 The error body always carries `erro` — a stable, machine-readable code — and,
 when there is something to explain, a `mensagem` for people. In `grafo_invalido`
 it comes with §4's whole report (`estrutura` and `soundness`), which is what

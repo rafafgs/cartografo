@@ -34,7 +34,12 @@ import {
   type Event,
 } from '../db/event-validation.ts';
 import type { ProjectedJob } from '../domain/context.ts';
-import type { ContractProblem, ContractsState } from '../domain/graph.ts';
+import type { ContractProblem, ContractsState, GraphDocument } from '../domain/graph.ts';
+import {
+  deriveJobState,
+  type JobState,
+  type JobStateFacts,
+} from '../domain/job-state.ts';
 import {
   isScalarMap,
   missingRequiredFields,
@@ -42,6 +47,9 @@ import {
 } from '../domain/custom-fields.ts';
 import { getVersion, getVersionSummary } from './graphs.ts';
 import { enqueueHookDeliveries, type ClockOptions } from './hooks.ts';
+import { listInputRequests } from './input-request.ts';
+import { listLeases } from './leases.ts';
+import { getProject } from './projects.ts';
 import {
   API_ACTOR,
   DEFAULT_PROJECT,
@@ -110,12 +118,30 @@ export interface Job {
    * The job arrived: its current node is a final node of its graph version
    * (t152).
    *
-   * Derived at read time, never stored — see `isAtFinalNode`. It is the only
+   * Derived at read time, never stored — see `hasArrived`. It is the only
    * terminal signal this system has: the log has no `job.completed` event,
    * and "nothing is open right now" is a state a job one event old already
    * satisfies.
    */
   completed: boolean;
+  /**
+   * What this job is doing right now, in the six words RF-30 defines (t415).
+   *
+   * Derived at read time and never stored, the same posture as `completed`
+   * above — every one of the six is a fact of the log, of the lease table or of
+   * the graph version, and a column caching one would go on reporting a state
+   * the log no longer supports. The rule itself is `domain/job-state.ts`; what
+   * this file does is READ the facts, once for a whole board.
+   */
+  state: JobState;
+  /**
+   * When the job entered {@link Job.state} — the instant of the fact that put
+   * it there, never an invention.
+   *
+   * Falls back to `created_at` only where the log carries nothing at all: "in
+   * this state since we do not know when" is not something a screen can render.
+   */
+  state_since: string;
   created_at: string;
   updated_at: string;
 }
@@ -149,7 +175,10 @@ export interface ExecutionSummary {
 }
 
 interface JobRow
-  extends Omit<Job, 'blocked' | 'body' | 'acceptance_criteria' | 'fields' | 'completed'> {
+  extends Omit<
+    Job,
+    'blocked' | 'body' | 'acceptance_criteria' | 'fields' | 'completed' | 'state' | 'state_since'
+  > {
   blocked: number;
   /** The column `Job.body` is built from; see {@link COLUMNS}. */
   corpo: string | null;
@@ -243,44 +272,16 @@ function finishedAtOf(subject: string): string {
 }
 
 /**
- * Whether a session of this job, on this node, closed with a report that stood.
- *
- * `status = 'completed'` AND `output IS NOT NULL` is one condition and not two:
- * `finishSession` writes the reported object only when it validated against the
- * `output` schema of the skill the node pins, and stores a NULL for a report
- * the schema refused — with the reason in the event, never in the column
- * (`session.ts`, t253). So this single `SELECT` asks exactly what D9 asks: did
- * the pinned capability run and produce what its contract declares?
- *
- * @param db Open handle.
- * @param jobId The traveller.
- * @param nodeId The node it is standing on.
- * @returns Whether that node has a conforming finish on its account.
- */
-function hasConformingFinish(db: Database, jobId: number, nodeId: string): boolean {
-  return (
-    db
-      .prepare(
-        `SELECT 1 FROM session
-          WHERE job_id = ? AND node_id = ? AND status = 'completed' AND output IS NOT NULL
-          LIMIT 1`,
-      )
-      .get(jobId, nodeId) !== undefined
-  );
-}
-
-/**
  * "The traveller arrived": the job's node is a final node of ITS version, and
  * that node has nothing left to run (t152, t262).
  *
- * Three things say no before the graph is even read. A blocked job is never
- * done, whatever node it is standing on — the flag stops the report of an end
- * the same way it stops everything else. A job with no `graph_version_id` has no
- * graph to ask, and so has no terminal state to arrive at. And a version id that
- * no longer resolves is treated as no graph at all: `job.graph_version_id`
- * is loose text, not a foreign key (a job created with `'v1'` in hand is an
- * ordinary case here), and inventing a completion out of a version nobody can
- * read would be worse than admitting ignorance.
+ * Three things say no. A blocked job is never done, whatever node it is
+ * standing on — the flag stops the report of an end the same way it stops
+ * everything else. A job with no graph to ask has no terminal state to arrive
+ * at, which is what a `null` `finalNodes` means: no `graph_version_id`, an id
+ * that no longer resolves (the column is loose text, not a foreign key), or a
+ * snapshot that declares nothing. Inventing a completion out of a version
+ * nobody can read would be worse than admitting ignorance.
  *
  * ## Arriving is not finishing, when the node pins a skill (t262)
  *
@@ -296,9 +297,9 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * just a skill that never ran.
  *
  * So a final node that PINS a skill is done when that skill reported — see
- * {@link hasConformingFinish}. A final node that pins nothing is done on
+ * `JobStateFacts.conformingFinishAt`. A final node that pins nothing is done on
  * arrival, exactly as before. The rule is keyed on `skill_ref` and never on
- * `node_type`: `docs/spec/graph.md` §2 says a gate is "a node whose role is to
+ * `node_type`: `docs/spec/graph.md` 2 says a gate is "a node whose role is to
  * check", and the minimal example graph's own final node is a gate with a pin.
  *
  * The no-pin branch is defensive, not a supported document shape:
@@ -310,34 +311,225 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * snapshot no longer carries at all reads the same way: there is no pin to
  * demand a session for.
  *
- * One lookup per job, on purpose: the value is derived on read and never cached,
- * so a job cannot go on reporting a conclusion its version no longer declares.
- * On `listJobs` that is a query per row — correctness first; batching by
- * `graph_version_id` is the follow-up if a board ever grows enough to feel it.
+ * Pure since t415, over the very facts the six states are derived from: it used
+ * to run two queries of its own per job, and keeping a second, differently-fed
+ * copy of this rule beside the state machine is how the board and the job page
+ * would eventually come to disagree about the same traveller. What reads the
+ * database is {@link resolveJobStates}, once for a whole list.
  *
- * @param db Open handle.
- * @param row The job's row, as it is in the table.
+ * @param facts What is already known about the job.
  * @returns Whether the job is standing on a final node, unblocked, with that
  *   node's own work already reported.
  */
-function isAtFinalNode(db: Database, row: JobRow): boolean {
-  if (asBoolean(row.blocked)) return false;
-  if (row.graph_version_id === null) return false;
+function hasArrived(facts: JobStateFacts): boolean {
+  if (facts.blocked) return false;
+  if (facts.finalNodes === null || !facts.finalNodes.includes(facts.currentNodeId)) return false;
+  return !facts.currentNodePinsSkill || facts.conformingFinishAt !== null;
+}
 
-  // The job's OWN project, never the implicit default (t410, FR5): a version id
-  // is a content hash, and the same hash may legitimately exist once per
-  // project (D25) — so a job of project 2 deriving `completed` from project 1's
-  // copy would be reporting an arrival its own graph never declared.
-  const version = getVersion(db, row.graph_version_id, row.project_id);
-  if (version === undefined) return false;
+/** Key of one job's node, for the conforming-finish lookup below. */
+function nodeKey(jobId: number, nodeId: string): string {
+  return `${jobId} ${nodeId}`;
+}
 
-  if (!version.snapshot.final_nodes.includes(row.current_node_id)) return false;
+/**
+ * A list of ids as named parameters, never as interpolated values.
+ *
+ * The same rule `announceFinishedExecution` and `db/events.ts` already write:
+ * the LIST is built into the SQL (there is no other way to write an `IN`) and
+ * every VALUE is bound. It also keeps each query below to a single prepared
+ * statement per call, which is what makes the whole resolution cost a fixed
+ * number of statements whatever the board holds.
+ *
+ * @param prefix Name the parameters take, numbered.
+ * @param values The ids themselves, in whichever type the column holds.
+ * @returns The `IN` list and the object to bind it with.
+ */
+function boundList(
+  prefix: string,
+  values: Array<string | number>,
+): { list: string; params: Record<string, string | number> } {
+  return {
+    list: values.map((_, index) => `@${prefix}_${index}`).join(', '),
+    params: Object.fromEntries(values.map((value, index) => [`${prefix}_${index}`, value])),
+  };
+}
 
-  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.current_node_id);
-  const pin = node === undefined ? undefined : node.skill_ref;
-  if (pin === undefined || pin === null) return true;
+/**
+ * Every fact the six states — and `completed` — are read from, for a WHOLE list
+ * of jobs (t415, FR5).
+ *
+ * Six statements and a merge in memory, never one query per row. It is the
+ * discipline `listRunnersWithHealth` already writes for the fleet page ("small
+ * is not a reason to write an N+1 that grows with it"), and here it is also what
+ * the board's own guard demands: `test/jobs.test.ts`'s AT17 reads a one-job
+ * board and a five-job board and refuses any difference in the number of
+ * statements prepared.
+ *
+ * The six:
+ *
+ * 1. the project's ACTIVE leases, through `listLeases`'s own filter (t410) — at
+ *    most one per job, which `grantLease`'s `job_already_leased` guard makes an
+ *    invariant of the table rather than an assumption of this file;
+ * 2. the project's PENDING input requests, through `listInputRequests`'s
+ *    project join (t411);
+ * 3. which of these jobs have a session still open;
+ * 4. the latest `job.blocked` and `job.transitioned` of each, off the log. The
+ *    scope is `event.project_id` — a real column on that table, unlike
+ *    `session` — narrowed to the jobs actually being resolved;
+ * 5. the conforming finishes of these jobs, per node, matched in memory against
+ *    each job's current node;
+ * 6. the snapshots of the versions the jobs cite, in ONE read keyed by the
+ *    project (D25: the same content hash may legitimately exist once per
+ *    project).
+ *
+ * The sixth is the one place this departs from the ficha's letter, which asked
+ * for `getVersion` once per DISTINCT version id. That is bounded by the number
+ * of versions on the board instead of by the number of jobs, but it still makes
+ * a five-job board across two versions cost one statement more than a one-job
+ * board across one — which AT17 refuses, and rightly: "bounded" that grows with
+ * anything the board carries is not bounded. Reading `graph_version` from here
+ * is the shape this file already takes for the same kind of question
+ * (`resolvesInAnotherProject`).
+ *
+ * @param db Open handle.
+ * @param rows The jobs to resolve — all of them of `projectId`.
+ * @param projectId Partition the jobs live in.
+ * @param moment The instant the whole list is derived against: one clock read
+ *   per board, so two rows of the same page cannot disagree about "now".
+ * @returns The facts, keyed by job id — one entry per row handed in.
+ */
+function resolveJobStates(
+  db: Database,
+  rows: JobRow[],
+  projectId: number,
+  moment: string,
+): Map<number, JobStateFacts> {
+  const facts = new Map<number, JobStateFacts>();
+  if (rows.length === 0) return facts;
 
-  return hasConformingFinish(db, row.id, row.current_node_id);
+  const byJob = boundList(
+    'job',
+    rows.map((row) => row.id),
+  );
+  // `event.entity_id` is TEXT — one log for five entities, one of them keyed by
+  // a hash (D15) — so the ids are bound as the strings that column holds.
+  const byEntity = boundList(
+    'entity',
+    rows.map((row) => String(row.id)),
+  );
+
+  const leases = new Map<number, { granted_at: string; expires_at: string }>();
+  for (const lease of listLeases(db, { project_id: projectId, status: 'active' })) {
+    leases.set(lease.job_id, { granted_at: lease.granted_at, expires_at: lease.expires_at });
+  }
+
+  const pending = new Map<number, { created_at: string }>();
+  for (const request of listInputRequests(db, { project_id: projectId, status: 'pending' })) {
+    // The FIRST one wins, and the listing is in id order: a job with two
+    // questions open has been waiting for a person since the older of them.
+    if (!pending.has(request.job_id)) {
+      pending.set(request.job_id, { created_at: request.created_at });
+    }
+  }
+
+  const open = new Set(
+    (
+      db
+        .prepare(
+          `SELECT DISTINCT job_id FROM session
+            WHERE status = 'open' AND job_id IN (${byJob.list})`,
+        )
+        .all(byJob.params) as Array<{ job_id: number }>
+    ).map((row) => row.job_id),
+  );
+
+  const blockedAt = new Map<number, string>();
+  const transitionedAt = new Map<number, string>();
+  const stamps = db
+    .prepare(
+      `SELECT entity_id, type, MAX(occurred_at) AS occurred_at
+         FROM event
+        WHERE project_id = @project_id
+          AND entity_type = 'job'
+          AND type IN ('job.blocked', 'job.transitioned')
+          AND entity_id IN (${byEntity.list})
+        GROUP BY entity_id, type`,
+    )
+    .all({ project_id: projectId, ...byEntity.params }) as Array<{
+    entity_id: string;
+    type: string;
+    occurred_at: string;
+  }>;
+  for (const stamp of stamps) {
+    const latest = stamp.type === 'job.blocked' ? blockedAt : transitionedAt;
+    latest.set(Number(stamp.entity_id), stamp.occurred_at);
+  }
+
+  const finishes = new Map<string, string>();
+  const finished = db
+    .prepare(
+      `SELECT job_id, node_id, MAX(finished_at) AS finished_at
+         FROM session
+        WHERE status = 'completed' AND output IS NOT NULL AND job_id IN (${byJob.list})
+        GROUP BY job_id, node_id`,
+    )
+    .all(byJob.params) as Array<{
+    job_id: number;
+    node_id: string | null;
+    finished_at: string | null;
+  }>;
+  for (const session of finished) {
+    // A session with no node has no node to have finished on, and one with no
+    // `finished_at` is a row `finishSession` never closed: neither says anything
+    // about the node the job is standing on.
+    if (session.node_id === null || session.finished_at === null) continue;
+    finishes.set(nodeKey(session.job_id, session.node_id), session.finished_at);
+  }
+
+  const versionIds = [
+    ...new Set(rows.map((row) => row.graph_version_id).filter((id): id is string => id !== null)),
+  ];
+  const snapshots = new Map<string, GraphDocument>();
+  if (versionIds.length > 0) {
+    const byVersion = boundList('version', versionIds);
+    const stored = db
+      .prepare(
+        `SELECT id, snapshot FROM graph_version
+          WHERE project_id = @project_id AND id IN (${byVersion.list})`,
+      )
+      .all({ project_id: projectId, ...byVersion.params }) as Array<{
+      id: string;
+      snapshot: string;
+    }>;
+    for (const version of stored) {
+      snapshots.set(version.id, JSON.parse(version.snapshot) as GraphDocument);
+    }
+  }
+
+  for (const row of rows) {
+    const snapshot =
+      row.graph_version_id === null ? undefined : snapshots.get(row.graph_version_id);
+    const node = snapshot?.nodes?.find((candidate) => candidate.id === row.current_node_id);
+    const pin = node?.skill_ref;
+
+    facts.set(row.id, {
+      blocked: asBoolean(row.blocked),
+      currentNodeId: row.current_node_id,
+      createdAt: row.created_at,
+      now: moment,
+      pendingQuestion: pending.get(row.id) ?? null,
+      blockedAt: blockedAt.get(row.id) ?? null,
+      activeLease: leases.get(row.id) ?? null,
+      hasOpenSession: open.has(row.id),
+      finalNodes: snapshot?.final_nodes ?? null,
+      currentNodePinsSkill: pin !== undefined && pin !== null,
+      conformingFinishAt: finishes.get(nodeKey(row.id, row.current_node_id)) ?? null,
+      lastTransitionAt: transitionedAt.get(row.id) ?? null,
+    });
+  }
+
+  return facts;
 }
 
 /**
@@ -350,11 +542,14 @@ function isAtFinalNode(db: Database, row: JobRow): boolean {
  * nothing — it simply rides out to `/v1` under a name no client was ever told
  * about. `test/no-leaked-row-keys.test.ts` is the gate that says so.
  *
- * @param db Open handle; `completed` is derived on read and needs the graph.
+ * No `Database` since t415: the three derived fields all come out of the same
+ * `facts`, which somebody else read in one go.
+ *
  * @param row The job's row, as it is in the table.
+ * @param facts What {@link resolveJobStates} found out about this row.
  * @returns The projection.
  */
-function toJob(db: Database, row: JobRow): Job {
+function toJob(row: JobRow, facts: JobStateFacts): Job {
   const { corpo: body, criterios_de_aceite: criteria, ...rest } = row;
   return {
     ...rest,
@@ -362,8 +557,39 @@ function toJob(db: Database, row: JobRow): Job {
     acceptance_criteria: jsonOrNull<string[]>(criteria),
     blocked: asBoolean(row.blocked),
     fields: jsonOrNull<ScalarMap>(row.fields),
-    completed: isAtFinalNode(db, row),
+    completed: hasArrived(facts),
+    ...deriveJobState(facts),
   };
+}
+
+/**
+ * A whole list of rows as {@link Job}, resolved together.
+ *
+ * @param db Open handle.
+ * @param rows The rows, all of them of `projectId`.
+ * @param projectId Partition they live in.
+ * @returns One projection per row, in the order they came.
+ */
+function toJobs(db: Database, rows: JobRow[], projectId: number): Job[] {
+  const facts = resolveJobStates(db, rows, projectId, now());
+  // The cast is the map's own contract: `resolveJobStates` writes one entry per
+  // row it was handed, and these are those rows.
+  return rows.map((row) => toJob(row, facts.get(row.id) as JobStateFacts));
+}
+
+/**
+ * One row as {@link Job} — the same resolution, over a list of one.
+ *
+ * Correctness, not a special case: a second single-row path for the derived
+ * fields would be a second answer to the same question, and the one thing this
+ * ficha must not leave behind is a board that disagrees with the job page.
+ *
+ * @param db Open handle.
+ * @param row The job's row.
+ * @returns The projection.
+ */
+function toOneJob(db: Database, row: JobRow): Job {
+  return toJobs(db, [row], row.project_id)[0];
 }
 
 /**
@@ -407,7 +633,7 @@ function readScopedRow(db: Database, id: number, projectId: number): JobRow | un
  */
 export function getJob(db: Database, id: number, projectId: number = DEFAULT_PROJECT): Job | null {
   const row = readScopedRow(db, id, projectId);
-  return row === undefined ? null : toJob(db, row);
+  return row === undefined ? null : toOneJob(db, row);
 }
 
 /**
@@ -560,7 +786,7 @@ export function jobTraversal(
  * The end of a round, recorded once and only by the control plane (t245, D21).
  *
  * "Finished" is three conditions and never two: the execution has AT LEAST ONE
- * job, every one of them arrived (`Job.completed`, which is `isAtFinalNode` and
+ * job, every one of them arrived (`Job.completed`, which is `hasArrived` and
  * therefore also refuses a blocked job), and no `lease` row with `status =
  * 'active'` still holds any of them. Zero jobs is not vacuously finished — an
  * execution nobody put work into is not a round that ended.
@@ -607,7 +833,7 @@ export function jobTraversal(
  *
  * ## A job blocked forever keeps its round open forever, by design
  *
- * `isAtFinalNode` answers `false` for a blocked job whatever node it is standing
+ * `hasArrived` answers `false` for a blocked job whatever node it is standing
  * on, so `jobs.every(job => job.completed)` cannot pass while any job of the
  * round is blocked, and this function stays a no-op for as long as that lasts.
  * That is the intended reading: a round waiting on a human has not ended, and
@@ -767,6 +993,52 @@ export class CrossProjectVersionReferenceError extends Error {
 }
 
 /**
+ * The project this job would be born in does not exist (t417, FR1).
+ *
+ * D25 partitions the database by project, and three tickets gave the READ side
+ * of that rule to `job` (t410), `session`/`input_request` (t411) and
+ * `proposal`/`lease`/`webhook_subscription` (t412). None of them touched the
+ * WRITE side, so `createJob` took `project_id` as a bare integer while
+ * `GET /v1/jobs*` already answered `404 unknown_project` to an undeclared one.
+ * The pair wrote rows nothing could read back: created here, invisible to every
+ * read of the same scope.
+ *
+ * The check lives in this function and not on the route because this is the
+ * choke point all four callers share — `routes/jobs.ts`, `confirmDraft` in
+ * `repositories/intake.ts`, `routes/examples.ts` and the tests. Hardening the
+ * route alone would have left the identical defect reachable through
+ * `POST /intake` → `POST /intake/:id/confirmations`, which is the same bug one
+ * HTTP call further in.
+ *
+ * Its shape mirrors {@link CrossProjectVersionReferenceError} — a machine-
+ * readable `code` and the offending scope as a field — but the two are
+ * different facts and get different statuses: a version of another project is a
+ * conflict (`409`), a project that was never declared is an absence (`404`),
+ * and `404` is exactly what the paired read already answers.
+ */
+export class UnknownProjectError extends Error {
+  /**
+   * Stable, machine-readable code — `requireProject`'s own, deliberately.
+   *
+   * The routes that answer this error spell the same literal at their own call
+   * site instead of reading it off here, so `test/write-scope-guard.test.ts`
+   * can sweep the route source for it. That is not a duplication to collapse:
+   * this property is what makes the error self-describing to anything holding
+   * it, and the literal over there is what makes the guard able to read the
+   * answer without executing the route.
+   */
+  readonly code = 'unknown_project' as const;
+  /** The scope that answers to nothing. */
+  readonly projectId: number;
+
+  constructor(projectId: number) {
+    super(`no project answers to this scope: ${projectId}`);
+    this.name = 'UnknownProjectError';
+    this.projectId = projectId;
+  }
+}
+
+/**
  * Whether this version hash is registered in ANY project other than the given
  * one (t410, FR7).
  *
@@ -846,6 +1118,14 @@ export interface CreateJobInput {
  * and inventing a refusal for it would break the manual and imported flows for
  * a fact the control plane cannot check anyway.
  *
+ * ## The project has to EXIST, since t417 (FR1)
+ *
+ * The first thing checked after the body validates, before the version gate and
+ * before the transaction. `project_id` used to be whatever integer arrived, and
+ * `GET /v1/jobs*` has refused an undeclared one since t410 — so the two halves
+ * disagreed, and the disagreement wrote rows nothing could read back. See
+ * {@link UnknownProjectError} for why the guard is here and not on the route.
+ *
  * ## Where that check LOOKS, since t410 (FR6/FR7)
  *
  * In the job's own project, and there only. "Resolves to nothing" therefore
@@ -862,6 +1142,8 @@ export interface CreateJobInput {
  *   project and its contracts are not `checked` (t283).
  * @throws {CrossProjectVersionReferenceError} When it resolves only in another
  *   project (t410).
+ * @throws {UnknownProjectError} When the resolved `project_id` names no
+ *   registered project (t417).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -875,6 +1157,11 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     tier: input.tier,
   });
   const projectId = integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
+  // Before the version gate and before the transaction, for the reason the
+  // validation above gives: a job refused for its scope must not consume an id
+  // from the sequence either (t417, FR1). A row written here would answer to a
+  // partition no read of this API can name.
+  if (getProject(db, projectId) === undefined) throw new UnknownProjectError(projectId);
   const executionId = integerOrNull('execution_id', input.execution_id);
   const graphVersionId = textOrNull('graph_version_id', input.graph_version_id);
   const actor = resolveActor(input.actor, API_ACTOR);
@@ -949,7 +1236,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     // unfinished forever, because nothing else would ever look at it again.
     announceFinishedExecution(db, executionId, projectId, timestamp);
 
-    return toJob(db, readRow(db, id) as JobRow);
+    return toOneJob(db, readRow(db, id) as JobRow);
   });
 
   return create();
@@ -1005,7 +1292,7 @@ function mutate(
       data,
     });
     announce?.(row, data, event);
-    return toJob(db, readRow(db, id) as JobRow);
+    return toOneJob(db, readRow(db, id) as JobRow);
   });
 
   return apply();
@@ -1024,11 +1311,11 @@ export interface TransitionInput {
  * This is the deterministic gate D9 asks for wherever judgement is not needed:
  * no session, no runner, no template engine — a comparison between what the
  * class declared and what the ticket carries. It reads the job's graph version
- * the same way `isAtFinalNode` above does, and for the same reason: what is
+ * the same way `hasArrived` above does, and for the same reason: what is
  * demanded is a property of the VERSION the job runs under, not of the class
  * today.
  *
- * Silent in the same three cases `isAtFinalNode` is: no version, a version that
+ * Silent in the same three cases `hasArrived` is: no version, a version that
  * no longer resolves, a snapshot that declares nothing. Inventing a demand out
  * of a graph nobody can read would block a job for a reason nobody could act on.
  *
@@ -1040,7 +1327,7 @@ export interface TransitionInput {
 function requireFieldsOfNode(db: Database, row: JobRow): void {
   if (row.graph_version_id === null) return;
 
-  // The job's own project, for `isAtFinalNode`'s reason (t410, FR5): a demand
+  // The job's own project, for `hasArrived`'s reason (t410, FR5): a demand
   // borrowed from another project's snapshot is a demand nobody could act on.
   const version = getVersion(db, row.graph_version_id, row.project_id);
   if (version === undefined) return;
@@ -1221,7 +1508,7 @@ export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
 /**
  * The ceiling the job's graph version declares, or the default.
  *
- * Silent in the same three cases `requireFieldsOfNode` and `isAtFinalNode` are:
+ * Silent in the same three cases `requireFieldsOfNode` and `hasArrived` are:
  * no version, a version that no longer resolves, a snapshot that declares
  * nothing. A fourth one is added here — a declared value that is not a positive
  * integer — for the reason the schema alone cannot cover it: `POST /v1/graphs`
@@ -1237,7 +1524,7 @@ export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
 function resolveFailureCeiling(db: Database, row: JobRow): number {
   if (row.graph_version_id === null) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
-  // The job's own project, for `isAtFinalNode`'s reason (t410, FR5).
+  // The job's own project, for `hasArrived`'s reason (t410, FR5).
   const version = getVersion(db, row.graph_version_id, row.project_id);
   if (version === undefined) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
@@ -1364,13 +1651,20 @@ export function blockOnRepeatedFailure(
 
 /** Body of `POST /v1/jobs/:id/unblocks`. */
 export interface UnblockInput {
+  /** Why, when whoever lowered the flag has something to say (t339). */
+  reason?: unknown;
   actor?: unknown;
 }
 
 /**
  * Lowers the flag and records `job.unblocked` (FR6).
  *
- * The event has no payload: the fact is the fall of the flag itself.
+ * The fall of the flag is the fact; the reason is what a PERSON adds to it
+ * (t339). It stays optional for the caller that has none to give: answering an
+ * input request unblocks the job in the same transaction
+ * (`repositories/input-request.ts`), and there the answer already IS the reason
+ * — an invented sentence there would be worse than the `null` the validator
+ * normalizes an absent optional field to.
  *
  * @param db Open handle.
  * @param id Job id.
@@ -1379,7 +1673,7 @@ export interface UnblockInput {
  */
 export function unblockJob(db: Database, id: number, input: UnblockInput): Job | null {
   return mutate(db, id, 'job.unblocked', input.actor, API_ACTOR, () => ({
-    data: {},
+    data: { reason: input.reason },
     sql: 'blocked = ?, block_reason = NULL',
     values: [asInteger(false)],
   }));
@@ -1489,7 +1783,7 @@ export function listJobs(
           )
           .all(projectId, filter.execution_id)
   ) as JobRow[];
-  return rows.map((row) => toJob(db, row));
+  return toJobs(db, rows, projectId);
 }
 
 /**

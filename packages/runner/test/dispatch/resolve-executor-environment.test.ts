@@ -101,11 +101,25 @@ function commit(repoRoot: string, message: string): string {
 const JOB = Object.freeze({ id: 270, title: 'atravessar o bundle de software', current_node_id: 'testar', blocked: false, execution_id: null });
 const RESOLVED = Object.freeze({ node: { id: 'testar' }, edges: [] });
 
-/** Calls the built function with the two arguments the dispatch would hand it. */
+/**
+ * Calls the built function with the three arguments the dispatch hands it.
+ *
+ * Three since t440: `createMergedInputResolver` computes the control plane's
+ * projection first and passes it through, so this seam can read a fact that
+ * only exists inside it — `input.interview.skill_source`, which the interview
+ * itself reported on an earlier turn. The default is `{}`, which is what every
+ * case written before that ticket means by "the projection is not the subject
+ * here".
+ */
 async function resolve(
-  readEnvironment: (job: never, node: never) => Promise<Record<string, unknown>>,
+  readEnvironment: (
+    job: never,
+    node: never,
+    projection: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>,
+  projection: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-  return await readEnvironment(JOB as never, RESOLVED as never);
+  return await readEnvironment(JOB as never, RESOLVED as never, projection);
 }
 
 test('t270 AT — instalacao_em_uso reads the commit once and never again', async (t) => {
@@ -303,4 +317,151 @@ test('t360 AT3 — the class precedents are resolved per job, and sorted by scor
   // Per dispatch, not per process: the score is about THIS job`s own words.
   await resolve(readEnvironment);
   assert.deepEqual(asked, [270, 270], 'the resolver is asked again on the next dispatch');
+});
+
+/* -------------------------------------------------------------------------- */
+/* The skills the person already has (t440, FR5; RF-14 extension)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `environment.skill_drafts`, and the third argument that makes it possible.
+ *
+ * The fact this seam needs — "what path or URL did the person name" — is not on
+ * the `Job` row. It exists only inside the control plane's own projection, at
+ * `input.interview.skill_source`, because the interview REPORTED it on an
+ * earlier turn. So the resolver takes the projection the merge already fetched
+ * rather than fetching the same route a second time.
+ *
+ * The hook is memoized per job for the life of the runner, mirroring
+ * `instalacao_em_uso`'s single read: a twenty-question interview must not
+ * re-clone the same repository on every turn.
+ */
+test('t440 AT — a reported skill_source reaches the hook, and its drafts reach the session', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'skill-drafts');
+
+  const asked: { kind: string; location: string }[] = [];
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    resolveSkillSource: (source) => {
+      asked.push({ ...source });
+      return Promise.resolve({ drafts: [{ id: 'code-review' }, { id: 'triage' }], error: null });
+    },
+  });
+
+  const projection = {
+    interview: { done: false, skill_source: { kind: 'path', location: '/Users/rafael/skills' } },
+  };
+  const environment = (await resolve(readEnvironment, projection)).environment as Record<
+    string,
+    unknown
+  >;
+
+  assert.deepEqual(
+    environment.skill_drafts,
+    [{ id: 'code-review' }, { id: 'triage' }],
+    'what the source derived is what the session is shown, draft for draft',
+  );
+  assert.equal(environment.skill_drafts_error, null, 'a source that read is not an error');
+  assert.deepEqual(asked, [{ kind: 'path', location: '/Users/rafael/skills' }]);
+
+  // Memoized per job: the interview asks twenty questions, and re-reading the
+  // same folder — or re-cloning the same repository — on every one of them is
+  // twenty reads of an answer that did not change.
+  await resolve(readEnvironment, projection);
+  assert.equal(asked.length, 1, 'the same job`s source is resolved once, for the life of the runner');
+});
+
+test('t440 AT — no skill_source is an empty list, and the hook is never called', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'no-skill-source');
+
+  let calls = 0;
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    resolveSkillSource: () => {
+      calls += 1;
+      return Promise.resolve({ drafts: [{ id: 'never' }], error: null });
+    },
+  });
+
+  for (const projection of [{}, { interview: { done: false } }, { interview: null }]) {
+    const environment = (await resolve(readEnvironment, projection)).environment as Record<
+      string,
+      unknown
+    >;
+    assert.deepEqual(
+      environment.skill_drafts,
+      [],
+      'a person who has no skills to point at is shown none, not a failure',
+    );
+    assert.equal(environment.skill_drafts_error, null);
+  }
+  assert.equal(calls, 0, 'nothing is read, cloned or walked until somebody names a source');
+
+  // ...and a runner with no hook wired at all reads exactly the same way.
+  const silent = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+  });
+  const environment = (
+    await resolve(silent, { interview: { skill_source: { kind: 'path', location: '/tmp/x' } } })
+  ).environment as Record<string, unknown>;
+  assert.deepEqual(environment.skill_drafts, []);
+  assert.equal(environment.skill_drafts_error, null);
+});
+
+test('t440 AT — a source that could not be read travels as a message, verbatim', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'skill-drafts-error');
+
+  const message = 'the skill source /Users/rafael/skils is not a directory';
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    resolveSkillSource: () => Promise.resolve({ drafts: [], error: message }),
+  });
+
+  const environment = (
+    await resolve(readEnvironment, {
+      interview: { skill_source: { kind: 'path', location: '/Users/rafael/skils' } },
+    })
+  ).environment as Record<string, unknown>;
+
+  assert.deepEqual(environment.skill_drafts, [], 'an error derives no drafts');
+  assert.equal(
+    environment.skill_drafts_error,
+    message,
+    'the interview relays it to the person in its next question, so it arrives unedited',
+  );
+});
+
+test('t440 AT — the two t360 keys are untouched by the third argument', async (t) => {
+  const { createExecutorEnvironmentResolver } = await loadModule();
+  const repoRoot = fixture(t, 'no-regression');
+
+  const readEnvironment = createExecutorEnvironmentResolver({
+    testBenchPath: repoRoot,
+    referenceMode: 'ponta_do_principal',
+    mcpDiscovery: { supported: true, servers: ['cartografo'] },
+    classPrecedents: () =>
+      Promise.resolve([{ class: 'map-design', name: 'Map design', description: '', score: 0.3 }]),
+  });
+
+  const environment = (
+    await resolve(readEnvironment, {
+      interview: { skill_source: null },
+      job: { id: 270 },
+    })
+  ).environment as Record<string, unknown>;
+
+  assert.deepEqual(environment.mcp_servers, ['cartografo']);
+  assert.deepEqual(
+    (environment.similar_classes as { class: string }[]).map((entry) => entry.class),
+    ['map-design'],
+  );
+  assert.deepEqual(environment.skill_drafts, [], 'a reported `null` source is no source at all');
+  assert.equal(environment.skill_drafts_error, null);
 });

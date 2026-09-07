@@ -44,6 +44,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -55,8 +56,11 @@ import { bootCore } from '@cartografo/test-support';
 import { ControlPlaneClient } from '../../src/controller/control-plane-client.ts';
 import { Controller } from '../../src/controller/controller.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
+import { createExecutorEnvironmentResolver } from '../../src/dispatch/resolve-executor-environment.ts';
+import { createSkillSourceResolver } from '../../src/dispatch/resolve-skill-source.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 import type { WorktreeManager } from '../../src/dispatch/session-worktree.ts';
+import { SAFE_PERMISSIONS } from '../../src/dispatch/skill-draft.ts';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
 
@@ -68,6 +72,19 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 
 /** The execution this crossing's telemetry lands in. */
 const EXECUTION_ID = 3600;
+
+/**
+ * The folder of skills the person points the interview at (t440).
+ *
+ * Checked in rather than written at run time: what the crossing proves is that
+ * a real `SKILL.md` on disk becomes a real draft in the next turn's input, and
+ * a fixture the test wrote itself would be proving the test's own idea of the
+ * format. One file, one skill, one draft — `code review` → `code-review`.
+ */
+const SKILL_SOURCE = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-source');
+
+/** The id the fixture's frontmatter name derives to (`kebabCase`, t439). */
+const DERIVED_DRAFT_ID = 'code-review';
 
 /** The two manifests the graph's nodes pin, in document order. */
 const MANIFESTS = Object.freeze(['deliver-bundle.json', 'interview.json']);
@@ -130,12 +147,24 @@ function bundleFile(...segments: string[]): Record<string, unknown> {
   return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
 }
 
-/** A session that reports its draft and asks one question, in that order. */
-function asksWith(draft: Draft, question: Record<string, unknown>): string {
+/**
+ * A session that reports its draft and asks one question, in that order.
+ *
+ * `extra` is the sibling fields of the report — since t440 that is
+ * `skill_source`, which the turn that receives the answer reports ONCE, beside
+ * `done`/`draft` and never inside the draft: the bucket merge is shallow and
+ * last-writer-wins per key, so a key no later turn repeats survives, while a
+ * draft that is not re-reported whole is gone (`docs/spec/interview.md` §2).
+ */
+function asksWith(
+  draft: Draft,
+  question: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+): string {
   return JSON.stringify([
     { stream: 'stdout', text: 'Here is the map as it stands.' },
     { stream: 'stdout', text: '```resultado' },
-    { stream: 'stdout', text: JSON.stringify({ done: false, draft }) },
+    { stream: 'stdout', text: JSON.stringify({ done: false, draft, ...extra }) },
     { stream: 'stdout', text: '```' },
     { stream: 'stdout', text: '```input-request' },
     { stream: 'stdout', text: JSON.stringify(question) },
@@ -210,13 +239,38 @@ function draftedManifest(id: string): Record<string, unknown> {
   };
 }
 
+/**
+ * ...and the one manifest this interview did NOT write from nothing (t440).
+ *
+ * The scripted stand-in for FR8's adaptation: a step whose manifest starts from
+ * the draft derived out of the person's own `SKILL.md` and is then answered into
+ * a contract — the checks and the schemas are still this interview's, and only
+ * `instructions` and `origin` come from the source. What it pins here is the
+ * fixture's SHAPE, not a model's judgement: whether a real session adapts rather
+ * than copies is what the agentic check `skill-draft-adaptation-not-a-shortcut`
+ * is for, and no deterministic test can stand in for it.
+ *
+ * `permissions` are the derived draft's own, verbatim — which is
+ * {@link SAFE_PERMISSIONS}, and never anything wider: a draft that came from
+ * outside is read-only and offline until a person widens it at the import gate
+ * (D4, `specs/formats/skill-manifest.md`).
+ */
+function adaptedManifest(id: string): Record<string, unknown> {
+  return {
+    ...draftedManifest(id),
+    permissions: SAFE_PERMISSIONS,
+    instructions: `# ${id}\n\nAdapted from the person's own \`${DERIVED_DRAFT_ID}\` skill.`,
+    origin: { type: 'imported', repo: SKILL_SOURCE, ref: 'local' },
+  };
+}
+
 /** The four drafts, each strictly further along than the one before it. */
 const DRAFTS: readonly Draft[] = Object.freeze([
   { graph: { problem_class: null }, skills: [] },
   { graph: { problem_class: 'support-escalation', nodes: [] }, skills: [] },
   {
     graph: { problem_class: 'support-escalation', nodes: [draftedNode('triage', 'agent', 'triage')] },
-    skills: [draftedManifest('triage')],
+    skills: [adaptedManifest('triage')],
   },
   {
     graph: {
@@ -240,7 +294,7 @@ const DRAFTS: readonly Draft[] = Object.freeze([
       final_nodes: ['resolve'],
       custom_fields: [],
     },
-    skills: [draftedManifest('triage'), draftedManifest('resolve')],
+    skills: [adaptedManifest('triage'), draftedManifest('resolve')],
   },
 ]);
 
@@ -352,6 +406,40 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
 
   let currentLines = '[]';
   const worktrees = directoryWorktrees(root);
+
+  // --- the machine half of a dispatched input (t270, t360, t440) ------------
+  //
+  // Wired here for the first time in this crossing, because t440's subject IS
+  // this seam: the executor environment reads the projection the merge just
+  // fetched, finds the `skill_source` an earlier turn reported into it, and
+  // turns it into one derived draft per `SKILL.md` at
+  // `input.environment.skill_drafts`. Cloning is switched OFF — the fixture is
+  // a folder, and a crossing that reached the network for it would be testing
+  // somebody's connectivity.
+  const bench = path.join(root, 'bench');
+  mkdirSync(bench, { recursive: true });
+  for (const args of [
+    ['init', '--quiet', '--initial-branch', 'main'],
+    ['config', 'user.email', 'fixture@cartografo.local'],
+    ['config', 'user.name', 'Fixture t440'],
+    ['commit', '--quiet', '--allow-empty', '-m', 'the bench this crossing only reads'],
+  ]) {
+    execFileSync('git', args, { cwd: bench, stdio: 'pipe' });
+  }
+
+  const machineFacts = createExecutorEnvironmentResolver({
+    testBenchPath: bench,
+    referenceMode: 'ponta_do_principal',
+    resolveSkillSource: createSkillSourceResolver({
+      allowGitClone: false,
+      scratchRoot: path.join(root, '.skill-sources'),
+    }),
+  });
+
+  /** What each dispatch was told, in order — the projection and the environment. */
+  const dispatched: { projection: Record<string, unknown>; environment: Record<string, unknown> }[] =
+    [];
+
   const controller = new Controller({
     client,
     runnerId: 'runner-t360',
@@ -377,6 +465,14 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
         },
         worktrees,
         timeoutSeconds: 60,
+        executorEnvironment: async (jobRow, resolved, projection) => {
+          const environment = await machineFacts(jobRow, resolved, projection);
+          dispatched.push({
+            projection,
+            environment: environment.environment as Record<string, unknown>,
+          });
+          return environment;
+        },
         envOverrides: { FAKE_ENGINE_LINES: currentLines },
       })(jobId),
   });
@@ -428,7 +524,15 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
 
   // --- AT1. three turns, each one question, each a draft further along -------
   for (const turn of [0, 1, 2]) {
-    await run(asksWith(DRAFTS[turn], QUESTIONS[turn]));
+    // The FIRST turn is the one that receives the class name and, with it, the
+    // answer to "do you already have skills for this, and where" (t440, FR1/FR2).
+    await run(
+      asksWith(
+        DRAFTS[turn],
+        QUESTIONS[turn],
+        turn === 0 ? { skill_source: { kind: 'path', location: SKILL_SOURCE } } : {},
+      ),
+    );
 
     const asking = await jobNow();
     assert.equal(
@@ -450,6 +554,49 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
   assert.deepEqual(reported, [DRAFTS[0], DRAFTS[1], DRAFTS[2]], 'each turn`s draft is its own');
   assert.notDeepEqual(reported[0], reported[1], 'a turn that changed nothing asked for nothing');
   assert.notDeepEqual(reported[1], reported[2]);
+
+  // --- t440. the source somebody named survives, and becomes drafts ---------
+  //
+  // Turn 0 reported `skill_source` once, beside its draft. No later turn
+  // repeats it — and it is still in the input of every one of them, because the
+  // bucket merge is shallow and per key: a key nobody overwrites keeps its
+  // value, unlike `draft`, which every turn has to report whole.
+  assert.deepEqual(
+    (dispatched[0].projection.interview as Record<string, unknown> | undefined)?.skill_source,
+    undefined,
+    'nothing was named before the first answer came back',
+  );
+  for (const turn of [1, 2]) {
+    assert.deepEqual(
+      (dispatched[turn].projection.interview as Record<string, unknown>).skill_source,
+      { kind: 'path', location: SKILL_SOURCE },
+      `turn ${String(turn)}: reported once, carried into every dispatch after it`,
+    );
+  }
+
+  // ...and the turn immediately after the one that named it opened with the
+  // draft derived from the fixture's own SKILL.md — the whole wiring, from a
+  // file on disk to what a session is told, and not just the domain function.
+  assert.deepEqual(dispatched[0].environment.skill_drafts, [], 'nothing named, nothing derived');
+  assert.equal(dispatched[0].environment.skill_drafts_error, null);
+
+  const drafts = dispatched[1].environment.skill_drafts as Record<string, unknown>[];
+  assert.equal(dispatched[1].environment.skill_drafts_error, null, 'the fixture folder reads');
+  assert.deepEqual(
+    drafts.map((draft) => draft.id),
+    [DERIVED_DRAFT_ID],
+    'one SKILL.md in the folder is one draft in the next turn`s input',
+  );
+  assert.deepEqual(
+    (drafts[0].origin as Record<string, unknown>).repo,
+    SKILL_SOURCE,
+    'the draft says where it came from, which is what a person reviews at the gate (D4)',
+  );
+  assert.deepEqual(
+    drafts[0].permissions,
+    SAFE_PERMISSIONS,
+    'derived, never widened: read the workspace, write nothing, no network',
+  );
 
   // --- AT6. abandoned here, the interview has registered NOTHING ------------
   const { classes: known } = await api<{ classes: { class: string }[] }>(
@@ -512,6 +659,24 @@ test('t360 — the interview is a traversal: four turns, one node, one bundle at
       'the pin is computed by whoever registers (t361), never claimed by the draft',
     );
   }
+
+  // --- t440. the step that reused a derived draft is still read-only --------
+  //
+  // The scripted session copied the draft's own permissions verbatim, which is
+  // what FR8 forbids widening: adapting a skill somebody else wrote is allowed,
+  // handing it the network is a decision only a person makes at the import gate.
+  const adapted = draft.skills.find((manifest) => manifest.id === 'triage-step');
+  assert.ok(adapted !== undefined, 'the adapted step is in the delivered bundle');
+  assert.deepEqual(
+    adapted.permissions,
+    SAFE_PERMISSIONS,
+    'no manifest that reuses an imported draft leaves this interview wider than the safe default',
+  );
+  assert.equal(
+    (adapted.origin as Record<string, unknown>).repo,
+    SKILL_SOURCE,
+    'and it still says which source it was adapted from',
+  );
 
   // --- AT7. and the drafted graph is a graph this repository would accept ---
   //

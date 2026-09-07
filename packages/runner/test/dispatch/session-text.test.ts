@@ -33,6 +33,7 @@ import { parseInputRequest } from '../../src/dispatch/parse-input-request.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
+  decodeShellSessionText,
 } from '../../src/dispatch/session-text.ts';
 
 /** Reads a transcript fixture as the lines that reached `onOutput`. */
@@ -96,6 +97,84 @@ test('AT1 — the escaped block of a real frame comes back parseable', () => {
   assert.equal(request.question, 'Renumber to 0003?');
 });
 
+// --- t485: the engine's session envelope is a frame, not prose ---------------
+//
+// The founder watched Interview #5 render the engine's own envelope in place of
+// the running turn's words: `system/init` with its tool list, MCP servers, model
+// id, permission mode and socket path, a `rate_limit_event`, and a stream of
+// `system/thinking_tokens` — all as raw JSON, because none of them carries a
+// `message` key and the decoder could not tell "a frame I have nothing to say
+// about" from "a line that is not a frame at all".
+//
+// The rule these tests pin is the one `codexFrameText` already used: an object
+// carrying a string `type` is this engine's envelope, recognized whether or not
+// this decoder knows what to do with it. Only a line that fails to parse as
+// JSON, or parses to an object with no `type`, is genuinely not a frame.
+
+test('t485/AT-1 — no envelope field of a real capture reaches the text', () => {
+  const text = decodeClaudeCodeSessionText(transcript('claude-code-envelope-frames.jsonl'));
+
+  // Paired on purpose: a decoder that swallowed everything, prose included,
+  // would satisfy the negative check alone and still be broken.
+  assert.notEqual(text, '', 'the assistant prose around the envelope has to survive');
+  for (const field of [
+    'session_id',
+    'tools',
+    'mcp_servers',
+    'permissionMode',
+    'slash_commands',
+    'messaging_socket_path',
+    'rate_limit_info',
+    'estimated_tokens',
+  ]) {
+    assert.ok(
+      !text.includes(field),
+      `the engine's envelope must not reach the page as prose, but \`${field}\` did:\n${text}`,
+    );
+  }
+});
+
+test('t485/AT-2 — the surrounding assistant prose stays intact and in order', () => {
+  // The fixture is a REAL capture, recovered from the stored transcripts of the
+  // very interview the founder was watching (sessions 23 and 24 of job 5, two
+  // consecutive turns of Interview #5): the first turn's assistant text frame,
+  // then the second turn's `system/init`, `rate_limit_event` and
+  // `system/thinking_tokens` verbatim, then the second turn's assistant text
+  // frame. Portuguese, like the two `codex-*.jsonl` transcripts and for the same
+  // reason — rewriting a recording falsifies the evidence it was captured to be.
+  const lines = transcript('claude-code-envelope-frames.jsonl');
+  const prose = [lines[0], lines[4]].map((line) => {
+    const { message } = JSON.parse(line) as { message: { content: { type: string; text?: string }[] } };
+    return message.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+  });
+
+  assert.equal(decodeClaudeCodeSessionText(lines), prose.join('\n'));
+});
+
+test('t485/AT-4 — an object with no string `type` is genuinely not a frame', () => {
+  // The boundary that stops the fix from becoming "any JSON is dropped". A
+  // command or a crash handler that prints a bare JSON object never carried a
+  // `type`, and its output is still the only account of what happened.
+  assert.equal(decodeClaudeCodeSessionText(['{"foo":"bar"}']), '{"foo":"bar"}');
+});
+
+test('t485/AT-5 — the shell decoder never routes through a frame recognizer', () => {
+  // A `shell` node that legitimately prints a frame-shaped object — a `jq`
+  // filter, a tool's `--json` flag — keeps every byte of its own output.
+  const lines = ['{"type":"result","result":"done"}', 'plain output'];
+  assert.equal(decodeShellSessionText(lines), lines.join('\n'));
+});
+
+test('t485/AT-6 — Codex already drops a frame kind it has never seen', () => {
+  // Pinned directly rather than inferred from the two real transcripts: this is
+  // the rule t485 brought over to the Claude Code side, and it needed no code
+  // change here because it was already the rule.
+  assert.equal(decodeCodexSessionText(['{"type":"some_future_frame_kind"}']), '');
+});
+
 // --- t148: the cases the synthesizer's own copy of this decoder had pinned ---
 //
 // t148 extracted the same Claude Code decoder a second time, into
@@ -104,11 +183,16 @@ test('AT1 — the escaped block of a real frame comes back parseable', () => {
 // engine, routed by the dispatcher — so the merge keeps t141's module as the one
 // definition and moves here the four claims only t148's copy was pinning.
 
-test('t148 — a JSON object that is not a frame of THIS engine passes through raw', () => {
-  // The Claude Code decoder recognizes `result` and `message.content[]` and
-  // nothing else. Unlike Codex's, a bare `type` is not enough to claim the line,
-  // so an unknown object stays visible instead of being silently dropped.
-  assert.equal(decodeClaudeCodeSessionText(['{"type":"unknown-to-us"}']), '{"type":"unknown-to-us"}');
+test('t148/t485 — a frame kind THIS engine does not read is dropped; a non-frame is not', () => {
+  // Reversed by t485, deliberately. t148 read a bare `type` as "unknown-to-us
+  // JSON, keep it visible"; what that actually kept visible was the engine's own
+  // envelope — `system/init`, `rate_limit_event`, `system/thinking_tokens` are
+  // each exactly "a `type` this decoder does not otherwise recognize", and the
+  // founder read all three as the interview's running answer. A string `type` is
+  // now what CLAIMS the line for this engine, as it always has been for Codex.
+  assert.equal(decodeClaudeCodeSessionText(['{"type":"unknown-to-us"}']), '');
+  // Untouched: this one is not a frame at all, and a plain-text runtime error is
+  // the only account left of a session that died mid-stream.
   assert.equal(decodeClaudeCodeSessionText(['{ not json after all']), '{ not json after all');
 });
 

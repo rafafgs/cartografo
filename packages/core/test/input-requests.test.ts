@@ -26,6 +26,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -1097,4 +1099,177 @@ test('t411 — precedents refuse an input request of another project, and answer
     mine.body.precedents.map((row) => row.id),
     [myPrecedent.id],
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t371 — `origin`: which mechanism raised this question                       */
+/*                                                                            */
+/* A nullable, unconstrained column, and the whole reason it exists is that    */
+/* the runner has to recognise ITS OWN write-failure question before it opens  */
+/* a worktree. Every question that exists today, and every ordinary one this   */
+/* ticket does not touch, reads `null` — which is exactly what it is.          */
+/*                                                                            */
+/* Not a fourth `kind`: that column carries a closed `CHECK` (`0003`, and its  */
+/* mirror in `event-validation.ts`), and widening it means a table rebuild for */
+/* a fact that is not the KIND of escalation at all. One `ADD COLUMN`, no      */
+/* backfill, no constraint — `setting.key`'s own posture.                      */
+/* -------------------------------------------------------------------------- */
+
+/** t371's own artifacts, required by name the way every suite here does it. */
+const T371_ORIGIN_ARTIFACTS = ['migrations/0035_input_request_origin.sql'];
+
+/** The tag the runner writes when a declared output could not be delivered. */
+const EXTERNAL_OUTPUT_WRITE = 'external_output_write';
+
+test('t371 AT-C5 — an ordinary question has no origin, and says so with null', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T371_ORIGIN_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const job = await createJob(ctx, { title: 'an ordinary doubt', entry_node_id: 'entrada' });
+
+  const asked = await askQuestion(ctx, job.id, 'Renumber the migration to 0003?');
+  assert.equal(
+    (asked as InputRequest & { origin?: unknown }).origin,
+    null,
+    'the projection carries the field, and its value is the absence itself',
+  );
+
+  const listed = await request<{ input_requests: (InputRequest & { origin?: unknown })[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?job_id=${job.id}`,
+  );
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.input_requests[0].origin, null, 'and so does the listing');
+});
+
+test('t371 AT-C6 — POST /v1/input-requests stores an origin, and the event carries it', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T371_ORIGIN_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const job = await createJob(ctx, { title: 'a delivery that did not land', entry_node_id: 'deliver' });
+
+  const created = await request<InputRequest & { origin?: unknown }>(
+    ctx,
+    'POST',
+    '/v1/input-requests',
+    {
+      job_id: job.id,
+      ...FULL_BODY,
+      question: 'Step `deliver` writes outside the system and did not finish cleanly',
+      options: ['retry', 'skip this output', 'mark as done'],
+      auto_approvable: false,
+      origin: EXTERNAL_OUTPUT_WRITE,
+    },
+  );
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.origin, EXTERNAL_OUTPUT_WRITE);
+  assert.equal(created.body.auto_approvable, false, 'a side-effect fault is never auto-answered');
+
+  const row = ctx.db
+    .prepare('SELECT origin FROM input_request WHERE id = ?')
+    .get(created.body.id) as { origin: string | null };
+  assert.equal(row.origin, EXTERNAL_OUTPUT_WRITE, 'the column and the projection agree');
+
+  const events = ctx.db
+    .prepare("SELECT data FROM event WHERE type = 'input_request.created' ORDER BY id DESC LIMIT 1")
+    .get() as { data: string };
+  assert.equal(
+    (JSON.parse(events.data) as { origin?: unknown }).origin,
+    EXTERNAL_OUTPUT_WRITE,
+    'the payload is where the fact is audited, exactly as node_id already is',
+  );
+});
+
+test('t371 AT-C7 — GET /v1/input-requests?origin= filters, and adds up with the others', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...T371_ORIGIN_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const job = await createJob(ctx, { title: 'a job with both kinds of doubt', entry_node_id: 'deliver' });
+
+  const ordinary = await askQuestion(ctx, job.id, 'Which name does the file take?');
+  const raised = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    job_id: job.id,
+    ...FULL_BODY,
+    question: 'Step `deliver` writes outside the system and did not finish cleanly',
+    auto_approvable: false,
+    origin: EXTERNAL_OUTPUT_WRITE,
+  });
+  assert.equal(raised.status, 201, JSON.stringify(raised.body));
+
+  const tagged = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?origin=${EXTERNAL_OUTPUT_WRITE}`,
+  );
+  assert.equal(tagged.status, 200, JSON.stringify(tagged.body));
+  assert.deepEqual(
+    tagged.body.input_requests.map((row) => row.id),
+    [raised.body.id],
+    'the ordinary question is not one of these, and neither is any question written before the column',
+  );
+
+  const unknownOrigin = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    '/v1/input-requests?origin=nobody_writes_this',
+  );
+  assert.equal(unknownOrigin.status, 200);
+  assert.deepEqual(unknownOrigin.body.input_requests, [], 'an unknown tag is an empty result');
+
+  // Answering it makes it the row the runner's own pre-worktree read looks for:
+  // job, status and origin, three filters that have to be an AND.
+  const answered = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${raised.body.id}/answer`,
+    { answer: 'skip this output', answered_by: 'rafael' },
+  );
+  assert.equal(answered.status, 200, JSON.stringify(answered.body));
+
+  const found = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?job_id=${job.id}&status=answered&origin=${EXTERNAL_OUTPUT_WRITE}`,
+  );
+  assert.equal(found.status, 200, JSON.stringify(found.body));
+  assert.deepEqual(
+    found.body.input_requests.map((row) => row.id),
+    [raised.body.id],
+  );
+
+  // ...and the ordinary question, answered too, still does not come back.
+  const closedOrdinary = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${ordinary.id}/answer`,
+    { answer: 'the one it already has', answered_by: 'rafael' },
+  );
+  assert.equal(closedOrdinary.status, 200);
+
+  const stillOne = await request<{ input_requests: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?job_id=${job.id}&status=answered&origin=${EXTERNAL_OUTPUT_WRITE}`,
+  );
+  assert.deepEqual(
+    stillOne.body.input_requests.map((row) => row.id),
+    [raised.body.id],
+    'an answered question with no origin is not an answered question with this one',
+  );
+});
+
+test('t371 AT-C8 — the column is added, not rebuilt, and nothing is backfilled', async () => {
+  requireArtifacts(...ARTIFACTS, ...T371_ORIGIN_ARTIFACTS);
+
+  const sql = readFileSync(
+    path.join(path.resolve(import.meta.dirname, '..'), 'migrations/0035_input_request_origin.sql'),
+    'utf8',
+  );
+
+  assert.ok(
+    /ALTER TABLE input_request\s+ADD COLUMN origin TEXT/i.test(sql),
+    'one ADD COLUMN and nothing else is what makes every existing row read null',
+  );
+  assert.ok(!/NOT NULL/i.test(sql), 'a NOT NULL here would need a value for rows that have none');
+  assert.ok(!/CHECK/i.test(sql), 'no CHECK: a closed enum is what this column exists to avoid');
+  assert.ok(!/UPDATE input_request/i.test(sql), 'and no backfill: null is the honest value');
+  assert.ok(!/DROP TABLE/i.test(sql), 'and no table rebuild, which is the whole point of `origin`');
 });

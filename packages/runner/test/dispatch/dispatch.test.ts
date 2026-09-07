@@ -70,7 +70,9 @@ import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 import { bootCore, resolvePins } from "@cartografo/test-support";
 
 import {
+  DELIVER_TOOL as MCP_DELIVER_TOOL,
   FIXED_BLOB as MCP_FIXED_BLOB,
+  deliveryLog as mcpDeliveryLog,
   readFileText as mcpReadFileText,
 } from "../fakes/mcp-server.mjs";
 
@@ -8008,6 +8010,647 @@ test("t423 — a declared artifact is uploaded, the report carries its id, and t
       );
       assert.equal(after.current_node_id, "implementar");
       assert.equal(after.blocked, true);
+    },
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t371 — the way out: the declared output leaves once, or a person decides    */
+/*                                                                            */
+/* The other half of §3.6, end to end and against a real control plane: an     */
+/* outward write happens only after the control plane ACCEPTED the step's      */
+/* report (RF-33); a step attempted again does not deliver twice (RF-35); a    */
+/* step the map marked `unsafe_to_retry` calls a person instead of repeating   */
+/* itself (RF-36); and every call is written down (RF-37).                     */
+/*                                                                            */
+/* The MCP server is `test/fakes/mcp-server.mjs`, spawned for real over stdio, */
+/* with its `deliver` tool keeping a log on disk: the count of `ok` lines in   */
+/* that file is the number of deliveries the far side really received, which   */
+/* is the only number RF-35 is about. A counter in this process would not      */
+/* survive the client pool closing between two dispatches — which is exactly   */
+/* the window a duplicate write slips through.                                 */
+/* -------------------------------------------------------------------------- */
+
+test("t371 — a node's declared output is delivered once, after the report is accepted", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  /** One row of `external_call`, as `/v1` publishes it. */
+  interface ExternalCall {
+    id: number;
+    node_id: string;
+    direction: string;
+    name: string;
+    server: string;
+    tool: string;
+    started_at: string;
+    finished_at: string | null;
+    outcome: string | null;
+    result_summary: string | null;
+  }
+
+  /** One question, as `GET /v1/input-requests` projects it. */
+  interface Question {
+    id: number;
+    job_id: number;
+    node_id: string | null;
+    question: string;
+    context: string | null;
+    options: string[] | null;
+    auto_approvable: boolean;
+    status: string;
+    origin: string | null;
+  }
+
+  /** The skill `implementar` pins here: its `output` is what `from` names. */
+  function deliverySkill(): Record<string, unknown> {
+    const content = {
+      instructions:
+        "# Do the step\n\nDo what the step asks: {{input.pedido}}.\n\n" +
+        "Report the note under `nota`; what happens to it afterwards is not yours.",
+      input: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        required: ["pedido"],
+        properties: { pedido: { type: "string", minLength: 1 } },
+      },
+      output: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        required: ["nota"],
+        properties: { nota: { type: "string", minLength: 1 } },
+      },
+      checks: [],
+      permissions: {
+        filesystem: { read: ["**"], write: ["**"] },
+        // The session never reaches the server: the delivery happens after it
+        // is terminal, from the runner, with the runner's own credential.
+        network: { allowed: false },
+      },
+    };
+
+    const digest = createHash("sha256")
+      .update(JSON.stringify(canonicalValue(content)), "utf8")
+      .digest("hex");
+
+    return {
+      id: "deliver-crossing",
+      version: "1.0.0",
+      hash: `sha256:${digest}`,
+      role: "work",
+      description: "Does one step whose result is handed over outside.",
+      preconditions: [],
+      origin: { type: "native" },
+      ...content,
+    };
+  }
+
+  const SKILL = deliverySkill();
+  await api(baseUrl, "POST", "/v1/skills", SKILL, 201, token);
+
+  /** The entry every case declares, unless it overrides something. */
+  function delivery(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      name: "delivered_note",
+      server: "reports",
+      tool: MCP_DELIVER_TOOL,
+      arguments: { folder: "clients/{{input.job.id}}" },
+      from: "nota",
+      ...overrides,
+    };
+  }
+
+  /** The traversal graph, with `implementar` pinning the skill and delivering. */
+  function deliveryGraph(
+    className: string,
+    outputs: Record<string, unknown>[],
+    unsafe = false,
+  ): Record<string, unknown> {
+    const document = traversalGraph(className);
+    const nodes = document.nodes as Array<Record<string, unknown>>;
+    return {
+      ...document,
+      nodes: nodes.map((node) =>
+        node.id === "implementar"
+          ? {
+              ...node,
+              skill_ref: { id: SKILL.id, version: SKILL.version, hash: SKILL.hash },
+              external: { outputs },
+              ...(unsafe ? { unsafe_to_retry: true } : {}),
+            }
+          : node,
+      ),
+    };
+  }
+
+  /** Writes the `.mcp.json` an adapter reads, pointed at the delivery log. */
+  function mcpConfig(root: string, mode: string, logPath: string): string {
+    writeFileSync(
+      path.join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          reports: {
+            type: "stdio",
+            command: process.execPath,
+            args: [FAKE_MCP_SERVER],
+            env: {
+              CARTOGRAFO_FAKE_MCP_MODE: mode,
+              CARTOGRAFO_FAKE_MCP_CALL_LOG: logPath,
+            },
+          },
+        },
+      }),
+    );
+    return root;
+  }
+
+  /** The engine route, with the MCP capabilities live and sessions counted. */
+  function route(
+    configDir: string,
+    opened: SessionSpec[],
+  ): Record<string, DispatchModule.EngineRoute> {
+    const adapter = new ClaudeCodeAdapter({
+      commandBuilder: (spec) => ({
+        command: process.execPath,
+        args: [FAKE_ENGINE, ...buildCommand(spec).args],
+      }),
+      graceMs: 300,
+      mcpWorkingDir: configDir,
+      credentialsPath: path.join(configDir, "no-user-scope-here.json"),
+      mcpListCommandBuilder: () => ({ command: NO_SUCH_BINARY, args: [] }),
+    });
+
+    const watched: EngineAdapter = {
+      engineName: adapter.engineName,
+      startSession: async (spec, listener) => {
+        opened.push(spec);
+        return await adapter.startSession(spec, listener);
+      },
+      getStatus: (id) => adapter.getStatus(id),
+      cancel: (id, status) => adapter.cancel(id, status),
+      capabilities: () => adapter.capabilities(),
+      verifyCli: () => adapter.verifyCli(),
+      discoverMcpServers: () => adapter.discoverMcpServers(),
+      resolveMcpServerConnection: (name) => adapter.resolveMcpServerConnection(name),
+    };
+
+    return {
+      "claude-code": { adapter: watched, decodeSessionText: decodeClaudeCodeSessionText },
+    };
+  }
+
+  /** Everything one case needs on disk, torn down with the case. */
+  function scratch(t: TestHook, label: string, mode: string): {
+    configDir: string;
+    workDir: string;
+    logPath: string;
+    opened: SessionSpec[];
+  } {
+    const configDir = mkdtempSync(path.join(tmpdir(), `cartografo-t371-${label}-mcp-`));
+    const workDir = mkdtempSync(path.join(tmpdir(), `cartografo-t371-${label}-work-`));
+    t.after(() => {
+      rmSync(configDir, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    });
+    const logPath = path.join(configDir, "deliveries.jsonl");
+    mcpConfig(configDir, mode, logPath);
+    return { configDir, workDir, logPath, opened: [] };
+  }
+
+  /** The dispatch every case below builds, differing only in what it is given. */
+  function dispatchWith(
+    build: typeof DispatchModule.createClaudeCodeDispatch,
+    place: ReturnType<typeof scratch>,
+    lines: string,
+    extra: Partial<DispatchModule.ClaudeCodeDispatchOptions> = {},
+  ): (jobId: number) => Promise<DispatchModule.DispatchOutcome> {
+    return build({
+      urlBase: baseUrl,
+      token,
+      engines: route(place.configDir, place.opened),
+      worktrees: fakeWorktrees(place.workDir),
+      timeoutSeconds: 60,
+      resolveInput: () => Promise.resolve({ pedido: "eqx" }),
+      // The ladder's own waits, cut to nothing: what the case is about is how
+      // MANY attempts happen, never how long they take.
+      outputWriteBackoffMs: [10, 10],
+      envOverrides: {
+        FAKE_ENGINE_RECORD: path.join(place.configDir, "engine.json"),
+        FAKE_ENGINE_LINES: lines,
+      },
+      ...extra,
+    });
+  }
+
+  /** The call log of one job, as the control plane has it. */
+  async function callsOf(jobId: number): Promise<ExternalCall[]> {
+    const listed = await api<{ external_calls: ExternalCall[] }>(
+      baseUrl,
+      "GET",
+      `/v1/jobs/${jobId}/external-calls`,
+      undefined,
+      200,
+      token,
+    );
+    return listed.external_calls;
+  }
+
+  /** How many deliveries the far side really accepted. */
+  function landed(logPath: string): number {
+    return mcpDeliveryLog(logPath).filter((entry) => entry.fate === "ok").length;
+  }
+
+  /** A job standing on `implementar`, on a graph of its own. */
+  async function jobOn(
+    className: string,
+    executionId: number,
+    outputs: Record<string, unknown>[] = [delivery()],
+    unsafe = false,
+  ): Promise<Work> {
+    const versionId = await registerGraph(
+      baseUrl,
+      token,
+      deliveryGraph(className, outputs, unsafe),
+    );
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: "a ticket whose node hands its result over outside",
+        entry_node_id: "implementar",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  await parent.test(
+    "AT1 — an accepted report delivers once, records two rows, and then transitions",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at1", "normal");
+      const job = await jobOn("delivery-t371-at1", 3710);
+
+      const outcome = await dispatchWith(
+        createClaudeCodeDispatch,
+        place,
+        linesWithCrossingNote(),
+      )(job.id);
+      assert.equal(outcome.blocked, false, JSON.stringify(outcome));
+
+      const deliveries = mcpDeliveryLog(place.logPath);
+      assert.equal(deliveries.length, 1, "one declared output is one call");
+      assert.equal(deliveries[0].fate, "ok");
+      assert.deepEqual(
+        deliveries[0].args,
+        // The declared argument with `{{input.job.id}}` resolved, plus the value
+        // at `from` under the name the declaration gave it.
+        { folder: `clients/${String(job.id)}`, nota: "the step left saida.md ready" },
+      );
+
+      const calls = await callsOf(job.id);
+      assert.equal(calls.length, 2, JSON.stringify(calls));
+      assert.equal(calls[0].direction, "output");
+      assert.equal(calls[0].name, "delivered_note");
+      assert.equal(calls[0].server, "reports");
+      assert.equal(calls[0].tool, MCP_DELIVER_TOOL);
+      assert.equal(calls[0].outcome, null, "the intent is written before the call");
+      assert.equal(calls[1].outcome, "ok", "and the outcome after it");
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir", "and only then does the work move");
+      assert.equal(after.blocked, false);
+
+      // The ordering, asserted rather than assumed: the transition is recorded
+      // no earlier than the delivery it depends on.
+      const { events } = await api<{ events: { type: string; created_at: string }[] }>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}/events`,
+        undefined,
+        200,
+        token,
+      );
+      const moved = events.find((event) => event.type === "job.transitioned");
+      assert.ok(moved !== undefined, JSON.stringify(events.map((event) => event.type)));
+      assert.ok(
+        String(calls[1].finished_at) <= moved.created_at,
+        `the transition (${moved.created_at}) may not precede the delivery ` +
+          `(${String(calls[1].finished_at)})`,
+      );
+    },
+  );
+
+  await parent.test(
+    "AT2 — a report the control plane REFUSED delivers nothing at all",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at2", "normal");
+      const job = await jobOn("delivery-t371-at2", 3711);
+
+      // Prose and no fenced block: `implementar` pins a skill whose `output`
+      // requires `nota`, so the control plane refuses the report and the work
+      // holds on the node. RF-33 is structural here — `advance()` is never
+      // reached, so there is no code path from a refused report to a delivery.
+      // The dispatch itself resolves normally — a refused report is the control
+      // plane's block, posted by `blockForOutputSchemaRefusal`, and t268 chose
+      // not to make it a `{blocked: true}` ending. What the case is about is the
+      // job's state and the silence on the wire.
+      await dispatchWith(createClaudeCodeDispatch, place, linesWithoutBlock())(job.id);
+
+      assert.deepEqual(mcpDeliveryLog(place.logPath), [], "nothing left this machine");
+      assert.deepEqual(await callsOf(job.id), [], "and nothing was recorded either");
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the work holds at the node");
+      assert.equal(after.blocked, true);
+    },
+  );
+
+  await parent.test(
+    "AT3 — the same job and node dispatched again skips the delivery it already made",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at3", "normal");
+      const job = await jobOn("delivery-t371-at3", 3712);
+
+      const dispatch = dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote());
+      await dispatch(job.id);
+      assert.equal(landed(place.logPath), 1);
+
+      // Back to the node it came from, the way the rework cycle does it: the
+      // job is on `conferir` now, so it is put back by hand — what is under
+      // test is the SECOND delivery attempt, not how the work got there.
+      await api(
+        baseUrl,
+        "POST",
+        `/v1/jobs/${job.id}/transitions`,
+        { to_node_id: "implementar", actor: { type: "user", ref: "rafael" } },
+        200,
+        token,
+      );
+
+      const again = await dispatch(job.id);
+      assert.equal(again.blocked, false, JSON.stringify(again));
+
+      assert.equal(
+        landed(place.logPath),
+        1,
+        "RF-35: the far side received the delivery once, whatever this side did",
+      );
+
+      const calls = await callsOf(job.id);
+      assert.deepEqual(
+        calls.map((call) => call.outcome),
+        [null, "ok", null, "skipped_duplicate"],
+        "the skip is recorded as a skip, never as an `ok` nobody made",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT4 — a safe node retries the CALL, not the session, and lands exactly one delivery",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at4", "deliver-fails-twice");
+      const job = await jobOn("delivery-t371-at4", 3713);
+
+      const outcome = await dispatchWith(
+        createClaudeCodeDispatch,
+        place,
+        linesWithCrossingNote(),
+      )(job.id);
+      assert.equal(outcome.blocked, false, JSON.stringify(outcome));
+
+      const deliveries = mcpDeliveryLog(place.logPath);
+      assert.deepEqual(
+        deliveries.map((entry) => entry.fate),
+        ["error", "error", "ok"],
+        "three attempts, and only the third one landed",
+      );
+      assert.equal(landed(place.logPath), 1);
+
+      assert.equal(
+        place.opened.length,
+        1,
+        "ONE session for the whole thing: the ladder retries the call, never the step",
+      );
+
+      const calls = await callsOf(job.id);
+      assert.deepEqual(
+        calls.map((call) => call.outcome),
+        [null, "error", null, "error", null, "ok"],
+        "every attempt has its own pair of phases: the log is what happened",
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir");
+    },
+  );
+
+  await parent.test(
+    "AT5 — a safe node whose delivery never lands stops the work with a reason",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at5", "deliver-fails-twice");
+      const job = await jobOn("delivery-t371-at5", 3714);
+
+      const outcome = await dispatchWith(
+        createClaudeCodeDispatch,
+        place,
+        linesWithCrossingNote(),
+        // Two rungs is one fewer than the fake server needs, so the ladder runs
+        // out with the delivery still unmade.
+        { maxOutputWriteAttempts: 2 },
+      )(job.id);
+
+      assert.equal(outcome.blocked, true, JSON.stringify(outcome));
+      assert.match(String(outcome.reason), /delivered_note/);
+      assert.match(String(outcome.reason), /reports/);
+
+      assert.equal(landed(place.logPath), 0);
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the transition is never published");
+      assert.equal(after.blocked, true);
+      assert.match(String(after.block_reason), /delivered_note/);
+
+      const pending = await api<{ input_requests: Question[] }>(
+        baseUrl,
+        "GET",
+        `/v1/input-requests?job_id=${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.deepEqual(pending.input_requests, [], "a safe node asks nobody: it stops");
+    },
+  );
+
+  await parent.test(
+    "AT6 — an unsafe node whose call times out asks a person, with three options",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at6", "deliver-hangs-once");
+      const job = await jobOn("delivery-t371-at6", 3715, [delivery()], true);
+
+      const outcome = await dispatchWith(
+        createClaudeCodeDispatch,
+        place,
+        linesWithCrossingNote(),
+        { mcpCallTimeoutMs: 700 },
+      )(job.id);
+
+      // Asking is a successful dispatch, exactly as every other question is:
+      // what blocks the job is the write of the input request itself.
+      assert.equal(outcome.blocked, false, JSON.stringify(outcome));
+
+      assert.deepEqual(
+        mcpDeliveryLog(place.logPath).map((entry) => entry.fate),
+        ["hang"],
+        "one attempt and no more: repeating is what the flag forbids",
+      );
+
+      const asked = await api<{ input_requests: Question[] }>(
+        baseUrl,
+        "GET",
+        `/v1/input-requests?job_id=${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(asked.input_requests.length, 1, JSON.stringify(asked));
+      const question = asked.input_requests[0];
+      assert.equal(question.origin, "external_output_write");
+      assert.equal(question.auto_approvable, false);
+      assert.equal(question.node_id, "implementar");
+      assert.deepEqual(question.options, ["retry", "skip this output", "mark as done"]);
+      assert.match(question.question, /writes outside the system/);
+      assert.match(String(question.context), /delivered_note/);
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.blocked, true, "the question is what blocks it");
+      assert.equal(after.current_node_id, "implementar");
+    },
+  );
+
+  await parent.test(
+    "AT7 — answering `skip this output` moves the work with no session and no worktree",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at7", "deliver-hangs");
+      const job = await jobOn("delivery-t371-at7", 3716, [delivery()], true);
+
+      const dispatch = dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote(), {
+        mcpCallTimeoutMs: 700,
+      });
+      await dispatch(job.id);
+
+      const asked = await api<{ input_requests: Question[] }>(
+        baseUrl,
+        "GET",
+        `/v1/input-requests?job_id=${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(asked.input_requests.length, 1, JSON.stringify(asked));
+
+      await api(
+        baseUrl,
+        "PATCH",
+        `/v1/input-requests/${asked.input_requests[0].id}/answer`,
+        { answer: "skip this output", answered_by: ANSWERED_BY },
+        200,
+        token,
+      );
+
+      const sessionsBefore = place.opened.length;
+      const settled = await dispatch(job.id);
+      assert.equal(settled.blocked, false, JSON.stringify(settled));
+
+      assert.equal(
+        place.opened.length,
+        sessionsBefore,
+        "re-opening the step's session is exactly the repeat `unsafe_to_retry` forbids",
+      );
+      assert.equal(
+        mcpDeliveryLog(place.logPath).length,
+        1,
+        "and the server is not called a second time either",
+      );
+
+      const calls = await callsOf(job.id);
+      assert.equal(
+        calls.at(-1)?.outcome,
+        "skipped_by_person",
+        `the decision is recorded as what it was: ${JSON.stringify(calls)}`,
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir", "the work moves on the person's word");
+      assert.equal(after.blocked, false);
+    },
+  );
+
+  await parent.test(
+    "AT8 — answering `retry` opens a new session, and the far side still received one delivery",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const place = scratch(t, "at8", "deliver-hangs-once");
+      const job = await jobOn("delivery-t371-at8", 3717, [delivery()], true);
+
+      const dispatch = dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote(), {
+        mcpCallTimeoutMs: 700,
+      });
+      await dispatch(job.id);
+
+      const asked = await api<{ input_requests: Question[] }>(
+        baseUrl,
+        "GET",
+        `/v1/input-requests?job_id=${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(asked.input_requests.length, 1, JSON.stringify(asked));
+      await api(
+        baseUrl,
+        "PATCH",
+        `/v1/input-requests/${asked.input_requests[0].id}/answer`,
+        { answer: "retry", answered_by: ANSWERED_BY },
+        200,
+        token,
+      );
+
+      const retried = await dispatch(job.id);
+      assert.equal(retried.blocked, false, JSON.stringify(retried));
+
+      assert.equal(
+        place.opened.length,
+        2,
+        "`retry` is the one answer that legitimately redispatches: the skill never " +
+          "touched the external system, only this step did",
+      );
+      assert.equal(
+        landed(place.logPath),
+        1,
+        "RF-35: however many attempts there were, the far side accepted exactly one",
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir");
+      assert.equal(after.blocked, false);
     },
   );
 });

@@ -19,8 +19,28 @@ export declare const FIXED_BLOB: Buffer;
 /** What `read_file` answers for a given `path` argument. */
 export declare function readFileText(path: unknown): string;
 
-/** The two tools this server publishes, in the order `tools/list` gives them. */
+/** The tools this server publishes, in the order `tools/list` gives them. */
 export declare const TOOLS: readonly { readonly name: string }[];
+
+/** The tool a node's declared OUTPUT is delivered through (t371). */
+export declare const DELIVER_TOOL: string;
+
+/** One recorded attempt at {@link DELIVER_TOOL}. */
+export interface DeliveryAttempt {
+  /** `ok` when the server accepted it, `error` when it refused, `hang` when it never answered. */
+  readonly fate: 'ok' | 'error' | 'hang';
+  /** The arguments it was handed, verbatim. */
+  readonly args: Record<string, unknown>;
+}
+
+/**
+ * Every attempt at {@link DELIVER_TOOL}, in order, or `[]`.
+ *
+ * Read from the file `CARTOGRAFO_FAKE_MCP_CALL_LOG` names, and not from memory:
+ * the count has to survive the client pool closing between two dispatches,
+ * which is exactly the window a duplicate write would slip through.
+ */
+export declare function deliveryLog(logPath: string | undefined): DeliveryAttempt[];
 
 /** The revision this fake speaks. */
 export declare const PROTOCOL_VERSION: string;
@@ -32,4 +52,8 @@ export declare const HANGS: symbol;
  * Answers one message: the response, `null` for a notification, or
  * {@link HANGS} for the modes whose whole point is that nothing comes back.
  */
-export declare function handle(message: unknown, mode?: string): object | null | symbol;
+export declare function handle(
+  message: unknown,
+  mode?: string,
+  logPath?: string,
+): object | null | symbol;

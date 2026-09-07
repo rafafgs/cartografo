@@ -762,3 +762,142 @@ test('t268 AT — `blockForOutputSchemaRefusal` names the node, the session and 
   }
   assert.deepEqual(posted.actor, { type: 'system', ref: 'runner' });
 });
+
+/* -------------------------------------------------------------------------- */
+/* t371 — the declared outputs leave BEFORE the transition is published        */
+/*                                                                            */
+/* `advance()` already held the bench advance and the transition in one        */
+/* function on purpose (t273): doing it beside the call site would make the    */
+/* order a convention, and a convention is what a second caller gets wrong.    */
+/* The delivery joins that same function, between the two, for the identical   */
+/* reason — and it inherits, for free, the five conditions `dispatch.ts`       */
+/* already checks before `advance()` is called at all. A report the control    */
+/* plane REFUSED never reaches this function, so it structurally cannot        */
+/* deliver anything outside (RF-33).                                           */
+/* -------------------------------------------------------------------------- */
+
+/** What one call to the injected write step was handed. */
+interface Delivered {
+  nodeId: string;
+  sessionId: number;
+  report: Record<string, unknown> | null;
+}
+
+/**
+ * A write step that records what it was asked to deliver and answers as told.
+ *
+ * The real one is `src/mcp/write-external-outputs.ts` and has its own suite.
+ * What THIS file is about is the order and the three answers, so the step is
+ * injected: a case that has to prove "the transition never precedes the
+ * delivery" needs to watch both from the same place.
+ */
+function writeStep(answer: { kind: 'written' } | { kind: 'blocked'; reason: string } | { kind: 'asked' }): {
+  delivered: Delivered[];
+  writeExternalOutputs: NonNullable<Parameters<typeof ReportModule.advance>[6]>;
+} {
+  const delivered: Delivered[] = [];
+  return {
+    delivered,
+    writeExternalOutputs: (_call, _job, resolved, sessionId, report) => {
+      delivered.push({ nodeId: resolved.node.id, sessionId, report });
+      return Promise.resolve(answer);
+    },
+  };
+}
+
+test('t371 AT-R1 — the delivery runs before edge selection, and a written one still transitions', async () => {
+  const { advance } = await loadReport();
+  const { sent, call } = recorder();
+  const step = writeStep({ kind: 'written' });
+
+  const output = ['```resultado', '{"resultado":"retrabalho","proposal":"x"}', '```'].join('\n');
+  const reason = await advance(
+    call,
+    JOB,
+    node(TWO_EDGES),
+    31,
+    output,
+    undefined,
+    step.writeExternalOutputs,
+  );
+
+  assert.equal(reason, null);
+  assert.deepEqual(step.delivered, [
+    { nodeId: JOB.current_node_id, sessionId: 31, report: { resultado: 'retrabalho', proposal: 'x' } },
+  ]);
+  assert.equal(sent.length, 1, JSON.stringify(sent));
+  assert.equal(sent[0].route, '/v1/jobs/7/transitions', 'the transition is the LAST thing to happen');
+});
+
+test('t371 AT-R2 — a delivery that could not be made stops the work and publishes no transition', async () => {
+  const { advance } = await loadReport();
+  const { sent, call } = recorder();
+  const step = writeStep({ kind: 'blocked', reason: 'the folder is read-only' });
+
+  const reason = await advance(
+    call,
+    JOB,
+    node([{ from: 'revisao', to: 'entrega', condition: 'sempre' }]),
+    31,
+    'anything at all',
+    undefined,
+    step.writeExternalOutputs,
+  );
+
+  assert.equal(
+    reason,
+    'the folder is read-only',
+    'the block reason comes back the way a stale bench already does, for the caller to hand on',
+  );
+  assert.deepEqual(sent, [], 'the transition is never published while a declared output is unwritten');
+});
+
+test('t371 AT-R3 — a delivery that ASKED returns null and never reaches edge selection', async () => {
+  const { advance } = await loadReport();
+  const { sent, call } = recorder();
+  const step = writeStep({ kind: 'asked' });
+
+  const reason = await advance(
+    call,
+    JOB,
+    node(TWO_EDGES),
+    31,
+    ['```resultado', '{"resultado":"retrabalho"}', '```'].join('\n'),
+    undefined,
+    step.writeExternalOutputs,
+  );
+
+  assert.equal(reason, null, 'asking is a successful dispatch, exactly as every other question is');
+  assert.deepEqual(
+    sent,
+    [],
+    'no transition and no second question: the job is blocked by the write of the input request itself',
+  );
+});
+
+test('t371 AT-R4 — a node with no way out still delivers: the shape of the report decides, not the topology', async () => {
+  const { advance } = await loadReport();
+  const { sent, call } = recorder();
+  const step = writeStep({ kind: 'written' });
+
+  await advance(call, JOB, node([]), 31, 'anything at all', undefined, step.writeExternalOutputs);
+
+  assert.equal(step.delivered.length, 1, 'a final node that declares a delivery still makes it');
+  assert.deepEqual(sent, []);
+});
+
+test('t371 AT-R5 — a dispatch wired without the write step behaves exactly as it did before', async () => {
+  const { advance } = await loadReport();
+  const { sent, call } = recorder();
+
+  await advance(
+    call,
+    JOB,
+    node([{ from: 'revisao', to: 'entrega', condition: 'sempre' }]),
+    31,
+    'the session chose nothing',
+  );
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/jobs/7/transitions');
+});

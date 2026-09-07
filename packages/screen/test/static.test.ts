@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -168,4 +168,79 @@ test('t458 AT3 — GET /style.css 200s as CSS and carries the token set', async 
   const body = served.body.toString('utf8');
   assert.ok(body.includes(':root'), '/style.css has no :root token block');
   assert.ok(body.includes('--radius'), '/style.css has no --radius token');
+});
+
+/**
+ * t484 AC1 — the returning-browser bug. `serveStatic` answered `/style.css`
+ * with no validator at all (`static.ts:88-109` before this ticket), so a
+ * browser holding a heuristically-cached copy from before t458 never asked
+ * again. An `etag` closes that: a conditional request that echoes it back
+ * gets a `304` instead of a fresh body.
+ */
+test('t484 AC1 — GET /style.css carries an etag, and a matching If-None-Match gets 304', async () => {
+  const { serveStatic } = await loadStatic();
+
+  const first = await serveStatic('/style.css');
+  assert.equal(first.status, 200);
+  const etag = first.headers.etag;
+  assert.ok(etag, '/style.css has no etag header');
+  assert.match(etag, /^"[0-9a-f]+"$/, 'etag is not a quoted hex digest');
+
+  const revalidated = await serveStatic('/style.css', { 'if-none-match': etag });
+  assert.equal(revalidated.status, 304);
+  assert.equal(revalidated.body.length, 0, '304 must carry an empty body');
+  assert.equal(revalidated.headers.etag, etag);
+  assert.equal(
+    revalidated.headers['content-type'],
+    undefined,
+    '304 has no body, so it has no content-type either',
+  );
+});
+
+/**
+ * t484 AC2 — the validator has to be content-derived, not a constant: a file
+ * whose bytes change on disk must report a different `etag`, and a browser
+ * still holding the old one must get the new bytes back, not a stale 304.
+ *
+ * The fixture is written into `public/` (the only directory `serveStatic`
+ * will answer from) and removed in a `finally`, so a failed assertion never
+ * leaves the repository dirty.
+ */
+test('t484 AC2 — changing a static file on disk changes its etag', async () => {
+  const { PUBLIC_DIR, serveStatic } = await loadStatic();
+
+  const fixtureName = 't484-etag-fixture.json';
+  const fixturePath = path.join(PUBLIC_DIR, fixtureName);
+  writeFileSync(fixturePath, '{"version":1}');
+
+  try {
+    const first = await serveStatic(`/${fixtureName}`);
+    assert.equal(first.status, 200);
+    const firstEtag = first.headers.etag;
+    assert.ok(firstEtag, 'fixture has no etag');
+
+    writeFileSync(fixturePath, '{"version":2}');
+
+    const second = await serveStatic(`/${fixtureName}`, { 'if-none-match': firstEtag });
+    assert.equal(second.status, 200, 'stale If-None-Match must not short-circuit fresh bytes');
+    assert.equal(second.body.toString('utf8'), '{"version":2}');
+    assert.notEqual(second.headers.etag, firstEtag, 'etag did not change with the file bytes');
+  } finally {
+    unlinkSync(fixturePath);
+  }
+});
+
+/**
+ * t484 FR3/FR4 — `no-cache` (cacheable, but must revalidate), never `no-store`,
+ * and uniform across every file `public/` serves, not special-cased to
+ * `/style.css`.
+ */
+test('t484 FR3/FR4 — static files carry cache-control: no-cache, never no-store', async () => {
+  const { serveStatic } = await loadStatic();
+
+  for (const requested of ['/style.css', '/graph-editor.html']) {
+    const served = await serveStatic(requested);
+    assert.equal(served.status, 200, `${requested} did not come back as a file`);
+    assert.equal(served.headers['cache-control'], 'no-cache', `${requested}'s cache-control`);
+  }
 });

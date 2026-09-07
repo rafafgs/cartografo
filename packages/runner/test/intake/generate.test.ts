@@ -188,6 +188,7 @@ test('AT3a — a class that is not registered is refused, with no session and no
         adapter,
         request: REQUEST,
         className: CLASS_NAME,
+        projectId: 2,
         workingDir,
         timeoutSeconds: 60,
         envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS })),
@@ -222,6 +223,7 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
     adapter,
     request: REQUEST,
     className: CLASS_NAME,
+    projectId: 2,
     workingDir: scratch(t, 'good-session'),
     timeoutSeconds: 60,
     envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
@@ -230,8 +232,8 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
   assert.equal(adapter.sessions, 1, 'exactly one agent session decomposes the request');
   assert.deepEqual(
     client.calls,
-    [{ class: CLASS_NAME, request: REQUEST, items: ITEMS }],
-    'the body is the class, the request and the items the session wrote, verbatim',
+    [{ class: CLASS_NAME, request: REQUEST, items: ITEMS, project_id: 2 }],
+    'the body is the class, the request, the items and the project the session ran under, verbatim',
   );
   assert.equal(draft.id, 7, 'the created draft is what comes back');
   assert.equal(draft.status, 'pending');
@@ -265,6 +267,7 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
     adapter: fakeAdapter(),
     request: REQUEST,
     className: CLASS_NAME,
+    projectId: 1,
     workingDir: scratch(t, 'session-with-tier'),
     timeoutSeconds: 60,
     envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: triaged })),
@@ -272,7 +275,7 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
 
   assert.deepEqual(
     client.calls,
-    [{ class: CLASS_NAME, request: REQUEST, items: triaged }],
+    [{ class: CLASS_NAME, request: REQUEST, items: triaged, project_id: 1 }],
     'the items go up exactly as the session wrote them, tier included',
   );
   assert.deepEqual(
@@ -296,6 +299,7 @@ test('AT3c — a session that did not complete posts nothing', async (t) => {
         adapter: fakeAdapter(),
         request: REQUEST,
         className: CLASS_NAME,
+        projectId: 1,
         workingDir: scratch(t, 'dead-session'),
         timeoutSeconds: 60,
         envOverrides: {
@@ -327,6 +331,7 @@ test('AT3d — a missing, unreadable or empty answer posts nothing', async (t) =
       adapter: fakeAdapter(),
       request: REQUEST,
       className: CLASS_NAME,
+      projectId: 1,
       workingDir: scratch(t, label),
       timeoutSeconds: 60,
       envOverrides,

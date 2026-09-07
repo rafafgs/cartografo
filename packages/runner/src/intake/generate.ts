@@ -88,6 +88,8 @@ export interface IntakeGenerationOptions {
   request: string;
   /** The registered class the batch will run over. */
   className: string;
+  /** The project the class was checked against, and the draft is created in. */
+  projectId: number;
   /** Scratch directory the session runs in, and writes its answer to. */
   workingDir: string;
   /** Wall-clock limit of the session. Default: 15 minutes. */
@@ -242,6 +244,7 @@ export async function generateIntakeDraft(options: IntakeGenerationOptions): Pro
     class: options.className,
     request: options.request,
     items: items,
+    project_id: options.projectId,
   });
   log(`draft ${draft.id} written as "${draft.status}"`);
 

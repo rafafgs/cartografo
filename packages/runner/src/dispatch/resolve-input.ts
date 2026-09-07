@@ -36,8 +36,12 @@
 
 import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
 import type { ClaudeCodeDispatchOptions, Job } from './options.ts';
-import { NO_EXECUTOR_ENVIRONMENT } from './resolve-executor-environment.ts';
+import {
+  NO_EXECUTOR_ENVIRONMENT,
+  type SimilarClass,
+} from './resolve-executor-environment.ts';
 import type { ResolvedNode } from './resolve-node.ts';
+import { similarity } from '../synthesizer/similarity.ts';
 
 /** The envelope `GET /v1/jobs/:id/context` answers with. */
 interface ContextEnvelope {
@@ -62,6 +66,94 @@ export function createNodeInputResolver(
   return async (job: Job): Promise<Record<string, unknown>> =>
     (await call<ContextEnvelope>(withProject(`/v1/jobs/${job.id}/context`, projectId), 'GET'))
       .input;
+}
+
+/** A registered class, as `GET /v1/classes` answers it. */
+interface ClassEntry {
+  class: string;
+  /** `null` for a lineage with no version yet; such a class cannot be scored. */
+  current_version_id: string | null;
+}
+
+/** One graph version, in the only part the ranking reads. */
+interface VersionEnvelope {
+  graph_version: { snapshot?: { metadata?: { name?: unknown; description?: unknown } } };
+}
+
+/**
+ * How many precedents a session is shown. The synthesizer's own number.
+ *
+ * Five, because this is a suggestion and not a search: a person being
+ * interviewed about their problem can weigh a handful of "is it one of these?"
+ * and cannot weigh twenty.
+ */
+const PRECEDENT_LIMIT = 5;
+
+/**
+ * Builds `input.environment.similar_classes` — the precedents this installation
+ * already knows (t360, FR4; RF-14, D8).
+ *
+ * The interview's first question is what the person calls their problem, and
+ * D8 makes that the class id. A class that is already registered may be the
+ * same problem under a different name — or a different problem that reads
+ * alike — so the answer this produces is a SUGGESTION the session offers as its
+ * recommendation, and never a decision it takes.
+ *
+ * The signal is `metadata.name` + `metadata.description` of the class's current
+ * version, never the class id on its own: an id like `map-design` is two tokens,
+ * and two tokens against a sentence produce a score that says nothing. It is the
+ * same rule `synthesizer/synthesize.ts` scores precedents by, and the scoring
+ * itself is that package's `similarity.ts`, imported rather than re-ported.
+ *
+ * **Nothing here refuses.** A class with no current version, a version that will
+ * not read, a `GET /v1/classes` that answers 500 — each is skipped, and a
+ * listing that fails entirely is an empty list. This is context, and an
+ * interview that could not open because a suggestion could not be computed
+ * would have broken the thing the suggestion was meant to help.
+ *
+ * @param call The dispatch's control-plane client — the same one every other
+ *   route of the dispatch goes through, so the credential has one owner.
+ * @param projectId Project the classes are read in (t410, D25); absent means the
+ *   server's default project.
+ * @returns A function of the work that answers its precedents, best first.
+ */
+export function createClassPrecedentsResolver(
+  call: ControlPlaneCall,
+  projectId?: number,
+): (job: Job) => Promise<SimilarClass[]> {
+  return async (job: Job): Promise<SimilarClass[]> => {
+    let classes: ClassEntry[];
+    try {
+      classes = (
+        await call<{ classes: ClassEntry[] }>(withProject('/v1/classes', projectId), 'GET')
+      ).classes;
+    } catch {
+      return [];
+    }
+
+    const declaration = `${job.title} ${job.body ?? ''}`;
+    const scored: SimilarClass[] = [];
+
+    for (const entry of classes) {
+      if (entry.current_version_id === null) continue;
+
+      let metadata: { name?: unknown; description?: unknown };
+      try {
+        const route = `/v1/graph-versions/${encodeURIComponent(entry.current_version_id)}`;
+        const version = await call<VersionEnvelope>(withProject(route, projectId), 'GET');
+        metadata = version.graph_version.snapshot?.metadata ?? {};
+      } catch {
+        continue;
+      }
+
+      const name = typeof metadata.name === 'string' ? metadata.name : '';
+      const description = typeof metadata.description === 'string' ? metadata.description : '';
+      const score = similarity(declaration, `${name} ${description}`);
+      if (score > 0) scored.push({ class: entry.class, name, description, score });
+    }
+
+    return scored.sort((a, b) => b.score - a.score).slice(0, PRECEDENT_LIMIT);
+  };
 }
 
 /**

@@ -468,6 +468,7 @@ test('AT4 — createIntake posts the body to /v1/intake and resolves the draft',
     class: 'software-development',
     request: 'fechar a camada de intake',
     items: INTAKE_ITEMS,
+    project_id: 3,
   });
 
   assert.deepEqual(calls, [
@@ -478,6 +479,7 @@ test('AT4 — createIntake posts the body to /v1/intake and resolves the draft',
         class: 'software-development',
         request: 'fechar a camada de intake',
         items: INTAKE_ITEMS,
+        project_id: 3,
       },
     },
   ]);
@@ -500,6 +502,7 @@ test('AT4 — a refused write carries the status, like every other call of this 
         class: 'unregistered',
         request: 'anything at all',
         items: INTAKE_ITEMS,
+        project_id: 3,
       }),
     (error: unknown) => {
       assert.ok(error instanceof ControlPlaneClientError);
@@ -508,6 +511,23 @@ test('AT4 — a refused write carries the status, like every other call of this 
       return true;
     },
   );
+});
+
+test('AT4/t421 — getClasses asks for the project and gives the classes back unwrapped', async () => {
+  const { ControlPlaneClient } = await loadClient();
+
+  const classes = [{ class: 'software-development' }, { class: 'nota-curta' }];
+  const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { classes } }));
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl });
+
+  const result = await client.getClasses(3);
+
+  assert.deepEqual(
+    calls,
+    [{ url: `${BASE_URL}/v1/classes?project_id=3`, method: 'GET', body: undefined }],
+    'the project travels as the same query filter getSettings and listReleasedJobs use',
+  );
+  assert.deepEqual(result, classes, 'the classes come out of `{classes}`, unwrapped');
 });
 
 test('AT4 — the client has no confirm, amend or discard: those are the human gate', async () => {

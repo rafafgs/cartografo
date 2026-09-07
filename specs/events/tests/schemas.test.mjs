@@ -46,8 +46,13 @@ export const TABLE = {
   },
   'job.unblocked': {
     entity: 'job',
+    // `reason` came in with the board's unblock action (t339): a person who
+    // releases a held job says why, and that sentence is the whole point of the
+    // action. Optional, and never required, because the control plane's own
+    // unblock-on-answer has no reason to state — the answer is the fact — and
+    // demanding one there would be inventing text nobody said.
     required: [],
-    optional: [],
+    optional: ['reason'],
   },
   'job.amended': {
     entity: 'job',
@@ -202,10 +207,12 @@ export const TABLE = {
   },
   // The 19th type came in with D21 (t245): the control plane declares the
   // execution finished, and it is the control plane — it alone (D1) — that
-  // asserts that fact. No payload, for the same reason as `job.unblocked`: the
-  // envelope's `execution_id`, `entity.id` and `occurred_at` already say which
-  // round is meant and when it ended, and one more field would be data repeated
-  // inside the event itself.
+  // asserts that fact. No payload because the envelope's `execution_id`,
+  // `entity.id` and `occurred_at` already say which round is meant and when it
+  // ended, and one more field would be data repeated inside the event itself.
+  // `job.unblocked` used to be cited here as the precedent; it stopped being
+  // payload-free in t339, when a human unblock gained a reason to state. The
+  // reasoning is the one that outlived the example.
   'execution.finished': {
     entity: 'execution',
     required: [],

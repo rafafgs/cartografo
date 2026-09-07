@@ -1,0 +1,3 @@
+### t462 (developing, unverified)
+
+- Did a real end-to-end visual check (not just unit tests): started the app on non-default ports (4517/4518 were already held by other worktrees' running instances — left those untouched), seeded a live mid-draft interview via the real API with title/description fields, and confirmed via curl that /interview/:id and /style.css actually render <span class="display-name">, <code class="secondary-token">, <span class="exit-sentence"> and <p class="map-progress"> with the --soft token applied — but no headless browser was available in this environment (no chromium-cli/playwright), so the DoD's literal 'eyes on the page' visual pass is still owed to a human, same caveat t458/t465 recorded.

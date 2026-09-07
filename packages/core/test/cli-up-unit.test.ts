@@ -374,6 +374,59 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
   );
 });
 
+test('t449 AT1 — resolveSibling finds each delegator script in `up`\'s own package, never on `PATH`', async () => {
+  const { RUNNER_BINARY, SCREEN_BINARY, resolveSibling } = await loadUp();
+
+  // A caller-supplied directory is used verbatim: the mapping this function
+  // owns is command name -> script file name, and nothing else.
+  const elsewhere = path.join(path.sep, 'opt', 'cartografo', 'bin');
+  assert.equal(
+    resolveSibling(SCREEN_BINARY, elsewhere),
+    path.join(elsewhere, 'cartografo-screen.mjs'),
+    'the screen is its delegator script inside the given bin/',
+  );
+  assert.equal(
+    resolveSibling(RUNNER_BINARY, elsewhere),
+    path.join(elsewhere, 'cartografo-runner.mjs'),
+    'and so is the runner',
+  );
+
+  // With no directory it is `packages/core/bin/`, at the fixed offset from
+  // `up.ts` itself — the same relative-offset trick `mapDesignBundle` plays for
+  // `factory-graphs/`, and the whole reason a bare-path invocation works.
+  const shipped = path.resolve(import.meta.dirname, '..', 'bin');
+  for (const command of [SCREEN_BINARY, RUNNER_BINARY]) {
+    const resolved = resolveSibling(command);
+    assert.ok(path.isAbsolute(resolved), `${command} has to resolve to an absolute path`);
+    assert.equal(path.dirname(resolved), shipped, `${command} is looked for in this package's own bin/`);
+    assert.ok(existsSync(resolved), `artifact does not exist yet: ${resolved}`);
+  }
+
+  // Anything else is a caller's mistake, and the message has to say which.
+  assert.throws(
+    () => resolveSibling('cartografo-mcp'),
+    /cartografo-mcp/,
+    'a command with no delegator of ours throws, naming it',
+  );
+});
+
+test('t449 AT2 — a child that could not start names the command AND the path that was tried', async () => {
+  const { MISSING_SIBLING, SCREEN_BINARY, spawnFailureLine } = await loadUp();
+
+  const tried = path.join(path.sep, 'opt', 'cartografo', 'bin', 'cartografo-screen.mjs');
+
+  // The two failures a reader must be able to tell apart: nothing at the path,
+  // and something there that `spawn` refused.
+  for (const reason of [MISSING_SIBLING, 'EACCES: permission denied']) {
+    const line = spawnFailureLine(SCREEN_BINARY, tried, reason);
+    assert.ok(line.includes(SCREEN_BINARY), `the command is missing from: ${line}`);
+    assert.ok(line.includes(tried), `the resolved path is missing from: ${line}`);
+    assert.ok(line.includes(reason), `the reason is missing from: ${line}`);
+    assert.ok(line.endsWith('\n'), 'one line, terminated');
+    assert.equal(line.trimEnd().split('\n').length, 1, `one line and not a dump: ${line}`);
+  }
+});
+
 test('t405 FR1 — the readiness line `up` prints carries the same five keys as before', async (t) => {
   const run = await runSeamed(t, { browser: false, runner: false, screen: false });
 

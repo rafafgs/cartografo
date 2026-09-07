@@ -122,7 +122,20 @@ test('t468 — a failing C4 reaps its own process group', async (parent) => {
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once('exit', (code, signal) => resolve({ code, signal }));
   });
-  const outcome = await Promise.race([exited, delay(HARNESS_BOUND_MS).then(() => null)]);
+  // The ceiling is disarmed AFTER the race, never from inside it: a timer left
+  // pending holds this process's event loop for the whole remainder of the bound
+  // — a file that does its work in 3s and then sits there for 17 more — but an
+  // abort chained onto `exited` would settle in the same microtask batch as the
+  // race itself and could hand back a timeout the harness never had.
+  const ceiling = new AbortController();
+  const outcome = await Promise.race([
+    exited,
+    delay(HARNESS_BOUND_MS, null, { signal: ceiling.signal }).then(
+      () => null,
+      () => null,
+    ),
+  ]);
+  ceiling.abort();
 
   // Read the side channel BEFORE anything is cleaned up: it is the only record
   // of the two pids that survives the harness, and both assertions need it.

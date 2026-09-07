@@ -1,0 +1,94 @@
+# Release: turns a `vX.Y.Z` tag into a provenance-attested publish of the
+# `cartografo` package (D23 4/4, t251).
+#
+# t216 (D23) settled that publishing to npm stays Rafael's own act, never the
+# plantão's. This workflow makes that gate mechanical rather than merely
+# documented: `workflow_dispatch` — the only trigger anyone but Rafael can
+# reach by clicking a button — is UNCONDITIONALLY a `--dry-run`, with no input
+# anywhere that turns it into a real publish. The only path that ever
+# publishes for real is a `push` of a tag matching `v*`, and pushing a tag is
+# Rafael's act by construction.
+#
+# Follows `ci.yml`'s own pattern: `actions/checkout@v4`, `actions/setup-node@v4`
+# with npm's own cache, and a `workflow_dispatch` fallback for the same reason
+# `ci.yml` carries one — the push that creates a branch does not trigger that
+# branch's first run (t191/t217's history), and a manual run is also how this
+# job's dry run gets verified without waiting for a real tag.
+#
+# Both the dry run and the real publish share one tarball, built with the
+# exact `npm pack` invocation `packages/core/test/pack-install.e2e.test.ts`
+# already proved (t248) bundles all six commands with no `tsx`.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # What `--provenance` needs to mint its GitHub OIDC attestation.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+          # Needed so publishing below picks up authentication from
+          # `NODE_AUTH_TOKEN` rather than `~/.npmrc`.
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      # Same four gates CI runs, all green before pack or publish ever runs.
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # A stale or wrong tag must never publish a version that is not what is
+      # actually committed. Only meaningful on a tag push: `workflow_dispatch`
+      # carries no tag at all.
+      - name: Tag matches package.json version
+        if: github.event_name == 'push'
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./packages/core/package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "Tag $GITHUB_REF_NAME (version $tag_version) does not match packages/core/package.json's version ($pkg_version)." >&2
+            exit 1
+          fi
+
+      # The one tarball both publish steps below publish, built the same way
+      # packages/core/test/pack-install.e2e.test.ts already does.
+      - run: npm pack --workspace cartografo --pack-destination "$RUNNER_TEMP"
+
+      - name: Locate tarball
+        id: tarball
+        run: echo "path=$(ls "$RUNNER_TEMP"/cartografo-*.tgz)" >> "$GITHUB_OUTPUT"
+
+      # Manual trigger, from anyone: always a dry run. No input anywhere turns
+      # this into a real publish — see this file's header.
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish "${{ steps.tarball.outputs.path }}" --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Tag push, tag already checked against packages/core/package.json
+      # above: the one path that actually publishes.
+      - name: Publish
+        if: github.event_name == 'push'
+        run: npm publish "${{ steps.tarball.outputs.path }}" --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "The cartografo control plane: sole owner of the embedded SQLite database and of the REST/JSON API (D1, D17).",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafafgs/cartografo.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/rafafgs/cartografo#readme",
+  "bugs": {
+    "url": "https://github.com/rafafgs/cartografo/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18.0"

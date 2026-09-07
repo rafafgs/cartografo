@@ -21,14 +21,47 @@ import { parseFencedJson } from './parse-fenced-json.ts';
 /** The fence a session opens when it needs a human. */
 const FENCE = 'input-request';
 
+/**
+ * One control of a batched question (t480).
+ *
+ * `options` began as one-click labels for ONE decision, and for one decision it
+ * stays exactly that. A step of the interview asks several things at once —
+ * measured at seventeen turns for four of seven steps — and a step's worth of
+ * decisions is a form: an ordered list of named controls, answered as a single
+ * JSON document keyed by each field's `id`.
+ *
+ * The two shapes travel on the same key and are told apart by what the items
+ * are, which is why they can both be permanent: nothing has to be migrated, and
+ * a reader that only knows labels sees a list it does not recognise rather than
+ * a key that vanished.
+ */
+export interface Field {
+  /** The key this field's value carries in the answer document. */
+  id: string;
+  /** What the person reads beside the control. */
+  label: string;
+  /** choice: pick one. multi: pick any number. free_text: type it. */
+  kind: 'choice' | 'multi' | 'free_text';
+  /** What there is to pick from, for a `choice` or a `multi`. */
+  options?: string[];
+  /** What the agent would pick. `postSessionQuestion` derives the default from these. */
+  recommended?: string | string[];
+}
+
+/** The three controls a field may be. */
+const FIELD_KINDS: readonly string[] = ['choice', 'multi', 'free_text'];
+
 /** What a session needs a human to decide. Only `question` is required. */
 export interface InputRequest {
   /** What is being asked. */
   question: string;
   /** Background the human needs to answer it. */
   context?: string;
-  /** Discrete choices, when the answer is a pick rather than prose. */
-  options?: string[];
+  /**
+   * What is being decided: discrete choices for one decision, or the fields of
+   * a whole step asked at once (t480).
+   */
+  options?: string[] | Field[];
   /** What the agent would do, as an imperative action. */
   recommendation?: string;
   /** The answer that applies if the human simply accepts. */
@@ -40,6 +73,43 @@ function optionalText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed === '' ? undefined : value;
+}
+
+/** Reads a list of non-empty strings, or `undefined` when it is not one. */
+function optionalStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  if (!value.every((item) => typeof item === 'string' && item.trim() !== '')) return undefined;
+  return [...(value as string[])];
+}
+
+/**
+ * Reads one item as a field, or `null` when it is not one (t480, FR3).
+ *
+ * The three keys that make a field answerable — a name for the value, a label
+ * to read, a kind of control — are required, and an item missing any of them is
+ * not something a form can draw. The two decorations are not: a malformed
+ * `options` or `recommended` costs the field those keys and nothing more,
+ * because a control with no shortcut list is still a control.
+ */
+function buildField(item: unknown): Field | null {
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+
+  const raw = item as Record<string, unknown>;
+  const id = optionalText(raw.id);
+  const label = optionalText(raw.label);
+  const kind = optionalText(raw.kind);
+  if (id === undefined || label === undefined || kind === undefined) return null;
+  if (!FIELD_KINDS.includes(kind)) return null;
+
+  const field: Field = { id: id.trim(), label: label.trim(), kind: kind as Field['kind'] };
+
+  const options = optionalStringList(raw.options);
+  if (options !== undefined) field.options = options;
+
+  const recommended = optionalText(raw.recommended) ?? optionalStringList(raw.recommended);
+  if (recommended !== undefined) field.recommended = recommended;
+
+  return field;
 }
 
 /** Builds the request from a parsed payload, or `null` if it is not answerable. */
@@ -58,9 +128,19 @@ function build(payload: unknown): InputRequest | null {
   if (context !== undefined) request.context = context;
 
   // A malformed `options` is dropped, not fatal: the question still stands, and
-  // losing the shortcut list is cheaper than losing the escalation.
-  if (Array.isArray(raw.options) && raw.options.every((item) => typeof item === 'string')) {
-    request.options = [...(raw.options as string[])];
+  // losing the shortcut list is cheaper than losing the escalation. Since t480
+  // the same rule applies one level down — an unusable FIELD is dropped and its
+  // siblings survive — and `options` only disappears when nothing in it did.
+  if (Array.isArray(raw.options)) {
+    if (raw.options.every((item) => typeof item === 'string')) {
+      // The empty array lands here too, and keeps landing here: it has always
+      // been kept rather than dropped, and it is a list of labels with nothing
+      // in it, never a form with no fields.
+      request.options = [...(raw.options as string[])];
+    } else {
+      const fields = raw.options.map(buildField).filter((field) => field !== null);
+      if (fields.length > 0) request.options = fields;
+    }
   }
 
   const recommendation = optionalText(raw.recommendation);

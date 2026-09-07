@@ -979,7 +979,10 @@ test('t480 AT11 — a hand-written `default` beside fields is ignored', async ()
     default: 'whatever the model happened to type',
   });
 
-  assert.equal(body(sent[0]).default_answer, JSON.stringify({ scope: 'a', areas: ['api', 'screen'] }));
+  assert.equal(
+    body(sent[0]).default_answer,
+    JSON.stringify({ scope: 'a', areas: ['api', 'screen'] }),
+  );
 });
 
 test('t480 AT12 — a legacy flat `options` still posts the hand-written default', async () => {

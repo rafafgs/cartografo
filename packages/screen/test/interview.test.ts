@@ -2146,3 +2146,172 @@ test('t481 AT7 — the batched form says it needs a script; the legacy one does 
     `a question that works without a script claims nothing:\n${legacy}`,
   );
 });
+
+/* ===========================================================================
+ * t492 — an interview pinned to the RETIRED contract still draws its map.
+ *
+ * A job's graph_version is frozen for the life of the job (D2, D15), so the
+ * shape a session's report is validated against is the one the pinned SKILL
+ * declared when the job was created — never the one in the source tree today.
+ * Every interview that ran before t464 flattened `{done, draft: {graph,
+ * skills}}` into `{done, graph, skills}` is therefore still reporting the
+ * nested shape, and the map column plus t460's panel were dark for all of them.
+ *
+ * The fixture below is that situation, built rather than borrowed: a class of
+ * its own whose first step pins a manifest declaring the PRE-t464 contract, so
+ * the control plane really does accept a nested report and really does refuse a
+ * flat one. Reusing the live `map-design` bundle would prove the opposite of
+ * what this test is for — that bundle has already been flattened.
+ * ======================================================================== */
+
+/** The `interview` skill's `output`, exactly as it stood before t464 flattened it. */
+const NESTED_OUTPUT_CONTRACT = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['done', 'draft'],
+  additionalProperties: false,
+  properties: {
+    done: {
+      type: 'boolean',
+      description: 'false while there is still something to ask',
+    },
+    draft: {
+      type: 'object',
+      required: ['graph', 'skills'],
+      description: 'the map as it stands after this turn, reported whole every time',
+      properties: {
+        graph: { type: 'object' },
+        skills: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  },
+};
+
+/** The class of the frozen fixture — its own, so it collides with nothing registered. */
+const FROZEN_CLASS = 'widget-triage-frozen';
+
+/**
+ * `closingDraft`'s map, re-cut as a class whose first step reports the old shape.
+ *
+ * Two edits and both are forced. The first step's MANIFEST gets the nested
+ * contract, because `session.output` is validated against the pinned skill's
+ * `output` and against nothing else (`repositories/session.ts`). The second
+ * step then loses its claim on a `note`: `unproduced_input` reads the pinned
+ * skill's `output.properties` too (`domain/graph.ts`), so a step that now
+ * reports a map produces no `note` for the step below it, and leaving that
+ * claim in place would make the class unregistrable.
+ */
+function frozenContractGraph(): RegisterMapModule.MapDraft {
+  const fixture = closingDraft();
+  fixture.graph.problem_class = FROZEN_CLASS;
+  (fixture.graph.metadata as Record<string, unknown>).name =
+    'Widget triage — frozen before the contract was flattened';
+
+  const onlyWidget = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    required: ['widget'],
+    properties: { widget: { type: 'string' } },
+  };
+  fixture.skills[0].output = NESTED_OUTPUT_CONTRACT;
+  fixture.skills[1].input = onlyWidget;
+
+  const nodes = fixture.graph.nodes as Array<Record<string, unknown>>;
+  (nodes[0].contract as Record<string, unknown>).output_schema = NESTED_OUTPUT_CONTRACT;
+  (nodes[1].contract as Record<string, unknown>).input_schema = onlyWidget;
+  return fixture;
+}
+
+/** Registers {@link frozenContractGraph} and starts an interview standing on its first step. */
+async function seedFrozenInterview(cp: RunningControlPlane): Promise<number> {
+  const { fillSkillRefs } = await loadRegisterMap();
+
+  const filled = fillSkillRefs(frozenContractGraph());
+  assert.ok(filled.ok, `the fixture's own pins have to close: ${JSON.stringify(filled)}`);
+  for (const manifest of filled.manifests) {
+    const registered = await api(cp, 'POST', '/v1/skills', manifest);
+    assert.equal(registered.status, 201, `registering ${manifest.id}: ${registered.status}`);
+  }
+
+  const version = await api<{ graph_version: { id: string } }>(
+    cp,
+    'POST',
+    '/v1/graphs',
+    filled.graph,
+  );
+  assert.equal(version.status, 201, `POST /v1/graphs: ${JSON.stringify(version.body)}`);
+
+  const created = await createJob(cp, {
+    title: 'how I triage a widget',
+    body: 'Every week I look at the widgets that came in.',
+    entry_node_id: 'triage',
+    graph_version_id: version.body.graph_version.id,
+    widget: 'a widget that came in',
+  });
+  return created.id;
+}
+
+/* ================================================================= AT7 */
+
+test('t492 AT7 — a map reported under the retired `draft` key reaches the page, panel and all', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const { renderMapDocument, renderStepProgress } = await loadMapDocument();
+
+  const jobId = await seedFrozenInterview(cp);
+  const draft = closingDraft();
+
+  // Two turns, written the way job 5 wrote its twenty: the whole map nested one
+  // level under `draft`, every time. The first settled no manifest yet.
+  await reportFrom(cp, jobId, 'triage', {
+    done: false,
+    draft: { graph: draft.graph, skills: [] },
+  });
+  await reportFrom(cp, jobId, 'triage', {
+    done: false,
+    draft: { graph: draft.graph, skills: draft.skills },
+  });
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+
+  assert.equal(
+    columnOf(page.html, 'map'),
+    renderStepProgress(draft.graph as MapDocumentModule.MapDocumentGraph) +
+      renderMapDocument(
+        draft.graph as MapDocumentModule.MapDocumentGraph,
+        draft.skills as MapDocumentModule.MapDocumentManifest[],
+      ),
+    'the map column draws what the two nested turns accumulated',
+  );
+
+  // The second half of the same failure: t460's panel keys off the same
+  // `conversation.draft`, so it was dark for exactly the same reason. Neither
+  // signal on its own proves the other did not quietly stay broken.
+  const panel = columnOf(page.html, 'map-progress');
+  assert.ok(
+    panel.includes('If this map were registered right now:'),
+    `the progress panel un-blocks with the map:\n${panel}`,
+  );
+});
+
+/* ================================================================= AT8 */
+
+test('t492 AT8 — an interview with nothing completed still draws nothing at all', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const jobId = await seedFrozenInterview(cp);
+
+  const page = await openPage(screen, `/interview/${jobId}`);
+  assert.equal(page.status, 200);
+  assert.ok(
+    columnOf(page.html, 'map').includes('nothing to draw yet'),
+    `no completed session is still no map:\n${columnOf(page.html, 'map')}`,
+  );
+  assert.equal(
+    columnOf(page.html, 'map-progress').trim(),
+    '',
+    'and a map nobody drafted is a map with nothing to judge',
+  );
+});

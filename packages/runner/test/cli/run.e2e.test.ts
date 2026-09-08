@@ -1727,17 +1727,23 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
     // Two full intervals with the loop turning: a runner that only reached
     // readiness and then died would prove nothing about "still comes up".
     await delay(500);
+
+    // Read BEFORE the stop since t491: a runner that exits cleanly deregisters
+    // itself, so `GET /v1/runners` after the stop answers "not present" for the
+    // healthy case too — which is not what this assertion is about. Up, with
+    // its probe having failed, is exactly the moment the claim is made about.
+    assert.equal(
+      await isPaired(runnerId),
+      true,
+      'a failed probe stopped the runner from being a runner at all',
+    );
+
     await runner.stop();
 
     assert.equal(
       (await catalogs()).some((entry) => entry.engine === 'codex'),
       false,
       'the catalog went out although the CLI the models belong to never answered',
-    );
-    assert.equal(
-      await isPaired(runnerId),
-      true,
-      'a failed probe stopped the runner from being a runner at all',
     );
     assert.ok(
       logged.some((line) => line.includes('codex')),

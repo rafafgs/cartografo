@@ -199,6 +199,48 @@ const SESSION_COMPLETED = 'completed';
 const MAP_KEYS = ['graph', 'skills'] as const;
 
 /**
+ * The wrapper the interview reported its map under BEFORE t464 flattened it.
+ *
+ * Not history: a job's `graph_version` is frozen for its whole life (D2, D15),
+ * so the shape a session's report was validated against is the one the pinned
+ * skill declared when the job was created — and every interview that ran before
+ * t464 is pinned to a manifest whose `output` REQUIRED `{done, draft: {graph,
+ * skills}}`. Those reports are sitting in the table, unreprocessable by design,
+ * and a projection that only reads the flat shape answers `null` for all of
+ * them (t492).
+ */
+const RETIRED_MAP_WRAPPER = 'draft';
+
+/**
+ * What one completed session said about one map key, if anything.
+ *
+ * The precedence is per key and evaluated independently, so a walk may cross
+ * the two contracts and still accumulate correctly: the top level first,
+ * because that is what is registered today, then the retired wrapper. A report
+ * that names the key at neither place answers `undefined`, which is this loop's
+ * long-standing "this turn said nothing about it" — never `null`, which is a
+ * value a turn can really report and which overwrites like any other.
+ *
+ * The both-at-once case cannot arise through the current contract, whose
+ * `additionalProperties: false` refuses a report carrying `draft` at all. It is
+ * pinned anyway, and it is pinned to the top level: given a choice, the answer
+ * is the one the registered contract asks for.
+ *
+ * @param output The session's stored report.
+ * @param key One of {@link MAP_KEYS}.
+ * @returns The reported value, or `undefined` when this turn named neither.
+ */
+function reportedValue(output: Record<string, unknown>, key: string): unknown {
+  if (output[key] !== undefined) return output[key];
+  const nested = output[RETIRED_MAP_WRAPPER];
+  // A `draft` that is not a plain object — `null`, a string, an array — is not
+  // a wrapper and is read as silence. Nothing valid ever reported one, and
+  // throwing over it would take the whole page down for one malformed row.
+  if (!isObject(nested)) return undefined;
+  return nested[key];
+}
+
+/**
  * The key whose absence means there is no map at all.
  *
  * `skills` alone is not a map — `register-map.ts` and `map-document.ts` both
@@ -241,10 +283,12 @@ function byClosingTime(a: ProjectedSessionState, b: ProjectedSessionState): numb
  *    in closing order, one independent key at a time (t464). Completed only: an
  *    unfinished session's report is not a fact yet, and a session that named
  *    neither key — `deliver`'s own `{bundle, checked, note}`, say — moves
- *    neither. Not the last session's own report: since the interview stopped
- *    reprinting its manifests every turn, "what the last turn printed" and
- *    "what the interview has settled" are two different answers, and the page
- *    owes the second one;
+ *    neither. Read from wherever the session really reported it — the top level
+ *    the registered contract asks for, or the retired `draft` wrapper a job
+ *    frozen against the pre-t464 contract still writes (t492). Not the last
+ *    session's own report: since the interview stopped reprinting its manifests
+ *    every turn, "what the last turn printed" and "what the interview has
+ *    settled" are two different answers, and the page owes the second one;
  * 4. `done` — passed through from the job's own projection;
  * 5. `thinking` — nothing to answer, not finished, and a session is open;
  * 6. `partial` — that same session's own `partial_text`, under exactly the
@@ -315,8 +359,9 @@ export function buildConversation(sources: ConversationSources): Conversation {
       // `undefined` is "this turn said nothing about it" and keeps what stands;
       // a `null` the session really reported is a value like any other, and
       // overwriting with it is what the turn asked for.
-      if (output[key] === undefined) continue;
-      map[key] = output[key];
+      const value = reportedValue(output, key);
+      if (value === undefined) continue;
+      map[key] = value;
     }
   }
   const draft: unknown = map[GRAPH_KEY] === undefined ? null : map;

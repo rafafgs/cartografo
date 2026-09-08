@@ -3435,6 +3435,54 @@ test('t464 AT2/AT3 — the map accumulates per key, and a report with neither ke
   );
 });
 
+test('t492 AT6 — a turn reporting the RETIRED nested `draft` accumulates the same map', async (t) => {
+  requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+  const job = await createJob(ctx, {
+    title: 'design a map for handling widget returns, before t464 landed',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  // Exactly what job 5 — the only interview this project has ever run — has
+  // sitting in its `session.output` rows: the map one level under `draft`,
+  // because the skill its frozen graph_version pins declared it that way.
+  const graph = { problem_class: 'widget-return', nodes: [{ id: 'inspect' }] };
+  const skills = [{ id: 'inspect-widget', version: '1.0.0' }];
+  const asked = await interviewTurn(ctx, job.id, 'What does `inspect` need?', {
+    draft: { graph, skills },
+  });
+  await request(ctx, 'PATCH', `/v1/input-requests/${asked}/answer`, {
+    answer: 'the widget and the order',
+    answered_by: 'rafael',
+  });
+
+  const settled = await conversation(ctx, job.id);
+  assert.deepEqual(
+    settled.draft,
+    { graph, skills },
+    'the nested shape accumulates the map the flat shape accumulates (t492 FR1/FR5)',
+  );
+
+  // And it accumulates PER KEY across the two turns, the same way the flat
+  // shape does: this one moves only the graph forward.
+  const secondGraph = {
+    problem_class: 'widget-return',
+    nodes: [{ id: 'inspect' }, { id: 'decide' }],
+  };
+  await interviewTurn(ctx, job.id, 'Which step closes the return?', {
+    draft: { graph: secondGraph },
+  });
+
+  const accumulated = await conversation(ctx, job.id);
+  assert.deepEqual(
+    accumulated.draft,
+    { graph: secondGraph, skills },
+    'a nested turn that omitted `skills` kept the manifests the turn before settled',
+  );
+});
+
 test('t360 AT2 — while a session is running the projection reports thinking, with nothing pending', async (t) => {
   requireArtifacts(...ARTIFACTS, ...CONVERSATION_ARTIFACTS);
   const ctx = await startControlPlane(t);

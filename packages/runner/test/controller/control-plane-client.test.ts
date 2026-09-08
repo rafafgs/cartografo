@@ -858,3 +858,43 @@ test('t401 AT16 — getPendingRecheck reads the route and unwraps `recheck`', as
 
   assert.deepEqual(pending, recheck);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t491 — saying goodbye is a call of its own.                                 */
+/* -------------------------------------------------------------------------- */
+
+test('t491 AT9 — deregisterRunner posts the retirement and answers the updated row', async () => {
+  const { ControlPlaneClient, ControlPlaneClientError } = await loadClient();
+
+  const retired = {
+    id: 'runner-a',
+    name: 'the founder laptop',
+    registered_at: '2026-08-14T12:00:00.000Z',
+  };
+  const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { runner: retired } }));
+
+  const runner = await new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl }).deregisterRunner(
+    'runner-a',
+  );
+
+  assert.deepEqual(calls, [
+    { url: `${BASE_URL}/v1/runners/runner-a/retirements`, method: 'POST', body: undefined },
+  ]);
+  assert.deepEqual(runner, retired);
+
+  // The same contract every other method of this client has: a non-2xx is an
+  // error object carrying the status, never a resolved promise the caller has
+  // to inspect.
+  await assert.rejects(
+    async () =>
+      await new ControlPlaneClient({
+        urlBase: BASE_URL,
+        fetchImpl: fakeFetch(() => ({ status: 404, body: { error: 'unknown_runner' } })).fetchImpl,
+      }).deregisterRunner('runner-ghost'),
+    (error: unknown) => {
+      assert.ok(error instanceof ControlPlaneClientError);
+      assert.equal(error.status, 404);
+      return true;
+    },
+  );
+});

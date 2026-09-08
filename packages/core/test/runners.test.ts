@@ -479,3 +479,177 @@ test('t180 — the two registration refusals are English', async (t) => {
   assert.equal(wrong.error, 'invalid_name');
   assert.equal(wrong.message, 'name, when sent, has to be a string');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t491 — retirement and liveness: one row per installation, not per restart.  */
+/* -------------------------------------------------------------------------- */
+
+/** The two columns t491 adds, on top of the row the rest of this file reads. */
+interface LiveRunnerRow extends RunnerRow {
+  status: string;
+  last_seen_at: string;
+}
+
+/** The row as the table holds it, read past whatever the repository filters. */
+function storedRunner(db: ConnectionModule.Database, id: string): LiveRunnerRow | undefined {
+  return db
+    .prepare('SELECT id, name, registered_at, status, last_seen_at FROM runner WHERE id = ?')
+    .get(id) as LiveRunnerRow | undefined;
+}
+
+/** Backdates a runner's `last_seen_at` by so many seconds — no test ever sleeps. */
+function backdateLastSeen(db: ConnectionModule.Database, id: string, seconds: number): void {
+  db.prepare('UPDATE runner SET last_seen_at = ? WHERE id = ?').run(
+    new Date(Date.now() - seconds * 1000).toISOString(),
+    id,
+  );
+}
+
+test('t491 AT3 — re-registering a retired id revives it in place, without a second row', async (t) => {
+  const { db } = await start(t);
+  const { registerRunner, retireRunner } = await loadRunners();
+
+  registerRunner(db, { id: 'runner-a', name: 'the founder laptop' });
+  retireRunner(db, 'runner-a');
+  backdateLastSeen(db, 'runner-a', 3_600);
+  const retired = storedRunner(db, 'runner-a');
+  assert.equal(retired?.status, 'retired', 'the fixture only means anything if it really retired');
+
+  const again = registerRunner(db, { id: 'runner-a' });
+  assert.equal(again.created, false, 'the row was already there: this is a re-registration');
+
+  const revived = storedRunner(db, 'runner-a');
+  assert.equal(revived?.status, 'active', 'registering again is a machine saying it is back');
+  assert.ok(
+    revived !== undefined && retired !== undefined && revived.last_seen_at > retired.last_seen_at,
+    `last_seen_at has to be refreshed on every call, not only the first (${String(retired?.last_seen_at)} -> ${String(revived?.last_seen_at)})`,
+  );
+  assert.equal(
+    revived?.registered_at,
+    retired.registered_at,
+    'the date the id appeared in the system is not rewritten by a restart',
+  );
+
+  const rows = db.prepare('SELECT count(*) AS total FROM runner').get() as { total: number };
+  assert.equal(rows.total, 1, 'one installation is one row, however many times it registers');
+});
+
+test('t491 AT4 — a retired runner leaves both listings and still exists to getRunner', async (t) => {
+  const { db } = await start(t);
+  const { registerRunner, retireRunner, getRunner, listRunners, listRunnersWithHealth } =
+    await loadRunners();
+
+  registerRunner(db, { id: 'runner-a', name: 'the one that stopped' });
+  registerRunner(db, { id: 'runner-b', name: 'the one still up' });
+
+  const retired = retireRunner(db, 'runner-a');
+  assert.equal(retired.id, 'runner-a');
+  assert.equal(storedRunner(db, 'runner-a')?.status, 'retired');
+
+  assert.deepEqual(
+    listRunners(db).map((runner) => runner.id),
+    ['runner-b'],
+    'a runner that deregistered is not part of the fleet a person is shown',
+  );
+  assert.deepEqual(
+    listRunnersWithHealth(db).map((runner) => runner.id),
+    ['runner-b'],
+    'and the health listing answers the same fleet as the plain one',
+  );
+
+  const still = getRunner(db, 'runner-a');
+  assert.equal(
+    still?.id,
+    'runner-a',
+    'existence is not presence: a retired id still answers its own routes instead of a false 404',
+  );
+});
+
+test('t491 AT5 — a runner nobody has heard from for the deadline stops being reported', async (t) => {
+  const { db } = await start(t);
+  const { registerRunner, listRunners, listRunnersWithHealth, RUNNER_LIVENESS_SECONDS } =
+    await loadRunners();
+
+  assert.equal(
+    RUNNER_LIVENESS_SECONDS,
+    180,
+    'the deadline is a named export, and this is the number the ticket settled on',
+  );
+
+  registerRunner(db, { id: 'runner-fresh', name: 'the one heartbeating' });
+  registerRunner(db, { id: 'runner-silent', name: 'the one that was killed' });
+  backdateLastSeen(db, 'runner-silent', RUNNER_LIVENESS_SECONDS + 60);
+
+  assert.deepEqual(
+    listRunners(db).map((runner) => runner.id),
+    ['runner-fresh'],
+    'past the deadline a machine is absent, even though nothing ever swept its row',
+  );
+  assert.deepEqual(
+    listRunnersWithHealth(db).map((runner) => runner.id),
+    ['runner-fresh'],
+  );
+  assert.equal(
+    storedRunner(db, 'runner-silent')?.status,
+    'active',
+    'nothing wrote to the row: presence is computed at read time, never by a sweep',
+  );
+
+  // ...and the same row comes back the moment the machine speaks again.
+  registerRunner(db, { id: 'runner-silent' });
+  assert.deepEqual(
+    listRunners(db).map((runner) => runner.id).sort(),
+    ['runner-fresh', 'runner-silent'],
+  );
+});
+
+test('t491 AT6 — POST /v1/runners/:id/retirements retires, is idempotent, and is scoped', async (t) => {
+  const { address } = await start(t);
+
+  const paired = await pair(address, 'runner-a', 'the one that stops');
+  assert.equal(paired.status, 201);
+  const other = await pair(address, 'runner-b', 'somebody else');
+  assert.equal(other.status, 201);
+
+  const retire = async (id: string, token?: string): Promise<Response> =>
+    await fetch(`${address}/v1/runners/${id}/retirements`, {
+      method: 'POST',
+      ...(token === undefined ? {} : { headers: { authorization: `Bearer ${token}` } }),
+    });
+
+  const first = await retire('runner-a');
+  assert.equal(first.status, 200);
+  const body = (await first.json()) as { runner: LiveRunnerRow };
+  assert.equal(body.runner.id, 'runner-a');
+  assert.equal(body.runner.status, 'retired');
+
+  const fleet = await fetch(`${address}/v1/runners`);
+  assert.equal(fleet.status, 200);
+  assert.deepEqual(
+    ((await fleet.json()) as { runners: RunnerRow[] }).runners.map((runner) => runner.id),
+    ['runner-b'],
+    'the fleet an operator reads no longer carries the machine that said goodbye',
+  );
+
+  const again = await retire('runner-a');
+  assert.equal(again.status, 200, 'retiring twice is not an error: a stop can be reported twice');
+
+  const ghost = await retire('runner-ghost');
+  assert.equal(ghost.status, 404);
+  const refusal = (await ghost.json()) as { error: string; runner_id: string };
+  assert.equal(refusal.error, 'unknown_runner');
+  assert.equal(refusal.runner_id, 'runner-ghost');
+
+  // A runner may report its own stop, and nobody else's: the same identity
+  // scope `POST /v1/runners/:id/probes` already enforces.
+  const own = await retire('runner-b', other.body.token ?? '');
+  assert.equal(own.status, 200, 'a runner retiring itself is exactly what the route is for');
+
+  const stranger = await retire('runner-a', other.body.token ?? '');
+  assert.equal(stranger.status, 403);
+  assert.equal(
+    ((await stranger.json()) as { error: string }).error,
+    'out_of_scope_credential',
+    'a credential is good for one identity, here as everywhere else',
+  );
+});

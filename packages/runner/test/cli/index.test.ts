@@ -800,3 +800,46 @@ test('t404 — a SettingsFallbackError reaches stderr verbatim, and exits 1', as
     'the control plane is up; telling the operator to start one would send them the wrong way',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t491 — the identity is the installation, not the process.                   */
+/* -------------------------------------------------------------------------- */
+
+test('t491 AT1 — the default identity is stable inside a process and carries no pid', async () => {
+  const { defaultRunnerId } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const first = defaultRunnerId();
+  const second = defaultRunnerId();
+
+  assert.equal(first, second, 'the same installation is the same runner, call after call');
+  assert.ok(
+    !first.includes(String(process.pid)),
+    `the pid is what made every restart a new machine, and it is gone: ${first}`,
+  );
+  assert.match(
+    first,
+    /^.+-[0-9a-f]{8}$/,
+    'host, then eight hex characters of the checkout it runs in',
+  );
+});
+
+test('t491 AT2 — two checkouts on one host are two runners', async () => {
+  const { defaultRunnerId } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  // Two directories that resolve differently; neither has to exist, exactly
+  // like every other path this file names — the identity is derived from the
+  // path, never read off the disk.
+  const here = defaultRunnerId(path.join(SOME_REPO, 'first'));
+  const there = defaultRunnerId(path.join(SOME_REPO, 'second'));
+
+  assert.notEqual(
+    here,
+    there,
+    'one machine running two checkouts is two runners, and the fleet has to see both',
+  );
+  assert.equal(
+    here,
+    defaultRunnerId(path.join(SOME_REPO, '.', 'first')),
+    'the path is resolved first: the same directory spelled two ways is one runner',
+  );
+});

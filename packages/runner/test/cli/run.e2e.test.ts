@@ -60,13 +60,13 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { bootCore } from '@cartografo/test-support';
+import { awaitReadiness, bootCore, spawnWatched } from '@cartografo/test-support';
 
 import type * as CliModule from '../../src/cli/index.ts';
 import type * as RunModule from '../../src/cli/run.ts';
@@ -1887,6 +1887,15 @@ test('t332 — the shell route is built here, never asked of the --engine factor
 interface ProxiedControlPlane extends RunningControlPlane {
   /** How many requests reached a route whose path starts with `prefix`. */
   countOf: (prefix: string) => number;
+  /**
+   * Makes the control plane unreachable from now on, without closing the
+   * server: every request from here answers with a dead socket (t491, AT10).
+   *
+   * A flag and not a `close()`, because what AT10 needs is a plane that WAS
+   * there — the runner has already paired through it — and is gone by the time
+   * the shutdown tries to say goodbye.
+   */
+  sever: () => void;
 }
 
 /**
@@ -1912,12 +1921,13 @@ async function proxyControlPlane(
   failOn?: string,
 ): Promise<ProxiedControlPlane> {
   const seen: string[] = [];
+  let severed = false;
 
   const server = createServer((request, response) => {
     const route = request.url ?? '/';
     seen.push(route);
 
-    if (failOn !== undefined && route.startsWith(failOn)) {
+    if (severed || (failOn !== undefined && route.startsWith(failOn))) {
       request.socket.destroy();
       return;
     }
@@ -1972,6 +1982,10 @@ async function proxyControlPlane(
     baseUrl: `http://127.0.0.1:${String(port)}`,
     token: plane.token,
     countOf: (prefix) => seen.filter((route) => route.startsWith(prefix)).length,
+    sever: () => {
+      severed = true;
+      server.closeAllConnections();
+    },
   };
 }
 
@@ -3152,4 +3166,200 @@ test('t360 AT4 — the MCP discovery is made once, and it is what the session re
       `the server the ONE discovery found is what the session was told: ${prompt.slice(0, 400)}`,
     );
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* t491 — one row per installation: the identity outlives the process, and the  */
+/* process says goodbye on the way out.                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The packaged command, spawned the way an operator starts it.
+ *
+ * The two cases below are about what a PROCESS does — the identity it derives
+ * from its own working directory, and the call it makes while a SIGTERM is
+ * being handled — and neither survives the in-process `startRunner` above: the
+ * signal handlers live in `runRunnerCli`, and `process.cwd()` in this test
+ * process is the runner package, not a checkout of the founder's.
+ */
+const RUNNER_BIN = path.join(PACKAGE_ROOT, 'bin', 'cartografo-runner.mjs');
+
+/** The readiness line the runner announces on stdout (`cli/index.ts`). */
+const RUNNER_READY_EVENT = 'cartografo.runner.ready';
+
+/** A spawned runner, and the two things these cases do with one. */
+interface SpawnedRunner {
+  /** The identity it announced on its readiness line. */
+  runnerId: string;
+  /** Its pid, which is what the old default used to derive that identity from. */
+  pid: number;
+  /** SIGTERMs it and resolves with the exit code, once it is really gone. */
+  stop: () => Promise<number | null>;
+  /** Everything it has written on stderr so far. */
+  err: () => string;
+}
+
+/**
+ * Starts the packaged runner against a control plane and waits for it to pair.
+ *
+ * @param t Subtest hook, for the teardown `spawnWatched` registers.
+ * @param plane Control plane to dial.
+ * @param space The checkout it runs in — its cwd AND its `--working-dir`, so
+ *   that the identity it derives is the one this case can predict.
+ */
+async function spawnRunner(
+  t: TestHook,
+  plane: RunningControlPlane,
+  space: Workspace,
+): Promise<SpawnedRunner> {
+  const watched = spawnWatched(
+    t,
+    [
+      RUNNER_BIN,
+      '--url', plane.baseUrl,
+      '--token', plane.token,
+      '--working-dir', space.repoRoot,
+      '--worktrees-root', space.worktreesRoot,
+      '--interval-ms', '250',
+    ],
+    { cwd: space.repoRoot, env: process.env },
+  );
+
+  const ready = await awaitReadiness(watched, RUNNER_READY_EVENT);
+  assert.equal(
+    typeof ready.runnerId,
+    'string',
+    `the readiness line carries no runnerId: ${JSON.stringify(ready)}`,
+  );
+
+  const stop = async (): Promise<number | null> => {
+    if (watched.child.exitCode === null && watched.child.signalCode === null) {
+      watched.child.kill('SIGTERM');
+    }
+    const deadline = Date.now() + DEADLINE_MS;
+    while (Date.now() < deadline) {
+      if (watched.child.exitCode !== null || watched.child.signalCode !== null) {
+        return watched.child.exitCode;
+      }
+      await delay(50);
+    }
+    throw new Error(`the runner did not exit after SIGTERM\nstderr:\n${watched.err()}`);
+  };
+
+  return {
+    runnerId: ready.runnerId as string,
+    pid: watched.child.pid ?? 0,
+    stop,
+    err: () => watched.err(),
+  };
+}
+
+/** The ids `GET /v1/runners` reports as present right now. */
+async function presentRunners(plane: RunningControlPlane): Promise<string[]> {
+  const { runners } = await api<{ runners: Array<{ id: string }> }>(plane, 'GET', '/v1/runners');
+  return runners.map((runner) => runner.id).sort();
+}
+
+/**
+ * Does a `runner` row with this id exist at all — retired or not?
+ *
+ * Read through `POST /v1/runners/:id/probes`, which answers `404 unknown_runner`
+ * for an id nobody ever paired and refuses the (empty) body of an id that
+ * exists. It is an existence oracle and not a listing on purpose: the API has
+ * no route that reports retired rows, and this package may not open the
+ * database to count them — `scripts/check-single-writer.mjs` forbids the driver
+ * to everything outside `packages/core/src/db` (D1), tests included.
+ */
+async function runnerRowExists(plane: RunningControlPlane, id: string): Promise<boolean> {
+  const response = await fetch(`${plane.baseUrl}/v1/runners/${id}/probes`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${plane.token}` },
+  });
+  assert.ok(
+    response.status === 404 || response.status === 400,
+    `the existence oracle only reads 404/400, got ${response.status}: ${await response.text()}`,
+  );
+  return response.status !== 404;
+}
+
+test('t491 AT8 — three restarts of one checkout are one runner, present only while it runs', async (t) => {
+  const plane = await bootControlPlane(t);
+  const space = initRepo(t, 't491-at8');
+
+  const identities = new Set<string>();
+  const pids: number[] = [];
+
+  for (const cycle of [1, 2, 3]) {
+    const runner = await spawnRunner(t, plane, space);
+    identities.add(runner.runnerId);
+    pids.push(runner.pid);
+
+    assert.deepEqual(
+      await presentRunners(plane),
+      [runner.runnerId],
+      `cycle ${String(cycle)}: exactly one machine is up, and it is this one`,
+    );
+
+    assert.equal(await runner.stop(), 0, `cycle ${String(cycle)}: a stop is a clean exit`);
+    assert.deepEqual(
+      await presentRunners(plane),
+      [],
+      `cycle ${String(cycle)}: a runner that exited cleanly deregistered itself`,
+    );
+  }
+
+  assert.equal(
+    identities.size,
+    1,
+    `three restarts of one checkout declared ${String(identities.size)} identities: ${[...identities].join(', ')}`,
+  );
+
+  // ...and the row count really is one, proven the only way this package may:
+  // the one id that exists is the stable one, and none of the three pids the
+  // old default would have derived an identity from was ever paired.
+  assert.ok(
+    await runnerRowExists(plane, [...identities][0]),
+    'the stable identity is a row, retired but never deleted',
+  );
+  for (const pid of pids) {
+    assert.equal(
+      await runnerRowExists(plane, `${hostname()}-${String(pid)}`),
+      false,
+      `a row shaped like the old default (host + pid ${String(pid)}) was written: identity is still per process`,
+    );
+  }
+});
+
+test('t491 AT10 — a control plane that is gone at shutdown costs one stderr line, not the exit code', async (t) => {
+  const plane = await bootControlPlane(t);
+  const proxy = await proxyControlPlane(t, plane);
+  const space = initRepo(t, 't491-at10');
+
+  const runner = await spawnRunner(t, proxy, space);
+  assert.deepEqual(await presentRunners(plane), [runner.runnerId], 'it paired through the proxy');
+
+  // The control plane becomes unreachable — a dead socket, which is what a
+  // machine that went away looks like from inside `fetch`, never an HTTP status.
+  proxy.sever();
+
+  assert.equal(
+    await runner.stop(),
+    0,
+    'a goodbye nobody was there to hear does not turn a clean stop into a failure',
+  );
+
+  const complained = runner
+    .err()
+    .split('\n')
+    .filter((line) => line.includes('deregister'));
+  assert.equal(
+    complained.length,
+    1,
+    `one actionable line about the deregistration, and only one:\n${runner.err()}`,
+  );
+  assert.match(
+    complained[0],
+    new RegExp(`cartografo-runner: .*${runner.runnerId}`),
+    'the line names the runner that could not say goodbye',
+  );
 });

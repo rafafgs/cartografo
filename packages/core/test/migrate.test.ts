@@ -315,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    36,
-    'a fresh database applies the thirty-six migrations of the package and nothing else',
+    37,
+    'a fresh database applies the thirty-seven migrations of the package and nothing else',
   );
 
   const objects = db
@@ -1067,5 +1067,110 @@ test('t417 AT8 — migration 0031 reassigns orphaned rows to project 1 and leave
   // Nothing was removed, which is the other half of the decision.
   for (const table of ['job', 'webhook_subscription', 'intake_draft']) {
     assert.equal(counted(db, `SELECT count(*) AS n FROM ${table}`), 2, `${table} still has 2 rows`);
+  }
+});
+
+test('t491 AT7 — migration 0037 collapses one host\'s PID-suffixed rows without deleting any', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { listMigrations, migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+
+  // The same shape as the 0026 test above: the database is taken to the
+  // migration BEFORE this one and seeded there, because what is under test is a
+  // reconciliation of rows that already exist — six of them, the ones the
+  // founder actually read as "six machines" on 2026-09-08.
+  const upToPrevious = path.join(base, 'up-to-previous');
+  mkdirSync(upToPrevious);
+  const all = listMigrations(REAL_MIGRATIONS_DIR);
+  const liveness = all.find((migration) => migration.number === 37);
+  assert.ok(
+    liveness,
+    'artifact does not exist yet: packages/core/migrations/0037_runner_liveness.sql',
+  );
+  const sql = readFileSync(liveness.path, 'utf8');
+  assert.doesNotMatch(
+    sql,
+    /\b(BEGIN|COMMIT|ROLLBACK)\b/i,
+    'the migration does not open a transaction of its own: the runner is what transacts',
+  );
+  assert.doesNotMatch(
+    sql,
+    /DELETE\s+FROM\s+runner/i,
+    'nothing is deleted: `credential.runner_id` and `lease.runner_id` still point at these rows',
+  );
+
+  for (const migration of all.filter((entry) => entry.number < 37)) {
+    writeMigration(upToPrevious, migration.file, readFileSync(migration.path, 'utf8'));
+  }
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+  migrate(db, upToPrevious);
+
+  // One host, six processes, one row each — `${hostname()}-${process.pid}` was
+  // the default identity, so a restart was a new machine as far as this table
+  // could tell. Plus a seventh id nobody derived from a pid: an operator who
+  // passed `--runner-id` is a group of one and must survive untouched.
+  const seeded: Array<[string, string]> = [
+    ['obj-rafaelgomesmac-8279', '2026-09-01T09:00:00.000Z'],
+    ['obj-rafaelgomesmac-14022', '2026-09-02T09:00:00.000Z'],
+    ['obj-rafaelgomesmac-31904', '2026-09-03T09:00:00.000Z'],
+    ['obj-rafaelgomesmac-45113', '2026-09-04T09:00:00.000Z'],
+    ['obj-rafaelgomesmac-60287', '2026-09-05T09:00:00.000Z'],
+    ['obj-rafaelgomesmac-76338', '2026-09-06T09:00:00.000Z'],
+    ['the-build-box', '2026-08-20T09:00:00.000Z'],
+  ];
+  const seed = db.prepare('INSERT INTO runner (id, name, registered_at) VALUES (?, NULL, ?)');
+  for (const [id, registeredAt] of seeded) seed.run(id, registeredAt);
+
+  // A lease and a credential pointing at rows the reconciliation touches: with
+  // `PRAGMA foreign_keys = ON` a migration that deleted instead of marking
+  // would fail right here, which is the whole reason it marks.
+  db.prepare(
+    `INSERT INTO lease (runner_id, job_id, project_id, status, ttl_seconds,
+                        granted_at, heartbeat_at, expires_at)
+     VALUES ('obj-rafaelgomesmac-8279', 1, 1, 'expired', 60, ?, ?, ?)`,
+  ).run('2026-09-01T09:00:00.000Z', '2026-09-01T09:00:00.000Z', '2026-09-01T09:01:00.000Z');
+  db.prepare(
+    `INSERT INTO credential (hash, owner_type, runner_id, created_at)
+     VALUES ('sha256:deadbeef', 'runner', 'obj-rafaelgomesmac-14022', ?)`,
+  ).run('2026-09-02T09:00:00.000Z');
+
+  migrate(db, REAL_MIGRATIONS_DIR);
+
+  assert.equal(
+    counted(db, 'SELECT count(*) AS n FROM schema_migrations'),
+    37,
+    'a database taken all the way through carries the thirty-seven migrations of the package',
+  );
+  assert.equal(
+    counted(db, 'SELECT count(*) AS n FROM runner'),
+    seeded.length,
+    'nothing is deleted: the reconciliation is a status flip, in place',
+  );
+
+  const rows = db
+    .prepare('SELECT id, status, last_seen_at, registered_at FROM runner ORDER BY id')
+    .all() as Array<{ id: string; status: string; last_seen_at: string; registered_at: string }>;
+
+  assert.deepEqual(
+    rows.filter((row) => row.status === 'active').map((row) => row.id).sort(),
+    ['obj-rafaelgomesmac-76338', 'the-build-box'],
+    'one row survives per host: the most recently registered of the pid group, plus the id nobody derived from a pid',
+  );
+  assert.equal(
+    rows.filter((row) => row.status === 'retired').length,
+    5,
+    'the other five processes of that one machine are marked retired',
+  );
+
+  for (const row of rows) {
+    assert.equal(
+      row.last_seen_at,
+      row.registered_at,
+      'a row that predates the column is last seen when it registered, never at the empty string',
+    );
   }
 });

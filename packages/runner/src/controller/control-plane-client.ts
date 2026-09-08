@@ -432,6 +432,32 @@ export class ControlPlaneClient {
   }
 
   /**
+   * Reports that this runner is stopping (t491, FR2).
+   *
+   * The other half of {@link ControlPlaneClient.registerRunner}, and the reason
+   * the fleet page can be honest about a machine the second it exits instead of
+   * three minutes later. Idempotent on the server, like pairing: a stop
+   * reported twice is not an error.
+   *
+   * It retires an IDENTITY and revokes no credential — two acts that share a
+   * foreign key and nothing else — so a runner that comes back pairs again
+   * under the same id, with the token it already had.
+   *
+   * @param id Identity of the runner that is stopping.
+   * @returns The runner as it now stands.
+   * @throws {ControlPlaneClientError} On any non-2xx, `404 unknown_runner`
+   *   included. The caller in `cli/run.ts` catches it: a goodbye nobody heard
+   *   must not keep a process from exiting.
+   */
+  async deregisterRunner(id: string): Promise<Runner> {
+    const { runner } = await this.#post<{ runner: Runner }>(
+      `/v1/runners/${encodeURIComponent(id)}/retirements`,
+      undefined,
+    );
+    return runner;
+  }
+
+  /**
    * Reports which models this runner's engine offers (t166, FR11).
    *
    * Replaces the catalogue stored for that engine, and that is the semantics

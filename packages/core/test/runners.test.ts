@@ -434,6 +434,15 @@ test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a 
     id: 'runner-a',
     name: 'the first paired one',
     registered_at: first.body.runner.registered_at,
+    // t491. The row carries its own liveness now: `status` is what the process
+    // said on its way out, `last_seen_at` when it last said anything. Both are
+    // published rather than filtered out — the fleet page is where a person
+    // asks how a machine is doing, and the columns that decide whether it is
+    // listed at all belong in the answer.
+    status: 'active',
+    // ...and on the pairing itself the two stamps are the same instant: the
+    // call that created the row is also the last time the machine spoke.
+    last_seen_at: first.body.runner.registered_at,
     active_leases: 0,
     last_heartbeat: null,
     last_expiration: null,

@@ -40,6 +40,10 @@
  *   `POST /v1/leases` makes against the `runner_id` it was handed.
  * - **`GET /v1/runners/:id/rechecks`** is the runner's too, and scoped the same
  *   way: a machine asking whether anybody wants it to report again.
+ * - **`POST /v1/runners/:id/retirements`** joined them in t491, on the same
+ *   line of reasoning: a runner saying "this process is stopping" is the last
+ *   fact it reports about itself, and the `:id` is scoped in the handler
+ *   exactly like the two above.
  * - **`POST /v1/runners/:id/rechecks`** is the operator's, by OMISSION — the
  *   reasoning `GET /v1/engines` already wrote down. Ordering another machine to
  *   re-probe is the operator's job, and a runner credential that could do it
@@ -71,7 +75,12 @@ import {
   type McpOrigin,
   type ProbeReport,
 } from '../repositories/runner-probes.ts';
-import { getRunner, listRunnersWithHealth, registerRunner } from '../repositories/runners.ts';
+import {
+  getRunner,
+  listRunnersWithHealth,
+  registerRunner,
+  retireRunner,
+} from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal, type ErrorResponse } from './common.ts';
 
@@ -325,6 +334,37 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
     }
 
     return { revoked: revokeRunnerCredentials(db, id) };
+  });
+
+  // The runner's goodbye (t491, FR2). On the runner's side of the credential
+  // gate, beside `/probes` and for the same reason: a machine reporting that it
+  // stopped is reporting a fact about ITSELF, which is what a runner credential
+  // is for — never provisioning, which is what `POST /v1/runners` is and why
+  // that one stays the operator's.
+  //
+  // Idempotent, deliberately: a stop reported twice is not an error, the same
+  // posture `/revocations` already answers `{revoked: 0}` with. And it is a
+  // status flip and never a delete — `credential.runner_id` and
+  // `lease.runner_id` point at this row, and retiring says "this process
+  // stopped", not "this credential is no longer trusted". Those are two acts
+  // that share a foreign key and nothing else; revoking is still
+  // `/revocations`.
+  app.post<IdParam>('/runners/:id/retirements', async (request, reply) => {
+    const { id } = request.params;
+
+    const refused = outOfScopeForRunner(request, id, 'report a retirement');
+    if (refused !== null) {
+      reply.code(403);
+      return refused;
+    }
+
+    // An id nobody ever paired is a typo and not "already gone", the same
+    // distinction `/revocations` draws for the same condition.
+    if (getRunner(db, id) === undefined) {
+      return refusal(reply, 404, 'unknown_runner', undefined, { runner_id: id });
+    }
+
+    return { runner: retireRunner(db, id) };
   });
 
   app.post<IdParam>('/runners/:id/probes', async (request, reply) => {

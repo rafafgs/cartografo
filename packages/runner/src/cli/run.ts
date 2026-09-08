@@ -723,6 +723,33 @@ async function reportProbe(
 }
 
 /**
+ * Says goodbye, and never lets the goodbye be why a process stayed up (t491, FR2).
+ *
+ * Best-effort by construction: this runs from a `finally`, on a runner that is
+ * already leaving, and every reason it can fail — the control plane went down
+ * first, the credential was revoked, the network is gone — is a reason to write
+ * one line and exit anyway. It is the same posture `reportProbe` has for its own
+ * failure, and for the same reason: the fact this reports is worth reporting and
+ * is worth nothing at all if reporting it can hang a shutdown.
+ *
+ * A runner that could not deregister is not lost, either: it simply stops being
+ * present the ordinary way, once the control plane's own liveness deadline has
+ * passed with nothing heard from it.
+ *
+ * @param client Client of the control plane.
+ * @param runnerId Identity that is stopping.
+ */
+async function deregisterQuietly(client: ControlPlaneClient, runnerId: string): Promise<void> {
+  try {
+    await client.deregisterRunner(runnerId);
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: could not deregister "${runnerId}" — ${describeError(error)}\n`,
+    );
+  }
+}
+
+/**
  * The probe's MCP half, in the shape the executor environment declares (t360).
  *
  * A mapper and nothing else, and it exists so that the honesty rule survives the
@@ -966,150 +993,178 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // First call of the process, and it is not negotiable: everything below
   // answers 404 for a runner the control plane has never heard of.
   await client.registerRunner(options.runnerId);
-  if (stopped()) return;
 
-  // Second call, and only when there is something left to decide: the three
-  // values everything below reads come either from the command line or from
-  // this project's settings, and until this line a settings-mode runner does
-  // not know where it may write (t404, FR5).
-  const resolved = await resolveRunnerPaths(client, options);
-  if (stopped()) return;
+  // From here on the runner EXISTS to the control plane, and everything below
+  // has an exit to reach: `try`/`finally` and not a line before each `return`,
+  // because there are four of those plus the natural end of the loop, and a
+  // deregistration that only some of them reach is the bug this ticket is
+  // fixing wearing a different hat (t491, FR2).
+  try {
+    if (stopped()) return;
 
-  // Two routes, and the key of each is the engine's own name: the dispatch
-  // resolves the engine from the NODE the work is standing on, so a node that
-  // declares a third one lands on `UnknownEngineError` instead of quietly
-  // running somewhere nobody chose (t141, FR5). Which two, and why `shell` is
-  // not a `--engine` choice, is {@link buildEngineRoutes}.
-  const engines = buildEngineRoutes(resolved.engine, options.engineFactory);
-  const route = engines[resolved.engine] as EngineRoute;
+    // Second call, and only when there is something left to decide: the three
+    // values everything below reads come either from the command line or from
+    // this project's settings, and until this line a settings-mode runner does
+    // not know where it may write (t404, FR5).
+    const resolved = await resolveRunnerPaths(client, options);
+    if (stopped()) return;
 
-  // Preflight and then discovery, in that order and after the pairing — the
-  // whole of FR11's precondition, in one call (t166, t186). Neither half is on
-  // the critical path: a CLI that did not answer and a report that was refused
-  // are both logged, and the runner goes on to work.
-  await reportModels(client, resolved.engine, route.adapter);
-  if (stopped()) return;
+    // Two routes, and the key of each is the engine's own name: the dispatch
+    // resolves the engine from the NODE the work is standing on, so a node that
+    // declares a third one lands on `UnknownEngineError` instead of quietly
+    // running somewhere nobody chose (t141, FR5). Which two, and why `shell` is
+    // not a `--engine` choice, is {@link buildEngineRoutes}.
+    const engines = buildEngineRoutes(resolved.engine, options.engineFactory);
+    const route = engines[resolved.engine] as EngineRoute;
 
-  // ...and then what the operator page reads: the same preflight, the MCP
-  // servers this engine names, and the two directories this process was pointed
-  // at (t401, FR7). Unconditional, unlike the catalogue above: a CLI that did
-  // not answer is exactly the fact worth reporting.
-  //
-  // Kept, since t360, rather than discarded: the discovery inside it is also
-  // what a dispatched session is told at `input.environment.mcp_servers`, and
-  // computing it twice would be two CLI spawns and two answers about one
-  // machine.
-  const probe = await reportProbe(client, options, resolved, route.adapter);
-  if (stopped()) return;
+    // Preflight and then discovery, in that order and after the pairing — the
+    // whole of FR11's precondition, in one call (t166, t186). Neither half is on
+    // the critical path: a CLI that did not answer and a report that was refused
+    // are both logged, and the runner goes on to work.
+    await reportModels(client, resolved.engine, route.adapter);
+    if (stopped()) return;
 
-  // The client the precedent resolver speaks through: the same address, the
-  // same credential and the same deadline the dispatch itself uses. Built here
-  // because `executorEnvironment` is an OPTION of the dispatch and is therefore
-  // assembled before the dispatch exists — there is no earlier moment at which
-  // its own internal client could be borrowed.
-  const precedentsClient = createDispatchControlPlaneClient({
-    urlBase: options.url,
-    token: options.token,
-    ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
-  });
+    // ...and then what the operator page reads: the same preflight, the MCP
+    // servers this engine names, and the two directories this process was pointed
+    // at (t401, FR7). Unconditional, unlike the catalogue above: a CLI that did
+    // not answer is exactly the fact worth reporting.
+    //
+    // Kept, since t360, rather than discarded: the discovery inside it is also
+    // what a dispatched session is told at `input.environment.mcp_servers`, and
+    // computing it twice would be two CLI spawns and two answers about one
+    // machine.
+    const probe = await reportProbe(client, options, resolved, route.adapter);
+    if (stopped()) return;
 
-  const controller = new Controller({
-    client,
-    runnerId: options.runnerId,
-    projectId: options.projectId,
-    runnerCap: options.runnerCap,
-    projectCap: options.projectCap,
-    ttlSeconds: options.leaseTtlSeconds,
-    dispatch: createClaudeCodeDispatch({
+    // The client the precedent resolver speaks through: the same address, the
+    // same credential and the same deadline the dispatch itself uses. Built here
+    // because `executorEnvironment` is an OPTION of the dispatch and is therefore
+    // assembled before the dispatch exists — there is no earlier moment at which
+    // its own internal client could be borrowed.
+    const precedentsClient = createDispatchControlPlaneClient({
       urlBase: options.url,
       token: options.token,
-      engines,
-      // The same project the controller polls and leases in (t410): three of
-      // the dispatch's reads are scoped to one partition, and a dispatch left
-      // reading the default project would be told the work it just leased does
-      // not exist — a lease taken and given back on every tick, in silence.
+      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+    });
+
+    const controller = new Controller({
+      client,
+      runnerId: options.runnerId,
       projectId: options.projectId,
-      requestTimeoutMs: options.requestTimeoutMs,
-      // Passed straight through: what this function knows about a live session
-      // is nothing, and what the process owner needs is the handle to it (t193).
-      onSessionStarted: options.onSessionStarted,
-      onSessionEnded: options.onSessionEnded,
-      // One manager for the whole process, and one worktree per dispatch out of
-      // it: the isolation is per session, never per runner (t160, FR6).
-      worktrees: new GitWorktreeManager({
-        repoRoot: resolved.repoRoot,
-        worktreesRoot: resolved.worktreesRoot,
+      runnerCap: options.runnerCap,
+      projectCap: options.projectCap,
+      ttlSeconds: options.leaseTtlSeconds,
+      dispatch: createClaudeCodeDispatch({
+        urlBase: options.url,
+        token: options.token,
+        engines,
+        // The same project the controller polls and leases in (t410): three of
+        // the dispatch's reads are scoped to one partition, and a dispatch left
+        // reading the default project would be told the work it just leased does
+        // not exist — a lease taken and given back on every tick, in silence.
+        projectId: options.projectId,
+        requestTimeoutMs: options.requestTimeoutMs,
+        // Passed straight through: what this function knows about a live session
+        // is nothing, and what the process owner needs is the handle to it (t193).
+        onSessionStarted: options.onSessionStarted,
+        onSessionEnded: options.onSessionEnded,
+        // One manager for the whole process, and one worktree per dispatch out of
+        // it: the isolation is per session, never per runner (t160, FR6).
+        worktrees: new GitWorktreeManager({
+          repoRoot: resolved.repoRoot,
+          worktreesRoot: resolved.worktreesRoot,
+        }),
+        // Built ONCE for the whole process, and that is what makes
+        // `instalacao_em_uso` mean anything: the single read it memoizes is
+        // memoized for the life of THIS runner, which is the process the mode is
+        // an assertion about (t270).
+        executorEnvironment: createExecutorEnvironmentResolver({
+          testBenchPath: options.testBenchPath ?? resolved.repoRoot,
+          referenceMode: options.referenceMode ?? 'ponta_do_principal',
+          ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
+          ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+          // A VALUE for the one that is a fact about this process, and a FUNCTION
+          // for the one that is a fact about each job (t360, FR4).
+          mcpDiscovery: mcpDiscoveryOf(probe),
+          classPrecedents: createClassPrecedentsResolver(precedentsClient, options.projectId),
+          // ...and a function of the SOURCE for the third: what a person answered
+          // when the interview asked where their existing skills are (t440, FR7).
+          // It reads a folder, or clones a repository shallow and throws it away;
+          // nothing it finds is executed, and nothing enters the registry without
+          // somebody registering it (D4).
+          resolveSkillSource: createConfiguredSkillSourceResolver(
+            client,
+            options.projectId,
+            resolved.worktreesRoot,
+          ),
+        }),
+        // ...and the half that WRITES to that same bench (t273). Built once too,
+        // out of the same two paths: the bench to advance, and the repository the
+        // reported commit was born in — a worktree of `repoRoot` is where every
+        // session works, so its object store is the only one that has it.
+        advanceMainLine: createMainLineAdvancer({
+          testBenchPath: options.testBenchPath ?? resolved.repoRoot,
+          repoRoot: resolved.repoRoot,
+          ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+          ...(options.benchInstallCommand === undefined
+            ? {}
+            : { installCommand: options.benchInstallCommand }),
+        }),
       }),
-      // Built ONCE for the whole process, and that is what makes
-      // `instalacao_em_uso` mean anything: the single read it memoizes is
-      // memoized for the life of THIS runner, which is the process the mode is
-      // an assertion about (t270).
-      executorEnvironment: createExecutorEnvironmentResolver({
-        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
-        referenceMode: options.referenceMode ?? 'ponta_do_principal',
-        ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
-        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
-        // A VALUE for the one that is a fact about this process, and a FUNCTION
-        // for the one that is a fact about each job (t360, FR4).
-        mcpDiscovery: mcpDiscoveryOf(probe),
-        classPrecedents: createClassPrecedentsResolver(precedentsClient, options.projectId),
-        // ...and a function of the SOURCE for the third: what a person answered
-        // when the interview asked where their existing skills are (t440, FR7).
-        // It reads a folder, or clones a repository shallow and throws it away;
-        // nothing it finds is executed, and nothing enters the registry without
-        // somebody registering it (D4).
-        resolveSkillSource: createConfiguredSkillSourceResolver(
-          client,
-          options.projectId,
-          resolved.worktreesRoot,
-        ),
-      }),
-      // ...and the half that WRITES to that same bench (t273). Built once too,
-      // out of the same two paths: the bench to advance, and the repository the
-      // reported commit was born in — a worktree of `repoRoot` is where every
-      // session works, so its object store is the only one that has it.
-      advanceMainLine: createMainLineAdvancer({
-        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
-        repoRoot: resolved.repoRoot,
-        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
-        ...(options.benchInstallCommand === undefined
-          ? {}
-          : { installCommand: options.benchInstallCommand }),
-      }),
-    }),
-  });
+    });
 
-  options.onReady?.(resolved);
+    options.onReady?.(resolved);
 
-  while (!stopped()) {
-    try {
-      await controller.tick();
-    } catch (error) {
-      // Logged, and that is all: the lease is already back, and the next tick
-      // is a fresh question to the queue.
-      process.stderr.write(`cartografo-runner: the tick failed — ${describeError(error)}\n`);
+    while (!stopped()) {
+      try {
+        await controller.tick();
+      } catch (error) {
+        // Logged, and that is all: the lease is already back, and the next tick
+        // is a fresh question to the queue.
+        process.stderr.write(`cartografo-runner: the tick failed — ${describeError(error)}\n`);
+      }
+
+      // Checked here as well as at the top: the abort usually lands while a
+      // dispatch is running, and waiting out a full interval to notice would make
+      // a stop look like a hang.
+      if (stopped()) break;
+
+      // Beside the tick and not inside it (t401, FR9): a re-check is a question
+      // about this machine, and the controller's one job is turning a tick into a
+      // lease. It swallows its own failures, so there is nothing to catch here.
+      //
+      // AFTER the stop check and not before it: a runner already asked to shut
+      // down owes nobody a fresh probe, and one more round trip on the way out is
+      // exactly the kind of delay the check above exists to avoid.
+      await maybeServeRecheck(client, options, resolved, route.adapter);
+
+      // ...and the heartbeat, in the same slot and with the same posture
+      // (t491, FR3). It is the pairing call again and nothing new: already
+      // idempotent, already authorized, already the only write this process
+      // makes about its own identity. What it buys is that a runner that died
+      // without saying goodbye — SIGKILL, a closed lid, a severed network —
+      // stops being reported as present `RUNNER_LIVENESS_SECONDS` later,
+      // computed by the reader and never by a sweep somebody has to run.
+      try {
+        await client.registerRunner(options.runnerId);
+      } catch (error) {
+        // Logged, and that is all: a heartbeat that did not land is answered by
+        // the next one, and a control plane that is down is not a reason to
+        // take a runner with it.
+        process.stderr.write(
+          `cartografo-runner: could not refresh "${options.runnerId}" — ${describeError(error)}\n`,
+        );
+      }
+
+      try {
+        await delay(options.intervalMs, undefined, { signal: options.signal });
+      } catch {
+        // The only way this rejects is the shutdown landing while the loop was
+        // waiting out its interval. That is the answer, not an error.
+        break;
+      }
     }
-
-    // Checked here as well as at the top: the abort usually lands while a
-    // dispatch is running, and waiting out a full interval to notice would make
-    // a stop look like a hang.
-    if (stopped()) break;
-
-    // Beside the tick and not inside it (t401, FR9): a re-check is a question
-    // about this machine, and the controller's one job is turning a tick into a
-    // lease. It swallows its own failures, so there is nothing to catch here.
-    //
-    // AFTER the stop check and not before it: a runner already asked to shut
-    // down owes nobody a fresh probe, and one more round trip on the way out is
-    // exactly the kind of delay the check above exists to avoid.
-    await maybeServeRecheck(client, options, resolved, route.adapter);
-
-    try {
-      await delay(options.intervalMs, undefined, { signal: options.signal });
-    } catch {
-      // The only way this rejects is the shutdown landing while the loop was
-      // waiting out its interval. That is the answer, not an error.
-      break;
-    }
+  } finally {
+    await deregisterQuietly(client, options.runnerId);
   }
 }

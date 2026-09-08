@@ -89,6 +89,13 @@ const RUNNER_SURFACE: ReadonlySet<string> = new Set([
   // its OWN pending re-check and nothing else, scoped in the handler the same
   // way.
   'GET /v1/runners/:id/rechecks',
+  // t491. The last fact of the same class: a machine reporting that it is
+  // stopping, so the fleet page shows a runner that exited cleanly as gone
+  // immediately instead of 180 seconds later. Scoped in the handler like the
+  // two above — another runner's `:id` is `out_of_scope_credential`. It retires
+  // an identity and revokes no credential; `POST /v1/runners/:id/revocations`
+  // is a different act and stays the operator's.
+  'POST /v1/runners/:id/retirements',
   // `POST /v1/runners/:id/rechecks` is deliberately NOT here, on the reasoning
   // `GET /v1/engines` above already states: ordering a machine to re-probe is
   // fleet management, and a runner credential that could do it would turn one

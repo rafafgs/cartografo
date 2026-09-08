@@ -256,10 +256,13 @@ test(
       // the draft a running session writes for the interview page to show —
       // whose number was free at the merge, for the second time in eleven
       // instances that this comment has no collision to record.
+      // ...and t491 moved it again with `0037_runner_liveness.sql` — the two
+      // columns that make a runner present while it says so, and the
+      // reconciliation of the six rows one laptop had accumulated.
       assert.equal(
         first.readiness.migrationsApplied,
-        36,
-        'a brand-new database applies the thirty-six migrations the package ships',
+        37,
+        'a brand-new database applies the thirty-seven migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

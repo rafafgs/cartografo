@@ -23,14 +23,16 @@ answer.
 
 | Entity | What it is | Does it change? |
 |---|---|---|
-| `runner` | The **identity** of a process that executes work. | Only the name. |
+| `runner` | The **identity** of an INSTALLATION that executes work — a host and a directory, stable across restarts (t491). | The name, and its liveness: `status` and `last_seen_at`. |
 | `lease` | A runner's **temporary right** over a job, with a deadline of its own. | The status, the deadline and the heartbeat/end stamps. |
 
 ```sql
 CREATE TABLE runner (
   id            TEXT PRIMARY KEY,
   name          TEXT,
-  registered_at TEXT NOT NULL
+  registered_at TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'retired' (t491)
+  last_seen_at  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE lease (
@@ -784,8 +786,9 @@ written to refuse it — through the same door `GET /v1/executions` and
 | Method | Route | Who calls | What it does |
 |---|---|---|---|
 | `POST` | `/v1/runners` | operator | Pairs a runner. `201` the first time — with `token`, the runner's credential, returned exactly once —, `200` (idempotent) with `token: null` if the `id` already exists. |
-| `GET` | `/v1/runners` | operator | Lists the fleet with each runner's health: `active_leases`, `last_heartbeat` (the largest `heartbeat_at` of **any** lease it ever had) and `last_expiration` (`{job_id, expires_at, expiration_reason}` of the last one that ran out, or `null`). All derived from the `lease` table; there is no runner ping. Since t401 each row also carries `probe`: the machine's latest self-report, or `null` if it never sent one. |
+| `GET` | `/v1/runners` | operator | Lists the fleet with each runner's health: `active_leases`, `last_heartbeat` (the largest `heartbeat_at` of **any** lease it ever had) and `last_expiration` (`{job_id, expires_at, expiration_reason}` of the last one that ran out, or `null`). All derived from the `lease` table. Since t401 each row also carries `probe`: the machine's latest self-report, or `null` if it never sent one. Since t491 it lists the PRESENT fleet and not every row ever paired — `status = 'active'` and `last_seen_at` within 180 seconds, computed in the query and never by a sweep. The runner refreshes `last_seen_at` by re-calling `POST /v1/runners` once per loop iteration; `GET /v1/runners/:id`-shaped reads (`/probes`, `/rechecks`, pairing) are deliberately NOT filtered, so a machine that went quiet is revived by its next call instead of meeting a false `404`. |
 | `POST` | `/v1/runners/:id/revocations` | operator | Revokes every live credential of that runner. `200 {revoked: <how many>}`, including `0`: calling again is not an error. |
+| `POST` | `/v1/runners/:id/retirements` | runner or operator | Says that this machine is stopping: `status = 'retired'`, so it leaves `GET /v1/runners` at once instead of after the liveness deadline. `200 {runner}`, and `200` again on the second call — a stop reported twice is not an error. `404 unknown_runner` for an id nobody paired. Scoped in the handler like `/probes`: another runner's `:id` is `403 out_of_scope_credential`. It retires an identity and revokes no credential; nothing is ever deleted. |
 | `POST` | `/v1/leases` | runner or operator | Claims the expired ones and tries to grant. `201` with the lease, or `200` with `{lease: null, reason}`. |
 | `POST` | `/v1/leases/:id/heartbeats` | runner or operator | Renews the deadline. Optional body `{ttl_seconds}`; without it, the lease's TTL is kept. |
 | `POST` | `/v1/leases/:id/releases` | runner or operator | Closes the lease and gives the slot back immediately. |

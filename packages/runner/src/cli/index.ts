@@ -30,6 +30,7 @@
  * English per D18.
  */
 
+import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
 import path from 'node:path';
 
@@ -132,7 +133,9 @@ options:
   --project <id>            project the leases are asked under
                             (default ${DEFAULT_PROJECT})
   --runner-id <id>          identity this runner declares at pairing
-                            (default: this host and this pid)
+                            (default: this host and the directory this process
+                            runs in — one identity per installation, stable
+                            across restarts)
   --engine <${ENGINE_NAMES.join('|')}>
                             engine every session of this runner opens on
                             (default ${DEFAULT_ENGINE_NAME}); one per process.
@@ -408,13 +411,30 @@ export function resolveWorktreePaths(
 /**
  * The identity a runner declares when it was not given one.
  *
- * Host plus pid, and regenerated every run: a persisted identity is a config
- * file this ficha deliberately does not add (Out of Scope), and pairing is
- * idempotent on the server, so a name that changes per restart costs nothing
- * but a row.
+ * Host plus eight hex characters of the SHA-256 of the directory it runs in —
+ * an INSTALLATION, which is what the fleet page was always trying to show. It
+ * used to be host plus pid, and the cost of that was measured on 2026-09-08:
+ * six rows for one laptop, because every restart declared a machine nobody had
+ * ever seen and pairing, idempotent by exact id, had nothing to be idempotent
+ * against (t491).
+ *
+ * `process.cwd()` and not `--working-dir`: this is called from
+ * {@link parseRunnerOptions}, before any path has been resolved and before the
+ * settings-mode fallback has asked the control plane anything, so it has to be
+ * knowable synchronously and with no network. It is also the value
+ * `resolveWorktreePaths` already falls back to for `repoRoot`.
+ *
+ * A PERSISTED identity file was considered and rejected: this function is
+ * reachable from a `parseRunnerOptions` that the tests call directly with the
+ * real repository as `cwd`, and a file write there would leave state in the
+ * developer's own checkout on every run of the suite.
+ *
+ * @param cwd Directory this installation runs in. Default `process.cwd()`.
+ * @returns The identity, stable across restarts of the same installation.
  */
-function defaultRunnerId(): string {
-  return `${hostname()}-${process.pid}`;
+export function defaultRunnerId(cwd: string = process.cwd()): string {
+  const digest = createHash('sha256').update(path.resolve(cwd), 'utf8').digest('hex');
+  return `${hostname()}-${digest.slice(0, 8)}`;
 }
 
 /**

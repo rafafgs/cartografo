@@ -86,6 +86,9 @@ later. Rafael's condition: architected to be easy to extend and to change —
 guaranteed by being API-first (the screen is a client of the public API, with no
 privileges, in a package separate from the headless core).
 
+*Amended by D26 (2026-09-13): the terminal (CLI and MCP server) becomes the
+operating surface; the screen is retired once they reach parity.*
+
 ## D12 (2026-08-14) — Apache-2.0 licence
 
 Explicit patent protection, the standard for open infrastructure. The public name
@@ -247,6 +250,9 @@ Rafael's explicit decision, case by case**: ticket t216 stays blocked until he
 himself unblocks it, and if it takes off by mistake it goes back to blocked.
 Recorded by the agent with Rafael's authorization (2026-08-16).
 
+*Amended by D26 (2026-09-13): `cartografo-tela` leaves the published package,
+and the Docker image ships the control plane alone, once the screen retires.*
+
 ## D24 (2026-08-25) — English is the only language of the project
 
 English is the only language of the project: code, identifiers, commit messages,
@@ -300,3 +306,26 @@ What the tickets that carry it inherit from here:
 
 Recorded by the agent with Rafael's authorization (2026-09-05: "it stays in;
 adjust D8 to reflect it").
+
+## D26 (2026-09-13) — The terminal is the operator's surface; the screen retires after parity
+
+The CLI (`cartografo`) and the MCP server (`@cartografo/mcp`) become the
+complete operating surface: every observation, control and interaction the
+screen offers today is reachable from the terminal. Nothing the screen does is
+its own — since D11 it has been an unprivileged client of `/v1/*`, so what
+moves is coverage, not capability.
+
+The two halves keep their roles. The CLI is the human's hand: it covers
+everything, including deciding proposals (approve, apply, reject, revert), and
+records those writes as `user`, exactly as the screen does today. The MCP
+server is the model's hand and keeps its two exclusions — it never decides a
+proposal and never transitions a job — because principle 5 (README) needs the
+judge outside the model, and the runner's traversal log must record only what
+actually happened.
+
+The screen (`cartografo-screen`; D11's inbox and graph editor; D23's third
+command and its place in the Docker image) is removed **only after the CLI and
+the MCP server are complete**, by a decision of its own taken by Rafael. Until
+then it stays as it is. D11 and D23 are amended accordingly.
+
+Recorded by the agent with Rafael's authorization (2026-09-13: "pode seguir").

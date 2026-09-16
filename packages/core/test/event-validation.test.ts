@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 21 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 23 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -260,6 +260,11 @@ test('t196 AT9 — the catalogue is the 21 type names of the taxonomy, in its or
       'graph_version.registered',
       'graph_version.applied',
       'graph_version.reverted',
+      // The twenty-second and twenty-third (t583): the human gate's yes and no
+      // on a proposal, keyed to the version it targets. They sit right after
+      // `reverted` so the three human decisions on a proposal read together.
+      'graph_version.proposal_approved',
+      'graph_version.proposal_rejected',
       // The twentieth type, and the fourth of this group (t283): a version's
       // contract state moving, which only ever happens on the re-check a newly
       // registered manifest triggers. It sits inside the graph_version run for
@@ -881,4 +886,21 @@ test('t480 FR2 — the offending index is the one named, not the first', () => {
     },
     'data.options[1].label',
   );
+});
+
+test('t583 AT7 — graph_version.proposal_approved takes graph_id and proposal_id', () => {
+  const data = { graph_id: 'x', proposal_id: 1 };
+  assert.deepEqual(requireValidData('graph_version.proposal_approved', data), data);
+
+  refuses('graph_version.proposal_approved', { proposal_id: 1 }, 'graph_id');
+  refuses('graph_version.proposal_approved', { graph_id: 'x' }, 'proposal_id');
+});
+
+test('t583 AT7 — graph_version.proposal_rejected takes graph_id, proposal_id and reason', () => {
+  const data = { graph_id: 'x', proposal_id: 1, reason: 'not worth it' };
+  assert.deepEqual(requireValidData('graph_version.proposal_rejected', data), data);
+
+  refuses('graph_version.proposal_rejected', { proposal_id: 1, reason: 'r' }, 'graph_id');
+  refuses('graph_version.proposal_rejected', { graph_id: 'x', reason: 'r' }, 'proposal_id');
+  refuses('graph_version.proposal_rejected', { graph_id: 'x', proposal_id: 1 }, 'reason');
 });

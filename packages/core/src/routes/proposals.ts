@@ -161,12 +161,15 @@ const CREATE_PROPOSAL_SCHEMA = {
 /**
  * `POST /proposals/:id/approve` — the human gate's yes.
  *
- * The body is optional and open: its one key is `actor`, who decided (t583). A
- * `400` is that actor being an agent.
+ * The handler reads an optional `actor` off the body (t583), and a `400` is
+ * that actor being an agent. Still no `body` entry, and that is deliberate: a
+ * declared object schema refuses a POST with no body at all as
+ * `400 invalid_body`, and callers post this route bodyless today (the
+ * surveyor's t285 e2e does). The body is read leniently by hand instead. Same
+ * for `/apply` below.
  */
 const APPROVE_SCHEMA = {
   params: ID_PARAM_SCHEMA,
-  body: OPEN_OBJECT_SCHEMA,
   response: {
     200: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
@@ -194,11 +197,10 @@ const REASONED_DECISION_SCHEMA = {
 /**
  * `POST /proposals/:id/apply` — the D15 flow, and the only route here whose `422`
  * is the gate's verdict on the document that would come out. The body carries
- * the optional `actor`, like `/approve`'s (t583).
+ * the optional `actor`, and is undeclared for the reason `/approve`'s is (t583).
  */
 const APPLY_SCHEMA = {
   params: ID_PARAM_SCHEMA,
-  body: OPEN_OBJECT_SCHEMA,
   response: {
     200: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,

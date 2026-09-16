@@ -355,3 +355,26 @@ test('t583 AT6 — an agent actor is refused on all four routes, and nothing is 
   assert.equal(applied.status, 200, JSON.stringify(applied.body));
   await assertAgentRefused(ctx, pending.id, 'revert', { reason: 'rolled back' });
 });
+
+test('t583 — a bodyless POST to approve and apply still answers 200, as it did before', async (t) => {
+  // Not only the screen calls these routes: the surveyor's e2e (t285) posts
+  // approve with no body and no content-type at all. Declaring a body schema
+  // would turn that into `400 invalid_body`.
+  const ctx = await startControlPlane(t);
+  const proposal = await pendingProposal(ctx);
+
+  const approved = await request<{ proposal: Proposal }>(
+    ctx,
+    'POST',
+    `/v1/proposals/${proposal.id}/approve`,
+  );
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+
+  const applied = await request<{ proposal: Proposal }>(
+    ctx,
+    'POST',
+    `/v1/proposals/${proposal.id}/apply`,
+  );
+  assert.equal(applied.status, 200, JSON.stringify(applied.body));
+  assert.equal(applied.body.proposal.status, 'applied');
+});

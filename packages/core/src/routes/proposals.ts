@@ -161,14 +161,15 @@ const CREATE_PROPOSAL_SCHEMA = {
 /**
  * `POST /proposals/:id/approve` — the human gate's yes.
  *
- * No `body` entry, and that is the declaration and not an omission: the handler
- * never reads `request.body`, so documenting one would put a payload in every
- * generated client for a route that ignores it. Same for `/apply` below.
+ * The body is optional and open: its one key is `actor`, who decided (t583). A
+ * `400` is that actor being an agent.
  */
 const APPROVE_SCHEMA = {
   params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
   response: {
     200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
     404: ERROR_RESPONSE_SCHEMA,
     409: ERROR_RESPONSE_SCHEMA,
   },
@@ -192,12 +193,15 @@ const REASONED_DECISION_SCHEMA = {
 
 /**
  * `POST /proposals/:id/apply` — the D15 flow, and the only route here whose `422`
- * is the gate's verdict on the document that would come out.
+ * is the gate's verdict on the document that would come out. The body carries
+ * the optional `actor`, like `/approve`'s (t583).
  */
 const APPLY_SCHEMA = {
   params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
   response: {
     200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
     404: ERROR_RESPONSE_SCHEMA,
     409: ERROR_RESPONSE_SCHEMA,
     422: ERROR_RESPONSE_SCHEMA,
@@ -440,11 +444,15 @@ async function approve(
   if (found.proposal === undefined) return found.refusal;
   const proposal = found.proposal;
 
+  const body = isObject(request.body) ? request.body : {};
+  const agent = agentActorRefusal(reply, body);
+  if (agent !== undefined) return agent;
+
   if (proposal.status !== 'pending') {
     return notPending(reply, proposal, 'approved');
   }
 
-  return { proposal: approveProposal(db, proposal.id) };
+  return { proposal: approveProposal(db, proposal.id, body.actor) };
 }
 
 /** `POST /proposals/:id/reject` — the human gate says no, and says why. */
@@ -457,10 +465,13 @@ async function reject(
   if (found.proposal === undefined) return found.refusal;
   const proposal = found.proposal;
 
+  const body = isObject(request.body) ? request.body : {};
+  const agent = agentActorRefusal(reply, body);
+  if (agent !== undefined) return agent;
+
   // Reason before status, like `revert`: a rejected proposal is negative
   // knowledge for the topographer, and "no" with no reason is the half of the
   // fact nobody can learn from.
-  const body = isObject(request.body) ? request.body : {};
   const reason = body.reason;
   if (typeof reason !== 'string' || reason.trim() === '') {
     return refusal(
@@ -475,7 +486,7 @@ async function reject(
     return notPending(reply, proposal, 'rejected');
   }
 
-  return { proposal: rejectProposalByHuman(db, proposal.id, reason.trim()) };
+  return { proposal: rejectProposalByHuman(db, proposal.id, reason.trim(), body.actor) };
 }
 
 /** The pin of one node, as the graph document carries it (`{id, version, hash}`). */
@@ -592,6 +603,10 @@ async function apply(
   if (found.proposal === undefined) return found.refusal;
   const proposal = found.proposal;
 
+  const body = isObject(request.body) ? request.body : {};
+  const agent = agentActorRefusal(reply, body);
+  if (agent !== undefined) return agent;
+
   // `aprovada`, not `pendente` (t165): a change to the graph passes a human
   // gate, and a proposal that skipped it has to fail loudly. The code is its
   // own — `proposal_not_pending` now describes approve/reject's precondition,
@@ -705,6 +720,7 @@ async function apply(
     versionId,
     document,
     contracts: { state: classifyContracts(contracts), problems: contracts.problems },
+    actor: body.actor,
   });
   const graphAfter = getGraph(db, proposal.graph_id);
   return {
@@ -724,11 +740,14 @@ async function revert(
   if (found.proposal === undefined) return found.refusal;
   const proposal = found.proposal;
 
+  const body = isObject(request.body) ? request.body : {};
+  const agent = agentActorRefusal(reply, body);
+  if (agent !== undefined) return agent;
+
   // Reason before status: it is the field the `graph_version.reverted` event
   // demands — and since t196 really carries into the log —, and it is the
   // evidence the topographer will cross with the telemetry of the abandoned
   // version. Reverting without saying why loses the useful half of the fact.
-  const body = isObject(request.body) ? request.body : {};
   const reason = body.reason;
   if (typeof reason !== 'string' || reason.trim() === '') {
     return refusal(
@@ -770,7 +789,7 @@ async function revert(
     );
   }
 
-  const reverted = revertProposal(db, { proposal, reason });
+  const reverted = revertProposal(db, { proposal, reason, actor: body.actor });
   const graphAfter = getGraph(db, proposal.graph_id);
   return {
     proposal: reverted,
@@ -913,6 +932,37 @@ async function read(
   if (found.proposal === undefined) return found.refusal;
   const proposal = found.proposal;
   return { proposal };
+}
+
+/**
+ * The refusal of a decision attributed to an agent (t583), or `undefined`.
+ *
+ * Approve, apply, reject and revert are the human gate of principle 5, and the
+ * learning loop depends on the judge being outside the model — the same reason
+ * the MCP server offers no tool for any of the four. Only `type === 'agent'` is
+ * refused here; every other shape of `actor` passes through to
+ * `validateEvent`, which is the one place a malformed actor is judged.
+ *
+ * It runs right after the proposal resolves and before any other check, so an
+ * agent learns nothing about the proposal's state and nothing is written.
+ *
+ * @param reply Fastify reply, marked 400 when this refuses.
+ * @param body The request body, already narrowed to an object.
+ * @returns The refusal body, or `undefined` when the actor is acceptable.
+ */
+function agentActorRefusal(
+  reply: FastifyReply,
+  body: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const actor = body.actor;
+  if (!isObject(actor) || actor.type !== 'agent') return undefined;
+  return refusal(
+    reply,
+    400,
+    'agent_actor_not_allowed',
+    "a proposal decision cannot be attributed to an agent (principle 5): approve, apply, reject and revert are always a person's or the control plane's own decision",
+    { actor },
+  );
 }
 
 /**

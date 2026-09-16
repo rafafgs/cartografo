@@ -40,7 +40,7 @@ import { recordEvent } from '../db/events.ts';
 import type { GraphDocument } from '../domain/graph.ts';
 import type { Verdict } from '../domain/hypothesis.ts';
 import type { Operation } from '../domain/operations.ts';
-import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
+import { API_ACTOR, DEFAULT_PROJECT, now, resolveActor } from './common.ts';
 import {
   getVersionSummary,
   insertVersion,
@@ -398,25 +398,48 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
 /**
  * The human gate says yes: `pending` → `approved` (t165, FR2).
  *
- * Approving writes nothing but the status. It is a decision recorded, not the
+ * Approving changes nothing but the status. It is a decision recorded, not the
  * change itself — applying is a second, deliberate act, and principle 5's
- * ladder is exactly that separation.
+ * ladder is exactly that separation. Since t583 the decision is also a fact in
+ * the log, `graph_version.proposal_approved`, carrying who took it; row and
+ * event land in one transaction.
  *
  * @param db Open database.
  * @param id Proposal, already checked to be pending by the route.
+ * @param actorInput The caller's `actor`, unvalidated — `validateEvent` judges it.
  * @returns The updated proposal.
  * @throws {Error} When the row stopped being pending mid-flight — two people
  *   deciding at once is a 409, never a silent overwrite.
  */
-export function approveProposal(db: Database, id: number): Proposal {
-  const effect = db
-    .prepare(
-      `UPDATE proposal SET status = 'approved', updated_at = ?
-        WHERE id = ? AND status = 'pending'`,
-    )
-    .run(now(), id);
+export function approveProposal(db: Database, id: number, actorInput: unknown): Proposal {
+  const actor = resolveActor(actorInput, API_ACTOR);
+  const moment = now();
 
-  if (effect.changes !== 1) throw new Error(`proposal ${id} stopped being pending during approval`);
+  db.transaction(() => {
+    const effect = db
+      .prepare(
+        `UPDATE proposal SET status = 'approved', updated_at = ?
+          WHERE id = ? AND status = 'pending'`,
+      )
+      .run(moment, id);
+
+    if (effect.changes !== 1) {
+      throw new Error(`proposal ${id} stopped being pending during approval`);
+    }
+
+    const proposal = getProposal(db, id);
+    if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
+
+    recordEvent(db, {
+      type: 'graph_version.proposal_approved',
+      project_id: proposal.project_id,
+      execution_id: null,
+      entity: { type: 'graph_version', id: proposal.target_version },
+      actor,
+      occurred_at: moment,
+      data: { graph_id: proposal.graph_id, proposal_id: proposal.id },
+    });
+  })();
 
   const proposal = getProposal(db, id);
   if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
@@ -429,24 +452,51 @@ export function approveProposal(db: Database, id: number): Proposal {
  * `result` is deliberately untouched. That column carries either the report
  * of the soundness gate that failed a proposal or the verdict of a hypothesis
  * that was applied; a human "not worth it" is a third fact, and giving it its
- * own column is what keeps the three readable apart afterwards.
+ * own column is what keeps the three readable apart afterwards. Since t583 it
+ * is also `graph_version.proposal_rejected` in the log, with who said no.
  *
  * @param db Open database.
  * @param id Proposal, already checked to be pending by the route.
  * @param reason Why, required and non-blank — a rejection with no reason loses
  *   the half of the fact the topographer would learn from.
+ * @param actorInput The caller's `actor`, unvalidated — `validateEvent` judges it.
  * @returns The updated proposal.
  * @throws {Error} When the row stopped being pending mid-flight.
  */
-export function rejectProposalByHuman(db: Database, id: number, reason: string): Proposal {
-  const effect = db
-    .prepare(
-      `UPDATE proposal SET status = 'rejected', rejection_reason = ?, updated_at = ?
-        WHERE id = ? AND status = 'pending'`,
-    )
-    .run(reason, now(), id);
+export function rejectProposalByHuman(
+  db: Database,
+  id: number,
+  reason: string,
+  actorInput: unknown,
+): Proposal {
+  const actor = resolveActor(actorInput, API_ACTOR);
+  const moment = now();
 
-  if (effect.changes !== 1) throw new Error(`proposal ${id} stopped being pending during rejection`);
+  db.transaction(() => {
+    const effect = db
+      .prepare(
+        `UPDATE proposal SET status = 'rejected', rejection_reason = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending'`,
+      )
+      .run(reason, moment, id);
+
+    if (effect.changes !== 1) {
+      throw new Error(`proposal ${id} stopped being pending during rejection`);
+    }
+
+    const proposal = getProposal(db, id);
+    if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
+
+    recordEvent(db, {
+      type: 'graph_version.proposal_rejected',
+      project_id: proposal.project_id,
+      execution_id: null,
+      entity: { type: 'graph_version', id: proposal.target_version },
+      actor,
+      occurred_at: moment,
+      data: { graph_id: proposal.graph_id, proposal_id: proposal.id, reason },
+    });
+  })();
 
   const proposal = getProposal(db, id);
   if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
@@ -470,9 +520,12 @@ export function applyProposal(
     versionId: string;
     document: GraphDocument;
     contracts: StoredContracts;
+    /** The caller's `actor`, unvalidated; `API_ACTOR` when absent (t583). */
+    actor?: unknown;
   },
 ): { proposal: Proposal; version: GraphVersion } {
   const { proposal, versionId, document, contracts } = data;
+  const actor = resolveActor(data.actor, API_ACTOR);
   const moment = now();
 
   db.transaction(() => {
@@ -501,6 +554,7 @@ export function applyProposal(
       source: 'proposal',
       proposalId: proposal.id,
       moment,
+      actor,
     });
 
     const effect = db
@@ -535,15 +589,16 @@ export function applyProposal(
  * it with the reason recorded here.
  *
  * @param db Open database.
- * @param data Applied proposal and the reason (required, D15 / event
- *   `graph_version.reverted`).
+ * @param data Applied proposal, the reason (required, D15 / event
+ *   `graph_version.reverted`) and the caller's `actor`, if any (t583).
  * @returns The updated proposal.
  */
 export function revertProposal(
   db: Database,
-  data: { proposal: Proposal; reason: string },
+  data: { proposal: Proposal; reason: string; actor?: unknown },
 ): Proposal {
   const { proposal, reason } = data;
+  const actor = resolveActor(data.actor, API_ACTOR);
   const moment = now();
 
   // The subject of `graph_version.reverted` is the ABANDONED version, and an
@@ -576,7 +631,7 @@ export function revertProposal(
       project_id: proposal.project_id,
       execution_id: null,
       entity: { type: 'graph_version', id: abandoned },
-      actor: API_ACTOR,
+      actor,
       occurred_at: moment,
       data: {
         graph_id: proposal.graph_id,

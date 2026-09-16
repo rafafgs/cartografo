@@ -292,11 +292,13 @@ test('t196 AT3 — applying a proposal records registered and applied for the ne
   assert.deepEqual(events[1].data, { graph_id: graph.id, proposal_id: proposal.id });
 
   // The version that used to hold is not re-narrated: what changed is the
-  // pointer, and the fact of it belongs to the version that took over.
+  // pointer, and the fact of it belongs to the version that took over. The
+  // approval is on its timeline since t583 — a proposal decision is keyed to
+  // the version it targets — but it was written by approving, not by applying.
   const before = await eventsOf(ctx, version.id);
   assert.deepEqual(
     before.map((event) => event.type),
-    ['graph_version.registered', 'graph_version.applied'],
+    ['graph_version.registered', 'graph_version.applied', 'graph_version.proposal_approved'],
     'applying on top of a version adds nothing to that version\'s own timeline',
   );
 });

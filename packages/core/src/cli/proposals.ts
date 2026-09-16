@@ -22,7 +22,9 @@
  * deliberate copy of `cli/index.ts`'s own option-parsing primitives rather than
  * an import from it: `index.ts` calls `runProposals` from this file, and
  * importing back from it would make the two modules circular for the sake of
- * three tiny, side-effect-free functions.
+ * three tiny, side-effect-free functions. They, `errorText`, `renderOperations`
+ * and `resolveOperator` are exported for `cli/graph.ts` (t545), which this
+ * module does not import from, so that direction is not circular.
  *
  * A wrong-state decision (approving twice, applying a proposal still pending) is
  * left entirely to the control plane's own `409` — this module does not
@@ -63,7 +65,7 @@ interface Extraction {
   rest: string[];
 }
 
-function extractValue(args: string[], name: string): Extraction {
+export function extractValue(args: string[], name: string): Extraction {
   const rest: string[] = [];
   let value: string | undefined;
 
@@ -89,12 +91,12 @@ function extractValue(args: string[], name: string): Extraction {
   return { value, rest };
 }
 
-function extractFlag(args: string[], name: string): { present: boolean; rest: string[] } {
+export function extractFlag(args: string[], name: string): { present: boolean; rest: string[] } {
   const rest = args.filter((argument) => argument !== name);
   return { present: rest.length !== args.length, rest };
 }
 
-function requireNothingElse(left: string[], positionalCount: number, subcommand: string): void {
+export function requireNothingElse(left: string[], positionalCount: number, subcommand: string): void {
   const extras = left.slice(positionalCount);
   if (extras.length > 0) {
     throw new UsageError(`${subcommand} does not understand: ${extras.map((extra) => `"${extra}"`).join(', ')}`);
@@ -122,7 +124,7 @@ function proposalsOf(body: unknown): ProposalRead[] {
  * (FR7): `"<error>: <message>"` when both are there, whichever one is there
  * alone otherwise, and a generic fallback when the body carries neither.
  */
-function errorText(body: unknown, status: number): string {
+export function errorText(body: unknown, status: number): string {
   if (!isObject(body)) return `failure ${status}`;
   const error = typeof body.error === 'string' ? body.error : undefined;
   const message = typeof body.message === 'string' && body.message !== '' ? body.message : undefined;
@@ -203,7 +205,7 @@ function renderOperation(operation: unknown): string {
   }
 }
 
-function renderOperations(operations: unknown): string[] {
+export function renderOperations(operations: unknown): string[] {
   if (!Array.isArray(operations) || operations.length === 0) return [EMPTY_DIFF_LINE];
   return operations.map(renderOperation);
 }
@@ -311,7 +313,7 @@ async function runShow(args: string[], ctx: ProposalsContext): Promise<number> {
  * `$USER`/`$USERNAME`, the same identity read `cli/up.ts`'s `os.homedir()`
  * already leans on elsewhere in this CLI.
  */
-function resolveOperator(explicit: string | undefined): string {
+export function resolveOperator(explicit: string | undefined): string {
   if (explicit !== undefined) return explicit;
 
   try {

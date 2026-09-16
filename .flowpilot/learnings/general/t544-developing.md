@@ -1,0 +1,6 @@
+### t544 (developing, unverified)
+
+- An event's actor is a TOP-LEVEL field on the wire (`{id, type, actor, occurred_at, data}`), not nested inside `data` — `job.blocked`/`job.unblocked`'s actor is `event.actor`, not `event.data.actor`.
+- seedDefaultSettings (src/index.ts) seeds workspace_root/worktrees_root for the DEFAULT project (id 1) on EVERY control-plane startup, so `cartografo runners`'s pairing-command placeholders (AC2's exact wording) only show for a project with genuinely no settings recorded — never for project 1 against a real binary. The AT13 test therefore checks both: the ported decision logic against project 1's real seeded values, and the literal placeholder text against a freshly created project with nothing recorded.
+- createInputRequest does NOT itself block the job; a test that wants 'a pending input request on an already-blocked job' (as the ticket's AC1 describes) has to call POST /v1/jobs/:id/blocks first. Answering always unblocks unconditionally in the same transaction, regardless of why the job was blocked.
+- POST /v1/jobs/:id/blocks and /unblocks answer 200, not 201 (jobs.ts's `write` helper defaults to 200) — differs from POST /v1/jobs's 201, same pattern t542 already flagged for /transitions.

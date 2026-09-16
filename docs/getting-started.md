@@ -103,6 +103,23 @@ machine, and it says per runner whether the engine CLI, the model credential, th
 `cartografo` MCP server and the workspace are all in place — or exactly which of
 them is not, with one way to fix each.
 
+**The no-browser path.** Everything from here on has a CLI equivalent, and you
+never have to open the screen at all:
+
+```bash
+npx cartografo up --no-screen                  # the control plane and a local runner
+npx cartografo runners                         # is the runner ready to pick work up?
+npx cartografo example run asymmetric-bets     # registers and starts a demo, no curl
+watch -n 2 -- npx cartografo job 1             # and watch it move, every two seconds
+```
+
+`cartografo runners` is the check page's own readiness logic, in text — the
+same four checks per runner, and the same pairing command when nothing is
+paired yet. `example run` is step 3 and step 4 combined into one write. And
+`watch` — the Unix utility, not a subcommand of this CLI — turns `cartografo
+job <id>` (which already prints the whole thing and exits) into a live view;
+nothing new was added to the binary for it.
+
 ## 3. Import a factory graph
 
 An empty control plane knows no problem classes. Two come in the box; start with
@@ -129,12 +146,13 @@ does `GET /v1/classes`. The graph is five nodes — `refine`, `develop`,
 from this step you need for the next one.
 
 **The zero-`curl` way round.** Everything in this step and the next is one
-click on the screen's **examples** page (`http://127.0.0.1:4318/examples`): it
-lists every bundle that ships a `demo/job.json`, registers the one you pick if
-this project has never seen it, opens its demo job in a round of its own and
-takes you straight to the board. The commands below are what that click does,
-said out loud — read them if you want to know what happened, skip them if you
-only want it to run.
+click on the screen's **examples** page (`http://127.0.0.1:4318/examples`), or
+one command — `npx cartografo examples` lists every bundle that ships a
+`demo/job.json`, and `npx cartografo example run <class>` registers the one
+you pick if this project has never seen it and opens its demo job in a round
+of its own. The commands below are what either of those does, said out loud —
+read them if you want to know what happened, skip them if you only want it to
+run.
 
 ## 4. Put a piece of work on it
 
@@ -170,11 +188,13 @@ Two views, and they answer different questions.
 
 **Where is everything?** The board, at `http://127.0.0.1:4318/board`, groups
 every job by the node it is standing on and shows the blocking reason where
-there is one. Its sibling views are the readiness check at `/`, the proposal
-inbox at `/inbox`, the escalation queue at `/input-requests` and one job's
-timeline at `/jobs/<id>` ([`docs/spec/screen.md`](spec/screen.md) documents the
-whole route table). Each view renders on the request: reloading the page is the
-refresh.
+there is one — the same thing `npx cartografo jobs` prints from a terminal,
+one row per job. Its sibling views are the readiness check at `/` (`npx
+cartografo runners`), the proposal inbox at `/inbox`, the escalation queue at
+`/input-requests` (`npx cartografo input-requests`) and one job's timeline at
+`/jobs/<id>` (`npx cartografo job <id>`;
+[`docs/spec/screen.md`](spec/screen.md) documents the whole route table). Each
+view renders on the request: reloading the page is the refresh.
 
 **What happened to this one job?** Its event timeline, which is the log rather
 than a summary of it:
@@ -223,8 +243,9 @@ curl -sS -H "Authorization: Bearer $CARTOGRAFO_TOKEN" "$CARTOGRAFO_URL/v1/input-
 
 `{"input_requests":[]}` means nobody is waiting on you, which is a different
 answer from an error and reads as one. Anything in that list can be answered
-inline on the screen, at `/input-requests`, which writes through the same public
-API you just read.
+inline on the screen, at `/input-requests`, or from a terminal — `npx
+cartografo answer <id> "your answer"` — either of which writes through the
+same public API you just read, and unblocks the job in the same transaction.
 
 **Is the control plane itself unhappy?** Turn its log up. The server writes one
 JSON log stream, and a `500` answers the client with no more than

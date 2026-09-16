@@ -1,0 +1,5 @@
+### t544 (integrating, unverified)
+
+- The full npm test exited 1 on exactly one test, packages/core cli-watch.test.ts 'AT5 — SIGINT exits 0 once the connection has closed' (it ran 35.9s). The same file re-run on its own passed 8/8, and `git diff main` over watch.ts and cli-watch.test.ts is empty. This is the timing flakiness under load that t543 already recorded. Every other suite passed: 966/967 in core with that one failure, 909/911 in runner with 0 failing and 2 not counted as pass, and all of screen and root.
+- Two branches that each add a CLI subcommand always conflict in index.ts's USAGE help and in API_SUBCOMMANDS. A repeated option like --reason or --by should become one entry listing every subcommand that uses it, not two entries with the same flag name.
+- The README count problem that t584 recorded came back from the other direction: t584 wrote 'the ninth' against main's 'eight reads', and t544 had already removed that count. Search the merged README for ordinal words ('the ninth', 'the eighth') whenever two CLI tickets meet.

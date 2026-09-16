@@ -48,6 +48,7 @@ import {
   runSessions,
   runTranscript,
 } from './reads.ts';
+import { runProposals } from './proposals.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
 import { parseUpFlags, runUp } from './up.ts';
@@ -111,6 +112,20 @@ subcommands:
                          shows only the last N lines.
   input-requests         the escalation inbox; --status defaults to pending.
 
+  proposals <verb>       decides and reads proposals (D26): the CLI's own
+                         version of the inbox page, on par with the screen.
+                           proposals list [--status <status>] [--json]
+                           proposals show <id> [--json]
+                           proposals approve <id> [--by <name>] [--json]
+                           proposals apply <id> [--by <name>] [--json]
+                           proposals reject <id> --reason <text> [--by <name>] [--json]
+                           proposals revert <id> --reason <text> [--by <name>] [--json]
+                         list groups into PENDING/HISTORY unless --status is
+                         given; show prints the semantic diff; approve/apply
+                         take no --reason; reject/revert require one, checked
+                         before any request is sent. --by defaults to the OS
+                         user (env USER/USERNAME as a fallback).
+
   the D4 skill-import gate, in three steps:
 
   scan-skill <path>      derives a draft manifest from the SKILL.md of an
@@ -137,6 +152,10 @@ options:
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
+                         (proposals approve/apply/reject/revert) who decides;
+                         default the OS user
+  --reason <text>        (proposals reject, proposals revert) mandatory;
+                         checked before any request is sent
   --job <id>             (register-skill) job the approval was opened on
                          (export-history) job whose history to export
                          (sessions) filter to one job's sessions
@@ -147,15 +166,17 @@ options:
                          awaiting_you, blocked_unasked, running, unowned,
                          completed, queued
   --status <status>      (input-requests) filter by status; default pending
+                         (proposals list) filter by status; default groups
+                         into PENDING/HISTORY instead
   --tail <n>             (transcript) show only the last N lines, counting
                          back from the session's own last non-blank line
   --project <id|name>    project to work in (import, export, export-history,
                          status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests); default 1.
+                         transcript, input-requests, proposals); default 1.
                          A name is resolved against GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests) prints machine-readable
-                         JSON instead of the human table/card
+                         transcript, input-requests, proposals) prints
+                         machine-readable JSON instead of the human table/card
   -h, --help             this text
 
 Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST,
@@ -174,6 +195,7 @@ const API_SUBCOMMANDS = [
   'sessions',
   'transcript',
   'input-requests',
+  'proposals',
   'scan-skill',
   'propose-skill',
   'register-skill',
@@ -413,6 +435,17 @@ async function runApiClient(
       throw new UsageError(`--job has to be an integer (got: "${fromJob.value}")`);
     }
     return await runRegisterSkill({ jobId, url });
+  }
+
+  if (subcommand === 'proposals') {
+    // The verb and everything past it are `cli/proposals.ts`'s own to parse
+    // (FR1); this router only extracts the two things every other subcommand
+    // already extracts before it gets a say — the address and the project.
+    const verb = fromProject.rest[0];
+    return await runProposals(verb, fromProject.rest.slice(1), {
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+    });
   }
 
   if (subcommand === 'jobs') {

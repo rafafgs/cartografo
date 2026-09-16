@@ -191,8 +191,9 @@ middle still reads to its last line ([the
 format](docs/spec/history-export.md)). It goes only one way: there is no
 importing a history back, and the file carries the record unredacted.
 
-`cartografo` is also the complete operating surface D26 asks for: eight reads
-with board parity, each with a `--json` form for a script.
+`cartografo` is also the complete operating surface D26 asks for: reads with
+board parity plus every write the screen has, each with a `--json` form for a
+script.
 
 ```bash
 npx cartografo jobs                            # the board, one row per job
@@ -206,6 +207,17 @@ npx cartografo input-requests                  # the escalation inbox (pending, 
 npx cartografo input-requests --status answered
 npx cartografo watch                           # tails every event, live, reconnecting forever
 npx cartografo watch --job 41 --until-done     # follows one job, exits 0 when it finishes
+npx cartografo examples                        # the bundles this control plane can demonstrate
+npx cartografo example run asymmetric-bets     # registers it if needed, opens its demo job
+npx cartografo runners                         # the fleet, and whether each one is ready
+npx cartografo runners recheck r1              # asks one runner to report about itself again
+npx cartografo answer 12 "yes, go ahead"       # answers an escalation; unblocks the job
+npx cartografo answer 12 --file answer.txt     # same, reading the text from a file
+npx cartografo block 41 --reason "waiting on legal"
+npx cartografo unblock 41 --note "promotion released"
+npx cartografo job create --graph sha256:… --input job.json
+npx cartografo settings                        # this project's recorded defaults
+npx cartografo settings set workspace_root /path/to/a/checkout
 ```
 
 `watch` is what replaces the board's own live view for a terminal-first flow:

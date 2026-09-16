@@ -1,0 +1,3 @@
+### t549 (developing, unverified)
+
+- Dead links/claims remain OUTSIDE this ticket's declared surface and were left alone: docs/spec/interview.md (5 links to design-system.md/screen-interview.md), docs/spec/entities-versioning.md:553, packages/mcp/README.md:7 (links ../screen/README.md), .flowpilot/overlays/development.md and refinement.md (still tell sessions to open the deleted design-system.md for packages/screen work), .flowpilot/learnings/frontend.md, scripts/link-bundled-siblings.mjs:58 comment, and docs/spec/glossary-wire.md/events-stream.md path citations. A follow-up doc-sweep ticket should take them, plus the generic 'retiring' prose in what-cartografo-is.md that FR19 excluded.

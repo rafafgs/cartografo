@@ -235,6 +235,26 @@ own gate, ahead of the control plane's `400 reason_required`. Which actions a
 given proposal accepts is left entirely to the control plane's `409`: this is
 a thin client, not a second copy of that state machine.
 
+`graph` is the tenth: editing a graph's topology as a file, pushed through the
+same door the graph editor page uses — a proposal, created, approved and
+applied. `graph propose` diffs the edited file against the lineage's current
+version, and `graph versions`/`graph show` read the chain back.
+
+```bash
+npx cartografo export nota-curta --out nota-curta.graph.json   # edit the file
+npx cartografo graph propose nota-curta.graph.json --dry-run    # the operations and the soundness gate, locally
+npx cartografo graph propose nota-curta.graph.json --by rafael  # create, approve and apply
+npx cartografo graph propose my-variant.graph.json --graph my-variant --no-apply
+npx cartografo graph versions nota-curta                        # the whole chain, oldest first
+npx cartografo graph show nota-curta --version <version-id>
+```
+
+`--graph` defaults to the file's `problem_class`, which names a base lineage
+only — pass `--graph` for a variant. A node's `id` and `engine` are frozen and
+refused before anything is sent; ids are paired by position in `nodes`, so add
+nodes at the end and remove them from the end. `--dry-run` sends nothing and
+`--no-apply` leaves the proposal pending; the two do not combine.
+
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick
 (`--interval-ms`, default 2000). One engine per process

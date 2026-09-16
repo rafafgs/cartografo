@@ -38,6 +38,7 @@ import { LockHeldError } from '../db/lock.ts';
 import { DEFAULT_PORT } from '../index.ts';
 import { runExport } from './export.ts';
 import { historyScope, runExportHistory } from './export-history.ts';
+import { runGraph } from './graph.ts';
 import { runImport } from './import.ts';
 import {
   runExecution,
@@ -132,6 +133,28 @@ subcommands:
                          before any request is sent. --by defaults to the OS
                          user (env USER/USERNAME as a fallback).
 
+  graph <verb>           edits a graph as a file and pushes the edit through
+                         the proposal door (D26): export, edit, propose.
+                           graph propose <file> [--graph <id>] [--by <name>]
+                                 [--evidence <text>] [--dry-run | --no-apply] [--json]
+                           graph versions <id> [--json]
+                           graph show <id> [--version <version-id>] [--json]
+                         propose diffs the file against the lineage's current
+                         version, then creates, approves and applies the
+                         proposal as --by. --graph defaults to the file's
+                         problem_class, which is right only for a base
+                         lineage: for a variant, pass --graph <variant-id>.
+                         A node's id (paired by position in the nodes array —
+                         add nodes at the end, remove them from the end) and
+                         its engine are frozen and refused locally; a
+                         node_type change becomes a remove plus an add.
+                         --dry-run prints the operations and runs the
+                         soundness gate locally, sending nothing; --no-apply
+                         leaves the proposal pending. versions lists the
+                         whole chain oldest first; show prints the current
+                         version, or --version, refused if it belongs to
+                         another lineage.
+
   the D4 skill-import gate, in three steps:
 
   scan-skill <path>      derives a draft manifest from the SKILL.md of an
@@ -158,10 +181,20 @@ options:
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
-                         (proposals approve/apply/reject/revert) who decides;
-                         default the OS user
+                         (proposals approve/apply/reject/revert, graph propose)
+                         who decides; default the OS user
   --reason <text>        (proposals reject, proposals revert) mandatory;
                          checked before any request is sent
+  --graph <id>           (graph propose) lineage to propose against; default
+                         the file's problem_class (base lineages only)
+  --evidence <text>      (graph propose) the proposal's evidence note; default
+                         "manual edit via cartografo graph propose"
+  --dry-run              (graph propose) print the operations and run the
+                         soundness gate locally; send nothing
+  --no-apply             (graph propose) create the proposal and leave it
+                         pending; not combinable with --dry-run
+  --version <id>         (graph show) a version of the lineage other than the
+                         current one
   --job <id>             (register-skill) job the approval was opened on
                          (export-history) job whose history to export
                          (sessions) filter to one job's sessions
@@ -188,10 +221,10 @@ options:
                          back from the session's own last non-blank line
   --project <id|name>    project to work in (import, export, export-history,
                          status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, watch, proposals);
+                         transcript, input-requests, watch, proposals, graph);
                          default 1. A name is resolved against GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, watch, proposals) prints
+                         transcript, input-requests, watch, proposals, graph) prints
                          machine-readable JSON instead of the human table/card
                          (watch: JSON Lines, one whole envelope per line)
   -h, --help             this text
@@ -214,6 +247,7 @@ const API_SUBCOMMANDS = [
   'input-requests',
   'watch',
   'proposals',
+  'graph',
   'scan-skill',
   'propose-skill',
   'register-skill',
@@ -471,6 +505,16 @@ async function runApiClient(
     // already extracts before it gets a say — the address and the project.
     const verb = fromProject.rest[0];
     return await runProposals(verb, fromProject.rest.slice(1), {
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+    });
+  }
+
+  if (subcommand === 'graph') {
+    // Same hand-off as `proposals`: the verb and everything past it are
+    // `cli/graph.ts`'s own to parse (t545, FR1).
+    const verb = fromProject.rest[0];
+    return await runGraph(verb, fromProject.rest.slice(1), {
       url,
       projectId: await resolveProjectId(fromProject.value, url),
     });

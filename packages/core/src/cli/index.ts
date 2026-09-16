@@ -52,6 +52,7 @@ import { runProposals } from './proposals.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
 import { parseUpFlags, runUp } from './up.ts';
+import { runWatch, validateWatchFlags } from './watch.ts';
 import { isObject } from '../util/is-object.ts';
 import {
   DEFAULT_PROJECT_ID,
@@ -111,6 +112,11 @@ subcommands:
                          (a non-zero exit code) marked with ">>> ". --tail N
                          shows only the last N lines.
   input-requests         the escalation inbox; --status defaults to pending.
+  watch                  tails the event stream, reconnecting forever past the
+                         first connection; --job/--execution filter client-side
+                         (the route has neither parameter); --since/--from-start
+                         pick where it starts; --until-done exits 0 the moment
+                         the named job or round finishes.
 
   proposals <verb>       decides and reads proposals (D26): the CLI's own
                          version of the inbox page, on par with the screen.
@@ -159,9 +165,19 @@ options:
   --job <id>             (register-skill) job the approval was opened on
                          (export-history) job whose history to export
                          (sessions) filter to one job's sessions
+                         (watch) filter client-side to one job; combines with
+                         --execution (ANDed); with --until-done, exactly one
+                         of --job/--execution is required
   --execution <id>       (export-history) round whose history to export; exactly
                          one of --job/--execution
                          (jobs, sessions) filter to one round
+                         (watch) filter client-side to one round; see --job
+  --since <event-id>     (watch) resume from this event id (exclusive);
+                         mutually exclusive with --from-start
+  --from-start           (watch) start from the whole log (event id 0) instead
+                         of from now; mutually exclusive with --since
+  --until-done           (watch) exit 0 the moment the named job or round
+                         finishes; needs exactly one of --job/--execution
   --state <state>        (jobs) filter to one of the six job states:
                          awaiting_you, blocked_unasked, running, unowned,
                          completed, queued
@@ -172,11 +188,12 @@ options:
                          back from the session's own last non-blank line
   --project <id|name>    project to work in (import, export, export-history,
                          status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, proposals); default 1.
-                         A name is resolved against GET /v1/projects
+                         transcript, input-requests, watch, proposals);
+                         default 1. A name is resolved against GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, proposals) prints
+                         transcript, input-requests, watch, proposals) prints
                          machine-readable JSON instead of the human table/card
+                         (watch: JSON Lines, one whole envelope per line)
   -h, --help             this text
 
 Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST,
@@ -195,6 +212,7 @@ const API_SUBCOMMANDS = [
   'sessions',
   'transcript',
   'input-requests',
+  'watch',
   'proposals',
   'scan-skill',
   'propose-skill',
@@ -259,6 +277,13 @@ function parseIntegerOption(raw: string, label: string): number {
 function parsePositiveIntegerOption(raw: string, label: string): number {
   const value = parseIntegerOption(raw, label);
   if (value <= 0) throw new UsageError(`${label} has to be a positive integer (got: "${raw}")`);
+  return value;
+}
+
+/** Same, but refuses a negative value (`--since`, an event id). */
+function parseNonNegativeIntegerOption(raw: string, label: string): number {
+  const value = parseIntegerOption(raw, label);
+  if (value < 0) throw new UsageError(`${label} has to be a non-negative integer (got: "${raw}")`);
   return value;
 }
 
@@ -334,10 +359,13 @@ async function runApiClient(
   const fromToken = extractValue(fromUrl.rest, '--token');
   const fromProject = extractValue(fromToken.rest, '--project');
   const url = resolveBaseUrl(fromUrl.value, env);
+  const token = resolveToken(fromToken.value, env);
 
   // One place, before any subcommand runs: from here on every request this
-  // process makes carries the credential (t124, FR6).
-  useToken(resolveToken(fromToken.value, env));
+  // process makes carries the credential (t124, FR6). `watch` also takes it
+  // directly (below): it makes its own raw `fetch` calls for the stream
+  // itself, which `requestJson`'s module-level credential does not reach.
+  useToken(token);
 
   if (subcommand === 'import') {
     requireNothingElse(fromProject.rest, 1, 'import');
@@ -549,6 +577,40 @@ async function runApiClient(
       projectId: await resolveProjectId(fromProject.value, url),
       status: fromStatus.value ?? 'pending',
       json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'watch') {
+    const fromJob = extractValue(fromProject.rest, '--job');
+    const fromExecution = extractValue(fromJob.rest, '--execution');
+    const fromSince = extractValue(fromExecution.rest, '--since');
+    const fromFromStart = extractFlag(fromSince.rest, '--from-start');
+    const fromJson = extractFlag(fromFromStart.rest, '--json');
+    const fromUntilDone = extractFlag(fromJson.rest, '--until-done');
+    requireNothingElse(fromUntilDone.rest, 0, 'watch');
+
+    const jobId = fromJob.value === undefined ? undefined : parseIntegerOption(fromJob.value, 'watch --job');
+    const executionId =
+      fromExecution.value === undefined ? undefined : parseIntegerOption(fromExecution.value, 'watch --execution');
+    const since = fromSince.value === undefined ? undefined : parseNonNegativeIntegerOption(fromSince.value, 'watch --since');
+    const fromStart = fromFromStart.present;
+    const untilDone = fromUntilDone.present;
+
+    // Pure and synchronous, before `--project` is resolved (a name is a
+    // request of its own): a wrong command line costs the server nothing
+    // (AT6), the same posture `export-history`'s `historyScope` keeps.
+    validateWatchFlags({ job: jobId, execution: executionId, since, fromStart, untilDone });
+
+    return await runWatch({
+      url,
+      token,
+      projectId: await resolveProjectId(fromProject.value, url),
+      jobId,
+      executionId,
+      since,
+      fromStart,
+      json: fromJson.present,
+      untilDone,
     });
   }
 

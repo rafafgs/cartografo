@@ -1,0 +1,8 @@
+### t546 (developing, unverified)
+
+- Without `Last-Event-ID`, `GET /v1/events/stream` starts from the latest event at connection time. Opening a new connection for each wait with no cursor would miss anything that lands between reading the conversation and subscribing. The REPL keeps a cursor, starting from the highest id in `GET /v1/jobs/:id/events`.
+- bin/cartografo.mjs sets `process.exitCode` and never calls `process.exit`, so any open handle keeps the CLI alive. The readline interface has to be closed and stdin unref'd in a `finally`, and every stream wait has to abort its own AbortController.
+- While a draft is still being written, its manifests have no `hash`, so the 'reaches an external system' line never shows mid-interview (`matchesPin` needs id, version and hash). The screen behaves the same way. To show that line in a test, the draft has to carry pins that are already closed.
+- The Write tool turned `\u0000`-style escapes inside a regex literal into real control bytes, and eslint then failed with no-irregular-whitespace. Write regexes with escape sequences through a heredoc or python instead.
+- The feat commit also changes one line in the test file: a type cast in the `pinned()` fixture helper, so tsc accepts spreading `Record<string, unknown>` with `hash`. No assertion changed.
+- The server's own error messages (for example `input request 5 is already "answered"`) would break the interview's vocabulary rule. The REPL prints its own wording plus the error code, never the server's message, except for `class_already_registered`, which comes from import.ts and has no forbidden words.

@@ -350,7 +350,9 @@ of another project answers the same `404 not_found` an unknown id gets (t410).
 **Consumed by the screen's `/interview/:id`** (t433), which renders it as a chat
 beside the map it is drawing and reads nothing else — see
 [`screen-interview.md`](screen-interview.md). The projection's own contract is
-unchanged by that page: it was written for it.
+unchanged by that page: it was written for it. `cartografo interview` (t546) is a second
+consumer — the same conversation in a terminal, reading the same projection and
+nothing else — and it changes the contract no more than the page did.
 
 **`draft.graph` is also handed to `POST /v1/graphs/validate`** while the
 interview is still running (t460), so the page can say what registering the map

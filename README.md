@@ -191,8 +191,9 @@ middle still reads to its last line ([the
 format](docs/spec/history-export.md)). It goes only one way: there is no
 importing a history back, and the file carries the record unredacted.
 
-`cartografo` is also the complete operating surface D26 asks for: eight reads
-with board parity, each with a `--json` form for a script.
+`cartografo` is also the complete operating surface D26 asks for: reads with
+board parity plus every write the screen has, each with a `--json` form for a
+script.
 
 ```bash
 npx cartografo jobs                            # the board, one row per job
@@ -206,6 +207,17 @@ npx cartografo input-requests                  # the escalation inbox (pending, 
 npx cartografo input-requests --status answered
 npx cartografo watch                           # tails every event, live, reconnecting forever
 npx cartografo watch --job 41 --until-done     # follows one job, exits 0 when it finishes
+npx cartografo examples                        # the bundles this control plane can demonstrate
+npx cartografo example run asymmetric-bets     # registers it if needed, opens its demo job
+npx cartografo runners                         # the fleet, and whether each one is ready
+npx cartografo runners recheck r1              # asks one runner to report about itself again
+npx cartografo answer 12 "yes, go ahead"       # answers an escalation; unblocks the job
+npx cartografo answer 12 --file answer.txt     # same, reading the text from a file
+npx cartografo block 41 --reason "waiting on legal"
+npx cartografo unblock 41 --note "promotion released"
+npx cartografo job create --graph sha256:… --input job.json
+npx cartografo settings                        # this project's recorded defaults
+npx cartografo settings set workspace_root /path/to/a/checkout
 ```
 
 `watch` is what replaces the board's own live view for a terminal-first flow:
@@ -216,7 +228,7 @@ takes neither), `--since`/`--from-start` pick where it resumes, and
 `--until-done` turns it into something a script can wait on instead of
 polling `job <id>` in a loop.
 
-`proposals` is the ninth: the CLI's own version of the inbox page, list and
+`proposals` is the CLI's own version of the inbox page: list and
 show plus the four decisions (`approve`, `apply`, `reject`, `revert`), each a
 thin call of `/v1/proposals*`.
 
@@ -235,10 +247,23 @@ own gate, ahead of the control plane's `400 reason_required`. Which actions a
 given proposal accepts is left entirely to the control plane's `409`: this is
 a thin client, not a second copy of that state machine.
 
-`graph` is the tenth: editing a graph's topology as a file, pushed through the
-same door the graph editor page uses — a proposal, created, approved and
-applied. `graph propose` diffs the edited file against the lineage's current
-version, and `graph versions`/`graph show` read the chain back.
+`interview` is the only one that talks back: the interview
+page's conversation in the terminal. It asks for a title and a description,
+then every question as it arrives — a number or the text for a decision, one
+prompt per field for a form, Enter for the default — and prints the map as it
+grows. Once the interview is finished, `register` registers the map and
+`export <dir>` writes it as a bundle `import` reads back.
+
+```bash
+npx cartografo interview                       # start one, answering at the prompts
+npx cartografo interview --resume 41           # pick it up again; every answer is on the server
+npx cartografo interview --answers answers.txt # one line per prompt, from a file
+```
+
+`graph` edits a graph's topology as a file, pushed through the same door the
+graph editor page uses — a proposal, created, approved and applied.
+`graph propose` diffs the edited file against the lineage's current version,
+and `graph versions`/`graph show` read the chain back.
 
 ```bash
 npx cartografo export nota-curta --out nota-curta.graph.json   # edit the file

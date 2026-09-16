@@ -1,0 +1,3 @@
+### t584 (developing, unverified)
+
+- cli-proposals.test.ts needed a database handle no other cli-*.test.ts file needs (AT2, reading actor.ref off graph_version events): cli-support.ts's startControlPlane spawns the control plane as a real CHILD PROCESS with only url/token, no ctx.db. Opened a second connection directly with openDatabase() from src/db/connection.ts against the same databasePath the subprocess was started with, then read through loadEvents() from ./support.ts (getEventsByEntity/listEvents) — a second reader connection to the same WAL-mode file works fine alongside the live writer.

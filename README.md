@@ -228,6 +228,25 @@ takes neither), `--since`/`--from-start` pick where it resumes, and
 `--until-done` turns it into something a script can wait on instead of
 polling `job <id>` in a loop.
 
+`proposals` is the CLI's own version of the inbox page: list and
+show plus the four decisions (`approve`, `apply`, `reject`, `revert`), each a
+thin call of `/v1/proposals*`.
+
+```bash
+npx cartografo proposals list                  # PENDING and HISTORY, in two sections
+npx cartografo proposals show 12                # the semantic diff, evidence and metric
+npx cartografo proposals approve 12 --by rafael
+npx cartografo proposals apply 12 --by rafael
+npx cartografo proposals reject 12 --reason "not worth the cost"
+npx cartografo proposals revert 12 --reason "the rework doubled"
+```
+
+`--by` defaults to the OS user; `approve`/`apply` take no `--reason`, and
+`reject`/`revert` require one, checked before any request is sent — the CLI's
+own gate, ahead of the control plane's `400 reason_required`. Which actions a
+given proposal accepts is left entirely to the control plane's `409`: this is
+a thin client, not a second copy of that state machine.
+
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick
 (`--interval-ms`, default 2000). One engine per process

@@ -15,6 +15,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { ApiClient } from '../src/client.ts';
+import { INSTRUCTIONS } from '../src/protocol.ts';
 import { callTool } from '../src/protocol.ts';
 import {
   CLIP_CHARS,
@@ -36,6 +37,10 @@ const WRITERS = Object.freeze([
   'cartografo_block_job',
   'cartografo_unblock_job',
   'cartografo_register_graph',
+  'cartografo_request_runner_recheck',
+  'cartografo_update_settings',
+  'cartografo_run_example',
+  'cartografo_start_interview',
 ]);
 
 /** A client whose every request is answered by `answer`. */
@@ -139,7 +144,7 @@ const JOB_FIXTURE = Object.freeze({
   updated_at: 'now',
 });
 
-test('the hints match the surface: exactly five tools write, and none is destructive', () => {
+test('the hints match the surface: exactly nine tools write, and none is destructive', () => {
   for (const tool of TOOLS) {
     const writes = WRITERS.includes(tool.name);
     assert.equal(
@@ -697,4 +702,363 @@ test('AT19: list_proposals stays unscoped: no project_id in its schema, and none
   const { client, requests } = recordingClient(() => json({ proposals: [] }));
   await call(client, 'cartografo_list_proposals', { status: 'pending', project_id: 3 });
   assert.deepEqual(requests, ['GET /v1/proposals?status=pending']);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t547: runners, settings, examples, interview (D26 read parity)             */
+/* -------------------------------------------------------------------------- */
+
+/** A minimal-but-complete job, with the `state` field jobDigest reads. */
+const JOB_WITH_STATE = Object.freeze({
+  ...JOB_FIXTURE,
+  state: 'queued',
+});
+
+test('AC1: the catalogue holds the sixteen existing tools plus exactly the eight new ones, never a proposal-decision or transition tool', () => {
+  const names = TOOLS.map((tool) => tool.name);
+  const newTools = [
+    'cartografo_list_runners',
+    'cartografo_request_runner_recheck',
+    'cartografo_get_settings',
+    'cartografo_update_settings',
+    'cartografo_list_examples',
+    'cartografo_run_example',
+    'cartografo_start_interview',
+    'cartografo_get_interview',
+  ];
+
+  for (const name of newTools) {
+    assert.ok(names.includes(name), `${name} is missing from the catalogue`);
+  }
+  assert.equal(names.length, 16 + newTools.length);
+
+  for (const forbidden of ['approve', 'apply', 'reject', 'revert', 'transitions']) {
+    assert.ok(
+      !names.some((name) => name.includes(forbidden)),
+      `a tool name contains "${forbidden}" — D26's exclusions must stay absent`,
+    );
+  }
+});
+
+test('AC2: list_runners with no paired runners returns the pairing command built from settings', async () => {
+  const { client } = recordingClient((path) => {
+    if (path.startsWith('/v1/runners')) return json({ runners: [] });
+    if (path.startsWith('/v1/settings')) return json({ project_id: 1 });
+    return json({}, 404);
+  });
+
+  const result = await call(client, 'cartografo_list_runners', {});
+  assert.equal(result.isError, false, result.text);
+  const digest = JSON.parse(result.text) as { runners: unknown[]; pairing_command: string | null };
+  assert.deepEqual(digest.runners, []);
+  assert.equal(
+    digest.pairing_command,
+    'npx cartografo-runner --project 1 --working-dir <the repository the sessions work in> --worktrees-root <a sibling directory, never inside it> --engine claude-code',
+  );
+});
+
+test('AC3: list_runners with a probe reproduces the check page verdicts — field/met/headline only, pairing_command null', async () => {
+  const runner = {
+    id: 'r1',
+    name: null,
+    registered_at: 'now',
+    active_leases: 0,
+    last_heartbeat: 'now',
+    probe: {
+      runner_id: 'r1',
+      reported_at: 'now',
+      cli: { available: true, version: '1.2.3', authenticated: false },
+      mcp: { supported: true, servers: [], origin: 'cli', resolved_at: 'now' },
+      workspace: {
+        working_dir: '/repo',
+        working_dir_resolved: '/repo',
+        is_git_repo: false,
+        worktrees_root: '/wt',
+        worktrees_root_resolved: '/wt',
+        worktrees_root_exists: true,
+        worktrees_root_writable: true,
+      },
+    },
+  };
+  const { client } = recordingClient((path) => {
+    if (path.startsWith('/v1/runners')) return json({ runners: [runner] });
+    if (path.startsWith('/v1/settings')) return json({ project_id: 1 });
+    return json({}, 404);
+  });
+
+  const result = await call(client, 'cartografo_list_runners', {});
+  assert.equal(result.isError, false, result.text);
+  const digest = JSON.parse(result.text) as {
+    runners: { lines: { field: string; met: boolean; headline: string }[] }[];
+    pairing_command: string | null;
+  };
+  assert.equal(digest.pairing_command, null);
+  assert.deepEqual(digest.runners[0].lines, [
+    { field: 'engine', met: true, headline: 'engine found — claude 1.2.3' },
+    { field: 'credential', met: false, headline: 'no model credential — the CLI reported none' },
+    { field: 'mcp', met: false, headline: 'MCP servers — cartografo is not registered with this engine' },
+    { field: 'workspace', met: false, headline: 'workspace unusable — /repo is not a git repository' },
+  ]);
+});
+
+test('AC3b: list_runners with a runner that has no probe yet returns waitingLines()', async () => {
+  const runner = { id: 'r2', name: null, registered_at: 'now', active_leases: 0, last_heartbeat: null, probe: null };
+  const { client } = recordingClient((path) => {
+    if (path.startsWith('/v1/runners')) return json({ runners: [runner] });
+    if (path.startsWith('/v1/settings')) return json({ project_id: 1 });
+    return json({}, 404);
+  });
+
+  const result = await call(client, 'cartografo_list_runners', {});
+  assert.equal(result.isError, false, result.text);
+  const digest = JSON.parse(result.text) as {
+    runners: { lines: { field: string; met: boolean; headline: string }[] }[];
+  };
+  assert.deepEqual(digest.runners[0].lines, [
+    { field: 'engine', met: false, headline: "waiting for this runner's first report" },
+    { field: 'credential', met: false, headline: "waiting for this runner's first report" },
+    { field: 'mcp', met: false, headline: "waiting for this runner's first report" },
+    { field: 'workspace', met: false, headline: "waiting for this runner's first report" },
+  ]);
+});
+
+test('AC5: request_runner_recheck posts with no body and returns the recheck untouched', async () => {
+  const recheck = { id: 9, runner_id: 'r1', requested_at: 'now', served_at: null };
+  const { client, requests } = recordingClient((_path, _method, body) => {
+    assert.equal(body, undefined, 'no body on a recheck request');
+    return json({ recheck });
+  });
+
+  const result = await call(client, 'cartografo_request_runner_recheck', { runner_id: 'r1' });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['POST /v1/runners/r1/rechecks']);
+  assert.deepEqual(JSON.parse(result.text), { recheck });
+});
+
+test('AC6: get_settings with project_id threads it, and returns the envelope untouched', async () => {
+  const settings = { project_id: 2, workspace_root: '/repo', allow_git_clone: 'true' };
+  const { client, requests } = recordingClient(() => json(settings));
+
+  const result = await call(client, 'cartografo_get_settings', { project_id: 2 });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['GET /v1/settings?project_id=2']);
+  assert.deepEqual(JSON.parse(result.text), settings);
+});
+
+test('AC7: update_settings sends only the given keys plus project_id, never an actor', async () => {
+  const { client, requests } = recordingClient((_path, _method, body) => {
+    assert.deepEqual(body, { workspace_root: '/tmp/x', project_id: 2 });
+    return json({ project_id: 2, workspace_root: '/tmp/x' });
+  });
+
+  const result = await call(client, 'cartografo_update_settings', {
+    workspace_root: '/tmp/x',
+    project_id: 2,
+  });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['PATCH /v1/settings']);
+});
+
+test('AC8: update_settings with no setting key throws ToolError before any request', async () => {
+  let requests = 0;
+  const client = clientAnswering(() => {
+    requests += 1;
+    return json({});
+  });
+
+  const result = await call(client, 'cartografo_update_settings', {});
+  assert.equal(result.isError, true);
+  assert.match(result.text, /workspace_root|worktrees_root|engine|allow_git_clone/);
+  assert.equal(requests, 0);
+});
+
+test('AC9: list_examples threads project_id and returns the envelope untouched', async () => {
+  const examples = [{ class: 'demo', bundle: 'demo', demo_title: 'Demo', registered: true }];
+  const { client, requests } = recordingClient(() => json({ examples }));
+
+  const result = await call(client, 'cartografo_list_examples', { project_id: 3 });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['GET /v1/examples?project_id=3']);
+  assert.deepEqual(JSON.parse(result.text), { examples });
+});
+
+test('AC10: run_example posts with no body and returns registered/execution_id/job digest', async () => {
+  const job = { ...JOB_WITH_STATE, id: 12 };
+  const { client, requests } = recordingClient((_path, _method, body) => {
+    assert.equal(body, undefined, 'no body on a run request');
+    return json({ registered: true, execution_id: 7, job });
+  });
+
+  const result = await call(client, 'cartografo_run_example', { class: 'demo' });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['POST /v1/examples/demo/run']);
+  assert.deepEqual(JSON.parse(result.text), {
+    registered: true,
+    execution_id: 7,
+    job: jobDigest(job as unknown as Job),
+  });
+});
+
+test('AC11: start_interview resolves the map-design version and posts the job with the mcp actor', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const client = new ApiClient({
+    baseUrl: 'http://127.0.0.1:4317',
+    token: TOKEN,
+    doFetch: async (input, init) => {
+      const route = decodeURIComponent(new URL(String(input)).pathname);
+      if (route === '/v1/classes') {
+        return json({
+          classes: [
+            {
+              class: 'map-design',
+              graph_id: 'map-design',
+              current_version_id: 'sha256:interview',
+              created_at: 'now',
+            },
+          ],
+        });
+      }
+      if (route === '/v1/graph-versions/sha256:interview') {
+        return json({
+          graph_version: {
+            id: 'sha256:interview',
+            graph_id: 'map-design',
+            parent_version: null,
+            source: 'manual',
+            proposal_id: null,
+            created_at: 'now',
+            snapshot: { problem_class: 'map-design', initial_node: 'interview', nodes: [], edges: [] },
+            contracts: { state: 'checked', problems: [] },
+          },
+        });
+      }
+      posted.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return json({ ...JOB_WITH_STATE, id: 41, entry_node_id: 'interview', current_node_id: 'interview' });
+    },
+  });
+
+  const result = await call(client, 'cartografo_start_interview', { title: 't', body: 'b' });
+  assert.equal(result.isError, false, result.text);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].entry_node_id, 'interview');
+  assert.equal(posted[0].graph_version_id, 'sha256:interview');
+  assert.deepEqual(posted[0].actor, { type: 'agent', ref: 'mcp' });
+});
+
+test('AC12: start_interview with blank title or body throws ToolError before any request', async () => {
+  let requests = 0;
+  const client = clientAnswering(() => {
+    requests += 1;
+    return json({});
+  });
+
+  const blankTitle = await call(client, 'cartografo_start_interview', { title: '  ', body: 'b' });
+  assert.equal(blankTitle.isError, true);
+
+  const blankBody = await call(client, 'cartografo_start_interview', { title: 't', body: '' });
+  assert.equal(blankBody.isError, true);
+
+  assert.equal(requests, 0);
+});
+
+test("AC13: start_interview with no map-design class registered surfaces resolveVersion's ToolError", async () => {
+  const { client } = recordingClient((path) => {
+    if (path.startsWith('/v1/classes')) return json({ classes: [] });
+    return json({}, 404);
+  });
+
+  const result = await call(client, 'cartografo_start_interview', { title: 't', body: 'b' });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /no class "map-design" is registered/);
+});
+
+test('AC14: get_interview passes the conversation through, clipping a long draft string', async () => {
+  const longNote = 'x'.repeat(CLIP_CHARS + 10);
+  const conversation = {
+    turns: [{ question: 'what do you do', answer: 'triage', answered_by: 'rafael', at: 'now' }],
+    pending: {
+      id: 5,
+      question: 'next step?',
+      context: null,
+      recommendation: null,
+      options: [{ id: 'note', label: 'Note', kind: 'free_text' }],
+      default: null,
+    },
+    thinking: false,
+    partial: null,
+    draft: { note: longNote },
+    done: false,
+  };
+  const { client, requests } = recordingClient(() => json(conversation));
+
+  const result = await call(client, 'cartografo_get_interview', { job_id: 41 });
+  assert.equal(result.isError, false, result.text);
+  assert.deepEqual(requests, ['GET /v1/jobs/41/conversation']);
+  const digest = JSON.parse(result.text) as {
+    job_id: number;
+    turns: unknown;
+    pending: unknown;
+    thinking: boolean;
+    partial: null;
+    draft: { note: string };
+    done: boolean;
+  };
+  assert.equal(digest.job_id, 41);
+  assert.deepEqual(digest.turns, conversation.turns);
+  assert.deepEqual(digest.pending, conversation.pending);
+  assert.equal(digest.thinking, false);
+  assert.equal(digest.done, false);
+  assert.match(digest.draft.note, /…\(\+10 chars\)$/);
+});
+
+test('AC15: get_interview against a 404 throws ToolError naming the job', async () => {
+  const client = clientAnswering(() => json({}, 404));
+
+  const result = await call(client, 'cartografo_get_interview', { job_id: 41 });
+  assert.equal(result.isError, true);
+  assert.match(result.text, /no job with id 41/);
+});
+
+test('AC16: the four new write tools are not destructive, and the four new read tools are read-only', () => {
+  for (const name of [
+    'cartografo_list_runners',
+    'cartografo_get_settings',
+    'cartografo_list_examples',
+    'cartografo_get_interview',
+  ]) {
+    const tool = TOOLS.find((entry) => entry.name === name)!;
+    assert.equal(tool.annotations.readOnlyHint, true, `${name} should read only`);
+  }
+  for (const name of [
+    'cartografo_request_runner_recheck',
+    'cartografo_update_settings',
+    'cartografo_run_example',
+    'cartografo_start_interview',
+  ]) {
+    const tool = TOOLS.find((entry) => entry.name === name)!;
+    assert.equal(tool.annotations.readOnlyHint, false, `${name} should write`);
+    assert.equal(tool.annotations.destructiveHint, false, `${name} should not be destructive`);
+  }
+});
+
+test('AC4: the proposal-decision text points at the CLI, not the screen', () => {
+  const toolsSrc = readFileSync(path.join(import.meta.dirname, '..', 'src', 'tools.ts'), 'utf8');
+  const protocolSrc = readFileSync(path.join(import.meta.dirname, '..', 'src', 'protocol.ts'), 'utf8');
+
+  for (const [name, text] of [
+    ['tools.ts', toolsSrc],
+    ['protocol.ts', protocolSrc],
+  ] as const) {
+    const flattened = text.replace(/\s+/g, ' ');
+    assert.ok(
+      !/decid\w*[^.]*the screen/i.test(flattened),
+      `${name} still points a model at "the screen" for a proposal decision`,
+    );
+  }
+
+  assert.match(
+    INSTRUCTIONS,
+    /cartografo proposals (approve|apply|reject|revert)/,
+    'the server instructions name the CLI, not the screen',
+  );
 });

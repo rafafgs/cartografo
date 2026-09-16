@@ -77,11 +77,11 @@ export const INSTRUCTIONS = [
   '`cartografo_describe_graph` draws the map a job is travelling.',
   '',
   'Two things this server deliberately cannot do. It cannot decide a proposal (approve, apply,',
-  'reject, revert): those are a human decision at the screen, and the learning loop depends on',
-  'the judge being outside the model. And it cannot move a job across the graph: transitions are',
-  'the runner writing down what it actually did, so an invented one would corrupt the record the',
-  'surveyor reads. It also starts and stops no processes — the control plane, the runner and the',
-  'surveyor are commands an operator runs.',
+  'reject, revert): those are the CLI\'s (`cartografo proposals approve/apply/reject/revert`), and',
+  'the learning loop depends on the judge being outside the model. And it cannot move a job across',
+  'the graph: transitions are the runner writing down what it actually did, so an invented one',
+  'would corrupt the record the surveyor reads. It also starts and stops no processes — the',
+  'control plane, the runner and the surveyor are commands an operator runs.',
 ].join('\n');
 
 /** A JSON-RPC message, as far as this server inspects it. */

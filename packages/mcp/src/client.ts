@@ -258,13 +258,190 @@ export interface ExecutionSummary {
   finished_at: string | null;
 }
 
-/** A paired runner and its liveness, as `GET /v1/runners` returns it. */
+/** The engine preflight a runner ran on its own machine, as t401 stores it. */
+export interface ProbeCli {
+  available: boolean;
+  version: string | null;
+  /** Best effort, and the adapter's own word for it — never a guarantee. */
+  authenticated: boolean;
+}
+
+/** One MCP server, by name and nothing else — the runner's own `McpServerRef`. */
+export interface McpServerRef {
+  name: string;
+}
+
+/**
+ * What the machine's MCP discovery found, or the fact that it cannot answer.
+ *
+ * Two shapes and not one with nullable fields, mirroring the control plane's:
+ * `{supported: false}` says the adapter implements no discovery at all, and a
+ * reader must not treat it as an engine that found nothing.
+ */
+export type ProbeMcp =
+  | { supported: false }
+  | {
+      supported: true;
+      servers: McpServerRef[];
+      origin: 'cli' | 'file';
+      resolved_at: string | null;
+    };
+
+/** The two directories a runner was pointed at, as they really are on disk. */
+export interface ProbeWorkspace {
+  working_dir: string;
+  working_dir_resolved: string;
+  is_git_repo: boolean;
+  worktrees_root: string;
+  worktrees_root_resolved: string;
+  worktrees_root_exists: boolean;
+  worktrees_root_writable: boolean;
+}
+
+/**
+ * The stored probe, as `GET /v1/runners` embeds it — the same shape
+ * `packages/screen/src/client.ts`'s `RunnerProbe` mirrors, for the same reason
+ * every interface in this file mirrors the wire instead of importing it.
+ */
+export interface RunnerProbe {
+  runner_id: string;
+  reported_at: string;
+  cli: ProbeCli;
+  mcp: ProbeMcp;
+  workspace: ProbeWorkspace;
+}
+
+/** A re-check an operator asked for, as `POST /v1/runners/:id/rechecks` answers. */
+export interface RunnerRecheck {
+  id: number;
+  runner_id: string;
+  requested_at: string;
+  /** When a probe answered it; `null` while it is still pending. */
+  served_at: string | null;
+}
+
+/**
+ * The keys `GET`/`PATCH /v1/settings` hold per project.
+ *
+ * `project_id` always rides along — the route's own partition, echoed back on
+ * every read — and every other key is optional: a project whose settings were
+ * never seeded answers with `project_id` alone.
+ */
+export interface Settings {
+  project_id: number;
+  workspace_root?: string;
+  worktrees_root?: string;
+  engine?: string;
+  allow_git_clone?: string;
+}
+
+/**
+ * One demo-ready bundle, as `GET /v1/examples` returns it.
+ *
+ * `class` and `bundle` are names the control plane read off disk, and
+ * `registered` is its own answer about its own database — this package has no
+ * way to invent any of the three (D11).
+ */
+export interface Example {
+  class: string;
+  bundle: string;
+  demo_title: string;
+  registered: boolean;
+}
+
+/** What `POST /v1/examples/:class/run` answers. */
+export interface ExampleRun {
+  /** The job that was created, as `POST /v1/jobs` would have returned it. */
+  job: Job;
+  /** The round the control plane allocated for it — where the board opens. */
+  execution_id: number;
+  /** Whether THIS call is what registered the bundle. */
+  registered: boolean;
+}
+
+/**
+ * One control of a question that asks a whole step at once.
+ *
+ * A second, hand-kept mirror of `packages/runner/src/dispatch/parse-input-request.ts`,
+ * the same one `packages/screen/src/client.ts`'s own `Field` mirrors — this
+ * package declares no dependency on `packages/runner` either.
+ */
+export interface Field {
+  /** The key this field's value carries in the answer document. */
+  id: string;
+  /** What the person reads beside the control. */
+  label: string;
+  /** choice: pick one. multi: pick any number. free_text: type it. */
+  kind: 'choice' | 'multi' | 'free_text';
+  /** What there is to pick from, for a `choice` or a `multi`. */
+  options?: string[];
+  /** What the agent would pick, pre-selected on the control. */
+  recommended?: string | string[];
+}
+
+/** One closed exchange of an interview, as `GET /v1/jobs/:id/conversation` returns it. */
+export interface ConversationTurn {
+  question: string;
+  answer: string;
+  /** Who answered; `null` when nobody signed it. */
+  answered_by: string | null;
+  /** When the answer landed; `null` for a row written before the column. */
+  at: string | null;
+}
+
+/**
+ * The one open question of an interview, in the vocabulary the fenced block
+ * uses.
+ *
+ * `default` and not `default_answer`: the projection renames exactly that one
+ * field, mirroring `packages/screen/src/client.ts`'s own `PendingQuestion`.
+ */
+export interface PendingQuestion {
+  id: number;
+  question: string;
+  context: string | null;
+  recommendation: string | null;
+  /** One decision's labels, or a whole step's fields. */
+  options: string[] | Field[] | null;
+  default: string | null;
+}
+
+/** The whole exchange of one interview, as one page-sized answer. */
+export interface Conversation {
+  /** Closed turns, in the order the log recorded the questions. */
+  turns: ConversationTurn[];
+  /** The one open question, or `null` when nobody is being asked anything. */
+  pending: PendingQuestion | null;
+  /** Something is running and there is nothing to answer yet. */
+  thinking: boolean;
+  /** What that step has written so far; `null` when there is nothing to show yet. */
+  partial: string | null;
+  /**
+   * The map the last completed session reported; `null` when there is none.
+   *
+   * `unknown` on purpose: what is in there is an agent's structured report,
+   * checked upstream against the node's own output schema and against nothing
+   * this package declares.
+   */
+  draft: unknown;
+  /** The traveller arrived: there is nothing left to ask. */
+  done: boolean;
+}
+
+/**
+ * A paired runner and its liveness, as `GET /v1/runners` returns it.
+ *
+ * `probe` is `null` for a runner that has never reported, and that is a real
+ * answer and not a missing field: a machine that said nothing about itself is
+ * a different state from one that reported a CLI it could not find.
+ */
 export interface RunnerHealth {
   id: string;
   name: string | null;
   registered_at: string;
   active_leases: number;
   last_heartbeat: string | null;
+  probe: RunnerProbe | null;
 }
 
 /** Who the control plane records as the author of a write. */
@@ -576,6 +753,92 @@ export class ApiClient {
   async listRunners(): Promise<RunnerHealth[]> {
     const { runners } = await this.#get<{ runners: RunnerHealth[] }>('/v1/runners');
     return runners;
+  }
+
+  /**
+   * Asks one runner to report about its machine again.
+   *
+   * Idempotent upstream while a request is still pending, so a second call
+   * finds the same re-check rather than queueing a new one.
+   *
+   * @param runnerId The runner to re-probe.
+   * @returns The pending re-check, whether this call created it or found it.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async requestRunnerRecheck(runnerId: string): Promise<RunnerRecheck> {
+    const { recheck } = await this.#request<{ recheck: RunnerRecheck }>(
+      `/v1/runners/${encodeURIComponent(runnerId)}/rechecks`,
+      { method: 'POST' },
+    );
+    return recheck;
+  }
+
+  /**
+   * The project's recorded defaults: workspace root, worktrees root, engine.
+   *
+   * @param projectId Project to read. Default: project 1.
+   * @returns Whatever keys are recorded, `project_id` always among them.
+   */
+  async getSettings(projectId?: number): Promise<Settings> {
+    return await this.#get<Settings>(`/v1/settings${projectQuery(projectId)}`);
+  }
+
+  /**
+   * Writes settings. Only the keys `patch` carries are touched; a key left out
+   * keeps whatever value it had.
+   *
+   * @param patch Setting keys to write; every value a non-empty string.
+   * @param projectId Project to write. Default: project 1.
+   * @returns The settings as they ended up.
+   * @throws {ApiError} When the control plane refuses.
+   */
+  async updateSettings(patch: Record<string, string>, projectId?: number): Promise<Settings> {
+    return await this.#request<Settings>('/v1/settings', {
+      method: 'PATCH',
+      body: { ...patch, ...(projectId === undefined ? {} : { project_id: projectId }) },
+    });
+  }
+
+  /**
+   * The bundles the control plane can demonstrate, and which it already knows.
+   *
+   * @param projectId Project to scope the read to. Default: project 1.
+   * @returns One entry per demo-ready bundle, sorted by the control plane.
+   */
+  async listExamples(projectId?: number): Promise<Example[]> {
+    const { examples } = await this.#get<{ examples: Example[] }>(
+      `/v1/examples${projectQuery(projectId)}`,
+    );
+    return examples;
+  }
+
+  /**
+   * Runs one example: registers it if it is new, then opens its demo job.
+   *
+   * Carries no body: everything the run needs is the class in the path and
+   * the project on the query string.
+   *
+   * @param className The example's problem class.
+   * @param projectId Project to scope the write to. Default: project 1.
+   * @returns The job, the round it landed in, and whether this call registered.
+   * @throws {ApiError} When the control plane refuses — 404 included.
+   */
+  async runExample(className: string, projectId?: number): Promise<ExampleRun> {
+    return await this.#request<ExampleRun>(
+      `/v1/examples/${encodeURIComponent(className)}/run${projectQuery(projectId)}`,
+      { method: 'POST' },
+    );
+  }
+
+  /**
+   * One interview, read as the conversation it is.
+   *
+   * @param id Job id.
+   * @param projectId Project to scope the read to. Default: project 1.
+   * @returns The exchange, or `null` when the control plane does not know it.
+   */
+  async getConversation(id: number, projectId?: number): Promise<Conversation | null> {
+    return await this.#getOrNull<Conversation>(`/v1/jobs/${id}/conversation${projectQuery(projectId)}`);
   }
 
   /** The proposals, by the slice asked for. Reading only: deciding is the gate's. */

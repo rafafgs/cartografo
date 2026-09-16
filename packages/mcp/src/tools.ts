@@ -14,7 +14,8 @@
  *   proposals wait for a human at the gate. A tool that let the same model that
  *   ran the surveyor approve the surveyor's own proposal would close the
  *   learning loop with no judge outside it, which is the one thing the loop is
- *   for. Reading a proposal is here; deciding it is the screen's (`/`).
+ *   for. Reading a proposal is here; deciding it is the CLI's (`cartografo
+ *   proposals approve/apply/reject/revert`, README.md).
  * - **Nothing transitions a job.** `POST /v1/jobs/:id/transitions` is the
  *   runner's traversal, written as it happens. Walking a job across the graph
  *   by hand from a chat window would leave the log saying that work happened at
@@ -49,13 +50,17 @@ import {
   NetworkError,
   type ApiClient,
   type Actor,
+  type Conversation,
   type Event,
   type GraphNode,
   type GraphVersion,
   type InputRequest,
   type Job,
   type Proposal,
+  type RunnerHealth,
+  type RunnerProbe,
   type Session,
+  type Settings,
   type Skill,
 } from './client.ts';
 
@@ -399,6 +404,149 @@ export function skillDigest(skill: Skill, withContract: boolean): Record<string,
   ) as Record<string, unknown>;
 }
 
+/**
+ * One interview, digested: every field of the projection passed through, with
+ * long strings clipped — `draft` included, since a growing map is exactly the
+ * kind of large string-bearing value {@link clipStrings} exists for.
+ */
+export function conversationDigest(conversation: Conversation, jobId: number): Record<string, unknown> {
+  return clipStrings({
+    job_id: jobId,
+    turns: conversation.turns,
+    pending: conversation.pending,
+    thinking: conversation.thinking,
+    partial: conversation.partial,
+    draft: conversation.draft,
+    done: conversation.done,
+  }) as Record<string, unknown>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Runner checks                                                              */
+/*                                                                             */
+/* A local mirror of the four verdicts `packages/screen/src/pages.ts` draws on */
+/* the check page (`engineLine`/`credentialLine`/`mcpLine`/`workspaceLine`/    */
+/* `waitingLines`, `pairingCommand`) — same conditions, same headline strings, */
+/* with the screen's HTML `fix` block left out (Out of Scope): a model that    */
+/* needs to act has `cartografo_get_settings`, `cartografo_update_settings`    */
+/* and `cartografo_request_runner_recheck` for that.                          */
+/* -------------------------------------------------------------------------- */
+
+/** The MCP server the check looks for, by the name `.mcp.json` already uses. */
+const MCP_SERVER_NAME = 'cartografo';
+
+/** The engine a runner takes when nothing recorded one (`settings.engine`). */
+const DEFAULT_ENGINE = 'claude-code';
+
+/** Stand-ins for the two roots when no setting records them yet. */
+const WORKING_DIR_PLACEHOLDER = '<the repository the sessions work in>';
+const WORKTREES_ROOT_PLACEHOLDER = '<a sibling directory, never inside it>';
+
+/** One check of one runner, digested to its verdict — no fix text. */
+interface RunnerCheckLine {
+  field: 'engine' | 'credential' | 'mcp' | 'workspace';
+  met: boolean;
+  headline: string;
+}
+
+/** The binary an engine's adapter really spawns — the slice `engineLine`'s headline needs. */
+function runnerBinary(engine: string): string {
+  return engine === 'claude-code' ? 'claude' : engine;
+}
+
+/** The engine line: is the CLI this runner dispatches through even there? */
+function engineLine(probe: RunnerProbe, binary: string): RunnerCheckLine {
+  if (probe.cli.available) {
+    return {
+      field: 'engine',
+      met: true,
+      headline: `engine found — ${binary} ${probe.cli.version ?? '(version unknown)'}`,
+    };
+  }
+  return {
+    field: 'engine',
+    met: false,
+    headline: `engine not found — the runner could not run \`${binary}\``,
+  };
+}
+
+/** The credential line: would a session this runner opens be able to authenticate? */
+function credentialLine(probe: RunnerProbe): RunnerCheckLine {
+  return probe.cli.authenticated
+    ? { field: 'credential', met: true, headline: 'model credential found' }
+    : { field: 'credential', met: false, headline: 'no model credential — the CLI reported none' };
+}
+
+/** The MCP line: is the model driving this session on the same map as its reader? */
+function mcpLine(probe: RunnerProbe): RunnerCheckLine {
+  if (!probe.mcp.supported) {
+    return {
+      field: 'mcp',
+      met: false,
+      headline: "MCP servers — this engine's adapter can't be checked automatically",
+    };
+  }
+  if (probe.mcp.servers.some((server) => server.name === MCP_SERVER_NAME)) {
+    return { field: 'mcp', met: true, headline: `MCP servers — ${MCP_SERVER_NAME} is registered` };
+  }
+  return {
+    field: 'mcp',
+    met: false,
+    headline: `MCP servers — ${MCP_SERVER_NAME} is not registered with this engine`,
+  };
+}
+
+/** The workspace line: can a session actually be cut on this machine? */
+function workspaceLine(probe: RunnerProbe): RunnerCheckLine {
+  const { workspace } = probe;
+  if (workspace.is_git_repo && workspace.worktrees_root_writable) {
+    return {
+      field: 'workspace',
+      met: true,
+      headline: `workspace usable — ${workspace.working_dir_resolved}`,
+    };
+  }
+
+  const problems = [
+    workspace.is_git_repo ? null : `${workspace.working_dir_resolved} is not a git repository`,
+    workspace.worktrees_root_writable
+      ? null
+      : `${workspace.worktrees_root_resolved} cannot be created by this runner`,
+  ].filter((problem): problem is string => problem !== null);
+
+  return { field: 'workspace', met: false, headline: `workspace unusable — ${problems.join('; ')}` };
+}
+
+/** The four lines of one runner that has never said anything about itself. */
+function waitingLines(): RunnerCheckLine[] {
+  const fields: RunnerCheckLine['field'][] = ['engine', 'credential', 'mcp', 'workspace'];
+  return fields.map((field) => ({
+    field,
+    met: false,
+    headline: "waiting for this runner's first report",
+  }));
+}
+
+/** The four checks of one runner, decided against what it reported. */
+function runnerLines(runner: RunnerHealth, settings: Settings): RunnerCheckLine[] {
+  const probe = runner.probe ?? null;
+  if (probe === null) return waitingLines();
+
+  const binary = runnerBinary(settings.engine ?? DEFAULT_ENGINE);
+  return [engineLine(probe, binary), credentialLine(probe), mcpLine(probe), workspaceLine(probe)];
+}
+
+/** The command that pairs the first runner, built from whatever is recorded. */
+function pairingCommand(projectId: number, settings: Settings): string {
+  return [
+    'npx cartografo-runner',
+    `--project ${projectId}`,
+    `--working-dir ${settings.workspace_root ?? WORKING_DIR_PLACEHOLDER}`,
+    `--worktrees-root ${settings.worktrees_root ?? WORKTREES_ROOT_PLACEHOLDER}`,
+    `--engine ${settings.engine ?? DEFAULT_ENGINE}`,
+  ].join(' ');
+}
+
 /* -------------------------------------------------------------------------- */
 /* Failures                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -531,6 +679,15 @@ async function resolveVersion(
   if (version === null) throw new ToolError(`the version in force (${current}) could not be read`);
   return version;
 }
+
+/**
+ * The class and entry node an interview starts on, mirroring
+ * `packages/screen/src/pages.ts`'s `INTERVIEW_CLASS`/`INTERVIEW_ENTRY_NODE`:
+ * this package imports nothing from `packages/screen` either, the same
+ * boundary `client.ts`'s own header documents for `packages/core`.
+ */
+const INTERVIEW_CLASS = 'map-design';
+const INTERVIEW_ENTRY_NODE = 'interview';
 
 /** The catalogue, in the order `tools/list` publishes it: read first, write last. */
 export const TOOLS: readonly Tool[] = Object.freeze([
@@ -830,7 +987,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
   {
     name: 'cartografo_list_proposals',
     description:
-      'The graph changes a surveyor proposed, with the lens that proposed them, the metric each expects to move and the operations each carries. Reading only: approving, applying, rejecting and reverting a proposal are decisions taken by a human at the screen, and this server exposes no tool for them. Always reads across every project — GET /v1/proposals is not scoped by project_id yet.',
+      "The graph changes a surveyor proposed, with the lens that proposed them, the metric each expects to move and the operations each carries. Reading only: approving, applying, rejecting and reverting a proposal are the CLI's (`cartografo proposals approve/apply/reject/revert`), and this server exposes no tool for them. Always reads across every project — GET /v1/proposals is not scoped by project_id yet.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -850,6 +1007,87 @@ export const TOOLS: readonly Tool[] = Object.freeze([
         graph_id: optionalText(args, 'graph_id'),
       });
       return { proposals: proposals.map(proposalDigest) };
+    },
+  },
+  {
+    name: 'cartografo_list_runners',
+    description:
+      "The fleet, the way the check page draws it: paired runners with their pairing/credential/MCP/workspace verdicts, or — with no runner paired yet — the command that pairs the first one. Each runner's `lines` carry the verdict only (field, met, headline); acting on one is cartografo_get_settings / cartografo_update_settings / cartografo_request_runner_recheck.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'List runners', ...READ_ONLY },
+    run: async (client, args) => {
+      const projectId = optionalInteger(args, 'project_id');
+      const [runners, settings] = await Promise.all([client.listRunners(), client.getSettings(projectId)]);
+
+      if (runners.length === 0) {
+        return { runners: [], pairing_command: pairingCommand(settings.project_id, settings) };
+      }
+
+      return {
+        runners: runners.map((runner) => ({
+          id: runner.id,
+          name: runner.name,
+          active_leases: runner.active_leases,
+          last_heartbeat: runner.last_heartbeat,
+          lines: runnerLines(runner, settings),
+        })),
+        pairing_command: null,
+      };
+    },
+  },
+  {
+    name: 'cartografo_get_settings',
+    description:
+      "The project's recorded defaults: workspace root, worktrees root, engine, and whether cloning a repository is allowed. A key that was never set is simply absent.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Read settings', ...READ_ONLY },
+    run: async (client, args) => await client.getSettings(optionalInteger(args, 'project_id')),
+  },
+  {
+    name: 'cartografo_list_examples',
+    description:
+      'The bundles the control plane can demonstrate: the class each registers, the bundle directory it came from, its demo title, and whether this project has already registered it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'List examples', ...READ_ONLY },
+    run: async (client, args) => ({ examples: await client.listExamples(optionalInteger(args, 'project_id')) }),
+  },
+  {
+    name: 'cartografo_get_interview',
+    description:
+      'One interview, read as the conversation it is: closed turns, the one pending question (if any), whether a step is thinking, what it has written so far, the map drafted by the last finished step, and whether the traveller has arrived. Answering the pending question is cartografo_answer_input_request.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'integer', description: 'Job id of the interview.' },
+        project_id: { type: 'integer', description: 'Project to scope the read to. Default 1.' },
+      },
+      required: ['job_id'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Read an interview', ...READ_ONLY },
+    run: async (client, args) => {
+      const id = requireInteger(args, 'job_id');
+      const conversation = await client.getConversation(id, optionalInteger(args, 'project_id'));
+      if (conversation === null) throw new ToolError(`no job with id ${id}`);
+      return conversationDigest(conversation, id);
     },
   },
   {
@@ -1030,6 +1268,106 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       return clipStrings(
         await client.registerGraph(document, optionalInteger(args, 'project_id')),
       );
+    },
+  },
+  {
+    name: 'cartografo_request_runner_recheck',
+    description:
+      "Asks one paired runner to report about its own machine again. Idempotent while a request is still pending; a fresh report is served on the runner's next loop tick, so this tool starts no process and waits for none — read cartografo_list_runners again once it has had time to report.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runner_id: { type: 'string', description: 'Runner id.' },
+      },
+      required: ['runner_id'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Request a runner recheck', ...WRITE },
+    run: async (client, args) => {
+      const recheck = await client.requestRunnerRecheck(requireText(args, 'runner_id'));
+      return { recheck };
+    },
+  },
+  {
+    name: 'cartografo_update_settings',
+    description:
+      "Writes the project's recorded defaults. Only the keys given are touched; name at least one of workspace_root, worktrees_root, engine or allow_git_clone.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_root: { type: 'string', description: 'Repository the runner works in.' },
+        worktrees_root: { type: 'string', description: 'Sibling directory, never inside workspace_root.' },
+        engine: { type: 'string', description: 'Engine a paired runner dispatches through.' },
+        allow_git_clone: { type: 'string', description: 'Whether the runner may clone a repository.' },
+        project_id: { type: 'integer', description: 'Project to write. Default 1.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Update settings', ...WRITE },
+    run: async (client, args) => {
+      const patch: Record<string, string> = {};
+      for (const key of ['workspace_root', 'worktrees_root', 'engine', 'allow_git_clone'] as const) {
+        const value = optionalText(args, key);
+        if (value !== undefined) patch[key] = value;
+      }
+      if (Object.keys(patch).length === 0) {
+        throw new ToolError(
+          'name at least one of "workspace_root", "worktrees_root", "engine" or "allow_git_clone"',
+        );
+      }
+      return await client.updateSettings(patch, optionalInteger(args, 'project_id'));
+    },
+  },
+  {
+    name: 'cartografo_run_example',
+    description:
+      'Runs one demo-ready bundle: registers its class if this project has never seen it, then opens its demo job in a round of its own. This tool starts no runner; a paired one has to pick the job up.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        class: { type: 'string', description: "The bundle's problem class, from cartografo_list_examples." },
+        project_id: { type: 'integer', description: 'Project to scope the write to. Default 1.' },
+      },
+      required: ['class'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Run an example', ...WRITE },
+    run: async (client, args) => {
+      const className = requireText(args, 'class');
+      const run = await client.runExample(className, optionalInteger(args, 'project_id'));
+      return { registered: run.registered, execution_id: run.execution_id, job: jobDigest(run.job) };
+    },
+  },
+  {
+    name: 'cartografo_start_interview',
+    description:
+      "Starts an interview: an ordinary job, on the map-design class's version in force, entered at its interview node. Answering its questions as they arrive is cartografo_answer_input_request; reading it back is cartografo_get_interview.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'One line naming the process being mapped.' },
+        body: { type: 'string', description: 'How the process is done today, in full.' },
+        project_id: { type: 'integer', description: 'Project to start it in. Default 1.' },
+      },
+      required: ['title', 'body'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Start an interview', ...WRITE },
+    run: async (client, args) => {
+      const title = requireText(args, 'title');
+      const body = requireText(args, 'body');
+      const projectId = optionalInteger(args, 'project_id');
+
+      const version = await resolveVersion(client, { class: INTERVIEW_CLASS, project_id: projectId });
+      const job = await client.createJob({
+        title,
+        body,
+        entry_node_id: INTERVIEW_ENTRY_NODE,
+        graph_version_id: version.id,
+        project_id: projectId,
+        actor: DEFAULT_ACTOR,
+      });
+      return { started: jobDigest(job) };
     },
   },
 ]);

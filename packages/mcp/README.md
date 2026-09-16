@@ -88,7 +88,7 @@ opens it; a token written there is a token published.
 
 ## The tools
 
-Eleven read, five write.
+Fifteen read, nine write.
 
 | Tool | Answers |
 |---|---|
@@ -103,11 +103,19 @@ Eleven read, five write.
 | `cartografo_read_transcript` | What a session printed — the tail by default, with both truncations named. |
 | `cartografo_list_input_requests` | The questions waiting on a human, and the answers already given. |
 | `cartografo_list_proposals` | What a surveyor proposed, with the lens and the operations. **Reading only.** |
+| `cartografo_list_runners` | The fleet's pairing/credential/MCP/workspace verdicts, or the command that pairs the first runner. |
+| `cartografo_get_settings` | The project's recorded defaults: workspace root, worktrees root, engine, allow_git_clone. |
+| `cartografo_list_examples` | The bundles the control plane can demonstrate, and which this project already knows. |
+| `cartografo_get_interview` | One interview, read as the conversation it is: turns, the pending question, thinking, the draft map. |
 | `cartografo_create_job` | Puts work on the graph, pinned to the version in force. |
 | `cartografo_answer_input_request` | Answers a question, which unblocks the job waiting on it. |
 | `cartografo_block_job` | Stops a job where it stands, with the reason in the log. |
 | `cartografo_unblock_job` | Releases it; it resumes from the same node. |
 | `cartografo_register_graph` | Registers a graph document as a new class and its first version. |
+| `cartografo_request_runner_recheck` | Asks one paired runner to report about its own machine again. |
+| `cartografo_update_settings` | Writes the project's recorded defaults — only the keys given. |
+| `cartografo_run_example` | Registers a demo bundle if new, then opens its demo job. |
+| `cartografo_start_interview` | Starts an interview: an ordinary job on the map-design class's version in force. |
 
 ## What it will not do, and why
 
@@ -118,7 +126,8 @@ purpose, and the tests hold their absence:
   here. Those are the human gate (README, principle 5). A tool that let the same
   model that ran the surveyor approve the surveyor's own proposal would close the
   learning loop with no judge outside it, which is what the loop is for. Read a
-  proposal here; decide it at the screen (`/`).
+  proposal here; decide it with the CLI (`cartografo proposals
+  approve/apply/reject/revert`, root README.md).
 - **No moving a job.** `POST /v1/jobs/:id/transitions` is the runner writing down
   what it actually did. A transition invented from a chat window would leave the
   log saying work happened at a node where none did — and the log is what the

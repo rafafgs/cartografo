@@ -316,7 +316,7 @@ into queueing, working and waiting on a human
 npx cartografo-mcp                             # started BY an MCP client
 ```
 
-Eleven read tools and five write ones
+Fifteen read tools and nine write ones
 ([`packages/mcp/README.md`](packages/mcp/README.md)). It deliberately publishes
 no tool that decides a proposal and none that moves a job across the graph: a
 transition is the runner writing down what it did, and an invented one would

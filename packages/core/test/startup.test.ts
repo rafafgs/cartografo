@@ -94,16 +94,16 @@ async function freePort(): Promise<number> {
 
 /**
  * What every test of this file that is not about the one-command startup asks
- * for (t405, FR8).
+ * for (t405, FR8; t549).
  *
  * `npx cartografo` stopped being the control plane alone: with no flag it also
- * spawns the screen and a local runner and opens a browser. Every test written
- * before t405 is about the control plane and nothing else, so the helper passes
- * all three refusals by default and each of them keeps asserting exactly what
- * it asserted before — a control-plane-only startup, with no child process, no
- * browser and no workspace provisioned under whoever runs the suite's home.
+ * spawns a local runner. Every test written before t405 is about the control
+ * plane and nothing else, so the helper passes the one refusal by default and
+ * each of them keeps asserting exactly what it asserted before — a
+ * control-plane-only startup, with no child process and no workspace
+ * provisioned under whoever runs the suite's home.
  */
-const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+const CONTROL_PLANE_ONLY = Object.freeze(['--no-runner']);
 
 /** Starts the command and resolves when the readiness line appears on stdout. */
 async function start(options: {
@@ -821,8 +821,31 @@ async function awaitPairedRunner(url: string, token: string): Promise<Array<{ id
   });
 }
 
+test('t549 AT5 — CONTROL_PLANE_ONLY carries only the flag `up` still knows', () => {
+  assert.deepEqual([...CONTROL_PLANE_ONLY], ['--no-runner']);
+});
+
+/**
+ * The command line of every direct child of a process, off the process table.
+ *
+ * Read with `ps` rather than off anything the command says about itself: what
+ * has to be proven is what it actually spawned.
+ *
+ * @param parent Pid of the command.
+ * @returns One command line per direct child.
+ */
+function childCommandLines(parent: number): string[] {
+  const found = spawnSync('pgrep', ['-P', String(parent)], { encoding: 'utf8' });
+  return found.stdout
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .filter((pid) => Number.isInteger(pid) && pid > 0)
+    .map((pid) => spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim())
+    .filter((line) => line !== '');
+}
+
 test(
-  't405 AT7 — `cartografo --no-browser` brings the screen and a local runner up with it, and provisions the default workspace',
+  't405 AT7 / t549 AT4 — `cartografo` brings a local runner up with it, and nothing else, and provisions the default workspace',
   { timeout: 300_000 },
   async (t) => {
     assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
@@ -833,7 +856,6 @@ test(
     const home = cleanHome(base);
     const databasePath = path.join(base, 'cartografo.db');
     const port = await freePort();
-    const screenPort = await freePort();
 
     assert.equal(existsSync(workspaceOf(home)), false, 'fixture broken: the home already had a workspace');
 
@@ -841,12 +863,12 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser'],
-      env: { HOME: home, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+      args: [],
+      env: { HOME: home },
     });
     try {
       // The control plane still announces itself exactly as it always did: the
-      // three processes are what changed, not the line a supervisor reads.
+      // child process is what changed, not the line a supervisor reads.
       assert.equal(startup.readiness.event, 'cartografo.ready');
       assert.equal(startup.readiness.url, `http://127.0.0.1:${port}`);
       const token = startup.readiness.bootstrapToken ?? '';
@@ -862,12 +884,18 @@ test(
       assert.ok(existsSync(path.join(workspace, '.git')), 'the default workspace is a git repository');
       assert.equal(commitCount(workspace), '1', 'with exactly one commit, so a branch can be cut from it');
 
-      // FR6/FR7: and the screen is answering on its own port, in its own process.
-      const screenStatus = await eventually('the spawned screen answers', async () => {
-        const response = await fetch(`http://127.0.0.1:${screenPort}/board`);
-        return response.status;
-      });
-      assert.equal(screenStatus, 200, 'the screen answers on CARTOGRAFO_SCREEN_PORT');
+      // t549 AT4: the runner is the one child. No screen was spawned, and no
+      // browser opener either — the process table is the witness, not the
+      // command's own account of itself.
+      const parent = startup.child.pid;
+      assert.ok(typeof parent === 'number', 'the command has no pid');
+      const children = childCommandLines(parent);
+      assert.equal(children.length, 1, `exactly one child process, the runner:\n${children.join('\n')}`);
+      assert.match(children[0] as string, /cartografo-runner/, 'and that child is the runner');
+      for (const line of children) {
+        assert.doesNotMatch(line, /screen/, `a screen was spawned: ${line}`);
+        assert.doesNotMatch(line, /(^|\/)(open|xdg-open|start)(\s|$)/, `a browser opener was spawned: ${line}`);
+      }
     } finally {
       await startup.shutdown();
     }
@@ -890,7 +918,7 @@ function pathWithoutNodeModules(): string {
 }
 
 test(
-  't449 AT3 — the screen and the runner still come up when `node_modules` is nowhere on `PATH`',
+  't449 AT3 — the runner still comes up when `node_modules` is nowhere on `PATH`',
   { timeout: 300_000 },
   async (t) => {
     assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
@@ -901,7 +929,6 @@ test(
     const home = cleanHome(base);
     const databasePath = path.join(base, 'cartografo.db');
     const port = await freePort();
-    const screenPort = await freePort();
 
     const scrubbed = pathWithoutNodeModules();
     assert.ok(!scrubbed.includes('node_modules'), 'fixture broken: a node_modules segment survived');
@@ -913,8 +940,8 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser'],
-      env: { HOME: home, PATH: scrubbed, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+      args: [],
+      env: { HOME: home, PATH: scrubbed },
     });
     try {
       const token = startup.readiness.bootstrapToken ?? '';
@@ -922,12 +949,6 @@ test(
 
       const runners = await awaitPairedRunner(startup.readiness.url, token);
       assert.equal(runners.length, 1, 'the runner paired, with no `PATH` to be found on');
-
-      const screenStatus = await eventually('the spawned screen answers', async () => {
-        const response = await fetch(`http://127.0.0.1:${screenPort}/board`);
-        return response.status;
-      });
-      assert.equal(screenStatus, 200, 'and the screen answers, likewise');
 
       const errors = startup.stderrSoFar();
       assert.ok(!errors.includes('ENOENT'), `nothing failed to resolve:\n${errors}`);
@@ -954,7 +975,7 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser', '--no-screen'],
+      args: [],
       env: { HOME: home },
     });
     let token: string;
@@ -973,7 +994,7 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser', '--no-screen'],
+      args: [],
       env: { HOME: home },
     });
     try {
@@ -997,14 +1018,13 @@ test(
     const home = cleanHome(base);
     const databasePath = path.join(base, 'cartografo.db');
     const port = await freePort();
-    const screenPort = await freePort();
 
     const startup = await start({
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser'],
-      env: { HOME: home, CARTOGRAFO_SCREEN_PORT: String(screenPort) },
+      args: [],
+      env: { HOME: home },
     });
 
     const parent = startup.child.pid;
@@ -1014,13 +1034,13 @@ test(
     // than off anything the command says about itself: what has to be proven is
     // that nothing it spawned survives it, and its own bookkeeping is exactly
     // what a leak would be hiding in.
-    const children = await eventually('the command spawns its two children', async () => {
+    const children = await eventually('the command spawns its runner', async () => {
       const found = spawnSync('pgrep', ['-P', String(parent)], { encoding: 'utf8' });
       const pids = found.stdout
         .split('\n')
         .map((line) => Number(line.trim()))
         .filter((pid) => Number.isInteger(pid) && pid > 0);
-      return pids.length >= 2 ? pids : undefined;
+      return pids.length >= 1 ? pids : undefined;
     });
 
     startup.child.kill('SIGINT');
@@ -1065,7 +1085,7 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser', '--no-screen'],
+      args: [],
       env: { HOME: home },
     });
     let token: string;
@@ -1091,7 +1111,7 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser', '--no-screen'],
+      args: [],
       env: { HOME: home },
     });
     try {
@@ -1126,15 +1146,12 @@ test(
       cwd: base,
       databasePath,
       port,
-      args: ['--no-browser', '--no-screen', '--no-runner'],
+      args: ['--no-runner'],
       env: { HOME: home },
     });
     try {
       // A different port, for t209's own reason: on the same one the refusal
-      // would be about the address instead of about the file. The screen gets
-      // a port of its own too, so the assertion after the exit can tell "it
-      // never started one" from "somebody else is on 4318".
-      const screenPort = await freePort();
+      // would be about the address instead of about the file.
       const refused = spawn(process.execPath, [BIN_PATH], {
         cwd: base,
         env: {
@@ -1142,7 +1159,6 @@ test(
           HOME: home,
           CARTOGRAFO_DB_PATH: databasePath,
           CARTOGRAFO_PORT: String(await freePort()),
-          CARTOGRAFO_SCREEN_PORT: String(screenPort),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -1170,15 +1186,6 @@ test(
       assert.ok(stderr.includes(String(first.child.pid)), `the refusal has to name the pid running:\n${stderr}`);
       assert.ok(stderr.includes(`${databasePath}.lock`), `the refusal has to name the lock file:\n${stderr}`);
       assert.equal(stdout.trim(), '', 'a startup that was refused announces nothing');
-
-      // And it started nothing on the way down. A refusal that had already
-      // forked a screen would have left it listening with nobody to stop it —
-      // an orphan `pgrep -P` could not find, because its parent is the process
-      // that just died. What the port answers is the honest question.
-      await assert.rejects(
-        fetch(`http://127.0.0.1:${screenPort}/board`),
-        'the refused command left a screen of its own listening',
-      );
     } finally {
       await first.shutdown();
     }

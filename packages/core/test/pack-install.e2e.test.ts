@@ -35,43 +35,38 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /**
- * What asks `up` for the control plane and nothing else (t405).
+ * What asks `up` for the control plane and nothing else (t405, t549).
  *
- * Since t405 the installed `cartografo` with no argument is the whole product:
- * it also spawns the screen and a local runner and opens a browser. That is
- * right for a stranger and wrong for this suite, which runs on the machine of
+ * The installed `cartografo` with no argument also spawns a local runner. That
+ * is right for a stranger and wrong for this suite, which runs on the machine of
  * whoever typed `npm test` — with the real `HOME`, since `strangerEnv` rewrites
- * `PATH` and nothing else. Without these three flags one case would open a
- * browser window, bind the screen's default port next to whatever is already on
- * it, and create `~/.cartografo/workspace` as a git repository under that home.
+ * `PATH` and nothing else. Without this flag one case would create
+ * `~/.cartografo/workspace` as a git repository under that home.
  *
  * Spelled out rather than imported from `cli-support.ts`, for this file's own
  * reason: nothing here comes from inside the monorepo (see the header).
- *
- * The case below still asserts exactly what it asserted before — readiness, the
- * database beside the working directory, a clean stop on `SIGTERM`. That the
- * other five binaries are on the installed `PATH` is the case above's job, and
- * it checks all six by name.
  */
-const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+const CONTROL_PLANE_ONLY = Object.freeze(['--no-runner']);
 
-/** The six commands D23 says one package ships. */
+/** The five commands D23 (as amended by D27) says one package ships. */
 const COMMANDS = Object.freeze([
   'cartografo',
   'cartografo-runner',
-  'cartografo-screen',
   'cartografo-surveyor',
   'cost-surveyor',
   'cartografo-mcp',
 ]);
 
+/** The screen's command and package, which D27 deleted (t549). */
+const RETIRED_COMMAND = ['cartografo', 'screen'].join('-');
+const RETIRED_PACKAGE_DIR = 'package/node_modules/@cartografo/screen/';
+
 /**
- * The five sibling packages, by the path their own bin takes inside the
+ * The four sibling packages, by the path their own bin takes inside the
  * tarball once `bundledDependencies` has inlined them.
  */
 const BUNDLED_BINS = Object.freeze([
   'package/node_modules/@cartografo/runner/bin/cartografo-runner.mjs',
-  'package/node_modules/@cartografo/screen/bin/screen.mjs',
   'package/node_modules/@cartografo/surveyor/bin/surveyor.mjs',
   'package/node_modules/@cartografo/cost-surveyor/bin/cost-surveyor.mjs',
   'package/node_modules/@cartografo/mcp/bin/mcp.mjs',
@@ -104,7 +99,11 @@ function strangerEnv(binDir: string): NodeJS.ProcessEnv {
   return env;
 }
 
-test('t248 — one tarball installs all six commands, with no checkout on disk', async (parent) => {
+test('t549 AT5 — CONTROL_PLANE_ONLY carries only the flag `up` still knows', () => {
+  assert.deepEqual([...CONTROL_PLANE_ONLY], ['--no-runner']);
+});
+
+test('t248 — one tarball installs all five commands, with no checkout on disk', async (parent) => {
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t248-pack-'));
   parent.after(() => rmSync(base, { recursive: true, force: true }));
 
@@ -118,7 +117,7 @@ test('t248 — one tarball installs all six commands, with no checkout on disk',
   const binDir = path.join(prefix, 'bin');
   let tarball = '';
 
-  await parent.test('AT — `npm pack` bundles the five siblings, and no loader', () => {
+  await parent.test('AT — `npm pack` bundles the four siblings, and no loader', () => {
     execFileSync('npm', ['pack', '--workspace', 'cartografo', '--pack-destination', packDir], {
       cwd: REPO_ROOT,
       stdio: 'pipe',
@@ -138,9 +137,20 @@ test('t248 — one tarball installs all six commands, with no checkout on disk',
       assert.ok(
         listing.includes(bundled),
         `the tarball ships only its own command: "${bundled}" is missing.\n` +
-          `That is D23 undone — the other five would resolve only inside this checkout.`,
+          `That is D23 undone — the other four would resolve only inside this checkout.`,
       );
     }
+
+    assert.deepEqual(
+      listing.filter((entry) => entry.startsWith('package/bin/') && entry.includes(RETIRED_COMMAND)),
+      [],
+      'the tarball still ships the screen\'s delegator script under package/bin/ (t549, D27)',
+    );
+    assert.deepEqual(
+      listing.filter((entry) => entry.startsWith(RETIRED_PACKAGE_DIR)),
+      [],
+      'the tarball still bundles the screen package (t549, D27)',
+    );
 
     const loader = listing.filter((entry) => entry.includes('tsx'));
     assert.deepEqual(
@@ -169,6 +179,12 @@ test('t248 — one tarball installs all six commands, with no checkout on disk',
     );
 
     const env = strangerEnv(binDir);
+
+    assert.equal(
+      existsSync(path.join(binDir, RETIRED_COMMAND)),
+      false,
+      'the screen\'s command is still on the installed PATH (t549, D27)',
+    );
 
     for (const command of COMMANDS) {
       assert.ok(

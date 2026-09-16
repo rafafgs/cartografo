@@ -1,7 +1,8 @@
 /**
  * Acceptance tests for the container artifacts (t250, FR1-FR10; D23).
  *
- * D23 promises "an official Docker image" for the control plane and the screen.
+ * D23 promises "an official Docker image"; since D27 it ships the control plane
+ * alone, the screen having been deleted.
  * These cases pin the SHAPE of what that promise ships — the `Dockerfile`, the
  * `.dockerignore` and the `compose.yml` at the repository root — plus the two
  * prose claims a reader depends on. Everything here is a file read: no Docker
@@ -21,10 +22,10 @@
  * - **The database lives at `/data`, on a named volume.** Otherwise it lives on
  *   the container's writable layer and a `docker rm` is a data loss nobody was
  *   warned about.
- * - **The screen's baked healthcheck is disabled for its own service.** The
- *   image's `HEALTHCHECK` probes the control plane's port, which the screen
- *   never listens on; left enabled, that service reports unhealthy forever for
- *   a reason that means nothing.
+ * - **One service, one port (t549, D27).** The screen was the image's second
+ *   binary and `compose.yml`'s second service; with it gone, an `EXPOSE 4318`
+ *   or a `screen:` service left behind would advertise a port nothing listens
+ *   on and a container that cannot start.
  *
  * `compose.yml` is read with a small indentation reader rather than a YAML
  * parser. Nothing in this repository depends on one — the only `yaml` on disk is
@@ -166,8 +167,16 @@ test('t250 AT — the Dockerfile takes no decision the operator has to take', ()
 
   assert.match(
     dockerfile,
-    /^\s*EXPOSE\s+4317\s+4318\s*$/m,
-    'both ports are exposed: either binary may be the one a container from this image runs',
+    /^\s*EXPOSE\s+4317\s*$/m,
+    'the control plane\'s port is the only one exposed: there is no screen to listen on 4318 (t549)',
+  );
+
+  const cmd = dockerfile.split('\n').find((line) => /^\s*CMD\b/.test(line));
+  assert.notEqual(cmd, undefined, 'the image declares no CMD');
+  assert.deepEqual(
+    JSON.parse((cmd as string).replace(/^\s*CMD\s+/, '')) as unknown,
+    ['cartografo', '--no-runner'],
+    'the default command is the control plane with no runner, and no flag `up` no longer knows (t549)',
   );
 
   const healthcheck = dockerfile
@@ -196,7 +205,7 @@ test('t250 AT — .dockerignore keeps the checkout out of the build context', ()
   }
 });
 
-test('t250 AT — compose.yml wires two services, one image and one volume', () => {
+test('t250 AT — compose.yml wires one service, one image and one volume', () => {
   const compose = required(COMPOSE, 'compose.yml');
 
   assert.doesNotMatch(
@@ -207,9 +216,9 @@ test('t250 AT — compose.yml wires two services, one image and one volume', () 
 
   const services = blockUnder(compose, 'services', 0);
   assert.deepEqual(
-    keysAt(services, 2).sort(),
-    ['control-plane', 'screen'],
-    'compose.yml declares exactly the two services the image serves',
+    keysAt(services, 2),
+    ['control-plane'],
+    'compose.yml declares exactly one service, the control plane: the screen is gone (t549, D27)',
   );
 
   const controlPlane = blockUnder(services, 'control-plane', 2);
@@ -230,30 +239,7 @@ test('t250 AT — compose.yml wires two services, one image and one volume', () 
     'the control plane mounts a volume at /data, or its database dies with the container',
   );
 
-  const screen = blockUnder(services, 'screen', 2);
-  const command = screen
-    .split('\n')
-    .find((line) => indentOf(line) === 4 && line.trimStart().startsWith('command:'));
-  assert.notEqual(command, undefined, 'the screen service declares no `command:` of its own');
-  assert.match(
-    command as string,
-    /cartografo-screen/,
-    "the screen service replaces the image's default command with `cartografo-screen`",
-  );
-
-  const screenEnv = environmentOf(screen);
-  assert.equal(
-    screenEnv.CARTOGRAFO_URL,
-    'http://control-plane:4317',
-    'the screen reaches the control plane by its compose service name',
-  );
-
-  assert.match(
-    blockUnder(screen, 'healthcheck', 4),
-    /disable:\s*true/,
-    'the image\'s baked healthcheck probes port 4317, which the screen never listens on:\n' +
-      'left enabled it reports unhealthy forever, for a reason that means nothing',
-  );
+  assert.doesNotMatch(compose, /4318/, 'nothing in compose.yml still publishes the screen\'s port');
 
   assert.notEqual(
     blockUnder(compose, 'volumes', 0).trim(),

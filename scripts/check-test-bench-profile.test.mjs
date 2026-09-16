@@ -25,7 +25,9 @@ import {
   APP_URL_MISSING,
   PORT_MISMATCH,
   RUN_MISSING,
+  RUN_PORT_ENV,
   check,
+  extractRunPort,
 } from './check-test-bench-profile.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -47,7 +49,7 @@ const PROFILE_RUN_SET_NO_APP_URL = [
   '  build: npm run build',
   '  lint: npm run lint',
   '  migration_heads: null',
-  '  run: CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner',
+  '  run: CARTOGRAFO_PORT=4517 node ./node_modules/.bin/cartografo up --no-runner',
   '  setup: npm install --no-audit --no-fund',
   '  test: npm test',
   '  typecheck: npm run typecheck',
@@ -58,7 +60,7 @@ const PROFILE_PORT_MISMATCH = [
   '  build: npm run build',
   '  lint: npm run lint',
   '  migration_heads: null',
-  '  run: CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner',
+  '  run: CARTOGRAFO_PORT=4517 node ./node_modules/.bin/cartografo up --no-runner',
   '  setup: npm install --no-audit --no-fund',
   '  test: npm test',
   '  typecheck: npm run typecheck',
@@ -70,10 +72,21 @@ const PROFILE_VALID = [
   '  build: npm run build',
   '  lint: npm run lint',
   '  migration_heads: null',
-  '  run: CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner',
+  '  run: CARTOGRAFO_PORT=4517 node ./node_modules/.bin/cartografo up --no-runner',
   '  setup: npm install --no-audit --no-fund',
   '  test: npm test',
   '  typecheck: npm run typecheck',
+  'app_url: http://127.0.0.1:4517/',
+].join('\n');
+
+/**
+ * The Profile as it read while the screen existed (t549): `commands.run`
+ * carries the screen's port and `app_url` points at it. With the screen gone
+ * the port a test can poll is the control plane's, so this now disagrees.
+ */
+const PROFILE_SCREEN_PORT_ONLY = [
+  'commands:',
+  '  run: CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-runner',
   'app_url: http://127.0.0.1:4518/',
 ].join('\n');
 
@@ -126,6 +139,18 @@ test('matching, present run and app_url pass with no violations', (t) => {
 
   const report = check(root);
   assert.deepEqual(report, { valid: true, violations: [] });
+});
+
+test('t549 AT7 — the port is keyed to the control plane\'s CARTOGRAFO_PORT, not the screen\'s', (t) => {
+  assert.equal(RUN_PORT_ENV, 'CARTOGRAFO_PORT');
+  assert.equal(extractRunPort('CARTOGRAFO_PORT=4517 node cartografo up --no-runner'), '4517');
+  assert.equal(extractRunPort('CARTOGRAFO_SCREEN_PORT=4518 node cartografo up'), null);
+
+  const root = writeProfile(temporaryArea(t), PROFILE_SCREEN_PORT_ONLY);
+  const report = check(root);
+  assert.equal(report.valid, false);
+  assert.deepEqual(codesOf(report), [PORT_MISMATCH]);
+  assert.match(report.violations[0].message, /CARTOGRAFO_PORT=\(none\)/);
 });
 
 test('the real repository profile passes its own gate (regression pin for FR1-FR3)', () => {

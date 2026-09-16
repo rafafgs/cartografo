@@ -2,18 +2,19 @@
  * The one-command startup, decided in process (t405, FR2/FR3/FR5–FR8).
  *
  * `startup.test.ts` spawns the real binary, which is the only honest way to
- * prove that `npx cartografo` brings three processes up and takes all three
- * down again. It is also a real control plane, a real screen and a real runner
- * per case, and what `up` actually DECIDES — which children to spawn, with
- * which environment, which URL the browser gets — is a small combinatorial
- * surface that has no business costing three processes per assertion.
+ * prove that `npx cartografo` brings its processes up and takes them down
+ * again. It is also a real control plane and a real runner per case, and what
+ * `up` actually DECIDES — whether to spawn the runner, with which environment —
+ * is a small surface that has no business costing two processes per assertion.
  *
  * So this file calls `runUp` as a function, over the seams `cli/up.ts`
- * publishes: the control plane, the spawner, the browser opener and the wait
- * for a stop signal. Nothing here starts a process, opens a port or opens a
- * browser; what it does start is a real, migrated database, because the
- * credential `up` hands its children is a row in it and a fake would prove
- * nothing about that.
+ * publishes: the control plane, the spawner and the wait for a stop signal.
+ * Nothing here starts a process or opens a port; what it does start is a real,
+ * migrated database, because the credential `up` hands its child is a row in it
+ * and a fake would prove nothing about that.
+ *
+ * Since t549 (D27) there is no screen and no browser: `--no-runner` is the one
+ * flag `up` takes, and `--no-screen`/`--no-browser` are typos like any other.
  *
  * Naming convention of `cli-router-unit.test.ts`; artifacts are loaded behind
  * `requireArtifacts` so the initial red NAMES the file that is missing.
@@ -33,6 +34,9 @@ import type * as UpModule from '../src/cli/up.ts';
 import type { ChildHandle, UpControlPlane, UpFlags } from '../src/cli/up.ts';
 import { UsageError } from '../src/cli/url.ts';
 import { verifyToken } from '../src/repositories/credentials.ts';
+import { CONTROL_PLANE_ONLY as TEST_SUPPORT_CONTROL_PLANE_ONLY } from '@cartografo/test-support';
+
+import { CONTROL_PLANE_ONLY as CLI_SUPPORT_CONTROL_PLANE_ONLY } from './cli-support.ts';
 import { capture } from './cli-unit-support.ts';
 import { MIGRATIONS_DIR, requireArtifacts, startControlPlane } from './support.ts';
 
@@ -84,7 +88,6 @@ interface SpawnCall {
 /** Everything one seamed `runUp` did. */
 interface Run {
   spawned: SpawnCall[];
-  opened: string[];
   db: Database;
   controlPlaneUrl: string;
   shutdowns: number;
@@ -101,9 +104,9 @@ interface Run {
  * would be a test about `process.on`.
  *
  * @param t Test context, for the temporary database.
- * @param flags The three booleans of the command line.
- * @param env Environment `up` reads and the children inherit.
- * @returns The spawn calls, the opened URLs and the database it minted into.
+ * @param flags The one boolean of the command line.
+ * @param env Environment `up` reads and the child inherits.
+ * @returns The spawn calls and the database it minted into.
  */
 async function runSeamed(
   t: TestHook,
@@ -116,7 +119,6 @@ async function runSeamed(
   const db = await openMigrated(t, base);
 
   const spawned: SpawnCall[] = [];
-  const opened: string[] = [];
   const controlPlaneUrl = 'http://127.0.0.1:4317';
   let shutdowns = 0;
 
@@ -144,9 +146,6 @@ async function runSeamed(
         spawned.push({ command, args, env: childEnv });
         return child();
       },
-      openBrowser: (url) => {
-        opened.push(url);
-      },
       listenForStop: (onStop) => {
         onStop();
         return () => undefined;
@@ -157,7 +156,6 @@ async function runSeamed(
 
   return {
     spawned,
-    opened,
     db,
     controlPlaneUrl,
     shutdowns,
@@ -166,42 +164,31 @@ async function runSeamed(
   };
 }
 
-test('t405 AT2 — parseUpFlags starts with all three on, and each flag flips exactly its own', async () => {
+test('t405 AT2 — parseUpFlags starts with the runner on, and --no-runner turns it off', async () => {
   const { parseUpFlags } = await loadUp();
 
-  assert.deepEqual(
-    parseUpFlags([]),
-    { browser: true, runner: true, screen: true },
-    'the command with no flag is the whole product coming up',
-  );
+  const none = parseUpFlags([]);
+  assert.deepEqual(none, { runner: true }, 'the command with no flag is the whole product coming up');
+  assert.equal('screen' in none, false, 'there is no screen to start or skip (t549)');
+  assert.equal('browser' in none, false, 'and no browser to open (t549)');
 
-  assert.deepEqual(parseUpFlags(['--no-browser']), { browser: false, runner: true, screen: true });
-  assert.deepEqual(parseUpFlags(['--no-runner']), { browser: true, runner: false, screen: true });
-  assert.deepEqual(parseUpFlags(['--no-screen']), { browser: true, runner: true, screen: false });
+  assert.deepEqual(parseUpFlags(['--no-runner']), { runner: false });
 
-  assert.deepEqual(
-    parseUpFlags(['--no-browser', '--no-runner', '--no-screen']),
-    { browser: false, runner: false, screen: false },
-    'all three together is a control-plane-only startup',
-  );
-
-  // Order is not a meaning, and a flag repeated is still that flag.
-  assert.deepEqual(parseUpFlags(['--no-screen', '--no-browser']), {
-    browser: false,
-    runner: true,
-    screen: false,
-  });
-  assert.deepEqual(parseUpFlags(['--no-runner', '--no-runner']), {
-    browser: true,
-    runner: false,
-    screen: true,
-  });
+  // A flag repeated is still that flag.
+  assert.deepEqual(parseUpFlags(['--no-runner', '--no-runner']), { runner: false });
 });
 
 test('t405 AT2 — a flag `up` does not know, and a stray positional, are wrong command lines', async () => {
   const { parseUpFlags } = await loadUp();
 
-  for (const line of [['--no-brwoser'], ['--project', '2'], ['--url=http://x'], ['--no-browser', '--verbose']]) {
+  for (const line of [
+    ['--no-runnr'],
+    ['--project', '2'],
+    ['--url=http://x'],
+    ['--no-runner', '--verbose'],
+    ['import'],
+    ['--no-runner', 'extra'],
+  ]) {
     assert.throws(
       () => parseUpFlags(line),
       (error: unknown) => {
@@ -211,17 +198,37 @@ test('t405 AT2 — a flag `up` does not know, and a stray positional, are wrong 
       line.join(' '),
     );
   }
+});
 
-  for (const line of [['import'], ['--no-runner', 'extra']]) {
+test('t549 AT3 — --no-screen and --no-browser are gone, and fail like any other typo', async () => {
+  const { parseUpFlags } = await loadUp();
+
+  for (const line of [
+    ['--no-screen'],
+    ['--no-browser'],
+    ['--no-runner', '--no-screen'],
+    ['--no-browser', '--no-runner'],
+  ]) {
     assert.throws(
       () => parseUpFlags(line),
       (error: unknown) => {
         assert.ok(error instanceof UsageError, `not a UsageError: ${String(error)}`);
+        assert.match(error.message, /up does not understand/);
+        assert.doesNotMatch(
+          error.message,
+          /takes[^)]*--no-(screen|browser)/,
+          'the usage hint no longer offers a removed flag',
+        );
         return true;
       },
       line.join(' '),
     );
   }
+});
+
+test('t549 AT5 — CONTROL_PLANE_ONLY carries only the flag `up` still knows, in both shared helpers', () => {
+  assert.deepEqual([...TEST_SUPPORT_CONTROL_PLANE_ONLY], ['--no-runner'], '@cartografo/test-support');
+  assert.deepEqual([...CLI_SUPPORT_CONTROL_PLANE_ONLY], ['--no-runner'], 'packages/core/test/cli-support.ts');
 });
 
 test('t405 AT3 — ensureDefaultWorkspace provisions the seeded default, once, and nothing else', async (t) => {
@@ -270,43 +277,39 @@ test('t405 AT3 — ensureDefaultWorkspace provisions the seeded default, once, a
   assert.equal(ensureDefaultWorkspace(undefined, home), false, 'no setting at all is nothing to do');
 });
 
-test('t405 AT4 — the browser is opened once, on the screen, and only when it was asked for', async (t) => {
-  const { DEFAULT_SCREEN_PORT, SCREEN_PORT_ENV } = await loadUp();
+test('t549 AT4 — `up` has no screen to spawn and no browser to open', async (t) => {
+  const up = (await loadUp()) as unknown as Record<string, unknown>;
 
-  const all = await runSeamed(t, { browser: true, runner: true, screen: true });
+  for (const retired of [
+    'SCREEN_BINARY',
+    'SCREEN_PORT_ENV',
+    'DEFAULT_SCREEN_PORT',
+    'screenUrl',
+    'openInBrowser',
+  ]) {
+    assert.equal(retired in up, false, `cli/up.ts still exports ${retired}`);
+  }
+
+  const run = await runSeamed(t, { runner: true });
   assert.deepEqual(
-    all.opened,
-    [`http://127.0.0.1:${String(DEFAULT_SCREEN_PORT)}`],
-    'the browser lands on the screen, on its own default port, exactly once',
-  );
-
-  const none = await runSeamed(t, { browser: false, runner: true, screen: true });
-  assert.deepEqual(none.opened, [], '--no-browser opens nothing');
-
-  const configured = await runSeamed(
-    t,
-    { browser: true, runner: true, screen: true },
-    { [SCREEN_PORT_ENV]: '4999' },
-  );
-  assert.deepEqual(
-    configured.opened,
-    ['http://127.0.0.1:4999'],
-    'an operator who set CARTOGRAFO_SCREEN_PORT gets the browser on that port — the same variable reaches the spawned screen',
+    run.spawned.map((call) => call.command),
+    [up.RUNNER_BINARY],
+    'the only child `up` spawns is the runner',
   );
 });
 
-test('t405 AT5 — both children are spawned by name, credentialed, and with no path flags', async (t) => {
-  const { RUNNER_BINARY, SCREEN_BINARY } = await loadUp();
+test('t405 AT5 — the runner is spawned by name, credentialed, and with no path flags', async (t) => {
+  const { RUNNER_BINARY } = await loadUp();
 
-  const both = await runSeamed(t, { browser: false, runner: true, screen: true });
+  const run = await runSeamed(t, { runner: true });
 
   assert.deepEqual(
-    both.spawned.map((call) => call.command).sort(),
-    [RUNNER_BINARY, SCREEN_BINARY].sort(),
-    'one screen and one runner, each spawned by binary name and never by a path',
+    run.spawned.map((call) => call.command),
+    [RUNNER_BINARY],
+    'one runner, spawned by binary name and never by a path',
   );
 
-  const runner = both.spawned.find((call) => call.command === RUNNER_BINARY);
+  const runner = run.spawned[0];
   assert.ok(runner !== undefined);
   for (const flag of ['--working-dir', '--worktrees-root', '--engine', '--project']) {
     assert.ok(!runner.args.includes(flag), `the runner must not be given ${flag}`);
@@ -317,51 +320,25 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
     'the runner is given nothing at all: those three are the settings fallback\'s (t404)',
   );
 
-  const screen = both.spawned.find((call) => call.command === SCREEN_BINARY);
-  assert.ok(screen !== undefined);
-  assert.deepEqual(screen.args, [], 'and neither is the screen');
+  // One credential, minted for this startup and never printed.
+  assert.equal(runner.env.CARTOGRAFO_URL, run.controlPlaneUrl, 'the runner was not told where the control plane is');
+  const token = runner.env.CARTOGRAFO_TOKEN;
+  assert.equal(typeof token, 'string');
+  assert.ok((token ?? '').length > 0, 'the runner was handed no credential');
 
-  // One credential for both, minted for this startup and never printed.
-  const tokens = new Set<string>();
-  for (const call of both.spawned) {
-    assert.equal(call.env.CARTOGRAFO_URL, both.controlPlaneUrl, `${call.command} was not told where the control plane is`);
-    const token = call.env.CARTOGRAFO_TOKEN;
-    assert.equal(typeof token, 'string');
-    assert.ok((token ?? '').length > 0, `${call.command} was handed no credential`);
-    tokens.add(token ?? '');
-  }
-  assert.equal(tokens.size, 1, 'one credential per startup, handed to both children');
-
-  const token = [...tokens][0];
-  assert.ok(!both.stdout.includes(token), 'the internal credential is never printed on stdout');
-  assert.ok(!both.stderr.includes(token), 'nor on stderr');
+  assert.ok(!run.stdout.includes(token ?? ''), 'the internal credential is never printed on stdout');
+  assert.ok(!run.stderr.includes(token ?? ''), 'nor on stderr');
   assert.equal(
-    verifyToken(both.db, token),
+    verifyToken(run.db, token ?? ''),
     null,
     'and a clean shutdown revokes it: it authenticates nothing once `up` is gone',
   );
 
-  const withoutRunner = await runSeamed(t, { browser: false, runner: false, screen: true });
-  assert.deepEqual(
-    withoutRunner.spawned.map((call) => call.command),
-    [SCREEN_BINARY],
-    '--no-runner spawns no runner',
-  );
-
-  const withoutScreen = await runSeamed(t, { browser: false, runner: true, screen: false });
-  assert.deepEqual(
-    withoutScreen.spawned.map((call) => call.command),
-    [RUNNER_BINARY],
-    '--no-screen spawns no screen',
-  );
-
   // A control-plane-only startup spawns nothing — and, since t360, still mints
   // a credential, because the auto-import of the interview bundle is a client
-  // of this control plane like any other and is not gated by either flag (FR1).
-  // t405's own rule ("nobody to hand it to is nobody to mint it for") was about
-  // a table that stayed empty; what it was really protecting is that nothing
-  // outlives the process, and that is what is asserted here now.
-  const neither = await runSeamed(t, { browser: false, runner: false, screen: false });
+  // of this control plane like any other and is not gated by the flag (FR1).
+  // What is protected is that nothing outlives the process.
+  const neither = await runSeamed(t, { runner: false });
   assert.deepEqual(neither.spawned, [], 'control-plane-only startup spawns nothing');
   assert.equal(
     (
@@ -374,52 +351,54 @@ test('t405 AT5 — both children are spawned by name, credentialed, and with no 
   );
 });
 
-test('t449 AT1 — resolveSibling finds each delegator script in `up`\'s own package, never on `PATH`', async () => {
-  const { RUNNER_BINARY, SCREEN_BINARY, resolveSibling } = await loadUp();
+test('t449 AT1 — resolveSibling finds the runner\'s delegator script in `up`\'s own package, never on `PATH`', async () => {
+  const { RUNNER_BINARY, resolveSibling } = await loadUp();
 
   // A caller-supplied directory is used verbatim: the mapping this function
   // owns is command name -> script file name, and nothing else.
   const elsewhere = path.join(path.sep, 'opt', 'cartografo', 'bin');
   assert.equal(
-    resolveSibling(SCREEN_BINARY, elsewhere),
-    path.join(elsewhere, 'cartografo-screen.mjs'),
-    'the screen is its delegator script inside the given bin/',
-  );
-  assert.equal(
     resolveSibling(RUNNER_BINARY, elsewhere),
     path.join(elsewhere, 'cartografo-runner.mjs'),
-    'and so is the runner',
+    'the runner is its delegator script inside the given bin/',
   );
 
   // With no directory it is `packages/core/bin/`, at the fixed offset from
   // `up.ts` itself — the same relative-offset trick `mapDesignBundle` plays for
   // `factory-graphs/`, and the whole reason a bare-path invocation works.
   const shipped = path.resolve(import.meta.dirname, '..', 'bin');
-  for (const command of [SCREEN_BINARY, RUNNER_BINARY]) {
-    const resolved = resolveSibling(command);
-    assert.ok(path.isAbsolute(resolved), `${command} has to resolve to an absolute path`);
-    assert.equal(path.dirname(resolved), shipped, `${command} is looked for in this package's own bin/`);
-    assert.ok(existsSync(resolved), `artifact does not exist yet: ${resolved}`);
-  }
+  const resolved = resolveSibling(RUNNER_BINARY);
+  assert.ok(path.isAbsolute(resolved), `${RUNNER_BINARY} has to resolve to an absolute path`);
+  assert.equal(path.dirname(resolved), shipped, `${RUNNER_BINARY} is looked for in this package's own bin/`);
+  assert.ok(existsSync(resolved), `artifact does not exist yet: ${resolved}`);
 
-  // Anything else is a caller's mistake, and the message has to say which.
-  assert.throws(
-    () => resolveSibling('cartografo-mcp'),
-    /cartografo-mcp/,
-    'a command with no delegator of ours throws, naming it',
+  // Anything else is a caller's mistake, and the message has to say which —
+  // including the screen's old name, which is no child of `up` any more (t549).
+  const retiredScreen = ['cartografo', 'screen'].join('-');
+  for (const command of ['cartografo-mcp', retiredScreen]) {
+    assert.throws(
+      () => resolveSibling(command),
+      new RegExp(command),
+      `${command} has no delegator of ours: it throws, naming it`,
+    );
+  }
+  assert.equal(
+    existsSync(path.join(shipped, `${retiredScreen}.mjs`)),
+    false,
+    'the screen\'s delegator script is gone from bin/ (t549)',
   );
 });
 
 test('t449 AT2 — a child that could not start names the command AND the path that was tried', async () => {
-  const { MISSING_SIBLING, SCREEN_BINARY, spawnFailureLine } = await loadUp();
+  const { MISSING_SIBLING, RUNNER_BINARY, spawnFailureLine } = await loadUp();
 
-  const tried = path.join(path.sep, 'opt', 'cartografo', 'bin', 'cartografo-screen.mjs');
+  const tried = path.join(path.sep, 'opt', 'cartografo', 'bin', 'cartografo-runner.mjs');
 
   // The two failures a reader must be able to tell apart: nothing at the path,
   // and something there that `spawn` refused.
   for (const reason of [MISSING_SIBLING, 'EACCES: permission denied']) {
-    const line = spawnFailureLine(SCREEN_BINARY, tried, reason);
-    assert.ok(line.includes(SCREEN_BINARY), `the command is missing from: ${line}`);
+    const line = spawnFailureLine(RUNNER_BINARY, tried, reason);
+    assert.ok(line.includes(RUNNER_BINARY), `the command is missing from: ${line}`);
     assert.ok(line.includes(tried), `the resolved path is missing from: ${line}`);
     assert.ok(line.includes(reason), `the reason is missing from: ${line}`);
     assert.ok(line.endsWith('\n'), 'one line, terminated');
@@ -428,7 +407,7 @@ test('t449 AT2 — a child that could not start names the command AND the path t
 });
 
 test('t405 FR1 — the readiness line `up` prints carries the same five keys as before', async (t) => {
-  const run = await runSeamed(t, { browser: false, runner: false, screen: false });
+  const run = await runSeamed(t, { runner: false });
 
   const line = run.stdout
     .split('\n')
@@ -453,8 +432,14 @@ test('t405 FR2 — a leading `--…` is `up`\'s own flag, and a bad one is exit 
 
   // Both spellings reach the same parser, and both fail the same way. Without
   // the router's leading-`--` detection the first line below would die with
-  // `unknown subcommand: "--no-brwoser"`, which says nothing about the typo.
-  for (const line of [['--no-brwoser'], ['up', '--no-brwoser'], ['--no-browser', 'extra']]) {
+  // `unknown subcommand: "--no-runnr"`, which says nothing about the typo.
+  for (const line of [
+    ['--no-runnr'],
+    ['up', '--no-runnr'],
+    ['--no-runner', 'extra'],
+    ['--no-screen'],
+    ['up', '--no-browser'],
+  ]) {
     const run = await capture(async () => await runCli(line, {}));
 
     assert.equal(run.code, 2, `${line.join(' ')}: a wrong command line is exit 2`);
@@ -509,12 +494,11 @@ async function runAgainstServer(
 
   const run = await capture(async () => {
     await runUp(
-      { browser: false, runner: false, screen: false },
+      { runner: false },
       {
         env,
         start: async () => controlPlane,
         spawnChild: () => ({ kill: () => undefined, exited: Promise.resolve() }),
-        openBrowser: () => undefined,
         listenForStop: (onStop) => {
           onStop();
           return () => undefined;

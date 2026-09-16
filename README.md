@@ -191,6 +191,21 @@ middle still reads to its last line ([the
 format](docs/spec/history-export.md)). It goes only one way: there is no
 importing a history back, and the file carries the record unredacted.
 
+`cartografo` is also the complete operating surface D26 asks for: seven reads
+with board parity, each with a `--json` form for a script.
+
+```bash
+npx cartografo jobs                            # the board, one row per job
+npx cartografo jobs --state awaiting_you       # only the jobs waiting on a person
+npx cartografo job 41                          # one job's timeline, artifacts and sessions
+npx cartografo executions                      # the rounds, and how each one is doing
+npx cartografo execution 7                     # one round's jobs, sessions and questions
+npx cartografo sessions --job 41               # a job's sessions
+npx cartografo transcript 12 --tail 40         # a session's decoded output, tailed
+npx cartografo input-requests                  # the escalation inbox (pending, by default)
+npx cartografo input-requests --status answered
+```
+
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick
 (`--interval-ms`, default 2000). One engine per process

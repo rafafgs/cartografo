@@ -39,6 +39,15 @@ import { DEFAULT_PORT } from '../index.ts';
 import { runExport } from './export.ts';
 import { historyScope, runExportHistory } from './export-history.ts';
 import { runImport } from './import.ts';
+import {
+  runExecution,
+  runExecutions,
+  runInputRequests,
+  runJob,
+  runJobs,
+  runSessions,
+  runTranscript,
+} from './reads.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
 import { parseUpFlags, runUp } from './up.ts';
@@ -79,6 +88,29 @@ subcommands:
                          back.
   status                 reports the server, the registered classes and the projects.
 
+  reads, with board parity (D26) — each has a --json form:
+
+  jobs                   lists jobs, the same set GET /v1/jobs returns.
+                         --state filters client-side on the six words RF-30
+                         defines (awaiting_you, blocked_unasked, running,
+                         unowned, completed, queued); --execution narrows to
+                         one round.
+  job <id>               one job's timeline in three buckets — the queue, an
+                         agent working, a human being asked — with its
+                         artifacts and sessions. The same content as the
+                         screen's job page, minus the board's map position.
+  executions             the rounds: jobs, blocked jobs and pending questions
+                         per round.
+  execution <id>         one round's jobs, sessions and pending questions.
+                         Never 404s — an execution is not an entity.
+  sessions               lists sessions; --job and --execution filter to one
+                         job or one round.
+  transcript <session-id>
+                         a session's decoded transcript, its own failed line
+                         (a non-zero exit code) marked with ">>> ". --tail N
+                         shows only the last N lines.
+  input-requests         the escalation inbox; --status defaults to pending.
+
   the D4 skill-import gate, in three steps:
 
   scan-skill <path>      derives a draft manifest from the SKILL.md of an
@@ -107,12 +139,23 @@ options:
   --by <name>            (scan-skill) who is importing, for origin.imported_by
   --job <id>             (register-skill) job the approval was opened on
                          (export-history) job whose history to export
+                         (sessions) filter to one job's sessions
   --execution <id>       (export-history) round whose history to export; exactly
                          one of --job/--execution
+                         (jobs, sessions) filter to one round
+  --state <state>        (jobs) filter to one of the six job states:
+                         awaiting_you, blocked_unasked, running, unowned,
+                         completed, queued
+  --status <status>      (input-requests) filter by status; default pending
+  --tail <n>             (transcript) show only the last N lines, counting
+                         back from the session's own last non-blank line
   --project <id|name>    project to work in (import, export, export-history,
-                         status); default 1.
+                         status, jobs, job, executions, execution, sessions,
+                         transcript, input-requests); default 1.
                          A name is resolved against GET /v1/projects
-  --json                 (status) prints the report as a single JSON object
+  --json                 (status, jobs, job, executions, execution, sessions,
+                         transcript, input-requests) prints machine-readable
+                         JSON instead of the human table/card
   -h, --help             this text
 
 Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST,
@@ -124,6 +167,13 @@ const API_SUBCOMMANDS = [
   'export',
   'export-history',
   'status',
+  'jobs',
+  'job',
+  'executions',
+  'execution',
+  'sessions',
+  'transcript',
+  'input-requests',
   'scan-skill',
   'propose-skill',
   'register-skill',
@@ -172,6 +222,22 @@ function extractValue(args: string[], name: string): Extraction {
 function extractFlag(args: string[], name: string): { present: boolean; rest: string[] } {
   const rest = args.filter((argument) => argument !== name);
   return { present: rest.length !== args.length, rest };
+}
+
+/** Reads a command-line value as an integer, or refuses the command line. */
+function parseIntegerOption(raw: string, label: string): number {
+  const value = Number(raw);
+  if (raw.trim() === '' || !Number.isInteger(value)) {
+    throw new UsageError(`${label} has to be an integer (got: "${raw}")`);
+  }
+  return value;
+}
+
+/** Same, but refuses anything that is not strictly positive (`--tail`). */
+function parsePositiveIntegerOption(raw: string, label: string): number {
+  const value = parseIntegerOption(raw, label);
+  if (value <= 0) throw new UsageError(`${label} has to be a positive integer (got: "${raw}")`);
+  return value;
 }
 
 /**
@@ -347,6 +413,110 @@ async function runApiClient(
       throw new UsageError(`--job has to be an integer (got: "${fromJob.value}")`);
     }
     return await runRegisterSkill({ jobId, url });
+  }
+
+  if (subcommand === 'jobs') {
+    const fromState = extractValue(fromProject.rest, '--state');
+    const fromExecution = extractValue(fromState.rest, '--execution');
+    const fromJson = extractFlag(fromExecution.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'jobs');
+
+    return await runJobs({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      state: fromState.value,
+      executionId:
+        fromExecution.value === undefined
+          ? undefined
+          : parseIntegerOption(fromExecution.value, 'jobs --execution'),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'job') {
+    const fromJson = extractFlag(fromProject.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'job');
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('job needs an id');
+
+    return await runJob({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      id: parseIntegerOption(rawId, 'job <id>'),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'executions') {
+    const fromJson = extractFlag(fromProject.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'executions');
+
+    return await runExecutions({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'execution') {
+    const fromJson = extractFlag(fromProject.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'execution');
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('execution needs an id');
+
+    return await runExecution({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      id: parseIntegerOption(rawId, 'execution <id>'),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'sessions') {
+    const fromJob = extractValue(fromProject.rest, '--job');
+    const fromExecution = extractValue(fromJob.rest, '--execution');
+    const fromJson = extractFlag(fromExecution.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'sessions');
+
+    return await runSessions({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      jobId: fromJob.value === undefined ? undefined : parseIntegerOption(fromJob.value, 'sessions --job'),
+      executionId:
+        fromExecution.value === undefined
+          ? undefined
+          : parseIntegerOption(fromExecution.value, 'sessions --execution'),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'transcript') {
+    const fromTail = extractValue(fromProject.rest, '--tail');
+    const fromJson = extractFlag(fromTail.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'transcript');
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('transcript needs a session id');
+
+    return await runTranscript({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      id: parseIntegerOption(rawId, 'transcript <session-id>'),
+      tail: fromTail.value === undefined ? undefined : parsePositiveIntegerOption(fromTail.value, '--tail'),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'input-requests') {
+    const fromStatus = extractValue(fromProject.rest, '--status');
+    const fromJson = extractFlag(fromStatus.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'input-requests');
+
+    return await runInputRequests({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      status: fromStatus.value ?? 'pending',
+      json: fromJson.present,
+    });
   }
 
   const fromFlag = extractFlag(fromProject.rest, '--json');

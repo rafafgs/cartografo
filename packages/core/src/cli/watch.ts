@@ -262,7 +262,7 @@ function deniedBodyMessage(body: string): string {
  *   plane at all — the caller lets this propagate to `runCli`'s own handling.
  * @throws {StreamDeniedError} On `400`/`401`/`403`, on any attempt.
  */
-async function* watchEvents(options: WatchOptions): AsyncGenerator<EventEnvelope> {
+export async function* watchEvents(options: WatchOptions): AsyncGenerator<EventEnvelope> {
   const doFetch = options.doFetch ?? fetch;
   const backoffMs = options.backoffMs ?? DEFAULT_BACKOFF_MS;
   const target = `${normalize(options.url)}/v1/events/stream?project_id=${options.projectId}`;

@@ -478,7 +478,7 @@ function threeTurns(draft: ReturnType<typeof closingDraft>): Turn[] {
 
 /** Closes the draft's pins in the test, with the canonical recipe. */
 function pinned(draft: ReturnType<typeof closingDraft>): ReturnType<typeof closingDraft> {
-  const skills = draft.skills.map((skill) => ({ ...skill, hash: manifestHash(skill) }));
+  const skills = draft.skills.map((skill) => ({ ...skill, hash: manifestHash(skill) }) as Record<string, unknown>);
   const nodes = (draft.graph.nodes as Record<string, unknown>[]).map((node) => {
     const ref = node.skill_ref as { id: string };
     const skill = skills.find((candidate) => candidate.id === ref.id);

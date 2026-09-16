@@ -39,6 +39,7 @@ import { DEFAULT_PORT } from '../index.ts';
 import { runExport } from './export.ts';
 import { historyScope, runExportHistory } from './export-history.ts';
 import { runImport } from './import.ts';
+import { runInterview } from './interview.ts';
 import {
   runExecution,
   runExecutions,
@@ -118,6 +119,15 @@ subcommands:
                          pick where it starts; --until-done exits 0 the moment
                          the named job or round finishes.
 
+  interview              draws a map by conversation, in the terminal (D26): asks
+                         for a title and a description, then every question as
+                         it arrives — a number or text for a decision, one
+                         prompt per field for a form, Enter for the default —
+                         printing the map as it grows. Once it is finished,
+                         \`register\` it, \`export <dir>\` it, or press Enter to
+                         leave it as a draft.
+                           interview [--resume <id>] [--answers <file>] [--by <name>]
+
   proposals <verb>       decides and reads proposals (D26): the CLI's own
                          version of the inbox page, on par with the screen.
                            proposals list [--status <status>] [--json]
@@ -160,6 +170,12 @@ options:
   --by <name>            (scan-skill) who is importing, for origin.imported_by
                          (proposals approve/apply/reject/revert) who decides;
                          default the OS user
+                         (interview) who answers; default the OS user
+  --resume <id>          (interview) picks an interview up again where the
+                         control plane says it stands
+  --answers <file>       (interview) reads every line from this file instead
+                         of the terminal; running out of lines before the
+                         interview finishes exits 1
   --reason <text>        (proposals reject, proposals revert) mandatory;
                          checked before any request is sent
   --job <id>             (register-skill) job the approval was opened on
@@ -188,7 +204,8 @@ options:
                          back from the session's own last non-blank line
   --project <id|name>    project to work in (import, export, export-history,
                          status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, watch, proposals);
+                         transcript, input-requests, watch, proposals,
+                         interview);
                          default 1. A name is resolved against GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
                          transcript, input-requests, watch, proposals) prints
@@ -213,6 +230,7 @@ const API_SUBCOMMANDS = [
   'transcript',
   'input-requests',
   'watch',
+  'interview',
   'proposals',
   'scan-skill',
   'propose-skill',
@@ -473,6 +491,27 @@ async function runApiClient(
     return await runProposals(verb, fromProject.rest.slice(1), {
       url,
       projectId: await resolveProjectId(fromProject.value, url),
+    });
+  }
+
+  if (subcommand === 'interview') {
+    const fromResume = extractValue(fromProject.rest, '--resume');
+    const fromAnswers = extractValue(fromResume.rest, '--answers');
+    const fromBy = extractValue(fromAnswers.rest, '--by');
+    requireNothingElse(fromBy.rest, 0, 'interview');
+
+    // Checked before `--project` is resolved, like `watch`'s flags: a wrong
+    // command line costs the server nothing.
+    const resumeId =
+      fromResume.value === undefined ? undefined : parseIntegerOption(fromResume.value, 'interview --resume');
+
+    return await runInterview({
+      url,
+      token,
+      projectId: await resolveProjectId(fromProject.value, url),
+      resumeId,
+      answersPath: fromAnswers.value,
+      by: fromBy.value,
     });
   }
 

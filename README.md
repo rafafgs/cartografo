@@ -235,6 +235,19 @@ own gate, ahead of the control plane's `400 reason_required`. Which actions a
 given proposal accepts is left entirely to the control plane's `409`: this is
 a thin client, not a second copy of that state machine.
 
+`interview` is the tenth, and the only one that talks back: the interview
+page's conversation in the terminal. It asks for a title and a description,
+then every question as it arrives — a number or the text for a decision, one
+prompt per field for a form, Enter for the default — and prints the map as it
+grows. Once the interview is finished, `register` registers the map and
+`export <dir>` writes it as a bundle `import` reads back.
+
+```bash
+npx cartografo interview                       # start one, answering at the prompts
+npx cartografo interview --resume 41           # pick it up again; every answer is on the server
+npx cartografo interview --answers answers.txt # one line per prompt, from a file
+```
+
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick
 (`--interval-ms`, default 2000). One engine per process

@@ -10,8 +10,10 @@
  *
  * - `run_missing` — `commands.run` is `null` or absent.
  * - `app_url_missing` — the top-level `app_url` key is `null` or absent.
- * - `port_mismatch` — both are present, but the port `CARTOGRAFO_SCREEN_PORT=`
- *   sets inside `commands.run` disagrees with the port in `app_url`.
+ * - `port_mismatch` — both are present, but the port `CARTOGRAFO_PORT=` sets
+ *   inside `commands.run` disagrees with the port in `app_url`. Until t549 this
+ *   was the screen's `CARTOGRAFO_SCREEN_PORT=`; with the screen gone, the one
+ *   server a test can poll is the control plane.
  *
  * Same shape as `scripts/check-single-writer.mjs` and
  * `scripts/check-readme-disclosure.mjs`: exported functions plus a thin CLI,
@@ -35,8 +37,8 @@ export const FILE_UNREADABLE = 'profile_unreadable';
 /** Path of the Profile, relative to the checked root. */
 export const PROFILE_FILE = '.flowpilot/profile.yml';
 
-/** Env var `commands.run` sets to pick the screen's port (`up.ts`). */
-export const SCREEN_PORT_ENV = 'CARTOGRAFO_SCREEN_PORT';
+/** Env var `commands.run` sets to pick the control plane's port (`src/index.ts`). */
+export const RUN_PORT_ENV = 'CARTOGRAFO_PORT';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -46,7 +48,7 @@ const RUN_LINE_RE = /^[ \t]+run:[ \t]*(.*)$/;
 /** Matches the top-level `app_url:` scalar (zero indentation). */
 const APP_URL_LINE_RE = /^app_url:[ \t]*(.*)$/;
 
-const SCREEN_PORT_ASSIGNMENT_RE = new RegExp(`\\b${SCREEN_PORT_ENV}=(\\d+)`);
+const RUN_PORT_ASSIGNMENT_RE = new RegExp(`\\b${RUN_PORT_ENV}=(\\d+)`);
 
 /**
  * Reduces a raw YAML scalar to its value, or `null` for absent/`null`.
@@ -102,9 +104,9 @@ export function extractAppUrl(content) {
   return null;
 }
 
-/** The port `CARTOGRAFO_SCREEN_PORT=` sets inside a `run` command, or `null`. */
+/** The port `CARTOGRAFO_PORT=` sets inside a `run` command, or `null`. */
 export function extractRunPort(runCommand) {
-  const match = runCommand?.match(SCREEN_PORT_ASSIGNMENT_RE);
+  const match = runCommand?.match(RUN_PORT_ASSIGNMENT_RE);
   return match ? match[1] : null;
 }
 
@@ -178,7 +180,7 @@ export function check(root = REPO_ROOT) {
       violations.push({
         code: PORT_MISMATCH,
         file,
-        message: `"commands.run" sets ${SCREEN_PORT_ENV}=${runPort ?? '(none)'} but "app_url" binds port ${appUrlPort ?? '(unparseable)'}; gate 3 would poll the wrong instance`,
+        message: `"commands.run" sets ${RUN_PORT_ENV}=${runPort ?? '(none)'} but "app_url" binds port ${appUrlPort ?? '(unparseable)'}; gate 3 would poll the wrong instance`,
         target: 'app_url',
       });
     }

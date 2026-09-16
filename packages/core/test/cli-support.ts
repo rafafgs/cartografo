@@ -28,12 +28,12 @@ export const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 export const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'cartografo.mjs');
 
 /**
- * What asks `up` for the control plane and nothing else (t405).
+ * What asks `up` for the control plane and nothing else (t405, t549).
  *
- * `npx cartografo` brings up three processes and opens a browser; every suite
- * here wants the first of the three and none of the rest.
+ * `npx cartografo` brings up two processes, the control plane and a local
+ * runner; every suite here wants the first and not the second.
  */
-export const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+export const CONTROL_PLANE_ONLY = Object.freeze(['--no-runner']);
 
 /** Factory bundle 1 (D14), the input of the README's three-command path. */
 export const FACTORY_BUNDLE = path.join(REPO_ROOT, 'factory-graphs', 'software-development');
@@ -192,12 +192,11 @@ export async function runCli(
  * token through `runCli`'s `token` option, as a person would.
  *
  * Every start here is a CONTROL PLANE, and since t405 the command is more than
- * that: with no flag `cartografo` also spawns the screen and a local runner and
- * opens a browser. So {@link CONTROL_PLANE_ONLY} is appended to whatever the
- * caller asked for — these suites test subcommands against a server, none of
- * them wants three processes and a browser window per case, and one of them
- * would otherwise create a git repository in the home directory of whoever runs
- * the suite.
+ * that: with no flag `cartografo` also spawns a local runner. So
+ * {@link CONTROL_PLANE_ONLY} is appended to whatever the caller asked for —
+ * these suites test subcommands against a server, none of them wants a second
+ * process per case, and one of them would otherwise create a git repository in
+ * the home directory of whoever runs the suite.
  *
  * @param t Test context, used to shut the process down at the end.
  * @param options Database and arguments (`[]` = implicit start, `['up']` = explicit).

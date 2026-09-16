@@ -1,32 +1,35 @@
 /**
- * The one command: control plane, screen and a local runner, in one `npx`
- * (t405, RF-07/RF-08/RNF-15).
+ * The one command: control plane and a local runner, in one `npx`
+ * (t405, RF-07/RF-08/RNF-15; t549).
  *
  * Until this file existed `npx cartografo` was the control plane and nothing
- * else, and a working installation took three terminals — the server here, the
- * screen there, a runner in a third, each with the token pasted into it by
- * hand. That is three chances to get it wrong before anybody has seen the
- * product work once, and time-to-first-graph is a quality non-negotiable
+ * else, and a working installation took more than one terminal — the server
+ * here, a runner there, with the token pasted into it by hand. That is a chance
+ * to get it wrong before anybody has seen the product work once, and
+ * time-to-first-graph is a quality non-negotiable
  * (`notes/2026-08-14-extension-and-quality.md`).
  *
  * What makes it legal is D23 rather than anything here: the D1/D11 boundaries
  * are PROCESS boundaries, not package ones, and `packages/core/package.json`
- * already ships all six binaries in one tarball. So the screen and the runner
- * this file starts are still separate processes with no privilege over the
- * control plane, started as their own commands with a credential in their
- * environment. Nothing below imports `@cartografo/screen` or
- * `@cartografo/runner`: what it starts are the two delegator scripts D23 puts
- * in this package's own `bin/`, found at their fixed offset from this file
+ * ships every binary in one tarball. So the runner this file starts is still a
+ * separate process with no privilege over the control plane, started as its own
+ * command with a credential in its environment. Nothing below imports
+ * `@cartografo/runner`: what it starts is the delegator script D23 puts in this
+ * package's own `bin/`, found at its fixed offset from this file
  * ({@link resolveSibling}) and never off `PATH`.
  *
- * Four decisions worth stating, because each has a plausible opposite:
+ * Until t549 it also started the screen and opened a browser on it. D27
+ * deleted the screen, and the browser went with it: there is nothing left for
+ * one to open.
+ *
+ * Three decisions worth stating, because each has a plausible opposite:
  *
  * - **A fresh credential per startup, never the printed one.** The bootstrap
  *   token is minted and printed exactly once, ever (`hasLiveCredential`,
  *   `src/index.ts:283-293`), so the second `up` against a database has nothing
  *   of its own to hand the children it is about to spawn. Minting one per
- *   startup — kept in this process's memory, never printed, revoked when both
- *   children are gone — is what makes the second startup work as well as the
+ *   startup — kept in this process's memory, never printed, revoked when the
+ *   child is gone — is what makes the second startup work as well as the
  *   first, and leaves nothing behind that outlives the process that used it.
  * - **The default workspace is provisioned, and only ever the default one.**
  *   `seedDefaultSettings` records a path; nothing creates it, and a runner
@@ -37,18 +40,11 @@
  * - **`runUp` duplicates `main()`'s readiness line instead of calling it.**
  *   `src/index.ts` is deliberately outside this ficha's surface, and the shape
  *   of `main` is wrong for us anyway: its signal handlers close the control
- *   plane and exit, and this command has to forward the signal to two children
- *   and wait for them FIRST. Five keys in two places is the cheaper of the two
- *   costs.
- * - **The screen's port is redeclared here.** `DEFAULT_SCREEN_PORT` is
- *   `packages/screen/src/router.ts:143`'s, restated as a local constant — the
- *   same "constant in two places" trade `packages/runner/src/cli/index.ts`
- *   already makes for the control plane's own URL, and for the same reason: the
- *   core imports nothing from the screen (D1, D11).
+ *   plane and exit, and this command has to forward the signal to its child and
+ *   wait for it FIRST. Five keys in two places is the cheaper of the two costs.
  *
- * Everything a test would otherwise need a real browser, a real second binary
- * or a real signal for is a seam ({@link UpSeams}); production passes none of
- * them.
+ * Everything a test would otherwise need a real second binary or a real signal
+ * for is a seam ({@link UpSeams}); production passes none of them.
  */
 
 import { spawn, execFileSync } from 'node:child_process';
@@ -66,38 +62,24 @@ import { EXAMPLES_ROOT_ENV } from '../routes/examples.ts';
 import { runImport } from './import.ts';
 import { UsageError, useToken } from './url.ts';
 
-/**
- * The screen's default port, restated (`packages/screen/src/router.ts:143`).
- *
- * See the header for why it is copied rather than imported.
- */
-export const DEFAULT_SCREEN_PORT = 4318;
-
-/** Environment variable the screen reads its port from, and this command with it. */
-export const SCREEN_PORT_ENV = 'CARTOGRAFO_SCREEN_PORT';
-
 /** Environment variable that points a child at this control plane. */
 export const URL_ENV = 'CARTOGRAFO_URL';
 
 /** Environment variable that carries a child's credential. */
 export const TOKEN_ENV = 'CARTOGRAFO_TOKEN';
 
-/** The screen's binary, as {@link resolveSibling} knows it by name. */
-export const SCREEN_BINARY = 'cartografo-screen';
-
-/** The runner's binary, likewise. */
+/** The runner's binary, as {@link resolveSibling} knows it by name. */
 export const RUNNER_BINARY = 'cartografo-runner';
 
 /**
- * What each of those two names is, as a file, inside this package's `bin/`.
+ * What that name is, as a file, inside this package's `bin/`.
  *
- * Since D23 neither name is a package of its own: both are thin delegator
- * scripts that ship as literal siblings of `cartografo.mjs`
- * (`packages/core/bin/`), and `package.json`'s `"files": ["bin", …]` is what
- * guarantees they are still there in the tarball.
+ * Since D23 it is not a package of its own: it is a thin delegator script that
+ * ships as a literal sibling of `cartografo.mjs` (`packages/core/bin/`), and
+ * `package.json`'s `"files": ["bin", …]` is what guarantees it is still there
+ * in the tarball.
  */
 const SIBLING_SCRIPTS: Readonly<Record<string, string | undefined>> = Object.freeze({
-  [SCREEN_BINARY]: 'cartografo-screen.mjs',
   [RUNNER_BINARY]: 'cartografo-runner.mjs',
 });
 
@@ -185,43 +167,38 @@ const COMMIT_IDENTITY = Object.freeze([
 const FIRST_COMMIT_MESSAGE =
   'chore: the empty first commit of the default workspace, so a session can branch from it';
 
-/** The three booleans a command line of `up` can carry. */
+/** The one boolean a command line of `up` can carry. */
 export interface UpFlags {
-  /** Open the browser on the screen once everything is up. */
-  browser: boolean;
   /** Start a local runner. */
   runner: boolean;
-  /** Start the screen. */
-  screen: boolean;
 }
 
 /** Long name of each flag, and the field it turns off. */
 const FLAGS: Readonly<Record<string, keyof UpFlags>> = Object.freeze({
-  '--no-browser': 'browser',
   '--no-runner': 'runner',
-  '--no-screen': 'screen',
 });
 
 /**
  * Reads `up`'s own command line.
  *
  * Everything is on by default, because the whole point of the command is that
- * a person who types `npx cartografo` and nothing else ends up looking at a
- * working product. The three flags subtract from that; nothing adds to it.
+ * a person who types `npx cartografo` and nothing else ends up with a working
+ * product. The one flag subtracts from that; nothing adds to it.
  *
  * Anything else — a flag nobody declared, a stray positional — is a usage
  * error rather than a silent ignore, the same discipline every other
- * subcommand keeps: somebody who typed `--no-brwoser` meant something, and a
- * command that quietly opened a browser anyway would take a whole startup to
- * disagree with them.
+ * subcommand keeps: somebody who typed `--no-runnr` meant something, and a
+ * command that quietly started a runner anyway would take a whole startup to
+ * disagree with them. Since t549 that includes `--no-screen` and
+ * `--no-browser`: the parts they turned off no longer exist.
  *
  * @param args Arguments of the subcommand (the command line after `up`, or the
  *   whole of it when `up` was left implicit).
- * @returns Which of the three parts come up.
+ * @returns Which parts come up.
  * @throws {UsageError} On anything this command cannot read.
  */
 export function parseUpFlags(args: string[]): UpFlags {
-  const flags: UpFlags = { browser: true, runner: true, screen: true };
+  const flags: UpFlags = { runner: true };
 
   for (const argument of args) {
     const field = FLAGS[argument];
@@ -362,28 +339,6 @@ export async function ensureInterviewBundle(
   return false;
 }
 
-/**
- * Where the browser is sent, and where the screen will be listening.
- *
- * `127.0.0.1` and not the control plane's own host: the screen binds loopback
- * and this is a browser on this machine. The port is the operator's
- * `CARTOGRAFO_SCREEN_PORT` if they set one — the same variable reaches the
- * spawned screen through ordinary environment inheritance, so the two cannot
- * disagree — and the screen's own default otherwise.
- *
- * A value that is not a port is passed through verbatim rather than
- * second-guessed: the screen is the one that parses it, and refusing here would
- * only produce a second, worse error message for the same typo.
- *
- * @param env Environment to read the port from.
- * @returns Base URL of the screen.
- */
-export function screenUrl(env: NodeJS.ProcessEnv): string {
-  const configured = env[SCREEN_PORT_ENV]?.trim();
-  const port = configured === undefined || configured === '' ? String(DEFAULT_SCREEN_PORT) : configured;
-  return `http://127.0.0.1:${port}`;
-}
-
 /** The slice of a running control plane this command uses. */
 export interface UpControlPlane {
   db: Database;
@@ -402,15 +357,12 @@ export interface ChildHandle {
   exited: Promise<void>;
 }
 
-/** Starts one of the sibling binaries, named as {@link SCREEN_BINARY} is. */
+/** Starts one of the sibling binaries, named as {@link RUNNER_BINARY} is. */
 export type SpawnChild = (
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv,
 ) => ChildHandle;
-
-/** Opens a URL in whatever the operating system considers the browser. */
-export type OpenBrowser = (url: string) => void;
 
 /**
  * Registers interest in a stop request, and hands back the way to stop
@@ -430,33 +382,30 @@ export interface UpSeams {
   start?: (env: NodeJS.ProcessEnv) => Promise<UpControlPlane>;
   /** What starts a child. Default: {@link spawnByName}, off this install's `bin/`. */
   spawnChild?: SpawnChild;
-  /** What opens the browser. Default: the platform's own opener. */
-  openBrowser?: OpenBrowser;
   /** How a stop is heard. Default: `SIGINT`/`SIGTERM` on this process. */
   listenForStop?: ListenForStop;
 }
 
 /**
- * Where one of this command's two children lives on this installation's disk
- * (t449, FR1).
+ * Where this command's child lives on this installation's disk (t449, FR1).
  *
  * Computed from this module's own location and NOTHING else — not `PATH`, not
- * `process.cwd()`. `up` used to hand `spawn` a bare `cartografo-screen` and let
- * the operating system walk the child's `PATH`, on the theory that a sibling
- * sits somewhere different in a checkout than in a tarball. Since D23 that is
- * simply not true of these two: both are delegator scripts in this package's
- * own `bin/`, at a fixed offset from this file in both worlds. What the old
- * theory did cost was real — `./node_modules/.bin/cartografo up`, from a shell
- * with no `node_modules/.bin` on `PATH`, started the control plane and then
- * failed both children with `ENOENT`.
+ * `process.cwd()`. `up` used to hand `spawn` a bare binary name and let the
+ * operating system walk the child's `PATH`, on the theory that a sibling sits
+ * somewhere different in a checkout than in a tarball. Since D23 that is simply
+ * not true: the runner is a delegator script in this package's own `bin/`, at a
+ * fixed offset from this file in both worlds. What the old theory did cost was
+ * real — `./node_modules/.bin/cartografo up`, from a shell with no
+ * `node_modules/.bin` on `PATH`, started the control plane and then failed its
+ * children with `ENOENT`.
  *
  * So `npx`, a global install and a bare path into a development checkout are
  * not three cases here: none of them moves `bin/` relative to `src/`.
  *
- * @param command {@link SCREEN_BINARY} or {@link RUNNER_BINARY}.
+ * @param command {@link RUNNER_BINARY}.
  * @param binDirectory Directory to look in. Default: this package's `bin/`.
  * @returns Absolute path of the delegator script, existing or not.
- * @throws If `command` is not one of the two this command starts.
+ * @throws If `command` is not the one this command starts.
  */
 export function resolveSibling(command: string, binDirectory: string = SHIPPED_BIN): string {
   const script = SIBLING_SCRIPTS[command];
@@ -543,29 +492,6 @@ function spawnByName(command: string, args: string[], env: NodeJS.ProcessEnv): C
 }
 
 /**
- * Opens a URL in the operating system's browser.
- *
- * Fire and forget, detached and unref'd: the opener is a third-party process
- * whose lifetime has nothing to do with this one's, and a browser someone
- * leaves open must not be something `npx cartografo` is waiting for. A failure
- * is one line — the URL is on stdout in the readiness line either way, and a
- * headless machine with no opener is a legitimate place to run this.
- *
- * macOS and Linux only, which is where the rest of this CLI is developed and
- * tested.
- *
- * @param url Address to open.
- */
-function openInBrowser(url: string): void {
-  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  const child = spawn(opener, [url], { stdio: 'ignore', detached: true });
-  child.on('error', (error: Error) => {
-    process.stderr.write(`cartografo: could not open ${url} — ${error.message}\n`);
-  });
-  child.unref();
-}
-
-/**
  * Listens for `SIGINT` and `SIGTERM` on this process.
  *
  * `on` and not `once`, and the listeners are removed on the way out: the
@@ -590,13 +516,12 @@ function listenForSignals(onStop: () => void): () => void {
  * needs the one before it: the control plane exists before there is anything
  * to hand a credential for; the credential exists before there is a child to
  * hand it to; the workspace exists before the runner is asked to cut a
- * worktree from it; the browser opens last, because a browser that arrives
- * before the screen is listening shows an error page.
+ * worktree from it.
  *
  * It returns only when the command is asked to stop, which is what makes it
  * the body of a foreground process rather than a setup routine.
  *
- * @param flags Which of the three parts come up.
+ * @param flags Which parts come up.
  * @param seams Test seams; production passes nothing.
  * @returns Once everything it started is down and the control plane is closed.
  */
@@ -604,7 +529,6 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
   const env = seams.env ?? process.env;
   const startControlPlane = seams.start ?? start;
   const spawnChild = seams.spawnChild ?? spawnByName;
-  const openBrowser = seams.openBrowser ?? openInBrowser;
   const listenForStop = seams.listenForStop ?? listenForSignals;
 
   const controlPlane = await startControlPlane(env);
@@ -615,8 +539,8 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
    * Since t360 it is minted whether or not there are children to hand it to:
    * the auto-import below is a client of this control plane like any other
    * (D1), and a client needs a credential. Until this ficha the rule was
-   * "nobody to hand it to is nobody to mint it for", and `--no-runner
-   * --no-screen` left the table empty. What has not changed is the part that
+   * "nobody to hand it to is nobody to mint it for", and a control-plane-only
+   * startup left the table empty. What has not changed is the part that
    * mattered: it is never printed, and it is always revoked on the way out.
    */
   let credential: { id: number; token: string } | null = null;
@@ -641,7 +565,7 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
 
   // The same five keys `main()` prints, and deliberately the same five: a
   // supervisor, or `startup.test.ts`, reads this line to know the control plane
-  // is up, and the command growing two children is not a reason for it to
+  // is up, and the command growing a child is not a reason for it to
   // change shape (see the header for why this is a copy).
   process.stdout.write(
     `${JSON.stringify({
@@ -676,13 +600,11 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
   const token = credential.token;
 
   try {
-    if (flags.screen || flags.runner) {
+    if (flags.runner) {
       // Straight off the open handle, with no HTTP round trip: this process IS
       // the single writer (D1), and asking itself over the network for a row it
       // is holding would be ceremony.
-      if (flags.runner) {
-        ensureDefaultWorkspace(getSettings(controlPlane.db, DEFAULT_PROJECT).workspace_root);
-      }
+      ensureDefaultWorkspace(getSettings(controlPlane.db, DEFAULT_PROJECT).workspace_root);
 
       const childEnv: NodeJS.ProcessEnv = {
         ...env,
@@ -690,16 +612,13 @@ export async function runUp(flags: UpFlags, seams: UpSeams = {}): Promise<void> 
         [TOKEN_ENV]: token,
       };
 
-      // No arguments for either, and that is the whole of FR6: the runner takes
-      // its two paths and its engine from this project's settings (t404), and
-      // neither child is scoped to a project, so both land on project 1 like
-      // every other unscoped command. An operator who wants a differently
-      // configured runner starts one by hand and passes `--no-runner`.
-      if (flags.screen) children.push(spawnChild(SCREEN_BINARY, [], childEnv));
-      if (flags.runner) children.push(spawnChild(RUNNER_BINARY, [], childEnv));
+      // No arguments, and that is the whole of FR6: the runner takes its two
+      // paths and its engine from this project's settings (t404), and it is not
+      // scoped to a project, so it lands on project 1 like every other unscoped
+      // command. An operator who wants a differently configured runner starts
+      // one by hand and passes `--no-runner`.
+      children.push(spawnChild(RUNNER_BINARY, [], childEnv));
     }
-
-    if (flags.browser) openBrowser(screenUrl(env));
   } catch (error) {
     // A startup that broke halfway leaves nothing running and nothing live: the
     // credential it may have minted has no holder, and a control plane nobody

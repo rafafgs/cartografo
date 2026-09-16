@@ -54,10 +54,9 @@ up the HTTP server and prints one line:
 {"event":"cartografo.ready","database":"/your/checkout/.cartografo/cartografo.db","migrationsApplied":28,"url":"http://127.0.0.1:4317","bootstrapToken":"<64 hex characters>"}
 ```
 
-Then, without asking you anything, it starts **the screen** on
-`http://127.0.0.1:4318` and **one local runner**, both as child processes of its
-own, and opens your browser on the screen. `Ctrl-C` in that terminal takes all
-three down together — the children first, then the server.
+Then, without asking you anything, it starts **one local runner** as a child
+process of its own. `Ctrl-C` in that terminal takes both down together — the
+runner first, then the server.
 
 **Copy the `bootstrapToken` now.** It appears only on the first start against a
 new database — the database keeps only its hash — and every `/v1/*` route
@@ -68,14 +67,9 @@ export CARTOGRAFO_TOKEN=<the token from the line above>
 export CARTOGRAFO_URL=http://127.0.0.1:4317
 ```
 
-Lost it? Delete `.cartografo/` and start again; a new one is issued. The screen
-and the runner started above need none of this: they were handed a credential of
-that startup's own, in their environment, which dies with them.
-
-The screen is an ordinary client of the same public API, on another port and in
-another process, with no access to the database and no privilege over the
-control plane (D11). Being started by `cartografo` changes nothing about that:
-what makes it a separate process is that it *is* one.
+Lost it? Delete `.cartografo/` and start again; a new one is issued. The runner
+started above needs none of this: it was handed a credential of that startup's
+own, in its environment, which dies with it.
 
 The runner works in `~/.cartografo/workspace`, which this command creates as an
 empty git repository the first time it runs, and cuts each session's worktree
@@ -83,12 +77,11 @@ into `~/.cartografo/worktrees`. Both are settings (`GET /v1/settings`), not
 constants — repoint `workspace_root` at a repository of your own with `PATCH
 /v1/settings` and the command will never write to it again.
 
-**Want fewer than three processes?** `--no-browser`, `--no-runner` and
-`--no-screen` each subtract exactly their own part, in any combination, with or
+**Want the control plane alone?** `--no-runner` leaves the runner out, with or
 without the word `up`:
 
 ```bash
-npx cartografo --no-browser --no-runner --no-screen   # the control plane alone
+npx cartografo --no-runner                      # the control plane alone
 ```
 
 That is also how you run a runner configured differently — a different
@@ -96,31 +89,24 @@ repository, engine or project. Start `cartografo` with `--no-runner`, and run
 `npx cartografo-runner --working-dir ~/proj --worktrees-root ~/proj-worktrees`
 in a second terminal.
 
-Open it and the first page is the **check**: with no runner paired yet it shows
-one line and the command that pairs one, built from whatever this project has
-recorded. Come back to it after step 6, when a runner has reported about its own
-machine, and it says per runner whether the engine CLI, the model credential, the
-`cartografo` MCP server and the workspace are all in place — or exactly which of
-them is not, with one way to fix each.
-
-**The no-browser path.** Everything from here on has a CLI equivalent, and you
-never have to open the screen at all:
+**The terminal path.** Everything from here on is a CLI command:
 
 ```bash
-npx cartografo up --no-screen --no-browser     # the control plane and a local runner
+npx cartografo up                              # the control plane and a local runner
 npx cartografo runners                         # is the runner ready to pick work up?
 npx cartografo example run asymmetric-bets     # registers and starts a demo, no curl
 npx cartografo watch --job 1 --until-done      # follow it, and exit when it finishes
 npx cartografo job 1                           # then read where its time went
 ```
 
-`cartografo runners` is the check page's own readiness logic, in text — the
-same four checks per runner, and the same pairing command when nothing is
-paired yet. `example run` is step 3 and step 4 combined into one write.
+`cartografo runners` is the readiness check: with no runner paired yet it prints
+the command that pairs one, and once a runner has reported about its own
+machine it says whether the engine CLI, the model credential, the `cartografo`
+MCP server and the workspace are all in place — or exactly which of them is
+not. `example run` is step 3 and step 4 combined into one write.
 `watch --job 1 --until-done` prints every event about that job as it lands and
 exits `0` the moment the job finishes; `job <id>` prints the whole timeline once
-and exits. Keep `--no-browser` beside `--no-screen`: on its own, `--no-screen`
-still opens a browser, on a port nothing is listening on.
+and exits.
 
 ## 3. Import a factory graph
 
@@ -148,11 +134,10 @@ does `GET /v1/classes`. The graph is five nodes — `refine`, `develop`,
 from this step you need for the next one.
 
 **The zero-`curl` way round.** Everything in this step and the next is one
-click on the screen's **examples** page (`http://127.0.0.1:4318/examples`), or
-one command — `npx cartografo examples` lists every bundle that ships a
+command — `npx cartografo examples` lists every bundle that ships a
 `demo/job.json`, and `npx cartografo example run <class>` registers the one
 you pick if this project has never seen it and opens its demo job in a round
-of its own. The commands below are what either of those does, said out loud —
+of its own. The commands below are what that does, said out loud —
 read them if you want to know what happened, skip them if you only want it to
 run.
 
@@ -215,11 +200,6 @@ readiness check, `npx cartografo input-requests` the escalation queue and
 the API when you run it: running it again is the refresh, and `npx cartografo
 watch` follows the event stream live.
 
-The screen shows the same things in a browser, and it is retiring
-([D26](../DECISIONS.md)): the board at `http://127.0.0.1:4318/board`, the check
-at `/`, the inbox at `/inbox`, the queue at `/input-requests` and a timeline at
-`/jobs/<id>` ([`docs/spec/screen.md`](spec/screen.md)).
-
 **What happened to this one job?** Its event timeline, which is the log rather
 than a summary of it — `npx cartografo watch --job 1 --from-start` replays it
 from the first event, and on the wire it is one read:
@@ -280,9 +260,8 @@ curl -sS -H "Authorization: Bearer $CARTOGRAFO_TOKEN" "$CARTOGRAFO_URL/v1/input-
 
 `{"input_requests":[]}` means nobody is waiting on you, which is a different
 answer from an error and reads as one. Anything in that list can be answered
-from a terminal — `npx cartografo answer <id> "your answer"` — or inline on the
-screen, at `/input-requests`, either of which writes through the
-same public API you just read, and unblocks the job in the same transaction.
+from a terminal — `npx cartografo answer <id> "your answer"` — which writes
+through the same public API you just read, and unblocks the job in the same transaction.
 
 **Is the control plane itself unhappy?** Turn its log up. The server writes one
 JSON log stream, and a `500` answers the client with no more than

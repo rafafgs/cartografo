@@ -58,19 +58,18 @@ export const READY_EVENT = 'cartografo.ready';
 /**
  * What asks the command for the control plane and nothing else (t405).
  *
- * Since t405 `cartografo` with no flag brings up three processes — the control
- * plane, the screen and a local runner — and opens a browser on the screen.
+ * Since t405 `cartografo` with no flag brings up two processes — the control
+ * plane and a local runner (t549 removed the screen and the browser it opened).
  * That is the right default for a person and the wrong one for a suite: twelve
  * files boot a control plane here to test something else entirely, and none of
- * them wants a browser window, a second and third process, or the git
- * repository the runner's workspace is provisioned as in the home directory of
- * whoever is running the tests.
+ * them wants a second process, or the git repository the runner's workspace is
+ * provisioned as in the home directory of whoever is running the tests.
  *
  * Spelled out rather than imported from `packages/core/src/cli/up.ts`, for the
  * same reason {@link READY_EVENT} is: this package imports nothing from the
  * core (D1, D11).
  */
-export const CONTROL_PLANE_ONLY = Object.freeze(['--no-browser', '--no-runner', '--no-screen']);
+export const CONTROL_PLANE_ONLY = Object.freeze(['--no-runner']);
 
 /**
  * Deadline for a startup. Wide slack, on purpose.

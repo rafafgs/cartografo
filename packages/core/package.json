@@ -19,7 +19,6 @@
   "bin": {
     "cartografo": "./bin/cartografo.mjs",
     "cartografo-runner": "./bin/cartografo-runner.mjs",
-    "cartografo-screen": "./bin/cartografo-screen.mjs",
     "cartografo-surveyor": "./bin/cartografo-surveyor.mjs",
     "cost-surveyor": "./bin/cost-surveyor.mjs",
     "cartografo-mcp": "./bin/cartografo-mcp.mjs"
@@ -39,7 +38,6 @@
     "@cartografo/cost-surveyor": "^0.1.0",
     "@cartografo/mcp": "^0.1.0",
     "@cartografo/runner": "^0.1.0",
-    "@cartografo/screen": "^0.1.0",
     "@cartografo/surveyor": "^0.1.0",
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",
@@ -50,7 +48,6 @@
   },
   "bundledDependencies": [
     "@cartografo/runner",
-    "@cartografo/screen",
     "@cartografo/surveyor",
     "@cartografo/cost-surveyor",
     "@cartografo/mcp"

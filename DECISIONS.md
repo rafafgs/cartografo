@@ -89,6 +89,11 @@ privileges, in a package separate from the headless core).
 *Amended by D26 (2026-09-13): the terminal (CLI and MCP server) becomes the
 operating surface; the screen is retired once they reach parity.*
 
+*Amended by D27 (2026-09-16): the screen is gone. The clause above about the
+screen being a client of the public API is history; the principle it served —
+every surface is an unprivileged API client — stands, and the CLI, the MCP
+server and the surveyors keep it.*
+
 ## D12 (2026-08-14) — Apache-2.0 licence
 
 Explicit patent protection, the standard for open infrastructure. The public name
@@ -253,6 +258,10 @@ Recorded by the agent with Rafael's authorization (2026-08-16).
 *Amended by D26 (2026-09-13): `cartografo-tela` leaves the published package,
 and the Docker image ships the control plane alone, once the screen retires.*
 
+*Amended by D27 (2026-09-16): done — the package ships two commands of its own,
+`cartografo` and `cartografo-runner`, beside the surveyors and the MCP server,
+and the image and `compose.yml` carry the control plane alone.*
+
 ## D24 (2026-08-25) — English is the only language of the project
 
 English is the only language of the project: code, identifiers, commit messages,
@@ -329,3 +338,39 @@ the MCP server are complete**, by a decision of its own taken by Rafael. Until
 then it stays as it is. D11 and D23 are amended accordingly.
 
 Recorded by the agent with Rafael's authorization (2026-09-13: "pode seguir").
+
+## D27 (2026-09-16) — The screen is gone
+
+D26's condition holds: the CLI and the MCP server are complete. The CLI has
+read and write parity with the board (t542, t544), a live `watch` (t543), graph
+proposals, versions and snapshots (t545), a terminal interview (t546) and the
+proposal decisions (t584, with the actor recorded by t583); the MCP server has
+the matching reads and writes (t547); and `docs/spec/cli.md` and
+`docs/spec/mcp-server.md` map every section of the four screen specifications
+onto a successor, a dropped requirement or a known gap (t548). Rafael cleared
+the removal on the board once that wave closed.
+
+Decision: the screen (`cartografo-screen`, the `@cartografo/screen` package) is
+deleted, and with it everything that existed only for it:
+
+- `cartografo up` starts the control plane and a local runner. `--no-runner` is
+  its one flag; `--no-screen` and `--no-browser` are unrecognised, like any
+  other typo.
+- The published package carries two commands of its own, `cartografo` and
+  `cartografo-runner`, beside `cartografo-surveyor`, `cost-surveyor` and
+  `cartografo-mcp`. D23's "one package, three commands" is amended to that.
+- The Docker image and `compose.yml` ship the control plane alone, which
+  finishes what D26 amended into D23. The runner stays on the host.
+- D11's "the screen is a client of the public API" now describes a component
+  that no longer exists. The rule behind it does not change: no surface has a
+  privilege any other API client lacks.
+- The design system (`docs/spec/design-system.md`), its token gate and the four
+  `docs/spec/screen*.md` specifications are deleted. Nothing outside the screen
+  adopted them: the CLI's output is plain text.
+
+The screen's name stays only in the historical record — this file,
+`CHANGELOG.md` and `notes/` — and `scripts/check-screen-retired.mjs` fails
+`npm run lint` if it shows up anywhere else.
+
+Recorded by the agent with Rafael's authorization (t549, cleared by his own
+transition on the board, 2026-09-16).

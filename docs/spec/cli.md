@@ -9,10 +9,10 @@ complete operating surface; the screen retires once they reach parity"
 The CLI is the operator's surface. Everything the screen used to be the only way
 to do — read the board, answer a question, stop a job, decide a proposal, edit a
 graph, hold an interview — is a subcommand here, and the screen's four
-specifications ([`screen.md`](screen.md),
-[`screen-proposal-inbox.md`](screen-proposal-inbox.md),
-[`screen-graph-editor.md`](screen-graph-editor.md),
-[`screen-interview.md`](screen-interview.md)) point at this document and at
+specifications (`screen.md`,
+`screen-proposal-inbox.md`,
+`screen-graph-editor.md`,
+`screen-interview.md`) point at this document and at
 [`mcp-server.md`](mcp-server.md) as their successors. Where a screen requirement
 did not survive the move, §6 says why; where it has no terminal form yet, §7
 says so.
@@ -40,7 +40,7 @@ both ways by
 
 | Subcommand | What it does | Control-plane route(s) | `--json` |
 |---|---|---|---|
-| `up [--no-browser] [--no-runner] [--no-screen]` | Brings the product up: the control plane (database, migrations, HTTP), the screen and one local runner, and opens the browser on the screen. The default when no subcommand is given. `--no-screen --no-browser` is the whole product with no browser at all. | None — it starts the control plane itself. | no |
+| `up [--no-runner]` | Brings the product up: the control plane (database, migrations, HTTP) and one local runner. The default when no subcommand is given. `--no-runner` is the control plane alone. | None — it starts the control plane itself. | no |
 | `import <path>` | Registers a graph file, or a bundle directory with `graph.json` and `skills/`, as a new base lineage; manifests first, the graph only after every one was accepted. | `POST /v1/skills`, `POST /v1/graphs` | no |
 | `export <class>` | Writes the current version of a class to a file `import` accepts back. | `GET /v1/graphs/:id`, `GET /v1/graph-versions/:id` | no |
 | `export-history --job <id> \| --execution <id>` | Writes a job's or a round's whole history as JSON Lines: a header with the map version, then every event in id order. | `GET /v1/jobs/:id` or `GET /v1/executions/:id` and `GET /v1/jobs?execution_id=`, `GET /v1/sessions`, `GET /v1/input-requests`, `GET /v1/graph-versions/:id`, `GET /v1/graphs/:id`, `GET /v1/projects` | no |
@@ -119,7 +119,7 @@ not a person — so the CLI always sends one:
   was at the gate.
 
 This is the terminal's mirror of the screen's fallbacks (`respondido_por` and
-`actor_ref` falling back to `"tela"`, [`screen.md`](screen.md) §3): the screen
+`actor_ref` falling back to `"tela"`, `screen.md` §3): the screen
 recorded the door the write came in through because it carried one service
 credential and asked the browser for no name; a terminal has a user, so the CLI
 records that user.
@@ -132,7 +132,7 @@ Every numbered section of the four screen specifications, and where its
 requirements live now. The buckets are: a row of §1 above, a tool of
 [`mcp-server.md`](mcp-server.md) §1, §6 (dropped), or §7 (known gaps).
 
-### [`screen.md`](screen.md)
+### `screen.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -159,7 +159,7 @@ requirements live now. The buckets are: a row of §1 above, a tool of
 | §6 No framework, no build (its design-system and `data-*` subsections) | §6 | HTML renderer |
 | §7 What this screen does not do yet | §7 | carried over |
 
-### [`screen-proposal-inbox.md`](screen-proposal-inbox.md)
+### `screen-proposal-inbox.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -169,7 +169,7 @@ requirements live now. The buckets are: a row of §1 above, a tool of
 | §4 The diff in prose | §1 | `proposals show` |
 | §5 What this screen does not do yet | §7 | carried over |
 
-### [`screen-graph-editor.md`](screen-graph-editor.md)
+### `screen-graph-editor.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -181,7 +181,7 @@ requirements live now. The buckets are: a row of §1 above, a tool of
 | §6 No framework, no build — and no `innerHTML` | §6 | HTML renderer, in-browser editing |
 | §7 What this screen does not do yet | §7 | carried over |
 
-### [`screen-interview.md`](screen-interview.md)
+### `screen-interview.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -201,38 +201,38 @@ requirements live now. The buckets are: a row of §1 above, a tool of
 Requirements with no terminal equivalent, because they are about a browser:
 
 - **The fetch-metadata gate** (`Sec-Fetch-Site`, `Origin`, the browser
-  `User-Agent` check — [`screen.md`](screen.md) §1 "What the proxy refuses"). It
+  `User-Agent` check — `screen.md` §1 "What the proxy refuses"). It
   defends a page against another page open in the same browser forging a write
   with the screen's credential. A terminal has no browser and no forged origin;
   the boundary for a local process was always D11's loopback port.
-- **The `/v1/*` proxy and the static half** ([`screen.md`](screen.md) §1 "The
-  package has two halves", [`screen-proposal-inbox.md`](screen-proposal-inbox.md)
+- **The `/v1/*` proxy and the static half** (`screen.md` §1 "The
+  package has two halves", `screen-proposal-inbox.md`
   §1). They exist because a browser cannot talk to the control plane without
   CORS. The CLI talks to it directly.
-- **`POST /project`'s cookie switcher** ([`screen.md`](screen.md) §1). Superseded
+- **`POST /project`'s cookie switcher** (`screen.md` §1). Superseded
   rather than lost: every subcommand takes `--project <id|name>` directly.
-- **The markup contract**: the `data-*` markers ([`screen.md`](screen.md) §6),
+- **The markup contract**: the `data-*` markers (`screen.md` §6),
   "no framework, no build" and `innerHTML`/`textContent`
-  ([`screen.md`](screen.md) §6, [`screen-proposal-inbox.md`](screen-proposal-inbox.md)
-  §1, [`screen-graph-editor.md`](screen-graph-editor.md) §6), the visible
+  (`screen.md` §6, `screen-proposal-inbox.md`
+  §1, `screen-graph-editor.md` §6), the visible
   `<label>` rules. Implementation details of an HTML renderer; there is nothing
   to carry. What survives is the injection concern itself: `interview` strips
   control characters from agent-written text before printing it.
-- **The design system's binding** ([`design-system.md`](design-system.md)). It is
+- **The design system's binding** (`design-system.md`). It is
   a visual language for rendered pages and does not apply outside one.
 - **The two per-page auto-refresh mechanisms** — `/board`'s 30-second
-  `<meta refresh>` ([`screen.md`](screen.md) §1, §7) and `/interview/:id`'s
-  three-second fragment poll ([`screen-interview.md`](screen-interview.md) §3,
+  `<meta refresh>` (`screen.md` §1, §7) and `/interview/:id`'s
+  three-second fragment poll (`screen-interview.md` §3,
   and `GET /interview/:id/fragment` with it). Superseded, not ported: `watch`
   (and `watch --until-done`) is the generic "tell me when it moves", and
   `interview` waits on the event stream between turns.
 - **The graph editor's live in-browser editing** — the card-per-node form, the
   contract kept as text until `Save`, and the draggable canvas it declined
-  ([`screen-graph-editor.md`](screen-graph-editor.md) §6, §7). `graph propose`
+  (`screen-graph-editor.md` §6, §7). `graph propose`
   treats the graph as a file in the operator's own editor, which is the terminal
   form of "no canvas".
 - **The inbox's per-row update with no reload**
-  ([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3). A command finishes
+  (`screen-proposal-inbox.md` §3). A command finishes
   and exits; there is no page to leave stale.
 
 ---
@@ -242,34 +242,34 @@ Requirements with no terminal equivalent, because they are about a browser:
 Requirements that make sense outside a browser and have no CLI form yet. Each
 names who it is left to.
 
-- **MCP-server suggestions for a step** ([`screen-interview.md`](screen-interview.md)
+- **MCP-server suggestions for a step** (`screen-interview.md`
   §6). When a turn writes `NEEDS_MCP_SERVER: <capability>`, the page offers up
   to three candidates from the public registry
-  ([`mcp-catalog.ts`](../../packages/screen/src/mcp-catalog.ts)'s
+  (`packages/screen/src/mcp-catalog.ts`'s
   `officialRegistry()`/`cachedCatalog()`), each with its add command.
   `interview` prints the question's context, hint line included, and offers no
   candidates. A terminal could print the same suggestions; nothing in
   `packages/core/src/cli` does yet. Left to a future ticket; t548 documents it
   and does not build it.
-- **The progress panel mid-interview** ([`screen-interview.md`](screen-interview.md)
+- **The progress panel mid-interview** (`screen-interview.md`
   §3.1). The page asks `POST /v1/graphs/validate` what registering the draft
   would still fail on; `interview` prints the map and a step count
   (`step N of M · K still to define`) but not the gate's report. The refusal
   still reaches the operator at `register`. Left to a future ticket.
-- **The text a step is writing mid-turn** ([`screen-interview.md`](screen-interview.md)
+- **The text a step is writing mid-turn** (`screen-interview.md`
   §2, `conversation.partial`). `interview` waits silently between questions.
   Left to a future ticket.
-- **The list of interviews still open** ([`screen-interview.md`](screen-interview.md)
+- **The list of interviews still open** (`screen-interview.md`
   §1). `jobs` lists every job, and `interview --resume <id>` picks one up, but
   nothing filters to the jobs whose `entry_node_id` is `interview`. Left to a
   future ticket.
-- **The board's map position** ([`screen.md`](screen.md) §1, t463's
+- **The board's map position** (`screen.md` §1, t463's
   `step N/M · <role>` line). `jobs` and `job <id>` show the raw current node.
   Left to a future ticket.
-- **The screen specs' own "not yet" lists** ([`screen.md`](screen.md) §7,
-  [`screen-proposal-inbox.md`](screen-proposal-inbox.md) §5,
-  [`screen-graph-editor.md`](screen-graph-editor.md) §7,
-  [`screen-interview.md`](screen-interview.md) §7) carry over unchanged where
+- **The screen specs' own "not yet" lists** (`screen.md` §7,
+  `screen-proposal-inbox.md` §5,
+  `screen-graph-editor.md` §7,
+  `screen-interview.md` §7) carry over unchanged where
   they are not about a browser: per-node execution policies, editing a skill
   manifest's content, variant lineages in the editor (`graph propose --graph
   <variant-id>` does reach them), editing `initial_node`/`final_nodes`/`metadata`,

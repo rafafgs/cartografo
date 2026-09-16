@@ -107,7 +107,7 @@ From a clean checkout to a registered graph, in three commands:
 
 ```bash
 npm install                                                   # 1
-npx cartografo up --no-screen --no-browser                    # 2 (leave it running)
+npx cartografo up                                             # 2 (leave it running)
 CARTOGRAFO_TOKEN=<the token from step 2> \
   npx cartografo import factory-graphs/software-development   # 3 (another terminal)
 ```
@@ -125,26 +125,17 @@ That local runner works in `~/.cartografo/workspace`, which step 2 creates as an
 empty git repository the first time, cutting each session's worktree into
 `~/.cartografo/worktrees`. Both paths are settings, not constants: `PATCH
 /v1/settings` points them anywhere you like, and a `workspace_root` you changed
-is never written to. Want fewer processes still? `--no-browser`,
-`--no-runner` and `--no-screen` each subtract exactly their own part, and all
-three together is the control plane on its own. Leave `--no-browser` off only
-when you also start the screen: `--no-screen` alone still opens a browser, on a
-port nothing is listening on.
-
-The screen is optional, and it is retiring
-([D26](DECISIONS.md)): the CLI and the MCP server are the operating surface, and
-the screen goes once they reach parity. `npx cartografo` with no flags still
-starts it and opens your browser on it; what it shows is the `cartografo-screen`
-paragraph under [The commands](#the-commands).
+is never written to. Want fewer processes still? `--no-runner` leaves the
+runner out, and what is left is the control plane on its own.
 
 Step 3 registers the bundled graph, checking each pinned skill hash first, and
 prints the recorded `graph_version.id`. `npx cartografo status` then lists
 `software-development` among the classes, and `npx cartografo jobs` is the board.
 
 **The checkout in step 1 is not optional yet.** `cartografo` is a single
-publishable package carrying all six commands (D23), so
+publishable package carrying all five commands (D23, D27), so
 `npm install -g cartografo` really does put every one of them on `PATH` — which
-is also how step 2 finds the screen and the runner it starts — and step 2 works
+is also how step 2 finds the runner it starts — and step 2 works
 from any empty directory. Step 3 does not: `factory-graphs/` is a directory of
 this repository and is not shipped inside the package, so `import` has nothing
 to point at without a clone. Making the whole sequence work from a bare install
@@ -171,22 +162,21 @@ and reading the system when that work stops moving —
 `export` and `export-history`.
 
 ```bash
-npx cartografo                                 # control plane + screen + runner, browser opens
-npx cartografo --no-browser --no-runner --no-screen  # the control plane on its own
+npx cartografo                                 # control plane + runner
+npx cartografo --no-runner                     # the control plane on its own
 npx cartografo status                          # server and registered projects
 npx cartografo status --json                   # the same, for a script
 npx cartografo export software-development     # writes ./software-development.graph.json
 npx cartografo export-history --job 41         # writes ./job-41.history.jsonl
 ```
 
-With no subcommand it is `up`, and the three `--no-*` options belong to it
-whether the word is typed or not. The screen and the runner it starts are
-ordinary processes with no privilege of their own — the same two binaries you
-would have run in two more terminals, found next to `cartografo` itself in the
-installation it was started from rather than off your `PATH`, and handed a
-credential of that startup's own, which is revoked when they stop. A `SIGINT`
-or `SIGTERM` goes to both children first and waits for them; a second one stops
-waiting.
+With no subcommand it is `up`, and the `--no-runner` option belongs to it
+whether the word is typed or not. The runner it starts is an ordinary process
+with no privilege of its own — the same binary you would have run in another
+terminal, found next to `cartografo` itself in the installation it was started
+from rather than off your `PATH`, and handed a credential of that startup's own,
+which is revoked when it stops. A `SIGINT` or `SIGTERM` goes to the runner first
+and waits for it; a second one stops waiting.
 
 What `export` writes is what `import` takes back: importing it elsewhere
 produces the same `graph_version.id`.
@@ -199,7 +189,7 @@ format](docs/spec/history-export.md)). It goes only one way: there is no
 importing a history back, and the file carries the record unredacted.
 
 `cartografo` is also the complete operating surface D26 asks for: reads with
-board parity plus every write the screen has, each with a `--json` form for a
+board parity plus every write the retired screen had, each with a `--json` form for a
 script.
 
 ```bash
@@ -331,19 +321,6 @@ npx cost-surveyor evaluate --url http://127.0.0.1:4317 \
   --execution 7 --token-cap 200000
 ```
 
-**`cartografo-screen`** — the operator's screen in a browser
-(`npx cartografo-screen`, `http://127.0.0.1:4318`), started by `cartografo up`
-unless `--no-screen` is given. At `/` it draws the check — per paired runner,
-whether the engine, the model credential, the `cartografo` MCP server and the
-workspace are ready — and from there the board, executions, sessions, the
-question queue and each job's timeline. At `/inbox` it draws the proposal inbox,
-and at `/graph-editor.html` and `/interview` the graph editor and the interview.
-It is retiring under [D26](DECISIONS.md) once the CLI and the MCP server reach
-parity; what it does now lives in
-[`docs/spec/cli.md`](docs/spec/cli.md) and
-[`docs/spec/mcp-server.md`](docs/spec/mcp-server.md), which say where each of
-its pages went.
-
 **`cartografo-mcp`** — the same map for a model instead of a browser, over MCP.
 
 ```bash
@@ -358,8 +335,7 @@ corrupt the record the evaluator reads. `.mcp.json` at the root declares the
 command with the credential left out — that file is versioned, and a token
 written there is a token published.
 
-All of the screen, the surveyors and the MCP server are ordinary clients of the
-public API, with no privilege over the control plane and no access to the
+The surveyors and the MCP server are ordinary clients of the public API, with no privilege over the control plane and no access to the
 database.
 
 ## Configuration
@@ -370,33 +346,27 @@ database.
 | `CARTOGRAFO_PORT` | `4317` | Control-plane port. |
 | `CARTOGRAFO_DB_PATH` | `.cartografo/` | Where the embedded database lives. |
 | `CARTOGRAFO_LOG_LEVEL` | `info` | `trace`…`silent`. Tick failures and unexpected 500s come out here; a client only ever sees `{error, message, request_id}`, and `request_id` is the `reqId` of the matching log line. |
-| `CARTOGRAFO_URL` | `http://127.0.0.1:4317` | Points the subcommands, the runner and the screen at a control plane elsewhere (or `--url`). |
+| `CARTOGRAFO_URL` | `http://127.0.0.1:4317` | Points the subcommands and the runner at a control plane elsewhere (or `--url`). |
 | `CARTOGRAFO_TOKEN` | — | The credential the subcommands and the runner present (or `--token`). |
 | `CARTOGRAFO_LEASE_CAP_RUNNER` | `50` | Cap on simultaneous leases per runner. The runner declares what it wants and the **smaller** of the two wins: concurrency is the control plane's call. |
 | `CARTOGRAFO_LEASE_CAP_PROJECT` | `50` | The same, per project. |
-| `CARTOGRAFO_SCREEN_HOST` | `127.0.0.1` | The screen's listening address. Same rule as `CARTOGRAFO_HOST`: opening it is your decision. `compose.yml` is the one place that takes it, because a container's loopback is not yours. |
-| `CARTOGRAFO_SCREEN_PORT` | `4318` | The screen's port. `npx cartografo` reads it too, so the screen it starts and the browser it opens land on the same one. |
-| `CARTOGRAFO_SCREEN_TOKEN` | `CARTOGRAFO_TOKEN` | A credential of the screen's own. It presents this to the control plane and asks the browser for none, which is why it listens on loopback. |
 | `CARTOGRAFO_MCP_TOKEN` | `CARTOGRAFO_TOKEN` | The same for the MCP server. There is deliberately no `--token` flag on that command. |
 
 ## Running in a container
 
-`Dockerfile` and `compose.yml` at the root build one image and run two
-containers from it: the control plane and the screen. Both are the single
-`cartografo` package installed the way anyone else installs it, so the commands
-inside the container are the commands in the table above.
+`Dockerfile` and `compose.yml` at the root build one image and run one container
+from it: the control plane. It is the single `cartografo` package installed the
+way anyone else installs it, so the commands inside the container are the
+commands in the table above.
 
 **The runner does not go in the container**, and that is a decision rather than
 an omission (D23): it needs the engine CLI already authenticated and the target
 repository on the same machine, and an image that carried both would be an image
-carrying your credentials. It runs on the host, beside the two containers, and
-is the last of the three commands below.
-
-Bring the control plane up first, because the screen needs a credential that
-only exists once it has started:
+carrying your credentials. It runs on the host, beside the container, and is the
+second of the two commands below.
 
 ```bash
-docker compose up control-plane                               # 1 (leave it running)
+docker compose up                                             # 1 (leave it running)
 ```
 
 On the **first** start against a new volume, its `cartografo.ready` line carries
@@ -406,29 +376,19 @@ another terminal:
 
 ```bash
 export CARTOGRAFO_TOKEN=<the token from step 1>
-docker compose up screen                                      # 2 → http://127.0.0.1:4318
-CARTOGRAFO_URL=http://127.0.0.1:4317 npx cartografo-runner    # 3 (on the host, not in a container)
+CARTOGRAFO_URL=http://127.0.0.1:4317 npx cartografo-runner    # 2 (on the host, not in a container)
 ```
 
-Once you have the token, `docker compose up` with no service name starts both
-containers together: nothing mints a second token, so a later start needs
-nothing new pasted into it.
-
-Three things worth knowing before you point anything real at this:
+Two things worth knowing before you point anything real at this:
 
 - **The database is on a named volume**, `cartografo-db`, mounted at `/data` on
-  the control plane alone. `docker compose down` leaves it; `docker compose down
+  the control plane. `docker compose down` leaves it; `docker compose down
   --volumes` is what deletes it, along with the operator credential inside it.
 - **The image binds loopback, the compose file opens it.** There is no
   `CARTOGRAFO_HOST` in the `Dockerfile` on purpose — an image should not decide
-  for its operator that a port is open. `compose.yml` sets `0.0.0.0` for both
-  services and publishes `4317` and `4318`, which puts the same two ports on your
-  host that the Quick Start would. The control plane's is behind the credential
-  gate; the screen's is not, and it is holding a credential of its own, so treat
-  `4318` the way the Quick Start's loopback default already treats it.
-- **The screen's service has its healthcheck turned off.** The image's baked
-  `HEALTHCHECK` probes the control plane's `/health` on port `4317`, which the
-  screen never listens on; there is no equivalent route for the screen yet.
+  for its operator that a port is open. `compose.yml` sets `0.0.0.0` for the
+  control plane and publishes `4317`, which puts the same port on your host that
+  the Quick Start would, behind the same credential gate.
 
 ## The factory graphs
 
@@ -454,9 +414,9 @@ records because no node here is allowed to research. It models a market-data
 workflow as an example of graph structure, and is not a trading signal.
 
 Two of the three ship a `demo/job.json`, which is what makes them runnable
-without writing anything: the screen's **examples** page
-(`http://127.0.0.1:4318/examples`) lists them, and one click registers the
-bundle and opens its demo job on a round of its own. Same effect as `cartografo
+without writing anything: `cartografo examples` lists them, and `cartografo
+example run <name>` registers the bundle and opens its demo job on a round of
+its own. Same effect as `cartografo
 import` followed by a `POST /v1/jobs`, minus both.
 
 ## Take the patterns

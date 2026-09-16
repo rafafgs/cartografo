@@ -8,11 +8,11 @@
  * (`notes/2026-08-14-extension-and-quality.md`). A mandatory subcommand would add
  * a word to the most travelled path of the product for nobody's benefit.
  *
- * Since t405 that front door brings up three processes rather than one — the
- * control plane, the screen and a local runner — and `cli/up.ts` is what
- * decides all of it. Two consequences reach this file: the leading argument of
- * an implicit `up` may now be one of that subcommand's own `--no-*` flags
- * rather than a subcommand name, and a `UsageError` can come out of `up` like
+ * Since t405 that front door brings up two processes rather than one — the
+ * control plane and a local runner (until t549, the screen as well) — and
+ * `cli/up.ts` is what decides all of it. Two consequences reach this file: the
+ * leading argument of an implicit `up` may now be that subcommand's own
+ * `--no-runner` flag rather than a subcommand name, and a `UsageError` can come out of `up` like
  * it comes out of any other subcommand.
  *
  * Every other subcommand — `import`, `export`, `status` and the three steps of
@@ -88,11 +88,10 @@ export const USAGE = `usage: cartografo [subcommand] [options]
 
 subcommands:
   up                     brings the whole product up: the control plane
-                         (database, migrations and HTTP), the screen and one
-                         local runner, and opens the browser on the screen. It
-                         is the default — \`cartografo\` with no argument does
-                         this, and the three \`--no-*\` options below belong to
-                         it whether the word is typed or not.
+                         (database, migrations and HTTP) and one local runner.
+                         It is the default — \`cartografo\` with no argument
+                         does this, and the \`--no-runner\` option below
+                         belongs to it whether the word is typed or not.
   import <path>          registers a graph as a new base lineage. <path> is a
                          graph file or a bundle directory (with graph.json and,
                          optionally, skills/ to check).
@@ -211,9 +210,7 @@ subcommands:
                          verifies it again before anything is stored.
 
 options:
-  --no-browser           (up) do not open the browser
   --no-runner            (up) do not start a local runner
-  --no-screen            (up) do not start the screen
   --url <url>            control plane to query (env ${ENV_URL};
                          default http://127.0.0.1:${DEFAULT_PORT})
   --token <token>        credential of the control plane (env ${ENV_TOKEN});
@@ -299,8 +296,10 @@ options:
                          (watch: JSON Lines, one whole envelope per line)
   -h, --help             this text
 
-Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST,
-CARTOGRAFO_SCREEN_PORT.`;
+Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST.
+
+Reference: docs/spec/cli.md (this command) and docs/spec/mcp-server.md (the
+same surface for a model, through cartografo-mcp).`;
 
 /** Subcommands that talk to the control plane over HTTP; `up` is the other one. */
 const API_SUBCOMMANDS = [
@@ -979,8 +978,8 @@ export async function runCli(
 
   // A leading `--…` belongs to the implicit `up`, and is not a subcommand
   // nobody declared (t405, FR2). Without this line `npx cartografo
-  // --no-browser` dies with `unknown subcommand: "--no-browser"`, which would
-  // make the three flags of the product's own front door reachable only by
+  // --no-runner` dies with `unknown subcommand: "--no-runner"`, which would
+  // make the flag of the product's own front door reachable only by
   // typing the word the front door exists not to require. It is backwards
   // compatible by construction: no subcommand of this command starts with a
   // dash, so nothing that used to route somewhere still does.

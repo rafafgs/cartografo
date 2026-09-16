@@ -17,20 +17,19 @@ strength of its own history.
 ## What you can do with it
 
 **Install it and bring it up in one command.** `npx cartografo` creates the
-local database, brings up the server, starts the interface and one local runner
-beside it, and opens your browser on the interface — no second terminal, no
-token to paste, nothing to answer. One `Ctrl-C` takes all three down again, and
-`--no-browser`, `--no-runner` and `--no-screen` leave out whichever part you did
-not want — `--no-screen --no-browser` is the whole product with no browser at
-all, driven from the terminal (`cartografo jobs`, `cartografo answer`,
+local database, brings up the server and starts one local runner beside it — no
+second terminal, no token to paste, nothing to answer. One `Ctrl-C` takes both
+down again, and
+`--no-runner` leaves out the runner if you did not want it — the whole product
+is driven from the terminal (`cartografo jobs`, `cartografo answer`,
 `cartografo proposals`) or from a model through the MCP server. The screen is
 retiring for exactly that reason: once the command line and the MCP server do
 everything it does, it goes. Everything on your machine; everything the screen shows comes from a
 public API any tool can consume, and the interface and the runner are separate
 processes with no privilege of their own — being started for you changes
-nothing about that. The server and the interface also ship as a container image,
-with a `docker compose up` that brings the two of them up together and keeps the
-database on a volume of its own; the runner stays outside it, on the machine
+nothing about that. The server also ships as a container image, with a
+`docker compose up` that brings it up and keeps the database on a volume of its
+own; the runner stays outside it, on the machine
 where your engine CLI is already signed in.
 
 **Start from ready-made maps.** Factory graphs come in the box: four of them —

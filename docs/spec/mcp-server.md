@@ -13,10 +13,10 @@ credential (`CARTOGRAFO_URL`, `CARTOGRAFO_TOKEN`), pinned by
 [`packages/mcp/test/no-privileged-access.test.ts`](../../packages/mcp/test/no-privileged-access.test.ts).
 
 Together with [`cli.md`](cli.md) it is the successor of the screen's four
-specifications ([`screen.md`](screen.md),
-[`screen-proposal-inbox.md`](screen-proposal-inbox.md),
-[`screen-graph-editor.md`](screen-graph-editor.md),
-[`screen-interview.md`](screen-interview.md)). It is deliberately the narrower
+specifications (`screen.md`,
+`screen-proposal-inbox.md`,
+`screen-graph-editor.md`,
+`screen-interview.md`). It is deliberately the narrower
 of the two: §2's three exclusions are the CLI's alone, so a screen requirement
 that lands on one of them points at `cli.md` rather than at a tool here.
 
@@ -126,7 +126,7 @@ Every numbered section of the four screen specifications, and where its
 requirements live now. The buckets are: a row of §1 above, a row of
 [`cli.md`](cli.md) §1, §5 (dropped), or §6 (known gaps).
 
-### [`screen.md`](screen.md)
+### `screen.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -154,7 +154,7 @@ requirements live now. The buckets are: a row of §1 above, a row of
 | §6 No framework, no build (its design-system and `data-*` subsections) | §5 | HTML renderer |
 | §7 What this screen does not do yet | §6 | carried over |
 
-### [`screen-proposal-inbox.md`](screen-proposal-inbox.md)
+### `screen-proposal-inbox.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -164,7 +164,7 @@ requirements live now. The buckets are: a row of §1 above, a row of
 | §4 The diff in prose | §1 | `cartografo_list_proposals` (one summary line per operation) |
 | §5 What this screen does not do yet | §6 | carried over |
 
-### [`screen-graph-editor.md`](screen-graph-editor.md)
+### `screen-graph-editor.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -176,7 +176,7 @@ requirements live now. The buckets are: a row of §1 above, a row of
 | §6 No framework, no build — and no `innerHTML` | §5 | HTML renderer, in-browser editing |
 | §7 What this screen does not do yet | §6 | carried over |
 
-### [`screen-interview.md`](screen-interview.md)
+### `screen-interview.md`
 
 | Section | Bucket | Where |
 |---|---|---|
@@ -196,34 +196,34 @@ requirements live now. The buckets are: a row of §1 above, a row of
 Requirements with no equivalent here, because they are about a browser:
 
 - **The fetch-metadata gate** (`Sec-Fetch-Site`, `Origin`, the browser
-  `User-Agent` check — [`screen.md`](screen.md) §1 "What the proxy refuses"). It
+  `User-Agent` check — `screen.md` §1 "What the proxy refuses"). It
   defends a page against another page in the same browser forging a write. An
   MCP client is a local process speaking stdio; there is no browser and no
   forged origin.
-- **The `/v1/*` proxy and the static half** ([`screen.md`](screen.md) §1,
-  [`screen-proposal-inbox.md`](screen-proposal-inbox.md) §1). They exist because
+- **The `/v1/*` proxy and the static half** (`screen.md` §1,
+  `screen-proposal-inbox.md` §1). They exist because
   a browser cannot reach the control plane without CORS; this server reaches it
   directly.
-- **`POST /project`'s cookie switcher** ([`screen.md`](screen.md) §1). Superseded
+- **`POST /project`'s cookie switcher** (`screen.md` §1). Superseded
   rather than lost: every scoped tool takes `project_id`.
-- **The markup contract**: the `data-*` markers ([`screen.md`](screen.md) §6),
+- **The markup contract**: the `data-*` markers (`screen.md` §6),
   "no framework, no build" and `innerHTML`/`textContent`
-  ([`screen.md`](screen.md) §6, [`screen-proposal-inbox.md`](screen-proposal-inbox.md)
-  §1, [`screen-graph-editor.md`](screen-graph-editor.md) §6), the visible
+  (`screen.md` §6, `screen-proposal-inbox.md`
+  §1, `screen-graph-editor.md` §6), the visible
   `<label>` rules. Implementation details of an HTML renderer.
-- **The design system's binding** ([`design-system.md`](design-system.md)). A
+- **The design system's binding** (`design-system.md`). A
   visual language for rendered pages; a tool answers JSON.
 - **The two per-page auto-refresh mechanisms** — `/board`'s 30-second
-  `<meta refresh>` ([`screen.md`](screen.md) §1, §7) and `/interview/:id`'s
-  three-second fragment poll ([`screen-interview.md`](screen-interview.md) §3).
+  `<meta refresh>` (`screen.md` §1, §7) and `/interview/:id`'s
+  three-second fragment poll (`screen-interview.md` §3).
   A tool call is a read on request; a model reads again when it needs to, and a
   person at a terminal has `cartografo watch`.
 - **The graph editor's live in-browser editing and its declined canvas**
-  ([`screen-graph-editor.md`](screen-graph-editor.md) §6, §7). The terminal form
+  (`screen-graph-editor.md` §6, §7). The terminal form
   is `graph propose` over a file ([`cli.md`](cli.md) §1); this server edits no
   graph at all (§2).
 - **The inbox's per-row update with no reload**
-  ([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3). A tool call
+  (`screen-proposal-inbox.md` §3). A tool call
   returns its answer; there is no page to leave stale.
 
 ---
@@ -233,26 +233,26 @@ Requirements with no equivalent here, because they are about a browser:
 Requirements that make sense outside a browser and have no tool yet. Each names
 who it is left to.
 
-- **MCP-server suggestions for a step** ([`screen-interview.md`](screen-interview.md)
+- **MCP-server suggestions for a step** (`screen-interview.md`
   §6). When a turn writes `NEEDS_MCP_SERVER: <capability>`, the page offers up
   to three candidates from the public registry
-  ([`mcp-catalog.ts`](../../packages/screen/src/mcp-catalog.ts)'s
+  (`packages/screen/src/mcp-catalog.ts`'s
   `officialRegistry()`/`cachedCatalog()`). `cartografo_get_interview` returns the
   pending question's context with the hint line in it, and
   `cartografo_start_interview` starts the interview, but neither offers "here
   are three servers you could add". Nothing in `packages/mcp/src` does yet. Left
   to a future ticket; t548 documents it and does not build it.
-- **The progress panel mid-interview** ([`screen-interview.md`](screen-interview.md)
+- **The progress panel mid-interview** (`screen-interview.md`
   §3.1). No tool asks `POST /v1/graphs/validate` about a draft. Left to a future
   ticket.
-- **The board's map position** ([`screen.md`](screen.md) §1, t463).
+- **The board's map position** (`screen.md` §1, t463).
   `cartografo_list_jobs` returns the raw node and the version id; resolving
   `step N/M · <role>` is left to the caller (`cartografo_describe_graph`) until
   a future ticket gives it a field.
-- **The screen specs' own "not yet" lists** ([`screen.md`](screen.md) §7,
-  [`screen-proposal-inbox.md`](screen-proposal-inbox.md) §5,
-  [`screen-graph-editor.md`](screen-graph-editor.md) §7,
-  [`screen-interview.md`](screen-interview.md) §7) carry over unchanged where
+- **The screen specs' own "not yet" lists** (`screen.md` §7,
+  `screen-proposal-inbox.md` §5,
+  `screen-graph-editor.md` §7,
+  `screen-interview.md` §7) carry over unchanged where
   they are not about a browser: per-node execution policies, editing a skill
   manifest's content, pagination, a runner liveness signal beyond leases, a
   second MCP catalogue. Each stays the declared scope of the ticket those lists

@@ -1,11 +1,7 @@
 canonical_docs:
-- README.md — what the product is, how to run it, and the six commands
+- README.md — what the product is, how to run it, and the five commands
 - DECISIONS.md — the recorded decisions D1-D25; cite a number, never overrule one
-- docs/spec/design-system.md — MANDATORY for any change under packages/screen, including
-  a server-rendered page, the STYLE constant in pages.ts, style.css and the interview island
-- docs/spec/screen.md — the twenty-four routes, the no-privilege rule (D11), no build chain
 - docs/spec/interview.md — the interview as a traversal, its turns and its output contract
-- docs/spec/screen-interview.md — the interview page, its two columns and its poll
 - docs/spec/graph.md — the graph document, nodes, edges, contracts
 - docs/spec/human-escalation.md — input requests, blocking, answering, redispatch
 - docs/spec/runner-and-controller.md — leases, heartbeat, the core/runner boundary
@@ -18,11 +14,11 @@ commands:
   build: npm run build
   lint: npm run lint
   migration_heads: null
-  run: CARTOGRAFO_PORT=4517 CARTOGRAFO_SCREEN_PORT=4518 node ./node_modules/.bin/cartografo up --no-browser --no-runner
+  run: CARTOGRAFO_PORT=4517 node ./node_modules/.bin/cartografo up --no-runner
   setup: npm install --no-audit --no-fund
   test: npm test
   typecheck: npm run typecheck
-app_url: http://127.0.0.1:4518/
+app_url: http://127.0.0.1:4517/
 conventions:
 - 'LANGUAGE — ENGLISH ONLY, EVERYWHERE (Rafael, 2026-08-18; supersedes the D18 exemptions):
   every new or edited artifact is in English — code, identifiers, comments, tests, commit
@@ -99,15 +95,6 @@ conventions:
   id=3), released ticket by ticket in dependency order with a maximum of 3 active
   tickets in parallel, and no wave-2 ticket is released until the PoC is accepted
   by the human against the D16 criteria.
-- 'DESIGN SYSTEM — docs/spec/design-system.md is binding on every page this product
-  serves, and it is not optional reading for a ticket that draws or edits one. It is
-  near-monochrome with no brand token, colour reserved for state, border instead of
-  shadow, console density (15.5px base, 44px rows, 36px buttons, 8px radius, multiples
-  of four), and a first-class monospace for anything copied, compared or typed. Never a
-  literal hex in a rule, never currentColor as a border, never opacity as a text grade,
-  never a shadow on anything that does not float over the page. The two stylesheets
-  (packages/screen/src/public/style.css and the STYLE constant in pages.ts) are a known
-  divergence recorded in that document, never a licence to invent a third.'
 detected_artifacts:
 - future_disposition: retire
   kind: other

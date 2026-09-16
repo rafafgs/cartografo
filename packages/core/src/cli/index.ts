@@ -40,6 +40,18 @@ import { runExport } from './export.ts';
 import { historyScope, runExportHistory } from './export-history.ts';
 import { runImport } from './import.ts';
 import {
+  runAnswer,
+  runBlock,
+  runCreateJob,
+  runExampleRun,
+  runExamples,
+  runRunners,
+  runRunnersRecheck,
+  runSettingsGet,
+  runSettingsSet,
+  runUnblock,
+} from './ops.ts';
+import {
   runExecution,
   runExecutions,
   runInputRequests,
@@ -116,6 +128,29 @@ subcommands:
                          (the route has neither parameter); --since/--from-start
                          pick where it starts; --until-done exits 0 the moment
                          the named job or round finishes.
+  examples               the bundles this control plane can demonstrate, and
+                         whether this project has already registered each one.
+  runners                the fleet and whether each one is ready to pick work
+                         up — the check page's own decision logic, in text.
+
+  the writes, closing the gap D26 leaves open (t544):
+
+  answer <request-id> (<text> | --file <path>)
+                         answers a pending escalation; the control plane
+                         unblocks the job in the same transaction.
+  block <job-id>         raises a job's blocked flag; --reason is required.
+  unblock <job-id>       lowers a job's blocked flag; --note is optional.
+  job create --graph <graph-version-id> --input <file>
+                         opens a job on a specific graph version, from a JSON
+                         file of the job's fields.
+  example run <class>    registers the bundle if this project has never seen
+                         the class, then opens its demo job.
+  runners recheck <runner-id>
+                         asks one runner to report about its own machine again.
+  settings [get]         reads this project's recorded defaults.
+  settings set <key> <value>
+                         writes one setting; the key is checked locally before
+                         any request goes out.
 
   the D4 skill-import gate, in three steps:
 
@@ -143,6 +178,8 @@ options:
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
+                         (answer, block, unblock) who is doing it, for the
+                         recorded actor; default the OS user, else "operator"
   --job <id>             (register-skill) job the approval was opened on
                          (export-history) job whose history to export
                          (sessions) filter to one job's sessions
@@ -153,6 +190,7 @@ options:
                          one of --job/--execution
                          (jobs, sessions) filter to one round
                          (watch) filter client-side to one round; see --job
+                         (job create) the round the job lands in
   --since <event-id>     (watch) resume from this event id (exclusive);
                          mutually exclusive with --from-start
   --from-start           (watch) start from the whole log (event id 0) instead
@@ -165,13 +203,27 @@ options:
   --status <status>      (input-requests) filter by status; default pending
   --tail <n>             (transcript) show only the last N lines, counting
                          back from the session's own last non-blank line
+  --reason <text>        (block) why the job stops here; required
+  --note <text>          (unblock) why the job can move again; optional
+  --file <path>          (answer) reads the answer text from this file
+                         instead of a positional argument
+  --graph <graph-version-id>
+                         (job create) the graph version the job travels; required
+  --input <file>         (job create) a JSON file with the job's fields
+                         (title, entry_node_id and, optionally, body, fields,
+                         acceptance_criteria, tier); required
   --project <id|name>    project to work in (import, export, export-history,
                          status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, watch); default 1.
-                         A name is resolved against GET /v1/projects
+                         transcript, input-requests, watch, examples, runners,
+                         job create, example run, settings); default 1. Accepted
+                         but inert on answer/block/unblock/runners recheck,
+                         none of whose routes are project-scoped. A name is
+                         resolved against GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
-                         transcript, input-requests, watch) prints
-                         machine-readable JSON instead of the human table/card
+                         transcript, input-requests, watch, examples, runners,
+                         answer, block, unblock, job create, example run,
+                         runners recheck, settings) prints machine-readable
+                         JSON instead of the human table/card
                          (watch: JSON Lines, one whole envelope per line)
   -h, --help             this text
 
@@ -192,6 +244,13 @@ const API_SUBCOMMANDS = [
   'transcript',
   'input-requests',
   'watch',
+  'examples',
+  'runners',
+  'answer',
+  'block',
+  'unblock',
+  'example',
+  'settings',
   'scan-skill',
   'propose-skill',
   'register-skill',
@@ -461,6 +520,28 @@ async function runApiClient(
     });
   }
 
+  if (subcommand === 'job' && fromProject.rest[0] === 'create') {
+    const afterCreate = fromProject.rest.slice(1);
+    const fromGraph = extractValue(afterCreate, '--graph');
+    const fromInput = extractValue(fromGraph.rest, '--input');
+    const fromExecution = extractValue(fromInput.rest, '--execution');
+    const fromJson = extractFlag(fromExecution.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'job create');
+
+    if (fromGraph.value === undefined) throw new UsageError('job create needs --graph');
+    if (fromInput.value === undefined) throw new UsageError('job create needs --input');
+
+    return await runCreateJob({
+      url,
+      graphVersionId: fromGraph.value,
+      inputPath: fromInput.value,
+      executionId:
+        fromExecution.value === undefined ? undefined : parseIntegerOption(fromExecution.value, 'job create --execution'),
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
   if (subcommand === 'job') {
     const fromJson = extractFlag(fromProject.rest, '--json');
     requireNothingElse(fromJson.rest, 1, 'job');
@@ -578,6 +659,141 @@ async function runApiClient(
       fromStart,
       json: fromJson.present,
       untilDone,
+    });
+  }
+
+  if (subcommand === 'examples') {
+    const fromJson = extractFlag(fromProject.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'examples');
+
+    return await runExamples({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'example') {
+    if (fromProject.rest[0] !== 'run') throw new UsageError('example needs a subcommand: run <class>');
+    const afterRun = fromProject.rest.slice(1);
+    const fromJson = extractFlag(afterRun, '--json');
+    requireNothingElse(fromJson.rest, 1, 'example run');
+    const className = fromJson.rest[0];
+    if (className === undefined) throw new UsageError('example run needs a class');
+
+    return await runExampleRun({
+      url,
+      className,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'runners' && fromProject.rest[0] === 'recheck') {
+    const afterRecheck = fromProject.rest.slice(1);
+    const fromJson = extractFlag(afterRecheck, '--json');
+    requireNothingElse(fromJson.rest, 1, 'runners recheck');
+    const runnerId = fromJson.rest[0];
+    if (runnerId === undefined) throw new UsageError('runners recheck needs a runner id');
+
+    return await runRunnersRecheck({ url, runnerId, json: fromJson.present });
+  }
+
+  if (subcommand === 'runners') {
+    const fromJson = extractFlag(fromProject.rest, '--json');
+    requireNothingElse(fromJson.rest, 0, 'runners');
+
+    return await runRunners({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'answer') {
+    const fromFile = extractValue(fromProject.rest, '--file');
+    const fromBy = extractValue(fromFile.rest, '--by');
+    const fromJson = extractFlag(fromBy.rest, '--json');
+    requireNothingElse(fromJson.rest, 2, 'answer');
+
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('answer needs a request id');
+
+    return await runAnswer({
+      url,
+      id: parseIntegerOption(rawId, 'answer <request-id>'),
+      text: fromJson.rest[1],
+      file: fromFile.value,
+      by: fromBy.value,
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'block') {
+    const fromReason = extractValue(fromProject.rest, '--reason');
+    const fromBy = extractValue(fromReason.rest, '--by');
+    const fromJson = extractFlag(fromBy.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'block');
+
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('block needs a job id');
+
+    return await runBlock({
+      url,
+      id: parseIntegerOption(rawId, 'block <job-id>'),
+      reason: fromReason.value,
+      by: fromBy.value,
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'unblock') {
+    const fromNote = extractValue(fromProject.rest, '--note');
+    const fromBy = extractValue(fromNote.rest, '--by');
+    const fromJson = extractFlag(fromBy.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'unblock');
+
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('unblock needs a job id');
+
+    return await runUnblock({
+      url,
+      id: parseIntegerOption(rawId, 'unblock <job-id>'),
+      note: fromNote.value,
+      by: fromBy.value,
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'settings' && fromProject.rest[0] === 'set') {
+    const afterSet = fromProject.rest.slice(1);
+    const fromJson = extractFlag(afterSet, '--json');
+    requireNothingElse(fromJson.rest, 2, 'settings set');
+
+    const key = fromJson.rest[0];
+    const value = fromJson.rest[1];
+    if (key === undefined || value === undefined) {
+      throw new UsageError('settings set needs a key and a value');
+    }
+
+    return await runSettingsSet({
+      url,
+      key,
+      value,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'settings') {
+    const positional = fromProject.rest[0] === 'get' ? fromProject.rest.slice(1) : fromProject.rest;
+    const fromJson = extractFlag(positional, '--json');
+    requireNothingElse(fromJson.rest, 0, 'settings');
+
+    return await runSettingsGet({
+      url,
+      projectId: await resolveProjectId(fromProject.value, url),
+      json: fromJson.present,
     });
   }
 

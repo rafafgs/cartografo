@@ -1,0 +1,3 @@
+### t543 (developing, unverified)
+
+- The first full `npm test` run (before I widened timing margins) showed 4 of cli-watch.test.ts's own tests (AT1, AT2, AT3a, AT5) fail with empty stdout/stderr under full-suite CPU contention — the documented t491/t492 'concurrent worktree wall-clock flakiness' pattern, but this time it was MY OWN new tests, not an unrelated suite. Rather than wave it off, I widened the fixed post-spawn sleeps (500ms→2s) and per-test/runCli timeouts across the board; a second full `npm test` run then passed clean. Worth remembering: a background-spawned-CLI test with a short fixed sleep before the first event is inherently the most contention-sensitive shape in this test family.

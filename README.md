@@ -191,7 +191,7 @@ middle still reads to its last line ([the
 format](docs/spec/history-export.md)). It goes only one way: there is no
 importing a history back, and the file carries the record unredacted.
 
-`cartografo` is also the complete operating surface D26 asks for: seven reads
+`cartografo` is also the complete operating surface D26 asks for: eight reads
 with board parity, each with a `--json` form for a script.
 
 ```bash
@@ -204,7 +204,17 @@ npx cartografo sessions --job 41               # a job's sessions
 npx cartografo transcript 12 --tail 40         # a session's decoded output, tailed
 npx cartografo input-requests                  # the escalation inbox (pending, by default)
 npx cartografo input-requests --status answered
+npx cartografo watch                           # tails every event, live, reconnecting forever
+npx cartografo watch --job 41 --until-done     # follows one job, exits 0 when it finishes
 ```
+
+`watch` is what replaces the board's own live view for a terminal-first flow:
+it tails `GET /v1/events/stream`, the same route the screen's board and
+interview page used to poll every three seconds, reconnecting on its own past
+the first connection. `--job`/`--execution` filter client-side (the route
+takes neither), `--since`/`--from-start` pick where it resumes, and
+`--until-done` turns it into something a script can wait on instead of
+polling `job <id>` in a loop.
 
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick

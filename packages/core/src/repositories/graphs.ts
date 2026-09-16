@@ -55,6 +55,7 @@
 
 import type { Database } from '../db/connection.ts';
 import { recordEvent } from '../db/events.ts';
+import type { Actor } from '../db/event-validation.ts';
 import {
   classifyContracts,
   validateContracts,
@@ -421,9 +422,10 @@ export function movePointer(
  *
  * `project_id` is the lineage's own since t354 — `graph` carries the column now
  * (D25) and the two events belong to the project the version was written in.
- * The actor is `API_ACTOR` because none of the routes that reach here accepts an
- * `actor` in the body: a token proves possession, not identity (`common.ts`), so
- * what gets recorded is the component that acted.
+ * The actor defaults to `API_ACTOR`: registering and forking accept no `actor`
+ * in the body, and a token proves possession, not identity (`common.ts`), so
+ * what gets recorded is the component that acted. Applying a proposal is the one
+ * caller that passes one (t583) — the person who applied it.
  */
 export interface VersionBirth {
   /** Partition the lineage lives in; defaults to the single-project reading. */
@@ -440,6 +442,8 @@ export interface VersionBirth {
   proposalId: number | null;
   /** Instant of the write — the same one the rows carry. */
   moment: string;
+  /** Who acted, on both events; `API_ACTOR` when absent (t583). */
+  actor?: Actor;
 }
 
 /**
@@ -453,13 +457,14 @@ export interface VersionBirth {
  */
 export function recordVersionBirth(db: Database, data: VersionBirth): void {
   const projectId = data.projectId ?? DEFAULT_PROJECT;
+  const actor = data.actor ?? API_ACTOR;
 
   recordEvent(db, {
     type: 'graph_version.registered',
     project_id: projectId,
     execution_id: null,
     entity: { type: 'graph_version', id: data.versionId },
-    actor: API_ACTOR,
+    actor,
     occurred_at: data.moment,
     data: {
       graph_id: data.graphId,
@@ -474,7 +479,7 @@ export function recordVersionBirth(db: Database, data: VersionBirth): void {
     project_id: projectId,
     execution_id: null,
     entity: { type: 'graph_version', id: data.versionId },
-    actor: API_ACTOR,
+    actor,
     occurred_at: data.moment,
     data: { graph_id: data.graphId, proposal_id: data.proposalId },
   });

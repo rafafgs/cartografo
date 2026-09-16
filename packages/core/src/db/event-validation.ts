@@ -481,6 +481,26 @@ const RULES: Record<string, TypeRule> = {
       reason: required('string'),
     },
   },
+  // The human gate's yes and no on a proposal (t583). Keyed to the version the
+  // proposal TARGETS, because that is the subject whose timeline the decision
+  // belongs to and the only entity a proposal already joins the log through —
+  // a `proposal` entity type would widen the table's CHECK for a fact the
+  // `graph_version` family already carries. `actor` is who decided.
+  'graph_version.proposal_approved': {
+    entity: 'graph_version',
+    fields: {
+      graph_id: required('string'),
+      proposal_id: required('integer'),
+    },
+  },
+  'graph_version.proposal_rejected': {
+    entity: 'graph_version',
+    fields: {
+      graph_id: required('string'),
+      proposal_id: required('integer'),
+      reason: required('string'),
+    },
+  },
   // A version's contract state moved (t283). Emitted ONLY by the re-check that
   // a newly registered manifest triggers — never at a version's birth, where
   // `graph_version.registered`/`.applied` already say what happened at that

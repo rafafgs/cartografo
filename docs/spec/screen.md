@@ -5,6 +5,7 @@
 **Founding decision:** [D11](../../DECISIONS.md) — "observability and the inbox
 first; the screen is a client of the public API, with no privileges" · the PoC
 criterion of [D16](../../DECISIONS.md)
+**Successor ([D26](../../DECISIONS.md)):** this document's requirements moved to [`cli.md`](cli.md) and [`mcp-server.md`](mcp-server.md); the screen itself is unaffected until Rafael removes it.
 
 The screen answers three questions and no others: **where each job is**, **who is
 waiting on a decision of mine**, and **where a job's time went**. Everything it

@@ -107,18 +107,20 @@ them is not, with one way to fix each.
 never have to open the screen at all:
 
 ```bash
-npx cartografo up --no-screen                  # the control plane and a local runner
+npx cartografo up --no-screen --no-browser     # the control plane and a local runner
 npx cartografo runners                         # is the runner ready to pick work up?
 npx cartografo example run asymmetric-bets     # registers and starts a demo, no curl
-watch -n 2 -- npx cartografo job 1             # and watch it move, every two seconds
+npx cartografo watch --job 1 --until-done      # follow it, and exit when it finishes
+npx cartografo job 1                           # then read where its time went
 ```
 
 `cartografo runners` is the check page's own readiness logic, in text — the
 same four checks per runner, and the same pairing command when nothing is
-paired yet. `example run` is step 3 and step 4 combined into one write. And
-`watch` — the Unix utility, not a subcommand of this CLI — turns `cartografo
-job <id>` (which already prints the whole thing and exits) into a live view;
-nothing new was added to the binary for it.
+paired yet. `example run` is step 3 and step 4 combined into one write.
+`watch --job 1 --until-done` prints every event about that job as it lands and
+exits `0` the moment the job finishes; `job <id>` prints the whole timeline once
+and exits. Keep `--no-browser` beside `--no-screen`: on its own, `--no-screen`
+still opens a browser, on a port nothing is listening on.
 
 ## 3. Import a factory graph
 
@@ -156,8 +158,25 @@ run.
 
 ## 4. Put a piece of work on it
 
-A **job** is one piece of work crossing one graph. Creating one is a `POST`, and
-the two fields that matter are what it is called and which node it starts on:
+A **job** is one piece of work crossing one graph. The two fields that matter
+are what it is called and which node it starts on, and it travels one graph
+version — the `graph_version.id` step 3 printed:
+
+```bash
+echo '{"title": "Add a /health check to the API", "entry_node_id": "refine"}' > job.json
+npx cartografo job create --graph <the graph_version.id from step 3> --input job.json
+```
+
+```
+job created
+  id                1
+  entry_node_id     refine
+  graph_version_id  sha256:030c7fdd…
+  execution_id      -
+```
+
+What the command does, said out loud, is one `POST` (without `graph_version_id`
+the job is created unpinned, which is what the body below shows):
 
 ```bash
 curl -sS -X POST "$CARTOGRAFO_URL/v1/jobs" \
@@ -186,18 +205,24 @@ start.
 
 Two views, and they answer different questions.
 
-**Where is everything?** The board, at `http://127.0.0.1:4318/board`, groups
-every job by the node it is standing on and shows the blocking reason where
-there is one — the same thing `npx cartografo jobs` prints from a terminal,
-one row per job. Its sibling views are the readiness check at `/` (`npx
-cartografo runners`), the proposal inbox at `/inbox`, the escalation queue at
-`/input-requests` (`npx cartografo input-requests`) and one job's timeline at
-`/jobs/<id>` (`npx cartografo job <id>`;
-[`docs/spec/screen.md`](spec/screen.md) documents the whole route table). Each
-view renders on the request: reloading the page is the refresh.
+**Where is everything?** `npx cartografo jobs` prints the board: one row per
+job, with the node it is standing on, its state and whether it is blocked.
+`npx cartografo job <id>` prints one job's timeline, split into queueing,
+working and waiting on a human, with the blocking reason where there is one; `npx cartografo runners` is the
+readiness check, `npx cartografo input-requests` the escalation queue and
+`npx cartografo proposals list` the proposal inbox
+([`docs/spec/cli.md`](spec/cli.md) documents every subcommand). Each one reads
+the API when you run it: running it again is the refresh, and `npx cartografo
+watch` follows the event stream live.
+
+The screen shows the same things in a browser, and it is retiring
+([D26](../DECISIONS.md)): the board at `http://127.0.0.1:4318/board`, the check
+at `/`, the inbox at `/inbox`, the queue at `/input-requests` and a timeline at
+`/jobs/<id>` ([`docs/spec/screen.md`](spec/screen.md)).
 
 **What happened to this one job?** Its event timeline, which is the log rather
-than a summary of it:
+than a summary of it — `npx cartografo watch --job 1 --from-start` replays it
+from the first event, and on the wire it is one read:
 
 ```bash
 curl -sS -H "Authorization: Bearer $CARTOGRAFO_TOKEN" "$CARTOGRAFO_URL/v1/jobs/1/events"
@@ -227,6 +252,12 @@ In order, because each of the three is cheaper than the one after it.
 reason; nothing has to be inferred from a log.
 
 ```bash
+npx cartografo job 1
+```
+
+On the wire, that is (among the others the timeline needs) this read:
+
+```bash
 curl -sS -H "Authorization: Bearer $CARTOGRAFO_TOKEN" "$CARTOGRAFO_URL/v1/jobs/1"
 ```
 
@@ -238,13 +269,19 @@ than deleting in silence, the path of a worktree still holding it.
 entity here, not an error path. The queue of what is still unanswered:
 
 ```bash
+npx cartografo input-requests
+```
+
+The literal wire call underneath:
+
+```bash
 curl -sS -H "Authorization: Bearer $CARTOGRAFO_TOKEN" "$CARTOGRAFO_URL/v1/input-requests?status=pending"
 ```
 
 `{"input_requests":[]}` means nobody is waiting on you, which is a different
 answer from an error and reads as one. Anything in that list can be answered
-inline on the screen, at `/input-requests`, or from a terminal — `npx
-cartografo answer <id> "your answer"` — either of which writes through the
+from a terminal — `npx cartografo answer <id> "your answer"` — or inline on the
+screen, at `/input-requests`, either of which writes through the
 same public API you just read, and unblocks the job in the same transaction.
 
 **Is the control plane itself unhappy?** Turn its log up. The server writes one

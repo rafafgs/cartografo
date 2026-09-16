@@ -7,6 +7,7 @@ RF-25), §1.4's *sugere, nunca instala*, and RNF-04 ·
 **Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
 the public API, with no privileges" · [D4](../../DECISIONS.md) — "a skill is
 pinned by content, and agent-authored content is an injection vector"
+**Successor ([D26](../../DECISIONS.md)):** this document's requirements moved to [`cli.md`](cli.md) (`interview`) and [`mcp-server.md`](mcp-server.md); the screen itself is unaffected until Rafael removes it.
 
 The [interview](interview.md) has existed since t360 and had no door. It is a
 job on the `map-design` class, asking one thing per turn — one decision, or one

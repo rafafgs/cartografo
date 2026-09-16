@@ -107,17 +107,16 @@ From a clean checkout to a registered graph, in three commands:
 
 ```bash
 npm install                                                   # 1
-npx cartografo                                                # 2 (leave it running)
+npx cartografo up --no-screen --no-browser                    # 2 (leave it running)
 CARTOGRAFO_TOKEN=<the token from step 2> \
   npx cartografo import factory-graphs/software-development   # 3 (another terminal)
 ```
 
 Step 2 is the product, not just the server. It creates
 `.cartografo/cartografo.db`, applies the migrations, serves HTTP on
-`127.0.0.1:4317` and prints `cartografo.ready` — and then starts the screen on
-`127.0.0.1:4318` and one local runner, both as child processes of its own, and
-opens your browser on the screen. It asks nothing and blocks on nothing;
-`Ctrl-C` takes all three down together. On the **first** start against a new
+`127.0.0.1:4317` and prints `cartografo.ready` — and then starts one local
+runner as a child process of its own. It asks nothing and blocks on nothing;
+`Ctrl-C` takes both down together. On the **first** start against a new
 database the readiness line also carries a `bootstrapToken` — the operator
 credential, shown once and never again, since only its hash is stored. Lost it?
 Delete `.cartografo/` and start again for a fresh one.
@@ -126,13 +125,21 @@ That local runner works in `~/.cartografo/workspace`, which step 2 creates as an
 empty git repository the first time, cutting each session's worktree into
 `~/.cartografo/worktrees`. Both paths are settings, not constants: `PATCH
 /v1/settings` points them anywhere you like, and a `workspace_root` you changed
-is never written to. Want fewer than all three processes? `--no-browser`,
+is never written to. Want fewer processes still? `--no-browser`,
 `--no-runner` and `--no-screen` each subtract exactly their own part, and all
-three together is the control plane on its own.
+three together is the control plane on its own. Leave `--no-browser` off only
+when you also start the screen: `--no-screen` alone still opens a browser, on a
+port nothing is listening on.
+
+The screen is optional, and it is retiring
+([D26](DECISIONS.md)): the CLI and the MCP server are the operating surface, and
+the screen goes once they reach parity. `npx cartografo` with no flags still
+starts it and opens your browser on it; what it shows is the `cartografo-screen`
+paragraph under [The commands](#the-commands).
 
 Step 3 registers the bundled graph, checking each pinned skill hash first, and
-prints the recorded `graph_version.id`. `GET /v1/classes` then lists
-`software-development`.
+prints the recorded `graph_version.id`. `npx cartografo status` then lists
+`software-development` among the classes, and `npx cartografo jobs` is the board.
 
 **The checkout in step 1 is not optional yet.** `cartografo` is a single
 publishable package carrying all six commands (D23), so
@@ -324,23 +331,18 @@ npx cost-surveyor evaluate --url http://127.0.0.1:4317 \
   --execution 7 --token-cap 200000
 ```
 
-**`cartografo-screen`** — the two halves of the operator's screen.
-
-```bash
-npx cartografo-screen                          # http://127.0.0.1:4318
-```
-
-At `/`, the **check**: per paired runner, whether its engine CLI is there, whether
-it has a model credential, whether the `cartografo` MCP server is registered with
-it and whether its workspace can be worked in — either all four met, with a way
-into the board, or exactly what is missing and one command to fix each. It asks
-for nothing it can read off a runner's own report. At `/inbox`, the **proposal
-inbox**: the semantic diff, the evidence, the decision
-([`docs/spec/screen-proposal-inbox.md`](docs/spec/screen-proposal-inbox.md)). At
-`/board`, **observability**: jobs grouped by node, executions, sessions, the
-queue of pending questions with an inline answer, and any job's timeline split
-into queueing, working and waiting on a human
-([`docs/spec/screen.md`](docs/spec/screen.md)).
+**`cartografo-screen`** — the operator's screen in a browser
+(`npx cartografo-screen`, `http://127.0.0.1:4318`), started by `cartografo up`
+unless `--no-screen` is given. At `/` it draws the check — per paired runner,
+whether the engine, the model credential, the `cartografo` MCP server and the
+workspace are ready — and from there the board, executions, sessions, the
+question queue and each job's timeline. At `/inbox` it draws the proposal inbox,
+and at `/graph-editor.html` and `/interview` the graph editor and the interview.
+It is retiring under [D26](DECISIONS.md) once the CLI and the MCP server reach
+parity; what it does now lives in
+[`docs/spec/cli.md`](docs/spec/cli.md) and
+[`docs/spec/mcp-server.md`](docs/spec/mcp-server.md), which say where each of
+its pages went.
 
 **`cartografo-mcp`** — the same map for a model instead of a browser, over MCP.
 

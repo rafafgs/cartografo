@@ -6,6 +6,7 @@
 the public API, with no privileges" · [D15](../../DECISIONS.md) — "a semantic
 diff, an operation with its inverse, append-only versioning" · principle 5 of the
 [README](../../README.md) — "the safety ladder"
+**Successor ([D26](../../DECISIONS.md)):** this document's requirements moved to [`cli.md`](cli.md) (`graph propose`); the screen itself is unaffected until Rafael removes it.
 
 D11 fixed the order: observability first, the inbox next, graph editing last. The
 first two arrived; this is the third. It is the page where a

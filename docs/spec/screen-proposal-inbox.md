@@ -4,6 +4,7 @@
 **Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
 the public API" · [D1](../../DECISIONS.md) — "only the server writes to the
 database" · principle 5 of the [README](../../README.md) — "the safety ladder"
+**Successor ([D26](../../DECISIONS.md)):** this document's requirements moved to [`cli.md`](cli.md) (`proposals`) and [`mcp-server.md`](mcp-server.md) (reading only); the screen itself is unaffected until Rafael removes it.
 
 The screen is the human half of the safety ladder. The topografo writes
 hypotheses about the graph; the soundness gate fails the ones that would break

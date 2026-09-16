@@ -21,7 +21,11 @@ local database, brings up the server, starts the interface and one local runner
 beside it, and opens your browser on the interface — no second terminal, no
 token to paste, nothing to answer. One `Ctrl-C` takes all three down again, and
 `--no-browser`, `--no-runner` and `--no-screen` leave out whichever part you did
-not want. Everything on your machine; everything the screen shows comes from a
+not want — `--no-screen --no-browser` is the whole product with no browser at
+all, driven from the terminal (`cartografo jobs`, `cartografo answer`,
+`cartografo proposals`) or from a model through the MCP server. The screen is
+retiring for exactly that reason: once the command line and the MCP server do
+everything it does, it goes. Everything on your machine; everything the screen shows comes from a
 public API any tool can consume, and the interface and the runner are separate
 processes with no privilege of their own — being started for you changes
 nothing about that. The server and the interface also ship as a container image,
@@ -38,7 +42,8 @@ own. That fourth one is registered for you at the first start, because you would
 have to know it existed to import it. Import any of the others with a single
 command and you already have a governed process — or open the screen's examples
 page and run one with a single click, which registers the bundle and starts its
-demo job for you.
+demo job for you — `cartografo example run <class>` does the same from the
+terminal, and `cartografo_run_example` from a model.
 
 **Be interviewed into a map of your own, in the browser.** Open the interview
 page, say what the problem is in your own words, and answer one question at a
@@ -49,10 +54,14 @@ conversation as you answer — the page refreshes itself, so there is nothing to
 reload. When it is over you either register the map, which puts the class and its
 skills in for real, or download it as a bundle you can import anywhere. The same
 page, read only, shows any map already registered: the whole procedure top to
-bottom, one block per step, with nothing to open, expand or drag.
+bottom, one block per step, with nothing to open, expand or drag. The browser is
+not the only door: `cartografo interview` holds the same conversation in the
+terminal, prints the map as it grows and ends in the same register-or-export
+choice, `cartografo graph show <class>` reads a registered map, and a model can
+start one and read it back through the MCP server.
 
 **Keep more than one project in the same installation, and switch between them
-on the screen.** A project is a name you give — `default` is the one that is
+with a flag or on the screen.** A project is a name you give — `default` is the one that is
 already there — and everything that belongs to a map lives inside one: the
 classes, the maps and their versions, the registered skills, the keys a hook
 signs with. Two projects do not see each other's maps, and each can register a
@@ -75,13 +84,16 @@ map goes through. What does not exist yet is "declare it on the screen and
 receive the map" without going through the terminal.
 
 **Edit the map yourself.** It is not only about approving what the evaluator
-proposes: on the screen you can add a step, remove another, change who does what
-and how that is verified, and connect or cut the paths between steps. What you
+proposes: on the screen, or by exporting the map to a file, editing it and
+handing it back with `cartografo graph propose`, you can add a step, remove
+another, change who does what and how that is verified, and connect or cut the
+paths between steps. What you
 save does not become a map straight away — it becomes a proposal, which goes
 through the same formal verification as ever and only lands if the resulting map
 still holds up (every step reachable, every traversal ending, every path
-labelled, every step with a contract). When it does not hold up, the screen says
-which step or which path broke which rule, and nothing is written. Changing the
+labelled, every step with a contract). When it does not hold up, the screen or
+the command says which step or which path broke which rule, and nothing is
+written. Changing the
 identity of a step that already exists is not possible: to do that, remove it and
 create it again.
 
@@ -89,7 +101,8 @@ create it again.
 breakdown into tickets and you confirm it. The tickets cross the map: CLI agents
 carry out each step with instructions and contracts coming from the database,
 gates verify every passage with evidence, and a decision that is not a machine's
-arrives on the screen and waits for you. **Every step receives what the previous
+arrives on the screen — and in `cartografo input-requests`, where `cartografo
+answer` settles it — and waits for you. **Every step receives what the previous
 ones produced** — the specification refinement wrote reaches whoever develops,
 the branch development left reaches whoever integrates —, assembled by the
 control plane out of what each session reported, and never by a file somebody
@@ -159,8 +172,10 @@ it goes back to the queue and somebody picks it up again. The one exception is
 killing the process by force, mid-cut (`kill -9`), which gives nobody a chance to
 clean anything up — and even then the work returns to the queue on its own.
 
-**See everything.** The board shows where every job is; every ticket has a
-timeline (agent working, waiting on you, queueing); every question carries the
+**See everything.** The board shows where every job is — `cartografo jobs` in the
+terminal, `cartografo_list_jobs` for a model; every ticket has a
+timeline (agent working, waiting on you, queueing), which `cartografo job <id>`
+prints; every question carries the
 context to answer it without opening the repository; the history makes it
 possible to reconstruct any execution.
 
@@ -174,8 +189,8 @@ are worth knowing before you send one: it goes only one way — there is no
 importing a history back into another installation — and it carries what was
 recorded, unredacted.
 
-**Build on top, without reading the code.** Everything the screen does goes
-through a public API — and that API describes itself: the server publishes the
+**Build on top, without reading the code.** Everything the screen, the command
+line and the MCP server do goes through a public API — and that API describes itself: the server publishes the
 `/openapi.json` document and a browsable page at `/docs`, both generated from the
 routes it really registers. It is not a hand-written document that ages: a new
 route shows up there the same instant it comes into being. Whoever wants to
@@ -188,8 +203,9 @@ behind the token.
 
 **The map improves, with your hand at the gate.** After a round, an evaluator
 reads the history and deposits proposals in your inbox, each one with the diff,
-the evidence and the metric it expects to move. You approve, and the new version
-is born. There are two evaluators: the flow one (where the round spent time) and
+the evidence and the metric it expects to move. You approve — on the screen's
+inbox or with `cartografo proposals approve`, never from a model, which can read
+a proposal but not decide it — and the new version is born. There are two evaluators: the flow one (where the round spent time) and
 the cost one (tokens and time per node). Both are called by hand — `npx
 cost-surveyor evaluate …` —, and now on their own as well, if you let them.
 Projects that diverge get a variant of the map of their own, and what the variant

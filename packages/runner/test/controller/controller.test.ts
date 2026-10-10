@@ -639,3 +639,58 @@ test('t252 — a tick whose only candidate blocks itself returns null', async ()
   assert.equal(await controller.tick(), null, 'a tick that blocked its only candidate won nothing');
   assert.deepEqual(asked(), [1]);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t638 — a held job is not a candidate.                                       */
+/* -------------------------------------------------------------------------- */
+
+test('t638 AT29 — a job with a dispatch_hold costs no lease request; the next one runs', async () => {
+  const { ControlPlaneClient } = await loadClient();
+  const { Controller } = await loadController();
+
+  const leasesAskedFor: number[] = [];
+  const respond = (status: number, body: unknown): Response =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const doFetch: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/v1/jobs') {
+      return respond(200, {
+        jobs: [
+          // Waiting on its children: the core would answer `job_held` anyway,
+          // and asking is one POST per held job per tick for nothing.
+          { ...candidate(1), dispatch_hold: 'children' },
+          { ...candidate(2), dispatch_hold: null },
+          // A control plane older than t636 sends no field at all.
+          candidate(3),
+        ],
+      });
+    }
+    if (url.pathname === '/v1/leases') {
+      const body = JSON.parse(String(init?.body)) as { job_id: number };
+      leasesAskedFor.push(body.job_id);
+      return respond(201, { lease: { ...LEASE, job_id: body.job_id } });
+    }
+    return respond(200, { lease: LEASE });
+  };
+
+  const client = new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl: doFetch });
+  const released = await client.listReleasedJobs(3);
+  assert.deepEqual(
+    released.map((job) => job.id),
+    [2, 3],
+  );
+
+  const dispatched: number[] = [];
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async (jobId: number) => {
+      dispatched.push(jobId);
+      return { blocked: false };
+    },
+  });
+
+  assert.deepEqual(await controller.tick(), { jobId: 2, leaseId: LEASE.id });
+  assert.deepEqual(leasesAskedFor, [2], 'no POST /v1/leases named the held job');
+  assert.deepEqual(dispatched, [2]);
+});

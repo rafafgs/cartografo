@@ -55,7 +55,22 @@ export interface JobRead {
   block_reason: string | null;
   completed: boolean;
   state: JobState;
+  /** Composition (t636): the job that opened this one, and from which node. */
+  parent_job_id: number | null;
+  parent_node_id: string | null;
+  /** 1-based position among the parent's children. */
+  sibling_position: number | null;
+  /** Ids of every direct child, in `sibling_position` order. */
+  children: number[];
+  /** Ids of the dependencies that have not completed yet. */
+  depends_on: number[];
+  cancelled_at: string | null;
+  /** Why the job may not be handed to a runner right now, derived by the server. */
+  dispatch_hold: DispatchHold | null;
 }
+
+/** The server's reasons for holding a job back from a runner. */
+export type DispatchHold = 'cancelled' | 'dependencies' | 'children';
 
 /** A session, in the fields these subcommands read off `GET /v1/sessions`. */
 export interface SessionRead {
@@ -503,15 +518,38 @@ function table(headers: string[], rows: string[][]): string {
   return [renderRow(headers), ...body].join('\n');
 }
 
+/** The ids of a job's direct children; a control plane that omits the field has none. */
+function childIds(job: JobRead): number[] {
+  return job.children ?? [];
+}
+
+/** How a job relates to the others on the board: `-`, `child 2 of #7`, `parent of 3`, or both. */
+function relationCell(job: JobRead): string {
+  const parts: string[] = [];
+  if (job.parent_job_id !== null && job.parent_job_id !== undefined) {
+    parts.push(`child ${job.sibling_position ?? '?'} of #${job.parent_job_id}`);
+  }
+  const children = childIds(job);
+  if (children.length > 0) parts.push(`parent of ${children.length}`);
+  return parts.length === 0 ? '-' : parts.join(', ');
+}
+
+/** The hold column: the server's `dispatch_hold`, or `-`. */
+function holdCell(job: JobRead): string {
+  return job.dispatch_hold ?? '-';
+}
+
 function jobsTable(jobs: JobRead[]): string {
   return table(
-    ['id', 'state', 'current_node_id', 'execution_id', 'blocked', 'title'],
+    ['id', 'state', 'current_node_id', 'execution_id', 'blocked', 'relation', 'hold', 'title'],
     jobs.map((job) => [
       String(job.id),
       job.state,
       job.current_node_id,
       job.execution_id === null ? '-' : String(job.execution_id),
       String(job.blocked),
+      relationCell(job),
+      holdCell(job),
       job.title,
     ]),
   );
@@ -615,6 +653,78 @@ export interface JobOptions {
   json: boolean;
 }
 
+/** What `job <id>` reads of a parent's children, matched by id off one board read. */
+interface ChildJobs {
+  /** One entry per direct child, in position order; `job` is `null` for an id the board did not answer. */
+  rows: Array<{ id: number; job: JobRead | null }>;
+  /** The untouched bodies of the children the board did answer, in position order. */
+  found: JobRead[];
+}
+
+/** Reads the board once and matches the job's direct children by id. */
+async function readChildren(options: JobOptions, job: JobRead): Promise<ChildJobs> {
+  const ids = childIds(job);
+  if (ids.length === 0) return { rows: [], found: [] };
+
+  const response = await requestJson(
+    `${options.url}/v1/jobs${queryString({ project_id: options.projectId })}`,
+  );
+  const byId = new Map(listOf<JobRead>(response.body, 'jobs').map((entry) => [entry.id, entry]));
+  const rows = ids.map((id) => ({ id, job: byId.get(id) ?? null }));
+  return {
+    rows,
+    found: rows.flatMap((row) => (row.job === null ? [] : [row.job])),
+  };
+}
+
+/** The relation lines of `job <id>`, each only when it applies, in the documented order. */
+function relationLinesOf(job: JobRead): string[] {
+  const lines: string[] = [];
+  if (job.parent_job_id !== null && job.parent_job_id !== undefined) {
+    lines.push(
+      `parent: #${job.parent_job_id} · node ${job.parent_node_id ?? '-'} · position ${job.sibling_position ?? '-'}`,
+    );
+  }
+  if (job.cancelled_at !== null && job.cancelled_at !== undefined) {
+    lines.push(`cancelled: ${job.cancelled_at}`);
+  }
+  if (job.dispatch_hold === 'dependencies' || job.dispatch_hold === 'children') {
+    lines.push(`held: ${job.dispatch_hold}`);
+  }
+  const dependencies = job.depends_on ?? [];
+  if (dependencies.length > 0) {
+    lines.push(`depends on: ${dependencies.map((id) => `#${id}`).join(', ')}`);
+  }
+  return lines;
+}
+
+/** The `children:` table of a parent and the line that says who is waiting on a person. */
+function childrenSection(parent: JobRead, rows: ChildJobs['rows']): string[] {
+  const total = childIds(parent).length;
+  const waiting: string[] = [];
+  const cells = rows.map(({ id, job }, index) => {
+    const position = job?.sibling_position ?? index + 1;
+    if (job === null) return [String(position), String(id), 'unknown', '-', '-', '-', '-', '-'];
+    if (job.state === 'awaiting_you') waiting.push(`#${id} (position ${position} of ${total})`);
+    return [
+      String(position),
+      String(id),
+      job.state,
+      job.current_node_id,
+      String(job.blocked),
+      String(childIds(job).length),
+      holdCell(job),
+      job.title,
+    ];
+  });
+
+  return [
+    'children:',
+    table(['position', 'id', 'state', 'current_node_id', 'blocked', 'children', 'hold', 'title'], cells),
+    `waiting on a person: ${waiting.length === 0 ? '(none)' : waiting.join(', ')}`,
+  ];
+}
+
 /**
  * Runs `cartografo job <id>` — `jobPage`'s own content (FR10), never the
  * board's map position and never a raw event list.
@@ -637,6 +747,10 @@ export async function runJob(options: JobOptions): Promise<number> {
     requestJson(`${url}/v1/input-requests${queryString({ project_id: projectId, job_id: id })}`),
     requestJson(`${url}/v1/jobs/${id}/artifacts${query}`),
   ]);
+
+  // One read of the board when the job has children, matched by id: never one
+  // request per child (t639, FR5).
+  const childJobs = await readChildren(options, job);
 
   const events = listOf<TimelineEvent>(eventsResponse.body, 'events');
   const sessions = listOf<SessionRead>(sessionsResponse.body, 'sessions');
@@ -670,6 +784,7 @@ export async function runJob(options: JobOptions): Promise<number> {
         sessions: sessionsResponse.body,
         questions: questionsResponse.body,
         artifacts: artifactsResponse.body,
+        children: childJobs.found,
         timeline,
       })}\n`,
     );
@@ -678,9 +793,11 @@ export async function runJob(options: JobOptions): Promise<number> {
 
   const state = timeline.done
     ? 'done'
-    : job.blocked
-      ? `blocked — ${job.block_reason ?? 'no reason declared'}`
-      : 'in progress';
+    : job.cancelled_at !== null && job.cancelled_at !== undefined
+      ? `cancelled — ${job.cancelled_at}`
+      : job.blocked
+        ? `blocked — ${job.block_reason ?? 'no reason declared'}`
+        : 'in progress';
 
   const lines: string[] = [];
   lines.push(
@@ -688,7 +805,12 @@ export async function runJob(options: JobOptions): Promise<number> {
       job.execution_id === null ? 'none' : `#${job.execution_id}`
     } · ${state}`,
   );
+  lines.push(...relationLinesOf(job));
   lines.push('');
+  if (childJobs.rows.length > 0) {
+    lines.push(...childrenSection(job, childJobs.rows));
+    lines.push('');
+  }
   lines.push('timeline:');
   if (timeline.segments.length === 0) {
     lines.push('  (nothing has happened to this job yet)');

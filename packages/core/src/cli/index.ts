@@ -44,6 +44,7 @@ import { runInterview } from './interview.ts';
 import {
   runAnswer,
   runBlock,
+  runCancel,
   runCreateJob,
   runExampleRun,
   runExamples,
@@ -109,11 +110,15 @@ subcommands:
                          --state filters client-side on the six words RF-30
                          defines (awaiting_you, blocked_unasked, running,
                          unowned, completed, queued); --execution narrows to
-                         one round.
+                         one round. The relation column says which jobs are
+                         parents and children, and hold says why the control
+                         plane will not hand a job to a runner.
   job <id>               one job's timeline in three buckets — the queue, an
                          agent working, a human being asked — with its
                          artifacts and sessions. The same content as the
                          screen's job page, minus the board's map position.
+                         A child names its parent; a parent lists its direct
+                         children and the ones waiting on a person.
   executions             the rounds: jobs, blocked jobs and pending questions
                          per round.
   execution <id>         one round's jobs, sessions and pending questions.
@@ -142,6 +147,8 @@ subcommands:
                          unblocks the job in the same transaction.
   block <job-id>         raises a job's blocked flag; --reason is required.
   unblock <job-id>       lowers a job's blocked flag; --note is optional.
+  cancel <job-id>        cancels a job for good, and its open children with it;
+                         --reason is optional. There is no way back.
   job create --graph <graph-version-id> --input <file>
                          opens a job on a specific graph version, from a JSON
                          file of the job's fields.
@@ -223,7 +230,7 @@ options:
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origin.imported_by
-                         (answer, block, unblock) who is doing it, for the
+                         (answer, block, unblock, cancel) who is doing it, for the
                          recorded actor; default the OS user, else "operator"
                          (proposals approve/apply/reject/revert, graph propose)
                          who decides; default the OS user
@@ -236,6 +243,7 @@ options:
   --reason <text>        (proposals reject, proposals revert) mandatory;
                          checked before any request is sent
                          (block) why the job stops here; required
+                         (cancel) why the job is dropped; optional
   --evidence <text>      (graph propose) the proposal's evidence note; default
                          "manual edit via cartografo graph propose"
   --dry-run              (graph propose) print the operations and run the
@@ -285,12 +293,12 @@ options:
                          examples, runners, job create, example run, settings,
                          interview, graph);
                          default 1. Accepted but inert on answer/block/unblock/
-                         runners recheck, none of whose routes are
+                         cancel/runners recheck, none of whose routes are
                          project-scoped. A name is resolved against
                          GET /v1/projects
   --json                 (status, jobs, job, executions, execution, sessions,
                          transcript, input-requests, watch, proposals, examples,
-                         runners, answer, block, unblock, job create, example
+                         runners, answer, block, unblock, cancel, job create, example
                          run, runners recheck, settings, graph) prints
                          machine-readable JSON instead of the human table/card
                          (watch: JSON Lines, one whole envelope per line)
@@ -320,6 +328,7 @@ const API_SUBCOMMANDS = [
   'answer',
   'block',
   'unblock',
+  'cancel',
   'example',
   'settings',
   'interview',
@@ -857,6 +866,24 @@ async function runApiClient(
     return await runBlock({
       url,
       id: parseIntegerOption(rawId, 'block <job-id>'),
+      reason: fromReason.value,
+      by: fromBy.value,
+      json: fromJson.present,
+    });
+  }
+
+  if (subcommand === 'cancel') {
+    const fromReason = extractValue(fromProject.rest, '--reason');
+    const fromBy = extractValue(fromReason.rest, '--by');
+    const fromJson = extractFlag(fromBy.rest, '--json');
+    requireNothingElse(fromJson.rest, 1, 'cancel');
+
+    const rawId = fromJson.rest[0];
+    if (rawId === undefined) throw new UsageError('cancel needs a job id');
+
+    return await runCancel({
+      url,
+      id: parseIntegerOption(rawId, 'cancel <job-id>'),
       reason: fromReason.value,
       by: fromBy.value,
       json: fromJson.present,

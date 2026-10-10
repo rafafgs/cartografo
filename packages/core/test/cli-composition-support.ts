@@ -97,8 +97,11 @@ async function minimalVersion(plane: RunningControlPlane): Promise<string> {
   if (body.graph_version !== undefined) return body.graph_version.id;
 
   // Registered by an earlier call on this plane: read the version in force.
-  const classes = await get<{ classes: Array<{ current_version_id: string }> }>(plane, '/v1/classes');
-  const id = classes.classes[0]?.current_version_id;
+  const classes = await get<{ classes: Array<{ class: string; current_version_id: string }> }>(
+    plane,
+    '/v1/classes',
+  );
+  const id = classes.classes.find((entry) => entry.class === String(document.problem_class))?.current_version_id;
   assert.ok(id, `the minimal graph is neither registered nor listed: ${JSON.stringify(body)}`);
   return id;
 }

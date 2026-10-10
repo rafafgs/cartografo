@@ -221,7 +221,7 @@ test(
     const parsed = JSON.parse(jsonResult.stdout) as Record<string, unknown>;
     assert.deepEqual(
       Object.keys(parsed).sort(),
-      ['artifacts', 'events', 'job', 'questions', 'sessions', 'timeline'].sort(),
+      ['artifacts', 'children', 'events', 'job', 'questions', 'sessions', 'timeline'].sort(),
     );
     assert.deepEqual(parsed.job, directJob);
     assert.deepEqual(parsed.events, directEvents);

@@ -195,6 +195,52 @@ export async function runBlock(options: BlockOptions): Promise<number> {
   return 0;
 }
 
+/** Options of `cancel`. */
+export interface CancelOptions {
+  url: string;
+  id: number;
+  reason?: string;
+  by?: string;
+  json: boolean;
+}
+
+/**
+ * Runs `cartografo cancel` (t639).
+ *
+ * Cancelling is for good and cascades to the job's open children, which the
+ * route does in one transaction; this only asks. The reason is optional
+ * because the route and `job.cancelled` allow `null`.
+ */
+export async function runCancel(options: CancelOptions): Promise<number> {
+  const reason = options.reason?.trim();
+  const body: Record<string, unknown> = { actor: { type: 'user', ref: resolveOperatorName(options.by) } };
+  if (reason !== undefined && reason !== '') body.reason = reason;
+
+  const response = await requestJson(`${options.url}/v1/jobs/${options.id}/cancellations`, {
+    method: 'POST',
+    body,
+  });
+
+  if (response.status === 404) {
+    process.stderr.write(`cartografo: no job #${options.id}\n`);
+    return 1;
+  }
+  if (response.status !== 200) return genericRefusal(response);
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(response.body)}\n`);
+    return 0;
+  }
+
+  const job = isObject(response.body) ? response.body : {};
+  const children = Array.isArray(job.children) ? job.children.length : 0;
+  process.stdout.write('job cancelled\n');
+  process.stdout.write(line('id', String(job.id)));
+  process.stdout.write(line('cancelled_at', String(job.cancelled_at)));
+  process.stdout.write(line('children', String(children)));
+  return 0;
+}
+
 /** Options of `unblock`. */
 export interface UnblockOptions {
   url: string;

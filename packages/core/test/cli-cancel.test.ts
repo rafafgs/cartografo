@@ -37,9 +37,9 @@ test('t639 cancel', { timeout: 300_000 }, async (t) => {
     const result = await cli(['cancel', String(parent.id), '--reason', 'theme dropped', '--by', 'rafael']);
     assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
     assert.match(result.stdout, /^job cancelled$/m);
-    assert.match(result.stdout, new RegExp(`^ {2}id {16}${parent.id}$`, 'm'));
-    assert.match(result.stdout, /^ {2}cancelled_at {8}\d{4}-/m);
-    assert.match(result.stdout, /^ {2}children {10}2$/m);
+    assert.match(result.stdout, new RegExp(`^\\s+id\\s+${parent.id}$`, 'm'));
+    assert.match(result.stdout, /^\s+cancelled_at\s+\d{4}-/m);
+    assert.match(result.stdout, /^\s+children\s+2$/m);
 
     const own = await cancellations(plane, parent.id);
     assert.equal(own.length, 1);

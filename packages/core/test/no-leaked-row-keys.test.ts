@@ -107,6 +107,15 @@ const JOB_KEYS = Object.freeze([
   // the six states of RF-30 and the instant the current one started.
   'state',
   'state_since',
+  // The relations of t636: the parent link, the children, the open
+  // dependencies, the cancellation and the dispatch hold derived from them.
+  'parent_job_id',
+  'parent_node_id',
+  'sibling_position',
+  'children',
+  'depends_on',
+  'cancelled_at',
+  'dispatch_hold',
   'created_at',
   'updated_at',
 ]);

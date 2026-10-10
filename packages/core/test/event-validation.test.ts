@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 23 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 25 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -248,6 +248,10 @@ test('t196 AT9 — the catalogue is the 23 type names of the taxonomy, in its or
       'job.unblocked',
       'job.amended',
       'job.dependency_declared',
+      // The twenty-fourth and twenty-fifth (t636): a child's link to the job
+      // that opened it, and a cancellation, right after the dependency.
+      'job.parent_linked',
+      'job.cancelled',
       'job.hook_failed',
       'session.opened',
       'session.finished',

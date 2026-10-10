@@ -259,10 +259,12 @@ test(
       // ...and t491 moved it again with `0037_runner_liveness.sql` — the two
       // columns that make a runner present while it says so, and the
       // reconciliation of the six rows one laptop had accumulated.
+      // ...and t636 with `0038_job_relations.sql` — the parent link and the
+      // cancellation, two new tables and no ALTER.
       assert.equal(
         first.readiness.migrationsApplied,
-        37,
-        'a brand-new database applies the thirty-seven migrations the package ships',
+        38,
+        'a brand-new database applies the thirty-eight migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

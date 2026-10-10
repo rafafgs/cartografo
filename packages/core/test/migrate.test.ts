@@ -315,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    37,
-    'a fresh database applies the thirty-seven migrations of the package and nothing else',
+    38,
+    'a fresh database applies the thirty-eight migrations of the package and nothing else',
   );
 
   const objects = db
@@ -1142,8 +1142,8 @@ test('t491 AT7 — migration 0037 collapses one host\'s PID-suffixed rows withou
 
   assert.equal(
     counted(db, 'SELECT count(*) AS n FROM schema_migrations'),
-    37,
-    'a database taken all the way through carries the thirty-seven migrations of the package',
+    38,
+    'a database taken all the way through carries the thirty-eight migrations of the package',
   );
   assert.equal(
     counted(db, 'SELECT count(*) AS n FROM runner'),
@@ -1173,4 +1173,91 @@ test('t491 AT7 — migration 0037 collapses one host\'s PID-suffixed rows withou
       'a row that predates the column is last seen when it registered, never at the empty string',
     );
   }
+});
+
+test('t636 AT22 — migration 0038 adds the relation tables and leaves existing rows alone', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { listMigrations, migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+  const upToPrevious = path.join(base, 'up-to-previous');
+  mkdirSync(upToPrevious);
+  const all = listMigrations(REAL_MIGRATIONS_DIR);
+  const relations = all.find((migration) => migration.number === 38);
+  assert.ok(relations, 'artifact does not exist yet: packages/core/migrations/0038_job_relations.sql');
+  const sql = readFileSync(relations.path, 'utf8');
+  assert.doesNotMatch(sql, /\b(BEGIN|COMMIT|ROLLBACK)\b/i, 'the runner is what transacts');
+  assert.doesNotMatch(sql, /ALTER\s+TABLE/i, 'no existing table is altered');
+
+  for (const migration of all.filter((entry) => entry.number < 38)) {
+    writeMigration(upToPrevious, migration.file, readFileSync(migration.path, 'utf8'));
+  }
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+  migrate(db, upToPrevious);
+
+  const moment = '2026-10-10T12:00:00.000Z';
+  const seedJob = db.prepare(
+    `INSERT INTO job (project_id, execution_id, title, corpo, criterios_de_aceite, fields, tier,
+                      entry_node_id, current_node_id, blocked, block_reason, graph_version_id,
+                      created_at, updated_at)
+     VALUES (1, NULL, ?, NULL, NULL, NULL, NULL, 'redigir', 'redigir', 0, NULL, NULL, ?, ?)`,
+  );
+  seedJob.run('first', moment, moment);
+  seedJob.run('second', moment, moment);
+  seedJob.run('third', moment, moment);
+  db.prepare(
+    'INSERT INTO job_dependency (job_id, depends_on_job_id, created_at) VALUES (2, 1, ?)',
+  ).run(moment);
+  db.prepare("INSERT INTO runner (id, name, registered_at) VALUES ('runner-a', NULL, ?)").run(
+    moment,
+  );
+  db.prepare(
+    `INSERT INTO lease (runner_id, job_id, project_id, status, ttl_seconds,
+                        granted_at, heartbeat_at, expires_at)
+     VALUES ('runner-a', 1, 1, 'active', 60, ?, ?, ?)`,
+  ).run(moment, moment, moment);
+
+  const snapshot = (): unknown =>
+    ['job', 'job_dependency', 'lease'].map((table) =>
+      db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+    );
+  const before = JSON.stringify(snapshot());
+
+  migrate(db, REAL_MIGRATIONS_DIR);
+  assert.equal(JSON.stringify(snapshot()), before, 'the job, dependency and lease rows are unchanged');
+
+  const columns = (table: string): string[] =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    );
+  assert.deepEqual(columns('job_parent'), [
+    'job_id',
+    'parent_job_id',
+    'parent_node_id',
+    'sibling_position',
+    'created_at',
+  ]);
+  assert.deepEqual(columns('job_cancellation'), [
+    'job_id',
+    'reason',
+    'cascaded_from_job_id',
+    'cancelled_at',
+  ]);
+
+  const link = db.prepare(
+    `INSERT INTO job_parent (job_id, parent_job_id, parent_node_id, sibling_position, created_at)
+     VALUES (?, ?, 'fan-out', ?, ?)`,
+  );
+  assert.throws(() => link.run(1, 1, 1, moment), /CHECK/, 'a job is never its own parent');
+  link.run(2, 1, 1, moment);
+  assert.throws(() => link.run(3, 1, 1, moment), /UNIQUE/, 'one position per parent');
+
+  const cancel = db.prepare(
+    'INSERT INTO job_cancellation (job_id, reason, cascaded_from_job_id, cancelled_at) VALUES (?, NULL, NULL, ?)',
+  );
+  cancel.run(3, moment);
+  assert.throws(() => cancel.run(3, moment), /UNIQUE|PRIMARY/, 'a job is cancelled once');
 });

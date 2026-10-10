@@ -1,0 +1,70 @@
+{
+  "problem_class": "note-review-pipeline",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Note review pipeline — a call to a class that is not registered",
+    "description": "The same graph as graph-valid-subgraph.json, calling a class nobody registered. It is valid as a document and is refused at registration (subgraph_unknown_class), which is why the DB-free validators mark it valid.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-10-10",
+    "source": "a manual port (the subgraph node's example)"
+  },
+  "nodes": [
+    {
+      "id": "write-note",
+      "role": "caller",
+      "node_type": "subgraph",
+      "description": "Opens a child job of the class nota-curta about the job's own title and collects the finished note.",
+      "subgraph": {
+        "class": "no-such-class",
+        "input_map": {
+          "title": "Note about {{input.job.title}}",
+          "body": "{{input.job.body}}"
+        },
+        "output_map": {
+          "text": "{{child.texto}}"
+        }
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "job"
+          ],
+          "properties": {
+            "job": {
+              "type": "object"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "produces": "note",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s child-output.json",
+            "description": "The child job handed back an output."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [],
+  "initial_node": "write-note",
+  "final_nodes": [
+    "write-note"
+  ],
+  "custom_fields": []
+}

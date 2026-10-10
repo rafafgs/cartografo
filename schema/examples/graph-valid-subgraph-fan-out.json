@@ -1,0 +1,110 @@
+{
+  "problem_class": "batch-note-pipeline",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Batch note pipeline — a subgraph node with a fan-out",
+    "description": "A planning step produces a list of items; the subgraph node then opens one child job of the class nota-curta per item, each one depending on the previous one, and collects every child's text in item order.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-10-10",
+    "source": "a manual port (the subgraph node's fan-out example)"
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "role": "planner",
+      "node_type": "work",
+      "description": "Lists the notes to write, one item each.",
+      "skill_ref": {
+        "id": "cartografo/plan-notes",
+        "version": "1.0.0",
+        "hash": "sha256:5a1c0e7d9b3f4a62c8d17e05f9b2a34c6d8e1f70a3b5c9d2e4f6081a7b3c5d9e"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["job"],
+          "properties": {
+            "job": { "type": "object" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["items"],
+          "properties": {
+            "items": { "type": "array" }
+          }
+        },
+        "produces": "plan",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s plan.json",
+            "description": "The plan exists and is not empty."
+          }
+        ]
+      }
+    },
+    {
+      "id": "write-notes",
+      "role": "caller",
+      "node_type": "subgraph",
+      "description": "Opens one child job of the class nota-curta per planned item, in order, and collects the texts.",
+      "subgraph": {
+        "class": "nota-curta",
+        "input_map": {
+          "title": "{{item.title}}"
+        },
+        "output_map": {
+          "texts": "{{child.texto}}"
+        },
+        "fan_out": {
+          "over": "plan.items",
+          "ordered": true
+        }
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["plan"],
+          "properties": {
+            "plan": {
+              "type": "object",
+              "required": ["items"],
+              "properties": {
+                "items": { "type": "array" }
+              }
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["texts"],
+          "properties": {
+            "texts": { "type": "array" }
+          }
+        },
+        "produces": "notes",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s child-outputs.json",
+            "description": "Every child job handed back an output."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "write-notes",
+      "condition": "sempre",
+      "description": "A single exit: the plan always goes on to be written."
+    }
+  ],
+  "initial_node": "plan",
+  "final_nodes": ["write-notes"],
+  "custom_fields": []
+}

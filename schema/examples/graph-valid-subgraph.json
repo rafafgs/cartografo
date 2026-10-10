@@ -1,0 +1,59 @@
+{
+  "problem_class": "note-review-pipeline",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Note review pipeline — a graph that calls another class",
+    "description": "The smallest graph that hands its work to another problem class: one subgraph node that opens a child job of the class nota-curta and takes the child's text back. It pins no skill and opens no session of its own.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-10-10",
+    "source": "a manual port (the subgraph node's example)"
+  },
+  "nodes": [
+    {
+      "id": "write-note",
+      "role": "caller",
+      "node_type": "subgraph",
+      "description": "Opens a child job of the class nota-curta about the job's own title and collects the finished note.",
+      "subgraph": {
+        "class": "nota-curta",
+        "input_map": {
+          "title": "Note about {{input.job.title}}",
+          "body": "{{input.job.body}}"
+        },
+        "output_map": {
+          "text": "{{child.texto}}"
+        }
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["job"],
+          "properties": {
+            "job": { "type": "object" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": { "type": "string", "minLength": 1 }
+          }
+        },
+        "produces": "note",
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s child-output.json",
+            "description": "The child job handed back an output."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [],
+  "initial_node": "write-note",
+  "final_nodes": ["write-note"],
+  "custom_fields": []
+}

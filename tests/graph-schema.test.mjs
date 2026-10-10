@@ -129,10 +129,10 @@ test('AT1 — every fixture in schema/examples validates against the schema', as
 
   // Seven from t96, plus the `model` fixture t166 added, the
   // `escalation_policy` one t167 added, the two `hooks` ones t169 added, the
-  // `shell` engine one t332 added and the `external`/`unsafe_to_retry` one t369
-  // added. The count is asserted instead of merely iterated so that a fixture
+  // `shell` engine one t332 added, the `external`/`unsafe_to_retry` one t369
+  // added and the four `subgraph` ones t637 added. The count is asserted instead of merely iterated so that a fixture
   // dropped by accident shows up here, and not as a silently smaller loop.
-  assert.equal(names.length, 13, `expected the thirteen committed fixtures, found ${names.length}`);
+  assert.equal(names.length, 17, `expected the seventeen committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,
@@ -151,6 +151,57 @@ test('AT1 — every fixture in schema/examples validates against the schema', as
       `${name}: shape`,
     );
   }
+});
+
+test('t637 AT22 — the schema tells the two node kinds apart', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+  const errorsOf = (doc) => validateAgainstSchema(doc, schema);
+
+  assert.deepEqual(errorsOf(readExample('graph-valid-subgraph.json')), []);
+  assert.deepEqual(errorsOf(readExample('graph-valid-subgraph-fan-out.json')), []);
+
+  const breaks = {
+    'a subgraph node carrying skill_ref': (doc) => {
+      doc.nodes[0].skill_ref = readExample('graph-valid-minimal.json').nodes[0].skill_ref;
+    },
+    'a subgraph-typed node without the subgraph key': (doc) => {
+      delete doc.nodes[0].subgraph;
+    },
+    'a subgraph node carrying a session-only field': (doc) => {
+      doc.nodes[0].engine = 'shell';
+    },
+    'a subgraph object with an unknown key': (doc) => {
+      doc.nodes[0].subgraph.surprise = true;
+    },
+    'a subgraph object with no input_map': (doc) => {
+      delete doc.nodes[0].subgraph.input_map;
+    },
+    'an input_map with no title': (doc) => {
+      doc.nodes[0].subgraph.input_map = { body: 'b' };
+    },
+    'a fan_out.ordered that is not a boolean': (doc) => {
+      doc.nodes[0].subgraph.fan_out = { over: 'job.list', ordered: 'yes' };
+    },
+    'a fan_out with no over': (doc) => {
+      doc.nodes[0].subgraph.fan_out = { ordered: true };
+    },
+  };
+  for (const [name, mutate] of Object.entries(breaks)) {
+    const doc = readExample('graph-valid-subgraph.json');
+    mutate(doc);
+    assert.notDeepEqual(errorsOf(doc), [], name);
+  }
+
+  const onWork = readExample('graph-valid-minimal.json');
+  onWork.nodes[0].subgraph = { class: 'x', input_map: { title: 't' }, output_map: {} };
+  assert.notDeepEqual(errorsOf(onWork), [], 'a work node carrying subgraph');
+
+  const withoutPin = readExample('graph-valid-minimal.json');
+  delete withoutPin.nodes[0].skill_ref;
+  assert.notDeepEqual(errorsOf(withoutPin), [], 'a work node without skill_ref');
 });
 
 test('AT2 — the minimal example passes validarEstrutura and validarSoundness', async () => {

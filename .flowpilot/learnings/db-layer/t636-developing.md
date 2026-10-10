@@ -1,0 +1,3 @@
+### t636 (developing, unverified)
+
+- Since t415 the statement-count guard is any branch that skips a query, not only N+1. resolveJobRelations prepares its four statements every time, even when they will find nothing (SQLite accepts an empty `IN ()`). A related job's `completed` comes from running resolveJobStates once over the listed rows plus the related rows. Skipping a query when there are no relations would make the existing t415 AT17 (1 vs 5 jobs, no relations) and the new AT16 (3 vs 30) count different numbers. Note that resolveJobStates' own graph_version read is already conditional on any row having a version, so any count test must give every job a version or none.

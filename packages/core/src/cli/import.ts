@@ -191,6 +191,9 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
   const nodes = isObject(document) && Array.isArray(document.nodes) ? document.nodes : [];
   for (const node of nodes) {
     if (!isObject(node)) continue;
+    // A subgraph node (t637) calls another class and pins no skill: there is no
+    // manifest in the bundle for it to match.
+    if (node.node_type === 'subgraph') continue;
     const ref = isObject(node.skill_ref) ? node.skill_ref : {};
     const label = `node "${String(node.id)}" → skill "${String(ref.id)}"`;
     const manifest = typeof ref.id === 'string' ? byId.get(ref.id) : undefined;

@@ -173,9 +173,31 @@
     },
     "node": {
       "type": "object",
-      "description": "One stage of the graph. Everything that executes is a skill with a contract; what changes is the role (doing, checking, routing).",
-      "required": ["id", "role", "node_type", "skill_ref", "contract"],
+      "description": "One stage of the graph. Everything that executes is a skill with a contract; what changes is the role (doing, checking, routing). The one node that executes no skill is the subgraph node (t637), which hands its work to another problem class: it carries a `subgraph` block and no `skill_ref`, and the allOf below is what tells the two kinds apart. `skill_ref` is therefore not in `required` here — it is required of every node that is not a subgraph node.",
+      "required": ["id", "role", "node_type", "contract"],
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "node_type": { "const": "subgraph" } }, "required": ["node_type"] },
+          "then": {
+            "required": ["subgraph"],
+            "not": {
+              "anyOf": [
+                { "required": ["skill_ref"] },
+                { "required": ["engine"] },
+                { "required": ["model"] },
+                { "required": ["escalation_policy"] },
+                { "required": ["escalation_recipient"] },
+                { "required": ["external"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["skill_ref"],
+            "not": { "required": ["subgraph"] }
+          }
+        }
+      ],
       "properties": {
         "id": { "$ref": "#/$defs/node_id" },
         "role": {
@@ -189,8 +211,8 @@
           "description": "What this node does, in one sentence."
         },
         "node_type": {
-          "enum": ["work", "gate"],
-          "description": "work: produces an artifact. gate: checks and routes — pass/fail/escalate_human, always with evidence. A gate is a node like any other, and deterministic whenever possible."
+          "enum": ["work", "gate", "subgraph"],
+          "description": "work: produces an artifact. gate: checks and routes — pass/fail/escalate_human, always with evidence. A gate is a node like any other, and deterministic whenever possible. subgraph (t637): calls another problem class — one child job, or one per element of a list — and takes the child's output back; it pins no skill and opens no session of its own (see `subgraph`). Nothing executes it yet: this ticket defines and validates the format only."
         },
         "engine": {
           "type": "string",
@@ -221,7 +243,60 @@
           "examples": [true]
         },
         "skill_ref": { "$ref": "#/$defs/skill_ref" },
+        "subgraph": { "$ref": "#/$defs/subgraph_call" },
         "contract": { "$ref": "#/$defs/contract" }
+      }
+    },
+    "subgraph_call": {
+      "type": "object",
+      "description": "What a subgraph node calls and how (t637). The node pins no skill and uses no session: it hands work to another problem class registered in the SAME project, and the flow between graphs is itself a versioned graph (D2, D15). The mapping reuses the `{{input.<path>}}` grammar of external.inputs[].arguments and of manifests, with segments `[a-zA-Z0-9_]+` joined by `.`, instead of inventing an expression language (no expression language before two real graphs press on the format). A string that is exactly one token keeps the resolved value's type; embedded in text it is stringified. This ticket fixes the grammar and what it must match; resolving it at run time belongs to the runtime that executes the node.",
+      "required": ["class", "input_map", "output_map"],
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The problem class that is called. It has to be registered in the same project when this graph is registered (subgraph_unknown_class), and it may not be this graph's own class (subgraph_self_call). Resolved at registration against the class's BASE lineage; a later change to the child is not re-judged here.",
+          "examples": ["nota-curta"]
+        },
+        "input_map": {
+          "type": "object",
+          "description": "The child job's creation payload. title is required; body and fields are optional. String values may carry {{input.<path>}} (at least one segment, read from this node's own input) and, with fan_out, {{item}} or {{item.<path>}} (the current element). A value with no token is a literal. A key of the child's custom_fields that the child demands at its own initial node has to be mapped in fields (subgraph_input_missing_field).",
+          "required": ["title"],
+          "additionalProperties": false,
+          "properties": {
+            "title": { "type": "string", "minLength": 1, "description": "The child job's title.", "examples": ["Note about {{input.job.title}}"] },
+            "body": { "type": "string", "description": "The child job's body." },
+            "fields": {
+              "type": "object",
+              "description": "The child job's custom fields: a flat object of scalars, keyed by the child class's own custom_fields names. A key the child does not declare is subgraph_input_unknown_field.",
+              "additionalProperties": { "type": ["string", "number", "boolean"] }
+            }
+          }
+        },
+        "output_map": {
+          "type": "object",
+          "description": "What this node's own output takes from the child. Keys are properties of this node's output_schema; values are strings carrying {{child.<path>}} (at least one segment), read from the child's accumulated state at its final node, in the same bucket paths a node's input projection uses. May be empty. Every required property of the output_schema has to be a key (subgraph_output_unmapped) and every key has to be a declared property (subgraph_output_unknown_property).",
+          "additionalProperties": { "type": "string" }
+        },
+        "fan_out": {
+          "type": "object",
+          "description": "Optional. One child job per element of the list at `over`; with ordered: true each child depends on the previous one. The node's own output then collects, for each output_map key, an array with one entry per child in element order, so each mapped property has to be declared type array (subgraph_output_not_a_list).",
+          "required": ["over"],
+          "additionalProperties": false,
+          "properties": {
+            "over": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)*$",
+              "description": "A dotted input path of at least one segment, resolved against this node's input, naming the list. It has to be declared in this node's contract.input_schema (top key or key.sub) with type array (subgraph_fan_out_not_a_list).",
+              "examples": ["plan.items"]
+            },
+            "ordered": {
+              "type": "boolean",
+              "description": "Whether each child depends on the previous one. Absent means false."
+            }
+          }
+        }
       }
     },
     "external": {

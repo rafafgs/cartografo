@@ -98,8 +98,40 @@ export interface GraphNode {
    * the map is allowed to declare it.
    */
   unsafe_to_retry?: boolean;
-  skill_ref: unknown;
+  /**
+   * The pin of the skill this node runs. Absent on a `subgraph` node (t637),
+   * which calls another class instead of running a skill; required of every
+   * other kind (`validateStructure` says so, per kind).
+   */
+  skill_ref?: unknown;
+  /** What a `subgraph` node calls (t637). Present exactly when `node_type` is `subgraph`. */
+  subgraph?: GraphSubgraph;
   contract: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * The call a `subgraph` node makes to another problem class (t637).
+ *
+ * Format only: nothing executes it yet. The placeholders inside `input_map` and
+ * `output_map` follow the `{{input.<path>}}` grammar the format already has,
+ * with `item` (fan-out) and `child` (output) as two more roots; see
+ * `docs/spec/graph.md` §2 "`subgraph`".
+ */
+export interface GraphSubgraph {
+  /** The called problem class, registered in the same project. */
+  class: string;
+  /** The child job's creation payload: `title` required, `body` and `fields` optional. */
+  input_map: {
+    title: string;
+    body?: string;
+    fields?: Record<string, string | number | boolean>;
+    [key: string]: unknown;
+  };
+  /** Keys are properties of the node's own output; values carry `{{child.<path>}}`. */
+  output_map: Record<string, string>;
+  /** One child per element of the list at `over`; `ordered` chains them. */
+  fan_out?: { over: string; ordered?: boolean };
   [key: string]: unknown;
 }
 
@@ -278,7 +310,19 @@ export const REQUIRED_DOCUMENT_FIELDS = [
   'final_nodes',
   'custom_fields',
 ];
-export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+/**
+ * The schema's `node.required`: what EVERY kind of node carries (t637).
+ *
+ * `skill_ref` left this list when the subgraph node arrived — a node that calls
+ * another class pins no skill — and moved into the per-kind lists below, which
+ * is what `validateStructure` actually walks. `domain-manifest-fields.test.ts`
+ * holds this one against the schema.
+ */
+export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'contract'];
+/** What a node that runs a skill (`work`, `gate`) also has to carry, in report order. */
+const REQUIRED_SKILL_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+/** What a `subgraph` node has to carry: the common ones, then its own block. */
+const REQUIRED_SUBGRAPH_NODE_FIELDS = [...REQUIRED_NODE_FIELDS, 'subgraph'];
 export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 export const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
@@ -294,6 +338,85 @@ export const HOOK_TRIGGERS = ['node_entered', 'node_blocked'];
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
+}
+
+/** The node kind that calls another class (t637). */
+const SUBGRAPH_NODE_TYPE = 'subgraph';
+
+/**
+ * What a subgraph node may not carry: it pins no skill and opens no session.
+ *
+ * `unsafe_to_retry` is deliberately NOT here: repeating the call opens new
+ * children, which is exactly what that flag is for.
+ */
+const SUBGRAPH_FORBIDDEN_FIELDS = [
+  'skill_ref',
+  'engine',
+  'model',
+  'escalation_policy',
+  'escalation_recipient',
+  'external',
+];
+
+const SUBGRAPH_KEYS = ['class', 'input_map', 'output_map', 'fan_out'];
+const SUBGRAPH_INPUT_MAP_KEYS = ['title', 'body', 'fields'];
+const SUBGRAPH_FAN_OUT_KEYS = ['over', 'ordered'];
+
+/** The path grammar of `{{input.<path>}}`: `[a-zA-Z0-9_]+` segments joined by `.`. */
+const PATH_GRAMMAR = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/**
+ * Every `{{...}}` pair of a string, whatever is written inside it.
+ *
+ * `[^{}]*` keeps a match inside one pair of braces, the way
+ * `packages/runner/src/dispatch/interpolate-input.ts` does: what does not fit
+ * the grammar is reported as an invalid placeholder instead of being left in the
+ * text because the regex did not recognise it.
+ */
+const PLACEHOLDER_PAIR = /\{\{([^{}]*)\}\}/g;
+
+/** Where a placeholder sits, which decides the roots it may use. */
+type PlaceholderPosition = 'input_map' | 'output_map';
+
+/**
+ * Whether the inside of a `{{...}}` fits its position (t637, FR4).
+ *
+ * `input_map`: `input` with at least one segment, and `item` (bare or with a
+ * path) only when a fan-out is declared. `output_map`: `child` with at least one
+ * segment. Anything else — an unknown root, a dash in a segment, an empty tail —
+ * does not fit.
+ */
+function placeholderFits(inner: string, position: PlaceholderPosition, hasFanOut: boolean): boolean {
+  const dot = inner.indexOf('.');
+  const root = dot === -1 ? inner : inner.slice(0, dot);
+  const path = dot === -1 ? null : inner.slice(dot + 1);
+  if (path !== null && !PATH_GRAMMAR.test(path)) return false;
+
+  if (position === 'output_map') return root === 'child' && path !== null;
+  if (root === 'input') return path !== null;
+  if (root === 'item') return hasFanOut;
+  return false;
+}
+
+/**
+ * The fragments of a string that look like a placeholder and do not fit (t637).
+ *
+ * An unclosed `{{` counts: it is a placeholder that would reach the child as
+ * text. A string with no token at all is a literal and has no problems.
+ */
+function invalidPlaceholders(
+  text: string,
+  position: PlaceholderPosition,
+  hasFanOut: boolean,
+): string[] {
+  const bad: string[] = [];
+  const rest = text.replace(PLACEHOLDER_PAIR, (whole: string, inner: string) => {
+    if (!placeholderFits(inner, position, hasFanOut)) bad.push(whole);
+    return '';
+  });
+  const open = rest.indexOf('{{');
+  if (open !== -1) bad.push(rest.slice(open));
+  return bad;
 }
 
 /** How a rule records what it found: the closure `validateStructure` builds. */
@@ -399,6 +522,208 @@ function checkExternalSurface(node: PlainObject, index: number, note: Note): voi
   }
 }
 
+/** Reports every placeholder in `text` that does not fit its position. */
+function notePlaceholders(
+  text: string,
+  where: string,
+  position: PlaceholderPosition,
+  hasFanOut: boolean,
+  node: { label: string; target: unknown },
+  note: Note,
+): void {
+  for (const bad of invalidPlaceholders(text, position, hasFanOut)) {
+    note(
+      'subgraph_invalid_placeholder',
+      `"${where}" of node "${node.label}" carries a placeholder that does not fit there: ${JSON.stringify(bad)} (${position === 'input_map' ? 'expected {{input.<path>}}, or {{item}} / {{item.<path>}} with a fan_out' : 'expected {{child.<path>}}'})`,
+      node.target,
+    );
+  }
+}
+
+/**
+ * Checks what a node says about calling another class (t637).
+ *
+ * Runs on EVERY node, because two of its rules are about the node kind itself:
+ * a `subgraph` block on a node that is not a subgraph node, and a subgraph node
+ * that carries a field only a session-running node has. Everything else is about
+ * the `subgraph` block and runs only on a subgraph node.
+ *
+ * Named rules are the ones a person writing the document by hand gets wrong
+ * (a forbidden field, a call to oneself, a missing title, a placeholder that
+ * does not fit); a wrong TYPE anywhere is `invalid_field`, the choice `hooks`,
+ * `nodes` and `external` already made. What needs the REGISTRY — does the class
+ * exist, does the input map satisfy it — is not here: this pass is pure and
+ * DB-free, and `validateSubgraphCalls` does that at registration.
+ *
+ * Kept byte-for-byte in `scripts/validate-graph.mjs`'s `validarEstrutura`.
+ */
+function checkSubgraphCall(
+  node: PlainObject,
+  index: number,
+  problemClass: unknown,
+  note: Note,
+): void {
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+  const call = node.subgraph;
+  const present = call !== undefined && call !== null;
+
+  if (node.node_type !== SUBGRAPH_NODE_TYPE) {
+    if (present) {
+      note(
+        'subgraph_on_non_subgraph_node',
+        `node "${label}" carries a "subgraph" block but its node_type is not "subgraph"`,
+        target,
+      );
+    }
+    return;
+  }
+
+  for (const field of SUBGRAPH_FORBIDDEN_FIELDS) {
+    if (node[field] !== undefined && node[field] !== null) {
+      note(
+        'subgraph_node_forbidden_field',
+        `subgraph node "${label}" may not carry "${field}": it pins no skill and opens no session`,
+        target,
+      );
+    }
+  }
+
+  // An absent block is `missing_required_field`'s, reported with the others.
+  if (!present) return;
+  if (!isObject(call)) {
+    note('invalid_field', `"subgraph" of node "${label}" has to be an object`, target);
+    return;
+  }
+
+  for (const key of Object.keys(call)) {
+    if (!SUBGRAPH_KEYS.includes(key)) {
+      note('invalid_field', `"subgraph" of node "${label}" has no key "${key}"`, target);
+    }
+  }
+
+  const hasFanOut = call.fan_out !== undefined && call.fan_out !== null;
+  const here = { label, target };
+
+  if (!isFilledText(call.class)) {
+    note('invalid_field', `"subgraph.class" of node "${label}" has to be a filled text`, target);
+  } else if (call.class === problemClass) {
+    note(
+      'subgraph_self_call',
+      `node "${label}" calls its own class "${call.class}": a class may not call itself`,
+      target,
+    );
+  }
+
+  const inputMap = call.input_map;
+  if (!isObject(inputMap)) {
+    note('invalid_field', `"subgraph.input_map" of node "${label}" has to be an object`, target);
+  } else {
+    for (const key of Object.keys(inputMap)) {
+      if (!SUBGRAPH_INPUT_MAP_KEYS.includes(key)) {
+        note('invalid_field', `"subgraph.input_map" of node "${label}" has no key "${key}"`, target);
+      }
+    }
+    if (inputMap.title === undefined || inputMap.title === null) {
+      note(
+        'subgraph_missing_title',
+        `"subgraph.input_map" of node "${label}" has no "title": the child job needs one`,
+        target,
+      );
+    } else if (!isFilledText(inputMap.title)) {
+      note(
+        'invalid_field',
+        `"subgraph.input_map.title" of node "${label}" has to be a filled text`,
+        target,
+      );
+    } else {
+      notePlaceholders(inputMap.title, 'subgraph.input_map.title', 'input_map', hasFanOut, here, note);
+    }
+
+    if (inputMap.body !== undefined && inputMap.body !== null) {
+      if (typeof inputMap.body !== 'string') {
+        note('invalid_field', `"subgraph.input_map.body" of node "${label}" has to be a text`, target);
+      } else {
+        notePlaceholders(inputMap.body, 'subgraph.input_map.body', 'input_map', hasFanOut, here, note);
+      }
+    }
+
+    const fields = inputMap.fields;
+    if (fields !== undefined && fields !== null) {
+      if (!isObject(fields)) {
+        note(
+          'invalid_field',
+          `"subgraph.input_map.fields" of node "${label}" has to be an object`,
+          target,
+        );
+      } else {
+        for (const [name, value] of Object.entries(fields)) {
+          if (typeof value === 'string') {
+            notePlaceholders(
+              value,
+              `subgraph.input_map.fields.${name}`,
+              'input_map',
+              hasFanOut,
+              here,
+              note,
+            );
+          } else if (typeof value !== 'number' && typeof value !== 'boolean') {
+            note(
+              'invalid_field',
+              `"subgraph.input_map.fields.${name}" of node "${label}" has to be a text, a number or a boolean`,
+              target,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const outputMap = call.output_map;
+  if (!isObject(outputMap)) {
+    note('invalid_field', `"subgraph.output_map" of node "${label}" has to be an object`, target);
+  } else {
+    for (const [name, value] of Object.entries(outputMap)) {
+      if (typeof value !== 'string') {
+        note(
+          'invalid_field',
+          `"subgraph.output_map.${name}" of node "${label}" has to be a text`,
+          target,
+        );
+      } else {
+        notePlaceholders(value, `subgraph.output_map.${name}`, 'output_map', hasFanOut, here, note);
+      }
+    }
+  }
+
+  const fanOut = call.fan_out;
+  if (fanOut !== undefined && fanOut !== null) {
+    if (!isObject(fanOut)) {
+      note('invalid_field', `"subgraph.fan_out" of node "${label}" has to be an object`, target);
+    } else {
+      for (const key of Object.keys(fanOut)) {
+        if (!SUBGRAPH_FAN_OUT_KEYS.includes(key)) {
+          note('invalid_field', `"subgraph.fan_out" of node "${label}" has no key "${key}"`, target);
+        }
+      }
+      if (typeof fanOut.over !== 'string' || !PATH_GRAMMAR.test(fanOut.over)) {
+        note(
+          'invalid_field',
+          `"subgraph.fan_out.over" of node "${label}" has to be a dotted input path of at least one segment: ${JSON.stringify(fanOut.over)}`,
+          target,
+        );
+      }
+      if (fanOut.ordered !== undefined && typeof fanOut.ordered !== 'boolean') {
+        note(
+          'invalid_field',
+          `"subgraph.fan_out.ordered" of node "${label}" has to be a boolean`,
+          target,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Checks the document's shape and referential integrity.
  *
@@ -455,7 +780,11 @@ export function validateStructure(doc: unknown): StructureReport {
       note('invalid_node', `the node at position ${index} has to be an object`, index);
       return;
     }
-    for (const field of REQUIRED_NODE_FIELDS) {
+    const requiredFields =
+      node.node_type === SUBGRAPH_NODE_TYPE
+        ? REQUIRED_SUBGRAPH_NODE_FIELDS
+        : REQUIRED_SKILL_NODE_FIELDS;
+    for (const field of requiredFields) {
       if (node[field] === undefined || node[field] === null) {
         note(
           'missing_required_field',
@@ -469,6 +798,8 @@ export function validateStructure(doc: unknown): StructureReport {
     // posture: the rules are about what the runner would DO with the
     // declaration, and a node with a broken id carries a broken one all the same.
     checkExternalSurface(node, index, note);
+    // What it says about calling another class (t637), on the same posture.
+    checkSubgraphCall(node, index, doc.problem_class, note);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —
@@ -528,6 +859,27 @@ export function validateStructure(doc: unknown): StructureReport {
       }
     }
   });
+
+  // A subgraph node has at most one exit (t637): how a failed or cancelled child
+  // maps to the parent is the runtime's to decide, and it will decide labels.
+  const exitsOf = new Map<string, number>();
+  for (const edge of edges) {
+    if (isObject(edge) && isFilledText(edge.from)) {
+      exitsOf.set(edge.from, (exitsOf.get(edge.from) ?? 0) + 1);
+    }
+  }
+  const alreadyReportedExits = new Set<string>();
+  for (const node of nodes) {
+    if (!isObject(node) || node.node_type !== SUBGRAPH_NODE_TYPE || !isFilledText(node.id)) continue;
+    if ((exitsOf.get(node.id) ?? 0) > 1 && !alreadyReportedExits.has(node.id)) {
+      note(
+        'subgraph_multiple_exits',
+        `subgraph node "${node.id}" has ${exitsOf.get(node.id)} outgoing edges: it has at most one exit`,
+        node.id,
+      );
+      alreadyReportedExits.add(node.id);
+    }
+  }
 
   // The two are mutually exclusive: an id of the wrong type is not an id
   // pointing at a missing node, and only the second one gets to be a reference
@@ -740,8 +1092,10 @@ export function validateSoundness(doc: unknown): SoundnessReport {
   }
 
   // 4. node-with-contract — holds for a gate too, which is a node like any other.
+  // A subgraph node (t637) pins no skill, so it is judged on its contract alone.
   for (const node of nodes) {
-    if (!hasSkillRef(node) || !hasContract(node)) {
+    const pinned = node.node_type === SUBGRAPH_NODE_TYPE || hasSkillRef(node);
+    if (!pinned || !hasContract(node)) {
       violations.push({ rule: RULES.NODE_WITH_CONTRACT, target: node.id ?? null });
     }
   }
@@ -918,10 +1272,54 @@ export interface UnknownExternalOutputProblem {
   message: string;
 }
 
+/**
+ * A `fan_out.over` that is not declared a list in the node's own `input_schema`
+ * (t637). `key` is the `over` path as the document writes it.
+ */
+export interface SubgraphFanOutNotAListProblem {
+  code: 'subgraph_fan_out_not_a_list';
+  node_id: string;
+  key: string;
+  message: string;
+}
+
+/** A required property of the node's `output_schema` that `output_map` never fills (t637). */
+export interface SubgraphOutputUnmappedProblem {
+  code: 'subgraph_output_unmapped';
+  node_id: string;
+  key: string;
+  message: string;
+}
+
+/** An `output_map` key that is not a property of the node's `output_schema` (t637). */
+export interface SubgraphOutputUnknownPropertyProblem {
+  code: 'subgraph_output_unknown_property';
+  node_id: string;
+  key: string;
+  message: string;
+}
+
+/**
+ * With a fan-out, an `output_map` key whose property is not declared a list (t637).
+ *
+ * The node's output collects one entry per child in element order, so every
+ * mapped property is an array.
+ */
+export interface SubgraphOutputNotAListProblem {
+  code: 'subgraph_output_not_a_list';
+  node_id: string;
+  key: string;
+  message: string;
+}
+
 export type ContractProblem =
   | UnproducedInputProblem
   | UnresolvedSkillProblem
-  | UnknownExternalOutputProblem;
+  | UnknownExternalOutputProblem
+  | SubgraphFanOutNotAListProblem
+  | SubgraphOutputUnmappedProblem
+  | SubgraphOutputUnknownPropertyProblem
+  | SubgraphOutputNotAListProblem;
 
 /** The contract report — the `contracts` key of the 422 (t278). */
 export interface ContractReport {
@@ -987,6 +1385,16 @@ interface NodeContract {
   externalInputs: string[];
   /** The `from` of each `external.outputs` entry, as the document declares it. */
   externalOutputs: string[];
+  /** What a subgraph node says about its call (t637); `null` for every other node. */
+  call: SubgraphCallShape | null;
+}
+
+/** The part of a subgraph node's `subgraph` block that the contract check reads (t637). */
+interface SubgraphCallShape {
+  /** `fan_out.over`, or `null` when the call declares no fan-out. */
+  over: string | null;
+  /** The keys of `output_map`, in document order. */
+  outputKeys: string[];
 }
 
 /** The declared `external.inputs[].name` list of a node, filtered to filled text. */
@@ -1009,6 +1417,59 @@ function externalEntriesOf(node: PlainObject, side: 'inputs' | 'outputs'): Plain
   if (!isObject(external)) return [];
   const declared = external[side];
   return Array.isArray(declared) ? declared.filter(isObject) : [];
+}
+
+/**
+ * What a subgraph node's call reads from its own input, as input paths (t637).
+ *
+ * Every `{{input.<path>}}` of `input_map` and the `fan_out.over` path, cut to the
+ * first two segments — the one level of nesting this check declares — and
+ * de-duplicated in first-seen order. They are required input paths of the node,
+ * exactly like the ones its `input_schema` requires.
+ */
+function callInputPaths(call: PlainObject): string[] {
+  const paths: string[] = [];
+  const add = (path: string): void => {
+    const cut = path.split('.').slice(0, 2).join('.');
+    if (!paths.includes(cut)) paths.push(cut);
+  };
+  const scan = (value: unknown): void => {
+    if (typeof value !== 'string') return;
+    for (const match of value.matchAll(PLACEHOLDER_PAIR)) {
+      const inner = match[1];
+      if (inner.startsWith('input.') && PATH_GRAMMAR.test(inner.slice('input.'.length))) {
+        add(inner.slice('input.'.length));
+      }
+    }
+  };
+
+  const inputMap = isObject(call.input_map) ? call.input_map : {};
+  scan(inputMap.title);
+  scan(inputMap.body);
+  for (const value of Object.values(isObject(inputMap.fields) ? inputMap.fields : {})) scan(value);
+
+  const fanOut = isObject(call.fan_out) ? call.fan_out : {};
+  if (typeof fanOut.over === 'string' && PATH_GRAMMAR.test(fanOut.over)) add(fanOut.over);
+
+  return paths;
+}
+
+/**
+ * Whether a schema declares the dotted path `over` as a list (t637).
+ *
+ * `key` or `key.sub`, the one level of nesting this check declares; anything
+ * deeper, or undeclared, is not a list as far as this check can tell.
+ */
+function declaresList(schema: unknown, over: string): boolean {
+  const segments = over.split('.');
+  if (segments.length > 2) return false;
+  let current: unknown = schema;
+  for (const segment of segments) {
+    const properties = propertiesOf(current);
+    if (!Object.hasOwn(properties, segment)) return false;
+    current = properties[segment];
+  }
+  return isObject(current) && current.type === 'array';
 }
 
 /** The `required` list of a JSON Schema object, or an empty one. */
@@ -1089,6 +1550,67 @@ function bucketOf(node: PlainObject): string | null {
 }
 
 /**
+ * What a subgraph node's call gets wrong against the node's OWN contract (t637).
+ *
+ * Three questions, all answered from the document alone — the child's real
+ * output needs its resolved skills and is the runtime's fail-closed resolver to
+ * catch:
+ *
+ * - `fan_out.over` has to be declared a list in the node's `input_schema`;
+ * - every required property of its `output_schema` has to be a key of
+ *   `output_map`, and every key has to be a declared property;
+ * - with a fan-out, every mapped property is collected per child, so it has to
+ *   be declared a list.
+ */
+function subgraphProblems(contract: NodeContract, call: SubgraphCallShape): ContractProblem[] {
+  const problems: ContractProblem[] = [];
+  const skill = contract.skill;
+  if (skill === null) return problems;
+
+  if (call.over !== null && !declaresList(skill.input, call.over)) {
+    problems.push({
+      code: 'subgraph_fan_out_not_a_list',
+      node_id: contract.id,
+      key: call.over,
+      message: `node "${contract.id}" fans out over "${call.over}", which its "contract.input_schema" does not declare as an array`,
+    });
+  }
+
+  const properties = propertiesOf(skill.output);
+  for (const key of requiredOf(skill.output)) {
+    if (call.outputKeys.includes(key)) continue;
+    problems.push({
+      code: 'subgraph_output_unmapped',
+      node_id: contract.id,
+      key,
+      message: `node "${contract.id}" requires "${key}" in its "contract.output_schema", and its "subgraph.output_map" never fills it`,
+    });
+  }
+  for (const key of call.outputKeys) {
+    if (!Object.hasOwn(properties, key)) {
+      problems.push({
+        code: 'subgraph_output_unknown_property',
+        node_id: contract.id,
+        key,
+        message: `node "${contract.id}" maps "${key}" in its "subgraph.output_map", which its "contract.output_schema" does not declare`,
+      });
+      continue;
+    }
+    const declared = properties[key];
+    if (call.over !== null && !(isObject(declared) && declared.type === 'array')) {
+      problems.push({
+        code: 'subgraph_output_not_a_list',
+        node_id: contract.id,
+        key,
+        message: `node "${contract.id}" fans out, so "${key}" collects one entry per child, and its "contract.output_schema" does not declare it as an array`,
+      });
+    }
+  }
+
+  return problems;
+}
+
+/**
  * Checks that every required input of every node has a producer (t278).
  *
  * Principle 3 promises contracts are checked at the gate; `validateStructure`
@@ -1159,6 +1681,39 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
     seen.add(node.id);
 
     const bucket = bucketOf(node);
+
+    // A subgraph node (t637) pins no skill, so there is nothing to resolve and
+    // nothing to be unresolved: its own contract stands in for the skill's — its
+    // `input` is `contract.input_schema`, its `output` is `contract.output_schema`
+    // — and the existing availability fixed point, buckets and one-level limit
+    // apply to it as to any node, as a consumer and as a producer.
+    if (node.node_type === SUBGRAPH_NODE_TYPE) {
+      const own = isObject(node.contract) ? node.contract : {};
+      const call = isObject(node.subgraph) ? node.subgraph : {};
+      const fanOut = isObject(call.fan_out) ? call.fan_out : null;
+      const input = isObject(own.input_schema) ? own.input_schema : {};
+      const output = isObject(own.output_schema) ? own.output_schema : {};
+      const required = [...requiredPaths(input)];
+      for (const path of callInputPaths(call)) {
+        if (!required.includes(path)) required.push(path);
+      }
+      contracts.push({
+        id: node.id,
+        bucket,
+        skill: { input, output },
+        produced: producedPaths(output, bucket),
+        placed: producedPaths(output, null),
+        required,
+        externalInputs: [],
+        externalOutputs: [],
+        call: {
+          over: fanOut !== null && typeof fanOut.over === 'string' ? fanOut.over : null,
+          outputKeys: Object.keys(isObject(call.output_map) ? call.output_map : {}),
+        },
+      });
+      continue;
+    }
+
     const pin = pinOf(node);
     const skill = pin === null ? undefined : resolveSkill(pin);
     const externalInputs = externalInputNamesOf(node);
@@ -1182,6 +1737,7 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
         required: [],
         externalInputs,
         externalOutputs,
+        call: null,
       });
       continue;
     }
@@ -1195,6 +1751,7 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
       required: requiredPaths(skill.input),
       externalInputs,
       externalOutputs,
+      call: null,
     });
   }
 
@@ -1339,7 +1896,106 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
             : `node "${contract.id}" delivers "${from}" outside, which its pinned skill's "output" does not declare (it declares "${declared.join('", "')}")`,
       });
     }
+
+    if (contract.call !== null) problems.push(...subgraphProblems(contract, contract.call));
   }
 
   return { valid: problems.length === 0, problems };
+}
+
+/* ----------------------------------------------- subgraph calls (t637) */
+
+/**
+ * What a class asks of the job that is opened in it, read from its document alone.
+ *
+ * Deliberately only this: the class's `initial_node` and, for each declared
+ * custom field, the node that demands it. The alternative — resolving the
+ * initial node's pinned skill input — needs the registry and would be skipped
+ * whenever a pin is unresolved.
+ */
+export interface ClassEntryContract {
+  initial_node: string;
+  custom_fields: Array<{ name: string; required_at: string | null }>;
+}
+
+/**
+ * Resolves a class name into its entry contract, in the project being written to.
+ *
+ * Injected for the reason {@link SkillLookup} is: the caller knows where its
+ * classes live (the registry over `db`, scoped by project), and the rule itself
+ * is a question about the document. `undefined` means "no such class in this
+ * project", which is reported and never guessed at.
+ */
+export type ClassLookup = (className: string) => ClassEntryContract | undefined;
+
+/**
+ * Checks every subgraph call of a document against the registry (t637, FR15).
+ *
+ * The one pass of the three that is about OTHER documents: `validateStructure`
+ * judges the call's shape, and this judges whether the called class exists and
+ * whether what the call maps into the child job satisfies that class's entry
+ * contract. Three codes, each with the node id as its target:
+ *
+ * - `subgraph_unknown_class` — the class has no entry in the same project;
+ * - `subgraph_input_unknown_field` — `input_map.fields` names a key the child
+ *   does not declare in its `custom_fields`;
+ * - `subgraph_input_missing_field` — the child declares a field it demands at
+ *   its own `initial_node` (the job may not leave its first node while the field
+ *   is empty, so it has to be filled at entry) and `input_map.fields` does not
+ *   map it. Fields demanded at later nodes are the child's people's to fill.
+ *
+ * `type` stays metadata (`docs/spec/graph.md` §2 `custom_fields`), so no type is
+ * checked. The class is resolved when the version is written: a later change to
+ * the child is not re-judged here.
+ *
+ * Meant to run on a document that already passed {@link validateGraph}; like its
+ * siblings it never throws on a malformed one.
+ *
+ * @param doc Graph document, already through structure and soundness.
+ * @param lookupClass How a class name becomes its entry contract.
+ * @returns Every problem found, in node order; empty means the calls hold.
+ */
+export function validateSubgraphCalls(doc: unknown, lookupClass: ClassLookup): StructureError[] {
+  const errors: StructureError[] = [];
+  const document = isObject(doc) ? doc : {};
+  const nodes = Array.isArray(document.nodes) ? document.nodes.filter(isObject) : [];
+
+  for (const node of nodes) {
+    if (node.node_type !== SUBGRAPH_NODE_TYPE || !isFilledText(node.id)) continue;
+    const call = node.subgraph;
+    if (!isObject(call) || !isFilledText(call.class)) continue;
+
+    const entry = lookupClass(call.class);
+    if (entry === undefined) {
+      errors.push({
+        code: 'subgraph_unknown_class',
+        message: `node "${node.id}" calls the class "${call.class}", which is not registered in this project`,
+        target: node.id,
+      });
+      continue;
+    }
+
+    const inputMap = isObject(call.input_map) ? call.input_map : {};
+    const mapped = Object.keys(isObject(inputMap.fields) ? inputMap.fields : {});
+    const declared = entry.custom_fields.map((field) => field.name);
+
+    for (const name of mapped) {
+      if (declared.includes(name)) continue;
+      errors.push({
+        code: 'subgraph_input_unknown_field',
+        message: `node "${node.id}" maps the field "${name}" in "subgraph.input_map.fields", which the class "${call.class}" does not declare in its "custom_fields"`,
+        target: node.id,
+      });
+    }
+    for (const field of entry.custom_fields) {
+      if (field.required_at !== entry.initial_node || mapped.includes(field.name)) continue;
+      errors.push({
+        code: 'subgraph_input_missing_field',
+        message: `node "${node.id}" does not map the field "${field.name}", which the class "${call.class}" demands at its first node ("${entry.initial_node}"): the child job may not leave it while the field is empty`,
+        target: node.id,
+      });
+    }
+  }
+
+  return errors;
 }

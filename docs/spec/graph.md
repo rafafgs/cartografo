@@ -200,7 +200,7 @@ contract; what changes is the role — **doing, checking, routing**.
 |---|---|---|
 | `id` | yes | A unique identifier in the document. |
 | `papel` | yes | Who does the work, in the domain's language: `architect`, `developer`, `red-team`. |
-| `node_type` | yes | `work` or `gate`. |
+| `node_type` | yes | `work`, `gate` or `subgraph`. A `subgraph` node calls another problem class instead of running a skill: see [`subgraph`](#subgraph-a-node-that-calls-another-class). |
 | `description` | no | What the node does, in one sentence. |
 | `engine` | no | Which engine executes this node. Absent = the runner's default engine. See below. |
 | `model` | no | Which model of that engine executes this node. Absent = the engine's own default. See below. |
@@ -208,7 +208,8 @@ contract; what changes is the role — **doing, checking, routing**.
 | `escalation_recipient` | no | Who ought to be called when this node escalates. Free text. See below. |
 | `external` | no | What this step needs from outside and what it hands over outside. Absent = `{inputs: [], outputs: []}`. See below. |
 | `unsafe_to_retry` | no | Whether repeating this step is safe. Absent = `false`. See below. |
-| `skill_ref` | yes | A pinned pointer to the registry's skill. |
+| `skill_ref` | yes, except on a `subgraph` node, which refuses it | A pinned pointer to the registry's skill. |
+| `subgraph` | only on a `subgraph` node, where it is required | What the node calls and how. See [`subgraph`](#subgraph-a-node-that-calls-another-class). |
 | `contract` | yes | Input, output and verifications. |
 
 ### `engine`: which engine executes this node
@@ -579,6 +580,111 @@ Two consequences the format inherits from that choice:
   `const: true` in the schema: an agentic check with no evidence attached is not
   a verification, it is an opinion.
 
+### `subgraph`: a node that calls another class
+
+> **Status: format and validation only.** Nothing executes a subgraph node yet.
+> A job that reaches one is not handled; opening the children, waiting without a
+> session, resuming with their output, and what a failed or cancelled child does
+> to the parent belong to the runtime that follows this one. What exists today is
+> the shape, its validation, and its refusal at registration.
+
+A class can hand work to another class. The flow between graphs is itself a
+versioned graph (D2, D15), so the call is a **node kind in the format**, not an
+out-of-band receiver: `node_type: "subgraph"`, with a `subgraph` block and no
+`skill_ref`.
+
+```json
+{
+  "id": "write-note",
+  "role": "caller",
+  "node_type": "subgraph",
+  "subgraph": {
+    "class": "nota-curta",
+    "input_map": { "title": "Note about {{input.job.title}}", "body": "{{input.job.body}}" },
+    "output_map": { "text": "{{child.texto}}" }
+  },
+  "contract": { "input_schema": {}, "output_schema": {}, "produces": "note", "checks": [] }
+}
+```
+
+A subgraph node requires `id`, `role`, `node_type`, `contract` (the same rules as
+any node, `checks` of at least one) and `subgraph`. Every other node still
+requires `skill_ref` and refuses a `subgraph` key. The schema says it in
+`node.allOf` (`if node_type = subgraph then …, else …`), and `required` itself
+lists only what every kind carries.
+
+**What a subgraph node does not carry.** It pins no skill and uses no session, so
+it refuses `skill_ref`, `engine`, `model`, `escalation_policy`,
+`escalation_recipient` and `external`. `unsafe_to_retry` stays allowed: repeating
+the call opens new children, which is exactly what that flag is for.
+
+The `subgraph` object (`additionalProperties: false`):
+
+| Key | Required | What it is |
+|---|---|---|
+| `class` | yes | The called problem class, a filled text. It has to be registered in the **same project** when this graph is registered, and it may not be this graph's own class. |
+| `input_map` | yes | The child job's creation payload: `title` (required), `body` (optional text) and `fields` (optional flat object of scalars, keyed by the child's own `custom_fields` names). |
+| `output_map` | yes, may be `{}` | Keys are properties of **this node's own output** (`contract.output_schema`); values are strings that read from the child. |
+| `fan_out` | no | `over` (required, a dotted input path of at least one segment) and `ordered` (optional boolean, absent = false). |
+
+**The placeholder grammar.** The mapping reuses `{{input.<path>}}` — the grammar
+of `external.inputs[].arguments`, with segments `[a-zA-Z0-9_]+` joined by `.` and
+the exact path rules of `packages/runner/src/dispatch/interpolate-input.ts` —
+instead of inventing an expression language (§3: none before two real graphs
+press on the format). A string value may carry tokens `{{<root>.<path>}}`:
+
+| Where | Roots allowed |
+|---|---|
+| `input_map` | `input` (at least one segment, read from **this node's own input**) and `item` (bare `{{item}}` allowed, only when `fan_out` is declared: the current element) |
+| `output_map` | `child` only, with at least one segment: read from the child's accumulated state at its final node, in the same bucket paths a node's input projection uses |
+
+Any `{{…}}` token that does not fit its position — and an unclosed `{{` — is
+`subgraph_invalid_placeholder`. A value with no token is a literal. A value that
+is **exactly one token** keeps the resolved value's type; embedded in text it is
+stringified. This section fixes the grammar and what it must match; resolving it
+at run time is the runtime's.
+
+**Fan-out.** One child job per element of the list at `over`. With
+`ordered: true` each child depends on the previous one. The node's own output
+collects, for each `output_map` key, an **array with one entry per child, in
+element order** — so with a fan-out every mapped property is a list.
+
+**One exit.** A subgraph node has at most one outgoing edge
+(`subgraph_multiple_exits`). How a failed or cancelled child maps to the parent
+is the runtime's to decide, and it will decide labels; until then there is one
+exit, labelled like any single-exit node.
+
+**The entry contract of the called class** is read from its document alone: its
+`initial_node` and its declared `custom_fields`. A field the child demands at its
+own initial node (`required_at` equal to `initial_node`) has to be mapped in
+`input_map.fields`, because a job may not leave its first node while the field is
+empty. Fields demanded at later nodes are the child's people's to fill and are
+not required. `type` stays metadata, so no type is checked.
+
+**Where each rule is judged.** Four layers, because only the last needs a
+registry:
+
+| Layer | What it judges | Codes |
+|---|---|---|
+| `validateStructure` (and `validarEstrutura`) — DB-free, byte-for-byte parity | The shape of the node and of the `subgraph` block | `subgraph_node_forbidden_field`, `subgraph_on_non_subgraph_node`, `subgraph_missing_title`, `subgraph_invalid_placeholder`, `subgraph_self_call`, `subgraph_multiple_exits`, and `invalid_field` / `missing_required_field` for a wrong type or an absent key. A longer cycle (A calls B calls A) cannot be seen from one document and is out of scope; registration order already prevents it for first versions. |
+| `validateSoundness` — DB-free | `node_with_contract` judges a subgraph node on its `contract` only; `reachable`, `terminates` and `edge_with_condition` apply unchanged | the four rule names of §6 |
+| `validateContracts` (§6.1) | Dataflow through the node, and the call against the node's own contract | `unproduced_input`, `subgraph_fan_out_not_a_list`, `subgraph_output_unmapped`, `subgraph_output_unknown_property`, `subgraph_output_not_a_list` |
+| `validateSubgraphCalls` — needs the registry, runs at registration | Whether the class exists in the same project and whether the mapped input satisfies its entry contract | `subgraph_unknown_class`, `subgraph_input_unknown_field`, `subgraph_input_missing_field` |
+
+`POST /v1/graphs/validate` is deliberately DB-free and stays so: a document naming
+an unregistered class gets `valid: true` from it, and only registration refuses.
+Registration (`POST /v1/graphs`, the examples run) runs `validateSubgraphCalls`
+right after the structure and soundness gate and answers `422 invalid_graph`, the
+errors appended to `structure.errors`; nothing is written. The class is resolved
+**when the version is written**: a later change to the child's `custom_fields` is
+not re-judged against its callers (the runtime resolves again at execution), and
+`POST /v1/proposals/:id/apply` judges the shape and the dataflow but does not add
+the cross-class lookup, because that route reads the registry without a project.
+Both are known gaps, recorded rather than closed.
+
+`cartografo import` skips the pin check (step 3) for a subgraph node: a bundle
+holding one is not refused as `no manifest in skills/ with that id`.
+
 ### `skill_ref`: a pinned pointer
 
 ```json
@@ -850,7 +956,7 @@ validarSoundness(doc) // → { valid, violations: [{ rule, target }] }
 
 `validarEstrutura` covers shape and referential integrity: the required keys
 present, node ids unique, every edge and every id in `initial_node`/`final_nodes`
-pointing at a node that exists. `validarSoundness` runs the four rules below, in
+pointing at a node that exists, and — since t637 — the shape of a `subgraph` node and of its call. `validarSoundness` runs the four rules below, in
 this order. Neither of them throws on a malformed document: the synthesizer needs
 the whole report, not the first error.
 
@@ -863,7 +969,7 @@ graph a model proposed is formally verified before anything runs on it**.
 | `reachable` | Every node is reachable from `initial_node` by following `edges`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/examples/graph-invalid-unreachable-node.json) |
 | `terminates` | From every node there is a path to some node in `final_nodes`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/examples/graph-invalid-without-termination.json) |
 | `edge_with_condition` | No edge with a `condition` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/examples/graph-invalid-edge-without-condition.json) |
-| `node_with_contract` | No node without a `skill_ref` or a `contract`, nor with an empty `checks`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/examples/graph-invalid-node-without-contract.json) |
+| `node_with_contract` | No node without a `skill_ref` or a `contract`, nor with an empty `checks`. A `subgraph` node pins no skill and is judged on its `contract` only. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/examples/graph-invalid-node-without-contract.json) |
 
 Reading notes:
 
@@ -899,7 +1005,15 @@ crossings answered that at dispatch time, after the sessions were paid for
 is that question, answered statically, before any session opens.
 
 **It checks the PINNED SKILL's `input`/`output`, never the node's own
-`input_schema`/`output_schema`.** The subsection [`output_schema` documents; the
+`input_schema`/`output_schema`** — with one exception, the
+[subgraph node](#subgraph-a-node-that-calls-another-class), which pins no skill:
+its own `contract.input_schema` is its `input` and its `contract.output_schema`
+is its `output`, there being no skill for them to drift against. The lookup is
+never called for it and it is never `skill_ref_unresolved`; the availability fixed
+point, the `produces` buckets and the one-level limit apply to it as to any node,
+as a consumer and as a producer for the nodes after it. Its call adds required
+input paths (every `{{input.<path>}}` of `input_map`, and `fan_out.over`, cut to
+the first two segments) and the four problems below. The subsection [`output_schema` documents; the
 skill is what validates](#output_schema-documents-the-skill-is-what-validates)
 already draws this line for output, and it holds for input too — where the two
 have already drifted: the software bundle's `refine` node declares
@@ -961,13 +1075,18 @@ incident that motivated this rule is one level deep. A gap deeper than that
 survives the check.
 
 **The vocabulary of the report** (`ContractReport`, the `contracts` key of the
-`422` and of the `201`):
+`422` and of the `201`). The four `subgraph_*` problems make a version `failed`
+like `unproduced_input` does:
 
 | Name | What it says |
 |---|---|
 | `unproduced_input` | The node requires this key path and no path into it supplies one. Carries `node_id`, `key` and `produced_elsewhere_by`. |
 | `skill_ref_unresolved` | The pin resolved to nothing, so this node's contract could not be read. It is not availability-checked, and it contributes nothing to its descendants. |
 | `external_output_unknown_property` | The node delivers `from` outside and its pinned skill's `output` declares no such property, so there would be nothing to send. Carries `node_id` and `from`. Checked only when the pin resolves, the guard `unproduced_input` already has. |
+| `subgraph_fan_out_not_a_list` | A subgraph node's `fan_out.over` is not declared in its own `contract.input_schema` (top key or `key.sub`) with `type: "array"` — or not declared at all. Carries `node_id` and `key`. |
+| `subgraph_output_unmapped` | A property its `contract.output_schema` requires is not a key of `output_map`. Carries `node_id` and `key`. |
+| `subgraph_output_unknown_property` | A key of `output_map` is not a property of its `contract.output_schema`. Carries `node_id` and `key`. |
+| `subgraph_output_not_a_list` | With a `fan_out`, a mapped property is not declared `type: "array"` (the node's output collects one entry per child). Carries `node_id` and `key`. |
 | `produced_elsewhere_by` | Node ids whose skill output would place this exact path *somewhere* — under a bucket the reader does not open, or on a path that does not always reach it. Empty means the key exists nowhere in the document. |
 
 **Where it runs, and where it does not.** `cartografo import` runs it offline
@@ -1104,6 +1223,10 @@ exercised by `tests/schema-grafo.test.mjs`.
 | [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
 | [`graph-valid-shell-engine.json`](../../schema/examples/graph-valid-shell-engine.json) | The same shape with `"engine": "shell"`: the smallest document that puts a deterministic node — a command, no session, no model — inside the trail (§2). |
 | [`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json) | Two work nodes on one edge, the second declaring `external` and `unsafe_to_retry`: the smallest document that says what a step fetches from outside, what it hands over, and that the handing over cannot be taken back (§2). |
+| [`graph-valid-subgraph.json`](../../schema/examples/graph-valid-subgraph.json) | One `subgraph` node that calls the class of `graph-valid-minimal.json` and takes its text back: the smallest document that hands work to another class, pinning no skill (§2). |
+| [`graph-valid-subgraph-fan-out.json`](../../schema/examples/graph-valid-subgraph-fan-out.json) | A planning node producing a list, then a `subgraph` node with `fan_out` over it, ordered: one child per item, the texts collected in item order (§2). |
+| [`graph-invalid-subgraph-unknown-class.json`](../../schema/examples/graph-invalid-subgraph-unknown-class.json) | The first fixture calling a class nobody registered. **Valid as a document**, so `node scripts/validate-graph.mjs` marks it ✔: it is refused at registration (`subgraph_unknown_class`), which the DB-free validators cannot do. |
+| [`graph-invalid-subgraph-input-mismatch.json`](../../schema/examples/graph-invalid-subgraph-input-mismatch.json) | The first fixture mapping a `topic` field the called class does not declare. Valid as a document, ✔ in the script, refused at registration (`subgraph_input_unknown_field`). |
 | `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
 
 ### The master example: flowpilot's flow

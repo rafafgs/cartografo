@@ -72,6 +72,7 @@ import {
   classifyContracts,
   validateContracts,
   validateGraph,
+  validateSubgraphCalls,
   type ContractProblem,
   type ContractReport,
   type GraphDocument,
@@ -84,6 +85,7 @@ import type { Operation } from '../domain/operations.ts';
 import {
   forkVariant,
   getClassBase,
+  getClassEntryContract,
   getGraph,
   getVersion,
   getVersionSummary,
@@ -432,6 +434,24 @@ export function registerGraphDocument(
   const report = validateGraph(document);
   if (!report.valid) {
     return { status: 'invalid_graph', structure: report.structure, soundness: report.soundness };
+  }
+
+  // The calls to other classes (t637): the one judgement of the shape gate that
+  // needs the registry, so it cannot live in `validateGraph` (which `POST
+  // /graphs/validate` runs DB-free) and runs here, in the project being written
+  // to. Its errors ride in `structure.errors` of the same `invalid_graph`, so
+  // every consumer of that status handles them with no new branch. A class is
+  // resolved NOW, when the version is written; a later change to the child is
+  // not re-judged here.
+  const callErrors = validateSubgraphCalls(document, (name) =>
+    getClassEntryContract(db, name, projectId),
+  );
+  if (callErrors.length > 0) {
+    return {
+      status: 'invalid_graph',
+      structure: { valid: false, errors: [...report.structure.errors, ...callErrors] },
+      soundness: report.soundness,
+    };
   }
 
   // The document passed the gate, so it is an object with the seven keys; all

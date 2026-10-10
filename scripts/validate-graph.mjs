@@ -77,7 +77,18 @@ const REQUIRED_DOC_FIELDS = [
   'final_nodes',
   'custom_fields',
 ];
-const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+/**
+ * The schema's `node.required`: what EVERY kind of node carries (t637).
+ *
+ * `skill_ref` left this list when the subgraph node arrived — a node that calls
+ * another class pins no skill — and moved into the per-kind lists below, which
+ * is what `validarEstrutura` actually walks.
+ */
+const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'contract'];
+/** What a node that runs a skill (`work`, `gate`) also has to carry, in report order. */
+const REQUIRED_SKILL_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+/** What a `subgraph` node has to carry: the common ones, then its own block. */
+const REQUIRED_SUBGRAPH_NODE_FIELDS = [...REQUIRED_NODE_FIELDS, 'subgraph'];
 const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
@@ -93,6 +104,85 @@ const HOOK_TRIGGERS = ['node_entered', 'node_blocked'];
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
+
+/** The node kind that calls another class (t637). */
+const SUBGRAPH_NODE_TYPE = 'subgraph';
+
+/**
+ * What a subgraph node may not carry: it pins no skill and opens no session.
+ *
+ * `unsafe_to_retry` is deliberately NOT here: repeating the call opens new
+ * children, which is exactly what that flag is for.
+ */
+const SUBGRAPH_FORBIDDEN_FIELDS = [
+  'skill_ref',
+  'engine',
+  'model',
+  'escalation_policy',
+  'escalation_recipient',
+  'external',
+];
+
+const SUBGRAPH_KEYS = ['class', 'input_map', 'output_map', 'fan_out'];
+const SUBGRAPH_INPUT_MAP_KEYS = ['title', 'body', 'fields'];
+const SUBGRAPH_FAN_OUT_KEYS = ['over', 'ordered'];
+
+/** The path grammar of `{{input.<path>}}`: `[a-zA-Z0-9_]+` segments joined by `.`. */
+const PATH_GRAMMAR = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/**
+ * Every `{{...}}` pair of a string, whatever is written inside it.
+ *
+ * `[^{}]*` keeps a match inside one pair of braces, the way the runner's
+ * `interpolate-input.ts` does: what does not fit the grammar is reported as an
+ * invalid placeholder instead of being left in the text.
+ */
+const PLACEHOLDER_PAIR = /\{\{([^{}]*)\}\}/g;
+
+/**
+ * Whether the inside of a `{{...}}` fits its position (t637, FR4).
+ *
+ * `input_map`: `input` with at least one segment, and `item` (bare or with a
+ * path) only when a fan-out is declared. `output_map`: `child` with at least one
+ * segment. Anything else does not fit.
+ *
+ * @param {string} inner What sits between the braces.
+ * @param {'input_map' | 'output_map'} position Where the string lives.
+ * @param {boolean} hasFanOut Whether the call declares a fan-out.
+ */
+function placeholderFits(inner, position, hasFanOut) {
+  const dot = inner.indexOf('.');
+  const root = dot === -1 ? inner : inner.slice(0, dot);
+  const path = dot === -1 ? null : inner.slice(dot + 1);
+  if (path !== null && !PATH_GRAMMAR.test(path)) return false;
+
+  if (position === 'output_map') return root === 'child' && path !== null;
+  if (root === 'input') return path !== null;
+  if (root === 'item') return hasFanOut;
+  return false;
+}
+
+/**
+ * The fragments of a string that look like a placeholder and do not fit (t637).
+ *
+ * An unclosed `{{` counts: it is a placeholder that would reach the child as
+ * text. A string with no token at all is a literal and has no problems.
+ *
+ * @param {string} text
+ * @param {'input_map' | 'output_map'} position
+ * @param {boolean} hasFanOut
+ * @returns {string[]}
+ */
+function invalidPlaceholders(text, position, hasFanOut) {
+  const bad = [];
+  const rest = text.replace(PLACEHOLDER_PAIR, (whole, inner) => {
+    if (!placeholderFits(inner, position, hasFanOut)) bad.push(whole);
+    return '';
+  });
+  const open = rest.indexOf('{{');
+  if (open !== -1) bad.push(rest.slice(open));
+  return bad;
+}
 
 /**
  * Whether an `as` names a place inside the step's own working directory (t369).
@@ -191,6 +281,202 @@ function checkExternalSurface(node, index, annotate) {
   }
 }
 
+/** Reports every placeholder in `text` that does not fit its position. */
+function notePlaceholders(text, where, position, hasFanOut, node, annotate) {
+  for (const bad of invalidPlaceholders(text, position, hasFanOut)) {
+    annotate(
+      'subgraph_invalid_placeholder',
+      `"${where}" of node "${node.label}" carries a placeholder that does not fit there: ${JSON.stringify(bad)} (${position === 'input_map' ? 'expected {{input.<path>}}, or {{item}} / {{item.<path>}} with a fan_out' : 'expected {{child.<path>}}'})`,
+      node.target,
+    );
+  }
+}
+
+/**
+ * Checks what a node says about calling another class (t637).
+ *
+ * Runs on EVERY node, because two of its rules are about the node kind itself:
+ * a `subgraph` block on a node that is not a subgraph node, and a subgraph node
+ * that carries a field only a session-running node has. Everything else is about
+ * the `subgraph` block and runs only on a subgraph node.
+ *
+ * Named rules are the ones a person writing the document by hand gets wrong
+ * (a forbidden field, a call to oneself, a missing title, a placeholder that
+ * does not fit); a wrong TYPE anywhere is `invalid_field`, the choice `hooks`,
+ * `nodes` and `external` already made. What needs the REGISTRY — does the class
+ * exist, does the input map satisfy it — is not here: this pass is pure and
+ * DB-free, and `validateSubgraphCalls` does that at registration.
+ *
+ * Kept byte-for-byte with `packages/core/src/domain/graph.ts`, like every other
+ * rule here.
+ *
+ * @param {object} node The node being checked.
+ * @param {number} index Its position, for the message when it carries no id.
+ * @param {unknown} problemClass The document's own class, for the self-call rule.
+ * @param {(code: string, message: string, target?: unknown) => void} annotate
+ */
+function checkSubgraphCall(node, index, problemClass, annotate) {
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+  const call = node.subgraph;
+  const present = call !== undefined && call !== null;
+
+  if (node.node_type !== SUBGRAPH_NODE_TYPE) {
+    if (present) {
+      annotate(
+        'subgraph_on_non_subgraph_node',
+        `node "${label}" carries a "subgraph" block but its node_type is not "subgraph"`,
+        target,
+      );
+    }
+    return;
+  }
+
+  for (const field of SUBGRAPH_FORBIDDEN_FIELDS) {
+    if (node[field] !== undefined && node[field] !== null) {
+      annotate(
+        'subgraph_node_forbidden_field',
+        `subgraph node "${label}" may not carry "${field}": it pins no skill and opens no session`,
+        target,
+      );
+    }
+  }
+
+  // An absent block is `missing_required_field`'s, reported with the others.
+  if (!present) return;
+  if (!isObject(call)) {
+    annotate('invalid_field', `"subgraph" of node "${label}" has to be an object`, target);
+    return;
+  }
+
+  for (const key of Object.keys(call)) {
+    if (!SUBGRAPH_KEYS.includes(key)) {
+      annotate('invalid_field', `"subgraph" of node "${label}" has no key "${key}"`, target);
+    }
+  }
+
+  const hasFanOut = call.fan_out !== undefined && call.fan_out !== null;
+  const here = { label, target };
+
+  if (!isFilledText(call.class)) {
+    annotate('invalid_field', `"subgraph.class" of node "${label}" has to be a filled text`, target);
+  } else if (call.class === problemClass) {
+    annotate(
+      'subgraph_self_call',
+      `node "${label}" calls its own class "${call.class}": a class may not call itself`,
+      target,
+    );
+  }
+
+  const inputMap = call.input_map;
+  if (!isObject(inputMap)) {
+    annotate('invalid_field', `"subgraph.input_map" of node "${label}" has to be an object`, target);
+  } else {
+    for (const key of Object.keys(inputMap)) {
+      if (!SUBGRAPH_INPUT_MAP_KEYS.includes(key)) {
+        annotate('invalid_field', `"subgraph.input_map" of node "${label}" has no key "${key}"`, target);
+      }
+    }
+    if (inputMap.title === undefined || inputMap.title === null) {
+      annotate(
+        'subgraph_missing_title',
+        `"subgraph.input_map" of node "${label}" has no "title": the child job needs one`,
+        target,
+      );
+    } else if (!isFilledText(inputMap.title)) {
+      annotate(
+        'invalid_field',
+        `"subgraph.input_map.title" of node "${label}" has to be a filled text`,
+        target,
+      );
+    } else {
+      notePlaceholders(inputMap.title, 'subgraph.input_map.title', 'input_map', hasFanOut, here, annotate);
+    }
+
+    if (inputMap.body !== undefined && inputMap.body !== null) {
+      if (typeof inputMap.body !== 'string') {
+        annotate('invalid_field', `"subgraph.input_map.body" of node "${label}" has to be a text`, target);
+      } else {
+        notePlaceholders(inputMap.body, 'subgraph.input_map.body', 'input_map', hasFanOut, here, annotate);
+      }
+    }
+
+    const fields = inputMap.fields;
+    if (fields !== undefined && fields !== null) {
+      if (!isObject(fields)) {
+        annotate(
+          'invalid_field',
+          `"subgraph.input_map.fields" of node "${label}" has to be an object`,
+          target,
+        );
+      } else {
+        for (const [name, value] of Object.entries(fields)) {
+          if (typeof value === 'string') {
+            notePlaceholders(
+              value,
+              `subgraph.input_map.fields.${name}`,
+              'input_map',
+              hasFanOut,
+              here,
+              annotate,
+            );
+          } else if (typeof value !== 'number' && typeof value !== 'boolean') {
+            annotate(
+              'invalid_field',
+              `"subgraph.input_map.fields.${name}" of node "${label}" has to be a text, a number or a boolean`,
+              target,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const outputMap = call.output_map;
+  if (!isObject(outputMap)) {
+    annotate('invalid_field', `"subgraph.output_map" of node "${label}" has to be an object`, target);
+  } else {
+    for (const [name, value] of Object.entries(outputMap)) {
+      if (typeof value !== 'string') {
+        annotate(
+          'invalid_field',
+          `"subgraph.output_map.${name}" of node "${label}" has to be a text`,
+          target,
+        );
+      } else {
+        notePlaceholders(value, `subgraph.output_map.${name}`, 'output_map', hasFanOut, here, annotate);
+      }
+    }
+  }
+
+  const fanOut = call.fan_out;
+  if (fanOut !== undefined && fanOut !== null) {
+    if (!isObject(fanOut)) {
+      annotate('invalid_field', `"subgraph.fan_out" of node "${label}" has to be an object`, target);
+    } else {
+      for (const key of Object.keys(fanOut)) {
+        if (!SUBGRAPH_FAN_OUT_KEYS.includes(key)) {
+          annotate('invalid_field', `"subgraph.fan_out" of node "${label}" has no key "${key}"`, target);
+        }
+      }
+      if (typeof fanOut.over !== 'string' || !PATH_GRAMMAR.test(fanOut.over)) {
+        annotate(
+          'invalid_field',
+          `"subgraph.fan_out.over" of node "${label}" has to be a dotted input path of at least one segment: ${JSON.stringify(fanOut.over)}`,
+          target,
+        );
+      }
+      if (fanOut.ordered !== undefined && typeof fanOut.ordered !== 'boolean') {
+        annotate(
+          'invalid_field',
+          `"subgraph.fan_out.ordered" of node "${label}" has to be a boolean`,
+          target,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Checks the document's shape and referential integrity.
  *
@@ -242,7 +528,11 @@ export function validarEstrutura(doc) {
       annotate('invalid_node', `the node at position ${index} has to be an object`, index);
       return;
     }
-    for (const field of REQUIRED_NODE_FIELDS) {
+    const requiredFields =
+      node.node_type === SUBGRAPH_NODE_TYPE
+        ? REQUIRED_SUBGRAPH_NODE_FIELDS
+        : REQUIRED_SKILL_NODE_FIELDS;
+    for (const field of requiredFields) {
       if (node[field] === undefined || node[field] === null) {
         annotate(
           'missing_required_field',
@@ -256,6 +546,8 @@ export function validarEstrutura(doc) {
     // posture: the rules are about what the runner would DO with the
     // declaration, and a node with a broken id carries a broken one all the same.
     checkExternalSurface(node, index, annotate);
+    // What it says about calling another class (t637), on the same posture.
+    checkSubgraphCall(node, index, doc.problem_class, annotate);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —
@@ -315,6 +607,27 @@ export function validarEstrutura(doc) {
       }
     }
   });
+
+  // A subgraph node has at most one exit (t637): how a failed or cancelled child
+  // maps to the parent is the runtime's to decide, and it will decide labels.
+  const exitsOf = new Map();
+  for (const edge of edges) {
+    if (isObject(edge) && isFilledText(edge.from)) {
+      exitsOf.set(edge.from, (exitsOf.get(edge.from) ?? 0) + 1);
+    }
+  }
+  const reportedExits = new Set();
+  for (const node of nodes) {
+    if (!isObject(node) || node.node_type !== SUBGRAPH_NODE_TYPE || !isFilledText(node.id)) continue;
+    if ((exitsOf.get(node.id) ?? 0) > 1 && !reportedExits.has(node.id)) {
+      annotate(
+        'subgraph_multiple_exits',
+        `subgraph node "${node.id}" has ${exitsOf.get(node.id)} outgoing edges: it has at most one exit`,
+        node.id,
+      );
+      reportedExits.add(node.id);
+    }
+  }
 
   // The two are mutually exclusive: an id of the wrong type is not an id
   // pointing at a missing node, and only the second one gets to be a reference
@@ -513,8 +826,10 @@ export function validarSoundness(doc) {
   }
 
   // 4. node with contract — holds for a gate too, which is a node like any other.
+  // A subgraph node (t637) pins no skill, so it is judged on its contract alone.
   for (const node of nodes) {
-    if (!hasSkillRef(node) || !hasContract(node)) {
+    const pinned = node.node_type === SUBGRAPH_NODE_TYPE || hasSkillRef(node);
+    if (!pinned || !hasContract(node)) {
       violations.push({ rule: RULES.NODE_WITH_CONTRACT, target: node.id ?? null });
     }
   }

@@ -59,12 +59,15 @@ import type { Actor } from '../db/event-validation.ts';
 import {
   classifyContracts,
   validateContracts,
+  type ClassEntryContract,
   type ContractProblem,
   type ContractsState,
   type GraphDocument,
   type SkillLookup,
 } from '../domain/graph.ts';
+import type { CustomFieldDefinition } from '../domain/custom-fields.ts';
 import { hashSnapshot, canonicalSerialize } from '../domain/hash.ts';
+import { isObject } from '../util/is-object.ts';
 import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
 
 /**
@@ -324,6 +327,41 @@ export function getClassBase(
         WHERE project_id = ? AND class = ? AND lineage_type = 'base'`,
     )
     .get(projectId, className) as Graph | undefined;
+}
+
+/**
+ * What a class asks of a job opened in it, read off its current base version (t637).
+ *
+ * The BASE lineage of the class in that project, its current version's snapshot,
+ * reduced to the two things a caller's `subgraph.input_map` has to satisfy: the
+ * `initial_node` and, for each declared custom field, the node that demands it.
+ * `undefined` when the class has no base in the project (a variant-only lineage
+ * does not answer for the class) or its base has no current version yet.
+ *
+ * @param db Open database.
+ * @param className Class looked for.
+ * @param projectId Partition to look in; a call never crosses projects.
+ * @returns The entry contract, or `undefined`.
+ */
+export function getClassEntryContract(
+  db: Database,
+  className: string,
+  projectId: number = DEFAULT_PROJECT,
+): ClassEntryContract | undefined {
+  const base = getClassBase(db, className, projectId);
+  if (base === undefined || base.current_version_id === null) return undefined;
+
+  const version = getVersion(db, base.current_version_id, projectId);
+  if (version === undefined) return undefined;
+
+  const snapshot = version.snapshot;
+  const declared: unknown[] = Array.isArray(snapshot.custom_fields) ? snapshot.custom_fields : [];
+  return {
+    initial_node: snapshot.initial_node,
+    custom_fields: declared
+      .filter((field): field is CustomFieldDefinition => isObject(field) && typeof field.name === 'string')
+      .map((field) => ({ name: field.name, required_at: field.required_at ?? null })),
+  };
 }
 
 /**

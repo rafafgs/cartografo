@@ -21,10 +21,26 @@ import { PACKAGE_ROOT, request, startControlPlane, type TestContext } from './su
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'examples');
 
-type Doc = Record<string, any>;
+type Doc = Record<string, unknown>;
 
-function readExample(name: string): Doc {
-  return JSON.parse(readFileSync(path.join(EXAMPLES_DIR, name), 'utf8')) as Doc;
+/** A graph document with the few keys these tests reach into typed. */
+interface Graphish extends Doc {
+  problem_class: string;
+  custom_fields: unknown;
+  nodes: Array<{ id: string; contract: Doc; subgraph: Call }>;
+  edges: unknown;
+  initial_node: string;
+  final_nodes: string[];
+}
+
+/** The `subgraph` block, as far as these tests touch it. */
+interface Call extends Doc {
+  class: string;
+  input_map: Doc;
+}
+
+function readExample(name: string): Graphish {
+  return JSON.parse(readFileSync(path.join(EXAMPLES_DIR, name), 'utf8')) as Graphish;
 }
 
 interface Refusal {
@@ -33,7 +49,7 @@ interface Refusal {
   contracts?: { status: string; valid?: boolean; problems: Array<{ code: string; key?: string }> };
 }
 
-async function register(ctx: TestContext, document: Doc, projectId?: number) {
+async function register(ctx: TestContext, document: Graphish, projectId?: number) {
   return request<Refusal & { graph: { id: string } }>(
     ctx,
     'POST',
@@ -49,7 +65,7 @@ async function declareProject(ctx: TestContext, name: string): Promise<number> {
 }
 
 /** The note pipeline, renamed so several can live in one database. */
-function caller(name: string, mutate: (call: Doc) => void = () => {}): Doc {
+function caller(name: string, mutate: (call: Call) => void = () => {}): Graphish {
   const document = readExample('graph-valid-subgraph.json');
   document.problem_class = name;
   mutate(document.nodes[0].subgraph);
@@ -57,7 +73,7 @@ function caller(name: string, mutate: (call: Doc) => void = () => {}): Doc {
 }
 
 /** `nota-curta` under another name, declaring fields. */
-function child(name: string, fields: Array<Record<string, unknown>>): Doc {
+function child(name: string, fields: Array<Record<string, unknown>>): Graphish {
   const document = readExample('graph-valid-minimal.json');
   document.problem_class = name;
   document.custom_fields = fields;
@@ -165,7 +181,7 @@ test('AT19 — a parent of subgraph nodes only still gets the contract check', a
   const document = caller('caller-two-steps', (call) => {
     call.input_map = { title: '{{input.x.y}}' };
   });
-  const second = JSON.parse(JSON.stringify(document.nodes[0])) as Doc;
+  const second = JSON.parse(JSON.stringify(document.nodes[0])) as Graphish['nodes'][number];
   second.id = 'write-again';
   second.subgraph.input_map = { title: 'again' };
   document.nodes[0].contract.produces = 'first';

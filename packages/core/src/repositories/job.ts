@@ -337,9 +337,19 @@ function finishedAtOf(subject: string): string {
  *
  * So a final node that PINS a skill is done when that skill reported — see
  * `JobStateFacts.conformingFinishAt`. A final node that pins nothing is done on
- * arrival, exactly as before. The rule is keyed on `skill_ref` and never on
- * `node_type`: `docs/spec/graph.md` 2 says a gate is "a node whose role is to
- * check", and the minimal example graph's own final node is a gate with a pin.
+ * arrival, exactly as before. The rule is keyed on `skill_ref` and not on
+ * `work` / `gate`: `docs/spec/graph.md` 2 says a gate is "a node whose role is
+ * to check", and the minimal example graph's own final node is a gate with a pin.
+ *
+ * ## ...or when it calls a subgraph (t638)
+ *
+ * The one `node_type` that does count. A subgraph node pins no skill, and yet
+ * arriving on it is the START of its work: the runner opens the children, waits,
+ * and resumes with one `completed` session carrying their assembled output. Read
+ * as "no pin", a final subgraph node completed on arrival, the controller dropped
+ * it, and the children were never opened — the same silence t262 found, one node
+ * kind later. So the per-node fact {@link resolveJobStates} computes is "pins a
+ * skill, OR is a subgraph node", and everything below is unchanged.
  *
  * The no-pin branch is defensive, not a supported document shape:
  * `schema/graph.schema.json` makes `skill_ref` mandatory on every node and
@@ -551,6 +561,9 @@ function resolveJobStates(
       row.graph_version_id === null ? undefined : snapshots.get(row.graph_version_id);
     const node = snapshot?.nodes?.find((candidate) => candidate.id === row.current_node_id);
     const pin = node?.skill_ref;
+    // A subgraph node pins nothing and still has a report to make: the one
+    // session its resume writes, carrying what the children handed back (t638).
+    const callsSubgraph = node?.node_type === 'subgraph';
 
     facts.set(row.id, {
       blocked: asBoolean(row.blocked),
@@ -562,7 +575,7 @@ function resolveJobStates(
       activeLease: leases.get(row.id) ?? null,
       hasOpenSession: open.has(row.id),
       finalNodes: snapshot?.final_nodes ?? null,
-      currentNodePinsSkill: pin !== undefined && pin !== null,
+      currentNodePinsSkill: (pin !== undefined && pin !== null) || callsSubgraph,
       conformingFinishAt: finishes.get(nodeKey(row.id, row.current_node_id)) ?? null,
       lastTransitionAt: transitionedAt.get(row.id) ?? null,
     });
@@ -1269,6 +1282,24 @@ export class UnknownParentJobError extends Error {
 }
 
 /**
+ * A job named in `depends_on` does not exist in the new job's project (t638,
+ * FR1).
+ *
+ * {@link UnknownParentJobError}'s convention, for the same reason: an id that
+ * was never created and an id of another project read the same, byte for byte,
+ * so the body carries no id.
+ */
+export class UnknownDependencyError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code = 'unknown_dependency' as const;
+
+  constructor() {
+    super('no job of this project answers to an id in depends_on');
+    this.name = 'UnknownDependencyError';
+  }
+}
+
+/**
  * The parent a child names was cancelled (t636, FR3).
  *
  * A conflict and not an absence: the parent exists and is visible, and what
@@ -1339,6 +1370,34 @@ function readParentLink(input: CreateJobInput): { jobId: number; nodeId: string 
   return { jobId: input.parent_job_id as number, nodeId: input.parent_node_id as string };
 }
 
+/**
+ * Reads the optional `depends_on` of a `POST /v1/jobs` body (t638, FR1).
+ *
+ * A list of distinct integers. Absent, `null` and `[]` all mean none, the
+ * posture of every other optional field of this body. A repeated id is refused
+ * rather than collapsed: `job_dependency` is keyed on the pair, and a caller who
+ * sent the same id twice meant something this route cannot guess.
+ *
+ * @param input Request body.
+ * @returns The ids, in the order they were sent.
+ * @throws {ValidationError} When the value is not a list of distinct integers.
+ */
+function readDependencies(input: CreateJobInput): number[] {
+  const declared = input.depends_on;
+  if (declared === undefined || declared === null) return [];
+  if (!Array.isArray(declared)) {
+    throw new ValidationError(['depends_on has to be a list of job ids']);
+  }
+  if (!declared.every((id) => typeof id === 'number' && Number.isInteger(id))) {
+    throw new ValidationError(['depends_on has to hold integer job ids only']);
+  }
+  const ids = declared as number[];
+  if (new Set(ids).size !== ids.length) {
+    throw new ValidationError(['depends_on may not name the same job twice']);
+  }
+  return ids;
+}
+
 /** Whether a job has a `job_cancellation` row. */
 function isCancelled(db: Database, id: number): boolean {
   return db.prepare('SELECT 1 FROM job_cancellation WHERE job_id = ?').get(id) !== undefined;
@@ -1400,6 +1459,11 @@ export interface CreateJobInput {
   parent_job_id?: unknown;
   /** The node of the parent that opens this one. Free text, like `entry_node_id`. */
   parent_node_id?: unknown;
+  /**
+   * Jobs of the same project this one waits for (t638). Optional; each id
+   * becomes a `job_dependency` row and a `job.dependency_declared` event.
+   */
+  depends_on?: unknown;
   actor?: unknown;
 }
 
@@ -1464,11 +1528,22 @@ export interface CreateJobInput {
  * `sibling_position` of that parent and recorded as `job.parent_linked` on the
  * child's timeline. `job.created` itself carries nothing new.
  *
+ * ## Dependencies, since t638
+ *
+ * `depends_on` names jobs of the same project this one waits for. Each id is
+ * resolved inside the project before the transaction, so that a refusal
+ * consumes no id; inside it, after `job.created` and after `job.parent_linked`
+ * when there is one, each becomes a `job_dependency` row and a
+ * `job.dependency_declared` on the new job's timeline — the same row and event
+ * the intake confirmation writes, so the hold derived from them is the same.
+ *
  * @throws {UnknownProjectError} When the resolved `project_id` names no
  *   registered project (t417).
  * @throws {UnknownParentJobError} When the parent does not exist in this
  *   project (t636).
  * @throws {ParentCancelledError} When the parent was cancelled (t636).
+ * @throws {UnknownDependencyError} When an id of `depends_on` names no job of
+ *   this project (t638).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -1482,6 +1557,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     tier: input.tier,
   });
   const parentLink = readParentLink(input);
+  const dependencies = readDependencies(input);
   const projectId = integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
   // Before the version gate and before the transaction, for the reason the
   // validation above gives: a job refused for its scope must not consume an id
@@ -1495,6 +1571,10 @@ export function createJob(db: Database, input: CreateJobInput): Job {
       throw new UnknownParentJobError();
     }
     if (isCancelled(db, parentLink.jobId)) throw new ParentCancelledError(parentLink.jobId);
+  }
+  // Inside the job's project too, and with one error for both absences (t638).
+  for (const dependency of dependencies) {
+    if (readScopedRow(db, dependency, projectId) === undefined) throw new UnknownDependencyError();
   }
   const executionId = integerOrNull('execution_id', input.execution_id);
   const graphVersionId = textOrNull('graph_version_id', input.graph_version_id);
@@ -1590,6 +1670,24 @@ export function createJob(db: Database, input: CreateJobInput): Job {
           parent_node_id: parentLink.nodeId,
           sibling_position: next,
         },
+      });
+    }
+
+    // The intake's own row and event (`intake.ts`), on the DEPENDENT job's
+    // timeline: "this one waits for that one" is a fact about whoever waits.
+    for (const dependency of dependencies) {
+      db.prepare(
+        `INSERT INTO job_dependency (job_id, depends_on_job_id, created_at)
+         VALUES (?, ?, ?)`,
+      ).run(id, dependency, timestamp);
+      recordEvent(db, {
+        type: 'job.dependency_declared',
+        project_id: projectId,
+        execution_id: executionId,
+        entity: { type: 'job', id },
+        actor,
+        occurred_at: timestamp,
+        data: { depends_on_job_id: dependency },
       });
     }
 

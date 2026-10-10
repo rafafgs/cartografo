@@ -106,7 +106,12 @@ export interface JobStateFacts {
    * graph nobody can read is not an arrival.
    */
   finalNodes: string[] | null;
-  /** Whether the node the job stands on pins a `skill_ref`. */
+  /**
+   * Whether the node the job stands on needs a report of its own before it is
+   * done: it pins a `skill_ref`, or it is a `subgraph` node (t638). The name
+   * predates the second half and was kept, because every reader is in this
+   * package and none of them needs to know which half applied.
+   */
   currentNodePinsSkill: boolean;
   /**
    * `finished_at` of a session on the current node that closed `completed` with

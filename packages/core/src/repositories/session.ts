@@ -496,6 +496,10 @@ export interface FinishSessionInput {
  * version's snapshot → the node inside it → the node's `skill_ref` → the
  * registry row at that exact `(id, version)` → its `output`.
  *
+ * One branch since t638: a `subgraph` node pins nothing, and its report is
+ * judged against the node's own `contract.output_schema` instead — the same
+ * frozen snapshot, so still nothing resolved forward.
+ *
  * **`null` is not a defect and is never reported as one.** A session with no
  * job (a discovery session, a conversation turn), a job created by hand with no
  * graph, a version the snapshot no longer carries the node of, a node with no
@@ -527,6 +531,13 @@ function resolveOutputSchema(db: Database, row: SessionRow): unknown {
   const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.node_id);
   const pin = node === undefined ? undefined : node.skill_ref;
   if (!isObject(pin) || typeof pin.id !== 'string' || typeof pin.version !== 'string') {
+    // The one node with no pin that still has an `output` contract to answer
+    // to (t638): a subgraph node, whose report the runner assembles from its
+    // children's work "through its own output contract". Every other pinless
+    // node keeps resolving nothing.
+    if (node?.node_type === 'subgraph' && isObject(node.contract)) {
+      return node.contract.output_schema ?? null;
+    }
     return null;
   }
 

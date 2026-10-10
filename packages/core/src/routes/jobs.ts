@@ -65,6 +65,7 @@ import {
   GraphVersionNotReadyError,
   JobCompletedError,
   ParentCancelledError,
+  UnknownDependencyError,
   UnknownParentJobError,
   UnknownProjectError,
   blockJob,
@@ -106,7 +107,8 @@ const CREATE_JOB_SCHEMA = {
   response: {
     201: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
-    // t636: the parent a child names does not exist in its project.
+    // t636: the parent a child names does not exist in its project; t638: nor
+    // does a job `depends_on` names.
     404: ERROR_RESPONSE_SCHEMA,
     // t283: the body was fine and the version it names exists — what refuses is
     // that version's contract state, which is a conflict and not a bad request.
@@ -400,6 +402,11 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       // another project are the same body, byte for byte: the boundary is never
       // distinguishable from an absence, so nothing of the id is echoed.
       if (error instanceof UnknownParentJobError) {
+        return refusal(reply, 404, error.code, error.message);
+      }
+      // A dependency `depends_on` names (t638, FR1): the same posture as the
+      // parent above — absent and another project's are one body.
+      if (error instanceof UnknownDependencyError) {
         return refusal(reply, 404, error.code, error.message);
       }
       if (error instanceof ParentCancelledError) {

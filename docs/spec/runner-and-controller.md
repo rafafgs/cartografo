@@ -736,6 +736,56 @@ JavaScript at all, `'exit'` does not fire, and nothing inside this process
 prevents that orphan. What stands against it is the lease expiring on the server
 and the job going back to the queue (D5).
 
+### A subgraph node opens no session (t638)
+
+A job standing on a `node_type: "subgraph"` node never reaches an engine. The
+dispatch reads the job's graph version once, right after the settle-without-a-
+session step of t371; when the node is a subgraph node it hands the job to
+[`subgraph-run.ts`](../../packages/runner/src/dispatch/subgraph-run.ts) and
+returns its outcome — no worktree is cut, no adapter is called, no token is
+spent. Every other node goes on to `resolveSessionPlan`, which is handed the node
+already resolved so the version is read once.
+
+The dispatch **reconciles**, keeping no state between ticks: the children of
+this node (`parent_node_id` equal to it, in `sibling_position` order) against
+the count the node expects. Fewer: it opens the missing ones, in element order,
+sequentially, each `POST /v1/jobs` carrying the parent pair, the parent's
+`execution_id`, the called class's current version and initial node, and — for
+an ordered fan-out — `depends_on` naming the previous child. Equal, some not
+arrived: it writes nothing. Equal, all arrived: it records the node's output as
+one `completed` session on the pseudo-engine `subgraph` and takes the node's
+single edge (none, for a final node). More: it blocks. A crash between the finish
+and the transition is repaired by the next dispatch, which finds the stored
+report and only transitions. The placeholder grammar is
+[`subgraph-map.ts`](../../packages/runner/src/dispatch/subgraph-map.ts)'s, pure.
+
+The refusals that reproduce on every retry — an unregistered class, a
+placeholder that does not resolve, a `fan_out.over` that is not a list, a 4xx
+from the control plane, too many children, a node reached a second time — block
+the job with a reason naming the node. A 5xx or a network error throws into the
+same bounded pre-session decision as every other read before a session
+(`pre-session-retry.ts`), and a dispatch that completed resets that streak.
+
+**The wait.** Once its children exist the parent reads `dispatch_hold:
+"children"`. `ControlPlaneClient.listReleasedJobs` drops every held job — so a
+waiting parent costs no `POST /v1/leases` per tick — and the core's `job_held`
+refusal stays the backstop. When the last child arrives the hold clears, the
+parent is leased like any job, and the dispatch above resumes it.
+
+**The children watcher.** A child that is blocked or cancelled never arrives, so
+the hold would never clear and nothing would ever look at the parent again.
+[`watch-children.ts`](../../packages/runner/src/controller/watch-children.ts) is
+the one place that does: the `Controller` awaits it at the start of every tick
+(an error lands in `lastWatchError` and never stops the tick), and one pass
+reads the project's board, takes every job that is not blocked or cancelled, is
+held by its children and has a child that is blocked or cancelled, checks — on
+its graph version, read once per version — that the node it stands on is a
+subgraph node, and blocks it naming the node, the first problem child in
+position order, its position and its cause. A blocked parent is skipped, so a
+pass is idempotent. It never advances, unblocks or cancels anything: a person
+unblocks the parent once the child is resolved, and cancelling the parent
+cascades to the open children through the core. `cli/run.ts` wires it.
+
 ### Zero database access
 
 Nothing in `packages/runner` imports a SQLite driver or any module of

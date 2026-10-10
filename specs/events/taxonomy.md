@@ -199,7 +199,11 @@ Whoever wants the new text reads the job.
 #### `job.dependency_declared` — [schema](schemas/job.dependency_declared.schema.json)
 
 Emitted at the **intake's confirmation**, once per edge declared between two
-jobs of the same batch (t122). Actor: `user` — it is a human gate, and when
+jobs of the same batch (t122), and — since t638 — by **`POST /v1/jobs`**, once
+per id of its optional `depends_on`, in the creation transaction, after
+`job.created` (and after `job.parent_linked` when the job is a child). The
+creation's actor is the event's actor; the runner's subgraph dispatch writes it
+as `system`/`runner` when it chains the children of an ordered fan-out. Actor: `user` — it is a human gate, and when
 whoever confirms identifies themselves it is their login that stays in
 `actor.ref`; t124 authenticated the API, but a token proves possession and not
 a person, so the control plane goes on honestly recording `system`/`intake`

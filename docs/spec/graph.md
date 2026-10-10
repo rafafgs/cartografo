@@ -582,11 +582,12 @@ Two consequences the format inherits from that choice:
 
 ### `subgraph`: a node that calls another class
 
-> **Status: format and validation only.** Nothing executes a subgraph node yet.
-> A job that reaches one is not handled; opening the children, waiting without a
-> session, resuming with their output, and what a failed or cancelled child does
-> to the parent belong to the runtime that follows this one. What exists today is
-> the shape, its validation, and its refusal at registration.
+> **Status: executed since t638.** The format, its validation and its refusal at
+> registration are t637's; the runtime contract below — opening the children,
+> waiting with no session, resuming with their output, and what a stuck child
+> does to the parent — is t638's. The runner's half is described in
+> [`runner-and-controller.md`](runner-and-controller.md) §4, "A subgraph node
+> opens no session".
 
 A class can hand work to another class. The flow between graphs is itself a
 versioned graph (D2, D15), so the call is a **node kind in the format**, not an
@@ -641,8 +642,10 @@ press on the format). A string value may carry tokens `{{<root>.<path>}}`:
 Any `{{…}}` token that does not fit its position — and an unclosed `{{` — is
 `subgraph_invalid_placeholder`. A value with no token is a literal. A value that
 is **exactly one token** keeps the resolved value's type; embedded in text it is
-stringified. This section fixes the grammar and what it must match; resolving it
-at run time is the runtime's.
+stringified. Embedded, a string is inserted as it is and anything else as JSON.
+Every path that does not resolve is reported at once, and the mapping fails
+closed: `title` has to resolve to a non-empty text, `body` to a text, and each
+`fields` value to a text, number or boolean.
 
 **Fan-out.** One child job per element of the list at `over`. With
 `ordered: true` each child depends on the previous one. The node's own output
@@ -650,9 +653,57 @@ collects, for each `output_map` key, an **array with one entry per child, in
 element order** — so with a fan-out every mapped property is a list.
 
 **One exit.** A subgraph node has at most one outgoing edge
-(`subgraph_multiple_exits`). How a failed or cancelled child maps to the parent
-is the runtime's to decide, and it will decide labels; until then there is one
-exit, labelled like any single-exit node.
+(`subgraph_multiple_exits`), labelled like any single-exit node. A failed,
+blocked or cancelled child does not take a second exit: it **blocks the parent**
+on the node, with a reason naming the child, its position and its cause (see
+"The runtime" below). Nothing is auto-advanced, and nothing is cancelled on the
+parent's behalf.
+
+**The runtime** (t638). When a job arrives on a subgraph node:
+
+1. **No session opens to make the call.** The runner reconciles against what the
+   control plane holds — the job's children whose `parent_node_id` is this node,
+   in `sibling_position` order — and keeps no state of its own. The expected
+   count is the length of the list at `fan_out.over`, or 1 without a fan-out.
+2. **Open.** Fewer children than expected: the class is looked up again, in the
+   job's own project (`GET /v1/classes`, then its `current_version_id` for the
+   `initial_node`), every missing payload is resolved through `input_map`, and
+   one `POST /v1/jobs` is made per missing child, sequentially, in element order:
+   the parent pair, the parent's `execution_id`, the class's version and initial
+   node. With `ordered: true`, child *k* names child *k − 1* in `depends_on`, so
+   the lease grant runs them one after another. The parent is now held
+   (`dispatch_hold: "children"`) and is not leased again until every child has
+   arrived.
+3. **Wait.** Exactly the expected count, some not arrived: nothing is written.
+   The wait is no session at all, so the session ceiling — which counts trailing
+   `failed` sessions — has nothing to count.
+4. **Resume.** Every child arrived: the output is assembled through
+   `output_map` (`{{child.<path>}}` reads each child's own node input), recorded
+   as **one** session on the pseudo-engine `subgraph` — `working_dir: "(none)"`,
+   a one-line prompt naming the node, the class and the children, finished
+   `completed` with the output and a transcript listing `<position>/<N> job <id>`,
+   no usage — and the node's single edge is taken. That session is checked
+   against the node's own `contract.output_schema` (the fallback for a pinless
+   subgraph node), it is the fact that marks a **final** subgraph node done (a
+   subgraph node needs its own report, like a node that pins a skill), and the
+   context projection merges it into the bucket `contract.produces` names. An
+   empty list resumes at once, every mapped property `[]`. A resume that finds a
+   `completed` session with an output already stored only repeats the transition.
+5. **Block.** Each of these stops the parent with a reason: an unregistered
+   class or one with no current version, a placeholder that does not resolve, a
+   `fan_out.over` that is not a list, a 4xx refusal of a child creation (quoted),
+   more children than expected, a report the control plane refused, and a job
+   reaching the node a **second time** — children belong to the node, not to a
+   visit, so a revisited subgraph node is not supported yet (a recorded known
+   gap). A 5xx or a network failure is retried and then blocked with its count,
+   like every other failure before a session.
+6. **A stuck child.** The runner's children watcher blocks a held parent standing
+   on a subgraph node when one of its children is blocked (it failed, a gate
+   stopped it, or it waits on a person) or was cancelled:
+   `` Subgraph node `<node>`: child job <id> (<position> of <total>) is blocked: <its reason> ``,
+   or `…was cancelled`. A person resolves the child and unblocks the parent; if
+   the child is still stuck the next pass blocks it again. Cancelling the parent
+   cascades to its open children.
 
 **The entry contract of the called class** is read from its document alone: its
 `initial_node` and its declared `custom_fields`. A field the child demands at its

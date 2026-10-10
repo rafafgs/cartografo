@@ -77,6 +77,16 @@
  * has not been told about. What is refused is the one case where the job
  * itself contradicts the claim (D25).
  *
+ * Since t636 the grant has a third exception, and it narrows what the paragraph
+ * at the top of this one said: eligibility is no longer the controller's alone.
+ * A job that exists in the claim's project and carries a non-null
+ * `dispatch_hold` — cancelled, or waiting on an unfinished dependency or child —
+ * is answered `200 {lease: null, reason: 'job_held', dispatch_hold}` and nothing
+ * is granted. It is the one place the core mediates dispatch, so it is the one
+ * place a dependency order or a parent's wait can be enforced without trusting
+ * every runner to filter. `GrantResult` in `repositories/leases.ts` is
+ * untouched: this route builds that answer itself.
+ *
  * A lease that clears by EXPIRING has the same theoretical gap and is not
  * closed here: `claimExpired`/`expireOverdue` kill a batch with one `UPDATE`,
  * which is a differently shaped problem, and it is not what t198 hit.
@@ -108,7 +118,12 @@ import {
   type LeaseFilters,
 } from '../repositories/leases.ts';
 import { now } from '../repositories/common.ts';
-import { announceFinishedExecution, getJob, jobProjectId } from '../repositories/job.ts';
+import {
+  announceFinishedExecution,
+  dispatchHoldOf,
+  getJob,
+  jobProjectId,
+} from '../repositories/job.ts';
 import { getRunner } from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal } from './common.ts';
@@ -250,6 +265,18 @@ export function registerLeases(
           job_project_id: jobProject,
         },
       );
+    }
+
+    // The dispatch hold (t636, FR13): a job that exists in the claim's project
+    // and is cancelled, or waits on an unfinished dependency or child, is not
+    // handed out. The same `200 {lease: null, reason}` a full cap answers with —
+    // "not now, try the next one" — because a hold on a dependency or a child
+    // lifts by itself once that work completes. The rule is the projection's
+    // own `dispatch_hold`, never a second copy of it. An id naming no row still
+    // falls through to the grant, as it always has.
+    if (jobProject !== null) {
+      const hold = dispatchHoldOf(db, body.job_id as number, body.project_id as number);
+      if (hold !== null) return { lease: null, reason: 'job_held', dispatch_hold: hold };
     }
 
     // The clamp, and not a refusal: a declaration above the ceiling is not a

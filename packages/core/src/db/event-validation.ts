@@ -273,6 +273,27 @@ const RULES: Record<string, TypeRule> = {
       depends_on_job_id: required('integer'),
     },
   },
+  // A child's link to the job that opened it (t636). Recorded on the CHILD's
+  // timeline, right after its `job.created`, rather than as new keys on that
+  // event: no existing `job.created` payload changes shape.
+  'job.parent_linked': {
+    entity: 'job',
+    fields: {
+      parent_job_id: required('integer'),
+      parent_node_id: required('string'),
+      sibling_position: required('integer', { min: 1 }),
+    },
+  },
+  // The job was cancelled for good (t636). `cascaded_from_job_id` is `null` for
+  // the job an operator named and the immediate parent for every descendant the
+  // cancel cascaded to; `reason` is `null` when nobody gave one.
+  'job.cancelled': {
+    entity: 'job',
+    fields: {
+      reason: optional('string'),
+      cascaded_from_job_id: optional('integer'),
+    },
+  },
   // The graph-declared hook that gave up (t169). It is an incident and not an
   // outcome — the same reading as `session.permission_denied`: nothing about the
   // job's traversal changes, and the only reason the type exists is that a hook

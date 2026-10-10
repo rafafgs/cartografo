@@ -63,8 +63,12 @@ import { listInputRequests } from '../repositories/input-request.ts';
 import {
   CrossProjectVersionReferenceError,
   GraphVersionNotReadyError,
+  JobCompletedError,
+  ParentCancelledError,
+  UnknownParentJobError,
   UnknownProjectError,
   blockJob,
+  cancelJob,
   getJob,
   createJob,
   jobContextSeed,
@@ -102,6 +106,8 @@ const CREATE_JOB_SCHEMA = {
   response: {
     201: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
+    // t636: the parent a child names does not exist in its project.
+    404: ERROR_RESPONSE_SCHEMA,
     // t283: the body was fine and the version it names exists — what refuses is
     // that version's contract state, which is a conflict and not a bad request.
     409: ERROR_RESPONSE_SCHEMA,
@@ -390,6 +396,17 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
           project_id: error.projectId,
         });
       }
+      // The parent a child names (t636, FR3). An unknown parent and a parent of
+      // another project are the same body, byte for byte: the boundary is never
+      // distinguishable from an absence, so nothing of the id is echoed.
+      if (error instanceof UnknownParentJobError) {
+        return refusal(reply, 404, error.code, error.message);
+      }
+      if (error instanceof ParentCancelledError) {
+        return refusal(reply, 409, error.code, error.message, {
+          parent_job_id: error.parentJobId,
+        });
+      }
       // The version resolves, but in another project (t410, FR7): the request
       // is reaching across a partition, which is a conflict and never a silent
       // accept. A hash that resolves in NO project is untouched by this branch
@@ -646,6 +663,31 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       };
     }),
   );
+
+  /**
+   * Cancels a job for good, cascading to its open children (t636, FR10).
+   *
+   * Outside the `write` helper above because it has one refusal that helper
+   * cannot speak: `409 job_completed` for a job that has already arrived. An
+   * unknown id is the same `404 not_found` the sibling writes give, and a job
+   * already cancelled answers `200` with its unchanged projection — the
+   * cancellation happened once, and asking again is not an error.
+   *
+   * Operator-only by omission from the runner allowlist (`auth.ts`): a runner
+   * reports what it did, it does not decide that work stops.
+   */
+  app.post('/jobs/:id/cancellations', async (request, reply) => {
+    try {
+      return await withValidation(reply, () => {
+        const body = isObject(request.body) ? request.body : {};
+        const cancelled = cancelJob(db, routeId(request.params), body);
+        return cancelled === null ? notFound(reply, 'job') : cancelled;
+      });
+    } catch (error) {
+      if (!(error instanceof JobCompletedError)) throw error;
+      return refusal(reply, 409, error.code, error.message, { job_id: error.jobId });
+    }
+  });
 
   write('/jobs/:id/transitions', 'post', (id, body) => transitionJob(db, id, body));
   write('/jobs/:id/blocks', 'post', (id, body) => blockJob(db, id, body));

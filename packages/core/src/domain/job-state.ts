@@ -206,3 +206,69 @@ export function deriveJobState(facts: JobStateFacts): JobStateResult {
   // 5. Waiting. Since it arrived where it stands, or since it was born.
   return { state: 'queued', state_since: facts.lastTransitionAt ?? facts.createdAt };
 }
+
+/* -------------------------------------------------------------------------- */
+/* t636 — the dispatch hold: may this job be handed to a runner right now?      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Why a job may not be dispatched, in the priority order
+ * {@link deriveDispatchHold} applies — or `null` when nothing holds it.
+ *
+ * A separate field and NOT a seventh {@link JobState}, deliberately: the six
+ * words are pinned by the CLI, the MCP server and `docs/spec/glossary-wire.md`
+ * §2.7, and how a hold is SHOWN belongs to the ticket that changes those. What
+ * this answers is narrower — whether the lease grant may hand the job out.
+ */
+export type DispatchHold =
+  /** The job was cancelled. Nothing is ever dispatched on it again. */
+  | 'cancelled'
+  /** A job it depends on (declared at the intake) has not completed. */
+  | 'dependencies'
+  /** A child it opened has not completed. */
+  | 'children';
+
+/** What the hold needs to know about one related job — a dependency or a child. */
+export interface RelatedJobFacts {
+  /** The related job's own derived `completed`. */
+  completed: boolean;
+  /**
+   * Whether the related job was cancelled.
+   *
+   * Carried and deliberately NOT read: a cancelled dependency or child does not
+   * release anything (see {@link deriveDispatchHold}). It is here so that the
+   * rule is stated against the fact it ignores, not against its absence.
+   */
+  cancelled: boolean;
+}
+
+/** Everything the hold is derived from, already read in a batch by the caller. */
+export interface DispatchHoldFacts {
+  /** Whether the job itself was cancelled. */
+  cancelled: boolean;
+  /** Every dependency the job declared, done or not. */
+  dependencies: RelatedJobFacts[];
+  /** Every direct child the job opened, done or not. */
+  children: RelatedJobFacts[];
+}
+
+/**
+ * Whether the job is held, and by what.
+ *
+ * First match wins: `'cancelled'`, then `'dependencies'`, then `'children'`,
+ * then `null`. Only a related job that COMPLETED releases a hold. A cancelled
+ * dependency or child does not: the work it stood for never happened, and
+ * running the dependent or the parent regardless would be a choice nobody made.
+ * The operator cancels the dependent or the parent instead.
+ *
+ * Pure, like {@link deriveJobState}: no `Database`, no clock.
+ *
+ * @param facts The job's own cancellation and its relations.
+ * @returns The hold, or `null` when the job may be dispatched.
+ */
+export function deriveDispatchHold(facts: DispatchHoldFacts): DispatchHold | null {
+  if (facts.cancelled) return 'cancelled';
+  if (facts.dependencies.some((dependency) => !dependency.completed)) return 'dependencies';
+  if (facts.children.some((child) => !child.completed)) return 'children';
+  return null;
+}

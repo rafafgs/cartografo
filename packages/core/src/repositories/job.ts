@@ -36,8 +36,11 @@ import {
 import type { ProjectedJob } from '../domain/context.ts';
 import type { ContractProblem, ContractsState, GraphDocument } from '../domain/graph.ts';
 import {
+  deriveDispatchHold,
   deriveJobState,
+  type DispatchHold,
   type JobState,
+  type RelatedJobFacts,
   type JobStateFacts,
 } from '../domain/job-state.ts';
 import {
@@ -142,6 +145,35 @@ export interface Job {
    * this state since we do not know when" is not something a screen can render.
    */
   state_since: string;
+  /**
+   * The job that opened this one, or `null` for a job nobody opened (t636).
+   *
+   * A fact with a row of its own (`job_parent`) and a `job.parent_linked` event
+   * on this job's timeline, written once, in the creation transaction.
+   */
+  parent_job_id: number | null;
+  /** The node of the parent that opened this job; free text, like `entry_node_id`. */
+  parent_node_id: string | null;
+  /** 1-based position among the parent's children, assigned at creation. */
+  sibling_position: number | null;
+  /** Ids of ALL direct children, in `sibling_position` order; `[]` when none. */
+  children: number[];
+  /**
+   * Ids, ascending, of the dependencies declared at the intake that have NOT
+   * completed yet; `[]` when there are none or all of them are done.
+   */
+  depends_on: number[];
+  /** When the job was cancelled, or `null`. Cancelling is for good (t636). */
+  cancelled_at: string | null;
+  /**
+   * Why the job may not be handed to a runner right now, or `null` (t636).
+   *
+   * Derived at read time and never stored, like `completed` and `state`: the
+   * rule is `domain/job-state.ts`'s `deriveDispatchHold`, over the cancellation
+   * and the `completed` verdict of every dependency and child. `POST /v1/leases`
+   * refuses a held job with `job_held`.
+   */
+  dispatch_hold: DispatchHold | null;
   created_at: string;
   updated_at: string;
 }
@@ -177,7 +209,14 @@ export interface ExecutionSummary {
 interface JobRow
   extends Omit<
     Job,
-    'blocked' | 'body' | 'acceptance_criteria' | 'fields' | 'completed' | 'state' | 'state_since'
+    | 'blocked'
+    | 'body'
+    | 'acceptance_criteria'
+    | 'fields'
+    | 'completed'
+    | 'state'
+    | 'state_since'
+    | keyof JobRelationFields
   > {
   blocked: number;
   /** The column `Job.body` is built from; see {@link COLUMNS}. */
@@ -532,6 +571,133 @@ function resolveJobStates(
   return facts;
 }
 
+/** The seven fields t636 adds to {@link Job}, all of them built by {@link toJob}. */
+type JobRelationFields = Pick<
+  Job,
+  | 'parent_job_id'
+  | 'parent_node_id'
+  | 'sibling_position'
+  | 'children'
+  | 'depends_on'
+  | 'cancelled_at'
+  | 'dispatch_hold'
+>;
+
+/** One row of `job_parent`, as the batched read below takes it. */
+interface ParentLinkRow {
+  job_id: number;
+  parent_job_id: number;
+  parent_node_id: string;
+  sibling_position: number;
+}
+
+/** The relations of ONE listed job, as {@link resolveJobRelations} found them. */
+interface JobRelations {
+  parent: ParentLinkRow | null;
+  /** Direct children, in position order. */
+  children: number[];
+  /** Every declared dependency, done or not, ascending. */
+  dependencies: number[];
+}
+
+/** What {@link resolveJobRelations} hands back for a whole list. */
+interface RelationResolution {
+  /** One entry per listed job. */
+  relations: Map<number, JobRelations>;
+  /**
+   * Rows of the related jobs the list does not carry itself — children and
+   * dependencies outside it — so their `completed` can be derived in the same
+   * batch as the listed ones. Their own relations are NOT resolved.
+   */
+  related: JobRow[];
+  /** `cancelled_at` of every cancelled job among the listed AND the related ones. */
+  cancelledAt: Map<number, string>;
+}
+
+/**
+ * The relations of a WHOLE list of jobs, in four statements whatever the list
+ * holds (t636, FR9).
+ *
+ * 1. `job_parent`, both directions at once: the links whose child is listed
+ *    (that job's parent) and the links whose parent is listed (its children),
+ *    in position order;
+ * 2. `job_dependency` of the listed jobs;
+ * 3. the rows of the related jobs that are NOT in the list, so the caller can
+ *    derive their `completed` in the same {@link resolveJobStates} pass — one
+ *    read, never a recursion: those jobs' own relations are not followed;
+ * 4. `job_cancellation` over listed and related alike.
+ *
+ * Every statement is prepared on every call, even when there is nothing for it
+ * to find (SQLite accepts an empty `IN ()`): skipping one when the board has no
+ * relations would make the statement count depend on what the board carries,
+ * which is exactly what `test/jobs.test.ts`'s t415 AT17 and
+ * `test/job-relations.test.ts`'s AT16 refuse.
+ *
+ * @param db Open handle.
+ * @param rows The listed jobs, all of `projectId`.
+ * @param projectId Partition they live in. Related rows are read inside it too.
+ * @returns The relations, the related rows and the cancellations.
+ */
+function resolveJobRelations(db: Database, rows: JobRow[], projectId: number): RelationResolution {
+  const listed = new Set(rows.map((row) => row.id));
+  const byJob = boundList('job', [...listed]);
+
+  const relations = new Map<number, JobRelations>();
+  for (const row of rows) relations.set(row.id, { parent: null, children: [], dependencies: [] });
+
+  const links = db
+    .prepare(
+      `SELECT job_id, parent_job_id, parent_node_id, sibling_position
+         FROM job_parent
+        WHERE job_id IN (${byJob.list}) OR parent_job_id IN (${byJob.list})
+        ORDER BY parent_job_id, sibling_position`,
+    )
+    .all(byJob.params) as ParentLinkRow[];
+  const relatedIds = new Set<number>();
+  for (const link of links) {
+    const asChild = relations.get(link.job_id);
+    if (asChild !== undefined) asChild.parent = link;
+    const asParent = relations.get(link.parent_job_id);
+    if (asParent !== undefined) {
+      asParent.children.push(link.job_id);
+      if (!listed.has(link.job_id)) relatedIds.add(link.job_id);
+    }
+  }
+
+  const dependencies = db
+    .prepare(
+      `SELECT job_id, depends_on_job_id FROM job_dependency
+        WHERE job_id IN (${byJob.list})
+        ORDER BY depends_on_job_id`,
+    )
+    .all(byJob.params) as Array<{ job_id: number; depends_on_job_id: number }>;
+  for (const dependency of dependencies) {
+    relations.get(dependency.job_id)?.dependencies.push(dependency.depends_on_job_id);
+    if (!listed.has(dependency.depends_on_job_id)) relatedIds.add(dependency.depends_on_job_id);
+  }
+
+  const byRelated = boundList('related', [...relatedIds]);
+  const related = db
+    .prepare(
+      `SELECT ${COLUMNS} FROM job
+        WHERE project_id = @project_id AND id IN (${byRelated.list})`,
+    )
+    .all({ project_id: projectId, ...byRelated.params }) as JobRow[];
+
+  const byEither = boundList('either', [...listed, ...related.map((row) => row.id)]);
+  const cancelledAt = new Map<number, string>();
+  const cancellations = db
+    .prepare(
+      `SELECT job_id, cancelled_at FROM job_cancellation WHERE job_id IN (${byEither.list})`,
+    )
+    .all(byEither.params) as Array<{ job_id: number; cancelled_at: string }>;
+  for (const cancellation of cancellations) {
+    cancelledAt.set(cancellation.job_id, cancellation.cancelled_at);
+  }
+
+  return { relations, related, cancelledAt };
+}
+
 /**
  * The row as {@link Job} publishes it.
  *
@@ -542,15 +708,26 @@ function resolveJobStates(
  * nothing — it simply rides out to `/v1` under a name no client was ever told
  * about. `test/no-leaked-row-keys.test.ts` is the gate that says so.
  *
- * No `Database` since t415: the three derived fields all come out of the same
- * `facts`, which somebody else read in one go.
+ * No `Database` since t415: the derived fields all come out of facts somebody
+ * else read in one go — the six states' and, since t636, the relations'.
  *
  * @param row The job's row, as it is in the table.
  * @param facts What {@link resolveJobStates} found out about this row.
+ * @param relations What {@link resolveJobRelations} found out about it.
+ * @param cancelledAt When this job was cancelled, or `null`.
+ * @param verdict The `completed` and cancellation of any job of the batch, the
+ *   related ones included.
  * @returns The projection.
  */
-function toJob(row: JobRow, facts: JobStateFacts): Job {
+function toJob(
+  row: JobRow,
+  facts: JobStateFacts,
+  relations: JobRelations,
+  cancelledAt: string | null,
+  verdict: (id: number) => RelatedJobFacts,
+): Job {
   const { corpo: body, criterios_de_aceite: criteria, ...rest } = row;
+  const dependencies = relations.dependencies.map(verdict);
   return {
     ...rest,
     body,
@@ -559,11 +736,26 @@ function toJob(row: JobRow, facts: JobStateFacts): Job {
     fields: jsonOrNull<ScalarMap>(row.fields),
     completed: hasArrived(facts),
     ...deriveJobState(facts),
+    parent_job_id: relations.parent?.parent_job_id ?? null,
+    parent_node_id: relations.parent?.parent_node_id ?? null,
+    sibling_position: relations.parent?.sibling_position ?? null,
+    children: relations.children,
+    depends_on: relations.dependencies.filter((_, index) => !dependencies[index].completed),
+    cancelled_at: cancelledAt,
+    dispatch_hold: deriveDispatchHold({
+      cancelled: cancelledAt !== null,
+      dependencies,
+      children: relations.children.map(verdict),
+    }),
   };
 }
 
 /**
  * A whole list of rows as {@link Job}, resolved together.
+ *
+ * Relations first, because they name the related jobs whose `completed` the
+ * hold needs; then the six-state facts once, over the listed AND the related
+ * rows, so that a child outside a filtered board costs nothing per child.
  *
  * @param db Open handle.
  * @param rows The rows, all of them of `projectId`.
@@ -571,10 +763,29 @@ function toJob(row: JobRow, facts: JobStateFacts): Job {
  * @returns One projection per row, in the order they came.
  */
 function toJobs(db: Database, rows: JobRow[], projectId: number): Job[] {
-  const facts = resolveJobStates(db, rows, projectId, now());
-  // The cast is the map's own contract: `resolveJobStates` writes one entry per
-  // row it was handed, and these are those rows.
-  return rows.map((row) => toJob(row, facts.get(row.id) as JobStateFacts));
+  if (rows.length === 0) return [];
+  const { relations, related, cancelledAt } = resolveJobRelations(db, rows, projectId);
+  const facts = resolveJobStates(db, [...rows, ...related], projectId, now());
+
+  // A related id with no row in this project (the foreign keys make it
+  // impossible, but the projection stays total) counts as not completed: an
+  // unknown job is never a released hold.
+  const verdict = (id: number): RelatedJobFacts => {
+    const known = facts.get(id);
+    return { completed: known !== undefined && hasArrived(known), cancelled: cancelledAt.has(id) };
+  };
+
+  // The casts are the maps' own contract: both resolutions write one entry per
+  // row they were handed, and these are those rows.
+  return rows.map((row) =>
+    toJob(
+      row,
+      facts.get(row.id) as JobStateFacts,
+      relations.get(row.id) as JobRelations,
+      cancelledAt.get(row.id) ?? null,
+      verdict,
+    ),
+  );
 }
 
 /**
@@ -1039,6 +1250,101 @@ export class UnknownProjectError extends Error {
 }
 
 /**
+ * The parent a child names does not exist in the child's project (t636, FR3).
+ *
+ * One error for two cases on purpose: a parent that was never created and a
+ * parent that lives in another project read the same, byte for byte, so the
+ * refusal never says which ids are taken across the boundary — t410's
+ * convention, the same one {@link readScopedRow} applies to every read. That
+ * is also why it carries no id: the body would differ by the id it echoed.
+ */
+export class UnknownParentJobError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code = 'unknown_parent_job' as const;
+
+  constructor() {
+    super('no job of this project answers to parent_job_id');
+    this.name = 'UnknownParentJobError';
+  }
+}
+
+/**
+ * The parent a child names was cancelled (t636, FR3).
+ *
+ * A conflict and not an absence: the parent exists and is visible, and what
+ * refuses the child is its state. A child of a cancelled job would be born
+ * under work nobody is doing any more — and would itself have to be cancelled
+ * by hand, since the cascade already ran.
+ */
+export class ParentCancelledError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code = 'parent_cancelled' as const;
+  /** The parent that refused the child. */
+  readonly parentJobId: number;
+
+  constructor(parentJobId: number) {
+    super(`job ${parentJobId} was cancelled: it can open no more children`);
+    this.name = 'ParentCancelledError';
+    this.parentJobId = parentJobId;
+  }
+}
+
+/**
+ * The job asked to be cancelled has already arrived (t636, FR10).
+ *
+ * A finished job is not cancelled: its work happened, and a cancellation
+ * recorded over it would claim the opposite in an append-only log.
+ */
+export class JobCompletedError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code = 'job_completed' as const;
+  /** The job that refused the cancel. */
+  readonly jobId: number;
+
+  constructor(jobId: number) {
+    super(`job ${jobId} has already completed: a finished job is not cancelled`);
+    this.name = 'JobCompletedError';
+    this.jobId = jobId;
+  }
+}
+
+/**
+ * Reads the optional parent pair of a `POST /v1/jobs` body (t636, FR2).
+ *
+ * Both or neither: a child with a parent and no node — or a node and no parent —
+ * is a half-declared link, refused naming the half that is missing. `null`
+ * reads as absent, the posture of every other optional field of this body. The
+ * node id is free text and is not checked against the parent's graph, like
+ * `entry_node_id`.
+ *
+ * @param input Request body.
+ * @returns The pair, or `null` when the job has no parent.
+ * @throws {ValidationError} When the pair is half-present or malformed.
+ */
+function readParentLink(input: CreateJobInput): { jobId: number; nodeId: string } | null {
+  const hasJob = input.parent_job_id !== undefined && input.parent_job_id !== null;
+  const hasNode = input.parent_node_id !== undefined && input.parent_node_id !== null;
+  if (!hasJob && !hasNode) return null;
+  if (!hasNode) throw new ValidationError(['parent_node_id is required when parent_job_id is given']);
+  if (!hasJob) throw new ValidationError(['parent_job_id is required when parent_node_id is given']);
+
+  const problems: string[] = [];
+  if (typeof input.parent_job_id !== 'number' || !Number.isInteger(input.parent_job_id)) {
+    problems.push('parent_job_id has to be an integer');
+  }
+  if (typeof input.parent_node_id !== 'string' || input.parent_node_id.length === 0) {
+    problems.push('parent_node_id has to be a non-empty string');
+  }
+  if (problems.length > 0) throw new ValidationError(problems);
+  return { jobId: input.parent_job_id as number, nodeId: input.parent_node_id as string };
+}
+
+/** Whether a job has a `job_cancellation` row. */
+function isCancelled(db: Database, id: number): boolean {
+  return db.prepare('SELECT 1 FROM job_cancellation WHERE job_id = ?').get(id) !== undefined;
+}
+
+/**
  * Whether this version hash is registered in ANY project other than the given
  * one (t410, FR7).
  *
@@ -1087,6 +1393,13 @@ export interface CreateJobInput {
   execution_id?: unknown;
   project_id?: unknown;
   graph_version_id?: unknown;
+  /**
+   * The job that opens this one (t636). Optional; present only together with
+   * {@link CreateJobInput.parent_node_id}.
+   */
+  parent_job_id?: unknown;
+  /** The node of the parent that opens this one. Free text, like `entry_node_id`. */
+  parent_node_id?: unknown;
   actor?: unknown;
 }
 
@@ -1142,8 +1455,20 @@ export interface CreateJobInput {
  *   project and its contracts are not `checked` (t283).
  * @throws {CrossProjectVersionReferenceError} When it resolves only in another
  *   project (t410).
+ * ## A child, since t636
+ *
+ * With `parent_job_id` + `parent_node_id` the job is born as a CHILD: the
+ * parent must exist in the job's own project and must not be cancelled, both
+ * checked before the transaction so that a refusal consumes no id. Inside it,
+ * right after `job.created`, the link is written to `job_parent` with the next
+ * `sibling_position` of that parent and recorded as `job.parent_linked` on the
+ * child's timeline. `job.created` itself carries nothing new.
+ *
  * @throws {UnknownProjectError} When the resolved `project_id` names no
  *   registered project (t417).
+ * @throws {UnknownParentJobError} When the parent does not exist in this
+ *   project (t636).
+ * @throws {ParentCancelledError} When the parent was cancelled (t636).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -1156,12 +1481,21 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     fields: input.fields,
     tier: input.tier,
   });
+  const parentLink = readParentLink(input);
   const projectId = integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
   // Before the version gate and before the transaction, for the reason the
   // validation above gives: a job refused for its scope must not consume an id
   // from the sequence either (t417, FR1). A row written here would answer to a
   // partition no read of this API can name.
   if (getProject(db, projectId) === undefined) throw new UnknownProjectError(projectId);
+  // The parent is resolved INSIDE the job's project: a parent of another
+  // project is refused exactly like one that does not exist (t636, FR3).
+  if (parentLink !== null) {
+    if (readScopedRow(db, parentLink.jobId, projectId) === undefined) {
+      throw new UnknownParentJobError();
+    }
+    if (isCancelled(db, parentLink.jobId)) throw new ParentCancelledError(parentLink.jobId);
+  }
   const executionId = integerOrNull('execution_id', input.execution_id);
   const graphVersionId = textOrNull('graph_version_id', input.graph_version_id);
   const actor = resolveActor(input.actor, API_ACTOR);
@@ -1229,6 +1563,35 @@ export function createJob(db: Database, input: CreateJobInput): Job {
       occurred_at: timestamp,
       data,
     });
+
+    if (parentLink !== null) {
+      // Assigned here and not by the caller, inside the transaction that writes
+      // it: the unique index on (parent, position) is the backstop, this read
+      // is what makes the backstop never fire.
+      const { next } = db
+        .prepare(
+          `SELECT COALESCE(MAX(sibling_position), 0) + 1 AS next
+             FROM job_parent WHERE parent_job_id = ?`,
+        )
+        .get(parentLink.jobId) as { next: number };
+      db.prepare(
+        `INSERT INTO job_parent (job_id, parent_job_id, parent_node_id, sibling_position, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(id, parentLink.jobId, parentLink.nodeId, next, timestamp);
+      recordEvent(db, {
+        type: 'job.parent_linked',
+        project_id: projectId,
+        execution_id: executionId,
+        entity: { type: 'job', id },
+        actor,
+        occurred_at: timestamp,
+        data: {
+          parent_job_id: parentLink.jobId,
+          parent_node_id: parentLink.nodeId,
+          sibling_position: next,
+        },
+      });
+    }
 
     // A job can be BORN standing on a final node — a one-node graph, or a class
     // whose `entry_node_id` is terminal — and then this creation is the fact
@@ -1677,6 +2040,117 @@ export function unblockJob(db: Database, id: number, input: UnblockInput): Job |
     sql: 'blocked = ?, block_reason = NULL',
     values: [asInteger(false)],
   }));
+}
+
+/** Body of `POST /v1/jobs/:id/cancellations`. */
+export interface CancelInput {
+  /** Why, when whoever cancels has something to say. */
+  reason?: unknown;
+  actor?: unknown;
+}
+
+/**
+ * Cancels a job for good, and every open descendant with it (t636, FR10–FR12).
+ *
+ * One `job_cancellation` row and one `job.cancelled` event per job, all of them
+ * in ONE transaction with the same `actor` and the same `occurred_at`: a
+ * failure anywhere in the cascade leaves nothing cancelled. The job named gets
+ * `cascaded_from_job_id: null`; every descendant gets the immediate parent that
+ * cascaded to it.
+ *
+ * The descent cancels each direct child that is neither `completed` nor already
+ * cancelled, and continues below it. It does not pass through a completed child
+ * — its work happened, and what it opened is its own business — nor through an
+ * already cancelled one, whose subtree its own cancel already covered. It never
+ * goes UP: cancelling a child leaves its parent alone, and the parent stays held
+ * by it (`deriveDispatchHold`).
+ *
+ * Idempotent: a job already cancelled answers its unchanged projection and
+ * writes nothing. What this does NOT do is stop a session already open on the
+ * job or release its lease — it records the fact and closes the door to new
+ * leases (`routes/leases.ts`, `job_held`).
+ *
+ * @param db Open handle.
+ * @param id Job id.
+ * @param input Request body.
+ * @returns The job, or `null` if it does not exist.
+ * @throws {ValidationError} When `reason` is not a non-empty string.
+ * @throws {JobCompletedError} When the job has already arrived.
+ */
+export function cancelJob(db: Database, id: number, input: CancelInput): Job | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+
+  const data = requireValidData('job.cancelled', {
+    reason: input.reason,
+    cascaded_from_job_id: null,
+  });
+  const reason = data.reason as string | null;
+  const actor = resolveActor(input.actor, API_ACTOR);
+
+  const apply = db.transaction((): Job => {
+    const current = toOneJob(db, row);
+    if (current.cancelled_at !== null) return current;
+    if (current.completed) throw new JobCompletedError(id);
+
+    const timestamp = now();
+    const record = (job: Job, cascadedFrom: number | null): void => {
+      db.prepare(
+        `INSERT INTO job_cancellation (job_id, reason, cascaded_from_job_id, cancelled_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(job.id, reason, cascadedFrom, timestamp);
+      recordEvent(db, {
+        type: 'job.cancelled',
+        project_id: job.project_id,
+        execution_id: job.execution_id,
+        entity: { type: 'job', id: job.id },
+        actor,
+        occurred_at: timestamp,
+        data: { reason, cascaded_from_job_id: cascadedFrom },
+      });
+    };
+
+    record(current, null);
+    const pending: Job[] = [current];
+    for (let parent = pending.shift(); parent !== undefined; parent = pending.shift()) {
+      // Scoped to the parent's project, which is every child's: `createJob`
+      // resolves a parent only inside the child's own partition (FR3).
+      const childRows = db
+        .prepare(
+          `SELECT ${COLUMNS} FROM job
+            WHERE project_id = ?
+              AND id IN (SELECT job_id FROM job_parent WHERE parent_job_id = ?)
+            ORDER BY id`,
+        )
+        .all(parent.project_id, parent.id) as JobRow[];
+      for (const child of toJobs(db, childRows, parent.project_id)) {
+        if (child.completed || child.cancelled_at !== null) continue;
+        record(child, parent.id);
+        pending.push(child);
+      }
+    }
+
+    return toOneJob(db, readRow(db, id) as JobRow);
+  });
+
+  return apply();
+}
+
+/**
+ * The dispatch hold of one job, for the lease grant (t636, FR13).
+ *
+ * Not a second implementation of the rule: it is the projection's own
+ * `dispatch_hold`, built by the same batched resolution every read uses, so the
+ * lease route and the board can never disagree about whether a job is held.
+ *
+ * @param db Open handle.
+ * @param id Job id.
+ * @param projectId Partition the job lives in.
+ * @returns The hold, or `null` when the job is not held — or does not exist in
+ *   this project, which the lease route leases over without comment.
+ */
+export function dispatchHoldOf(db: Database, id: number, projectId: number): DispatchHold | null {
+  return getJob(db, id, projectId)?.dispatch_hold ?? null;
 }
 
 /** Body of `PATCH /v1/jobs/:id`. */

@@ -214,10 +214,64 @@ depends on: "this one waits for that one" is a fact about the one that waits,
 and it is on its timeline that somebody will look for the reason it did not
 move.
 
-Declaring the dependency does **not** block the dependent job. The edge is a
-record; enforcing the order — blocking automatically, ordering dispatch — is
-another ficha's decision, and a flag nobody knows how to lower would be worse
-than no flag at all.
+Declaring the dependency does **not** raise the dependent job's `blocked` flag:
+a flag nobody knows how to lower would be worse than no flag at all. Since t636
+the order **is** enforced, at lease grant and through a derived field rather
+than a flag: while a dependency has not completed, the dependent's projection
+reads `dispatch_hold: "dependencies"` and `POST /v1/leases` refuses it with
+`reason: "job_held"`. Only a dependency that completes releases it; a cancelled
+one does not.
+
+#### `job.parent_linked` — no schema file yet
+
+Emitted when a job is **created as the child** of another (t636), in the same
+transaction as its `job.created` and immediately after it. Actor: whoever
+created the child — the same actor as its `job.created`.
+
+```json
+{"parent_job_id":200,"parent_node_id":"fan-out","sibling_position":2}
+```
+
+`entity.id` is the **child**: the link is a fact about the job that was opened,
+and it is on the child's timeline that somebody looks for where it came from.
+`sibling_position` is 1-based and assigned by the control plane, the next free
+position among that parent's children. `parent_node_id` is free text, like
+`entry_node_id`.
+
+It does **not** add anything to `job.created`, whose payload is unchanged for a
+child, and it does not move, block or hold the child. What it does to the
+**parent** is derived, never recorded: while a child has not completed, the
+parent reads `dispatch_hold: "children"` and is refused a lease.
+
+Its JSON Schema file follows in the same deferred way as the two
+`graph_version.proposal_*` types (t583); until then `RULES` in
+`packages/core/src/db/event-validation.ts` is authoritative.
+
+#### `job.cancelled` — no schema file yet
+
+Emitted when a job is **cancelled for good** (t636), once per job, through
+`POST /v1/jobs/:id/cancellations`. Actor: `user` — the route is operator-only.
+Cancelling a job cascades to its open descendants, and each of them gets its
+own `job.cancelled` with the same actor and the same `occurred_at`, in one
+transaction.
+
+```json
+{"reason":"the theme was dropped","cascaded_from_job_id":null}
+```
+
+`cascaded_from_job_id` is `null` for the job the operator named and the
+immediate parent for every descendant the cancel reached. `reason` is `null`
+when nobody gave one. A completed child is left alone, and the cascade does not
+pass through it; it never goes up to a parent.
+
+It does **not** stop a session already open on the job, release its lease or
+finish its round (`execution.finished` still waits for every job of the round
+to complete). It records the fact and closes the door to new leases: the job
+reads `dispatch_hold: "cancelled"`. A second cancel of the same job records
+nothing. There is no un-cancel.
+
+Its JSON Schema file follows in the same deferred way as the `job.parent_linked`
+entry above says; `RULES` is authoritative until then.
 
 #### `job.hook_failed` — [schema](schemas/job.hook_failed.schema.json)
 

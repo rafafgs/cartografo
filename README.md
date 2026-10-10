@@ -196,6 +196,7 @@ script.
 npx cartografo jobs                            # the board, one row per job
 npx cartografo jobs --state awaiting_you       # only the jobs waiting on a person
 npx cartografo job 41                          # one job's timeline, artifacts and sessions
+npx cartografo job 40                          # a parent: its children, and which one waits on a person
 npx cartografo executions                      # the rounds, and how each one is doing
 npx cartografo execution 7                     # one round's jobs, sessions and questions
 npx cartografo sessions --job 41               # a job's sessions
@@ -212,10 +213,21 @@ npx cartografo answer 12 "yes, go ahead"       # answers an escalation; unblocks
 npx cartografo answer 12 --file answer.txt     # same, reading the text from a file
 npx cartografo block 41 --reason "waiting on legal"
 npx cartografo unblock 41 --note "promotion released"
+npx cartografo cancel 40 --reason "theme dropped"  # for good: the open children go with it
 npx cartografo job create --graph sha256:… --input job.json
 npx cartografo settings                        # this project's recorded defaults
 npx cartografo settings set workspace_root /path/to/a/checkout
 ```
+
+A job can call another graph, and then the board is a tree. `jobs` has a
+`relation` column (`child 2 of #40`, `parent of 3`) and a `hold` column that says
+why the control plane will not hand a job to a runner (`children`,
+`dependencies`, `cancelled`). `job 40` on a parent prints its direct children in
+position order, each with the state the control plane derived for it, and a
+`waiting on a person:` line naming the children that have a question open; run
+`job` on a child to go one level down. `cancel` is for good and goes down, never
+up, so a parent that still has an open child stays held. It is the operator's
+hand only: the MCP server has no tool for it.
 
 `watch` is what replaces the board's own live view for a terminal-first flow:
 it tails `GET /v1/events/stream`, the same route the screen's board and

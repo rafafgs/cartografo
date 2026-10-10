@@ -391,6 +391,13 @@ test('a job digest passes the control plane\'s own state through, unchanged', ()
     graph_version_id: 'sha256:abc',
     completed: false,
     state: 'running',
+    parent_job_id: null,
+    parent_node_id: null,
+    sibling_position: null,
+    children: [],
+    depends_on: [],
+    cancelled_at: null,
+    dispatch_hold: null,
     created_at: '2026-09-06T09:00:00.000Z',
     updated_at: '2026-09-06T11:45:00.000Z',
   };

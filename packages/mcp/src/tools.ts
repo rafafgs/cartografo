@@ -7,7 +7,7 @@
  * **1. The surface is a decision, not a mapping of the API.** Everything here
  * could be done with `curl` against `/v1/*` by anybody holding the token; what
  * this file adds is a line around the part of the API a model may drive on its
- * own. Two exclusions carry the weight, and both are deliberate:
+ * own. Three exclusions carry the weight, and all are deliberate:
  *
  * - **Nothing decides a proposal.** `approve`, `apply`, `reject` and `revert`
  *   are absent, and their absence IS principle 5 (README): the surveyor's
@@ -22,6 +22,12 @@
  *   a node where none did — and the log is what the surveyor reads to propose
  *   the next version. `blocks`/`unblocks` ARE here, because stopping and
  *   resuming a job is an operator's fact about an operator's decision.
+ *
+ * - **Nothing cancels a job.** Cancelling is for good — there is no un-cancel
+ *   route — and it cascades to every open child; deciding that work stops
+ *   belongs to the operator's hand (`cartografo cancel`), not to a tool a model
+ *   can call from a chat window (D26). `blocks`/`unblocks` ARE here because
+ *   they have an inverse.
  *
  * Also absent, for a different reason: anything that starts or stops a process.
  * The control plane, the runner and the surveyor are long-lived commands an
@@ -219,9 +225,42 @@ export function jobDigest(job: Job): Record<string, unknown> {
     state: job.state,
     graph_version_id: job.graph_version_id,
     tier: job.tier,
+    // Composition (t639), passed through under their own names: the tree is
+    // read from these and never rebuilt here. A control plane that predates
+    // them digests as no relations.
+    parent_job_id: job.parent_job_id ?? null,
+    parent_node_id: job.parent_node_id ?? null,
+    sibling_position: job.sibling_position ?? null,
+    children: job.children ?? [],
+    depends_on: job.depends_on ?? [],
+    cancelled_at: job.cancelled_at ?? null,
+    dispatch_hold: job.dispatch_hold ?? null,
     created_at: job.created_at,
     updated_at: job.updated_at,
   };
+}
+
+/**
+ * A job's direct children, in position order, off ONE read of the board and
+ * only when the job has any.
+ *
+ * The route has no `children` filter, so the board is read once and matched by
+ * id — never one request per child. An id the board did not answer is skipped.
+ */
+async function readChildren(
+  client: ApiClient,
+  job: Job,
+  projectId: number | undefined,
+): Promise<Job[]> {
+  const ids = job.children ?? [];
+  if (ids.length === 0) return [];
+
+  const board = await client.listJobs({ project_id: projectId });
+  const byId = new Map(board.map((entry) => [entry.id, entry]));
+  return ids.flatMap((id) => {
+    const child = byId.get(id);
+    return child === undefined ? [] : [child];
+  });
 }
 
 /** A session, in the fields that answer "did the agent finish, and at what cost?". */
@@ -806,7 +845,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
   {
     name: 'cartografo_list_jobs',
     description:
-      'The board: every job with the node it is standing on, whether it is blocked and why, and whether it has arrived. Optionally narrowed to one execution.',
+      'The board: every job with the node it is standing on, whether it is blocked and why, and whether it has arrived. Each job also says how it relates to the others (its parent and position, its children, the dependencies still open), whether it was cancelled and why the control plane would not hand it to a runner (dispatch_hold). Optionally narrowed to one execution.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -827,7 +866,7 @@ export const TOOLS: readonly Tool[] = Object.freeze([
   {
     name: 'cartografo_get_job',
     description:
-      'One job with everything that explains where it stands: its own fields, the sessions that ran on it, the questions it is waiting on, and its timeline from the event log. This is the tool for "why is job N not moving".',
+      'One job with everything that explains where it stands: its own fields, the sessions that ran on it, the questions it is waiting on, and its timeline from the event log. A parent also returns its direct children (children, in position order) and the ids of those waiting on a person (waiting_on_a_person), read off one extra board request. This is the tool for "why is job N not moving".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -853,14 +892,18 @@ export const TOOLS: readonly Tool[] = Object.freeze([
       // job_id alone already disambiguates one job's rows (same reasoning
       // `packages/core/src/routes/jobs.ts` documents for the equivalent
       // server-side reads) — no project_id here.
-      const [sessions, questions, timeline] = await Promise.all([
+      const [sessions, questions, timeline, children] = await Promise.all([
         client.listSessions({ job_id: id }),
         client.listInputRequests({ job_id: id }),
         includeTimeline ? client.jobEvents(id, projectId) : Promise.resolve(null),
+        readChildren(client, job, projectId),
       ]);
 
       return {
         job: clipStrings(job),
+        children: children.map(jobDigest),
+        // The children whose state the control plane derived as `awaiting_you`.
+        waiting_on_a_person: children.filter((child) => child.state === 'awaiting_you').map((child) => child.id),
         sessions: sessions.map(sessionDigest),
         input_requests: questions.map(inputRequestDigest),
         timeline: timeline === null ? undefined : timeline.map(eventDigest),

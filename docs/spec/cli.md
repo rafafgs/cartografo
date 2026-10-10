@@ -25,8 +25,8 @@ client of the public API.** None of them opens the database or imports
 
 `--project <id|name>` scopes every subcommand whose routes are project-scoped
 (default `1`; a name is resolved against `GET /v1/projects`). It is accepted but
-inert on `answer`, `block`, `unblock` and `runners recheck`, none of whose routes
-are scoped.
+inert on `answer`, `block`, `unblock`, `cancel` and `runners recheck`, none of
+whose routes are scoped.
 
 ---
 
@@ -45,8 +45,8 @@ both ways by
 | `export <class>` | Writes the current version of a class to a file `import` accepts back. | `GET /v1/graphs/:id`, `GET /v1/graph-versions/:id` | no |
 | `export-history --job <id> \| --execution <id>` | Writes a job's or a round's whole history as JSON Lines: a header with the map version, then every event in id order. | `GET /v1/jobs/:id` or `GET /v1/executions/:id` and `GET /v1/jobs?execution_id=`, `GET /v1/sessions`, `GET /v1/input-requests`, `GET /v1/graph-versions/:id`, `GET /v1/graphs/:id`, `GET /v1/projects` | no |
 | `status` | The server, the registered classes, the projects, and the counts of jobs and pending questions. | `GET /health`, `GET /v1/classes`, `GET /v1/projects`, `GET /v1/jobs`, `GET /v1/input-requests?status=pending` | yes |
-| `jobs [--state <state>] [--execution <id>]` | The board: every job with its derived state; `--state` filters client-side on the six words (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`). | `GET /v1/jobs` | yes |
-| `job <id>` · `job create --graph <version-id> --input <file> [--execution <id>]` | `job <id>`: one job's timeline in the three buckets (queue, agent working, human being asked) with its totals, artifacts and sessions. `job create`: opens a job on a graph version from a JSON file of its fields. | `job <id>`: `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?job_id=`, `GET /v1/input-requests?job_id=`, `GET /v1/jobs/:id/artifacts`. `job create`: `POST /v1/jobs` | yes |
+| `jobs [--state <state>] [--execution <id>]` | The board: every job with its derived state; `--state` filters client-side on the six words (`awaiting_you`, `blocked_unasked`, `running`, `unowned`, `completed`, `queued`). Two columns say how jobs compose: `relation` (`-`, `child 2 of #7`, `parent of 3`, or both) and `hold` (the control plane's `dispatch_hold`: `cancelled`, `dependencies`, `children`, or `-`). | `GET /v1/jobs` | yes |
+| `job <id>` · `job create --graph <version-id> --input <file> [--execution <id>]` | `job <id>`: one job's timeline in the three buckets (queue, agent working, human being asked) with its totals, artifacts and sessions. Under the header it prints, each only when it applies, `parent:`, `cancelled:`, `held:` and `depends on:`; a parent adds a `children:` table (its direct children in position order, each with the state the control plane derived and its own child count) and a `waiting on a person:` line naming the children whose state is `awaiting_you`. A cancelled job's header says `cancelled — <timestamp>` unless it had already arrived. `job create`: opens a job on a graph version from a JSON file of its fields. | `job <id>`: `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?job_id=`, `GET /v1/input-requests?job_id=`, `GET /v1/jobs/:id/artifacts`, and, for a parent only, one `GET /v1/jobs` (the children are matched by id, never fetched one by one). `job create`: `POST /v1/jobs` | yes |
 | `executions` | The rounds: jobs, blocked jobs and pending questions per round. | `GET /v1/executions` | yes |
 | `execution <id>` | One round's jobs, sessions and pending questions. Never a 404 — an execution is not an entity. | `GET /v1/jobs?execution_id=`, `GET /v1/sessions?execution_id=`, `GET /v1/input-requests?execution_id=&status=pending` | yes |
 | `sessions [--job <id>] [--execution <id>]` | Lists sessions, optionally for one job or one round. | `GET /v1/sessions` | yes |
@@ -59,6 +59,7 @@ both ways by
 | `answer <request-id> (<text> \| --file <path>) [--by <name>]` | Answers a pending question; the control plane unblocks the job in the same transaction. | `PATCH /v1/input-requests/:id/answer` | yes |
 | `block <job-id> --reason <text> [--by <name>]` | Raises a job's blocked flag. | `POST /v1/jobs/:id/blocks` | yes |
 | `unblock <job-id> [--note <text>] [--by <name>]` | Lowers a job's blocked flag. | `POST /v1/jobs/:id/unblocks` | yes |
+| `cancel <job-id> [--reason <text>] [--by <name>]` | Cancels a job for good, and every open child with it (never its parent; a completed child is left alone). There is no way back. `--reason` is optional; a repeat is a success that writes nothing; a job that already arrived is refused (`job_completed`). | `POST /v1/jobs/:id/cancellations` | yes |
 | `settings [get]` · `settings set <key> <value>` | Reads, or writes one of, the project's recorded defaults; the key is checked locally before any request. | `GET /v1/settings`, `PATCH /v1/settings` | yes |
 | `interview [--resume <id>] [--answers <file>] [--by <name>]` | Draws a map by conversation in the terminal: a title and a description, then every question as it arrives (a number or text for a decision, one prompt per field for a form), printing the map and its step progress as it grows. When it is finished: `register`, `export <dir>`, or Enter to leave it as a draft. | `GET /v1/graphs/map-design`, `POST /v1/jobs`, `GET /v1/jobs/:id`, `GET /v1/jobs/:id/conversation`, `GET /v1/jobs/:id/events`, `GET /v1/events/stream`, `PATCH /v1/input-requests/:id/answer`, `POST /v1/skills`, `POST /v1/graphs` | no |
 | `proposals list\|show\|approve\|apply\|reject\|revert` | The proposal inbox: `list` groups into PENDING/HISTORY unless `--status` is given; `show` prints the semantic diff one line per operation; `approve`/`apply` take no reason; `reject`/`revert` require `--reason`, checked before any request. | `GET /v1/proposals`, `GET /v1/proposals/:id`, `POST /v1/proposals/:id/{approve,apply,reject,revert}` | yes |
@@ -107,7 +108,7 @@ Every write says who made it, and that is never left to the control plane to
 guess. An absent `actor` becomes the API's own identity — "the control plane",
 not a person — so the CLI always sends one:
 
-- `answer`, `block`, `unblock` and `interview` record `--by`, else the OS user,
+- `answer`, `block`, `unblock`, `cancel` and `interview` record `--by`, else the OS user,
   else the literal `"operator"`;
 - `proposals approve/apply/reject/revert` and `graph propose` record `--by`, else
   the OS user (`USER`/`USERNAME` as a fallback), and refuse with a usage error
@@ -263,6 +264,10 @@ names who it is left to.
   §1). `jobs` lists every job, and `interview --resume <id>` picks one up, but
   nothing filters to the jobs whose `entry_node_id` is `interview`. Left to a
   future ticket.
+- **No recursive tree view.** `job <parent>` lists the direct children only, and
+  each child's own child count says a deeper level exists; `job <child>` walks
+  down one level at a time. A `--tree` flag that prints every level is left to a
+  future ticket (t639).
 - **The board's map position** (`screen.md` §1, t463's
   `step N/M · <role>` line). `jobs` and `job <id>` show the raw current node.
   Left to a future ticket.

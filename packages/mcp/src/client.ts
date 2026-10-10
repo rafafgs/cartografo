@@ -142,6 +142,21 @@ export interface Job {
    * state would be claiming a say in a vocabulary that is not its own.
    */
   state: string;
+  /**
+   * Composition (t636), all of it derived or recorded over there and passed
+   * through untouched: the job that opened this one and from which node, its
+   * 1-based position among that parent's children, the ids of its own direct
+   * children (position order), the dependencies that have not completed yet,
+   * when it was cancelled, and why the control plane will not hand it to a
+   * runner right now (`cancelled`, `dependencies` or `children`).
+   */
+  parent_job_id: number | null;
+  parent_node_id: string | null;
+  sibling_position: number | null;
+  children: number[];
+  depends_on: number[];
+  cancelled_at: string | null;
+  dispatch_hold: 'cancelled' | 'dependencies' | 'children' | null;
   created_at: string;
   updated_at: string;
 }

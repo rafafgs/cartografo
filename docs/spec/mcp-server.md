@@ -40,8 +40,8 @@ a small wire body passed through whole.
 | `cartografo_list_graphs` | Reads the registered classes and every lineage, base and variant. | `GET /v1/classes`, `GET /v1/graphs` | as read |
 | `cartografo_describe_graph` | Reads one graph version — by `version_id`, `graph_id` or `class` — as nodes, edges, initial and final nodes and the contract gate's verdict. | `GET /v1/classes` or `GET /v1/graphs`, `GET /v1/graph-versions/:id` | `versionDigest` (nodes through `nodeDigest`) |
 | `cartografo_list_skills` | Reads the skill registry, optionally one lineage, optionally with contracts. | `GET /v1/skills` | `skillDigest` |
-| `cartografo_list_jobs` | Reads the board: every job with its node, blocked flag, reason and derived state. | `GET /v1/jobs` | `jobDigest` |
-| `cartografo_get_job` | Reads one job: the job, its sessions, its questions and (by default) its event timeline. | `GET /v1/jobs/:id`, `GET /v1/sessions?job_id=`, `GET /v1/input-requests?job_id=`, `GET /v1/jobs/:id/events` | `clipStrings`, `sessionDigest`, `inputRequestDigest`, `eventDigest` |
+| `cartografo_list_jobs` | Reads the board: every job with its node, blocked flag, reason and derived state, and how it composes with the others (`parent_job_id`, `parent_node_id`, `sibling_position`, `children`, `depends_on`, `cancelled_at`, `dispatch_hold`). | `GET /v1/jobs` | `jobDigest` |
+| `cartografo_get_job` | Reads one job: the job, its sessions, its questions and (by default) its event timeline. A parent also returns `children` (the digest of each direct child, in position order) and `waiting_on_a_person` (the ids of the children whose state is `awaiting_you`). | `GET /v1/jobs/:id`, `GET /v1/sessions?job_id=`, `GET /v1/input-requests?job_id=`, `GET /v1/jobs/:id/events`, and, for a parent only, one `GET /v1/jobs` | `clipStrings`, `sessionDigest`, `inputRequestDigest`, `eventDigest` |
 | `cartografo_list_executions` | Reads the rounds with their job, blocked-job and pending-question counts. | `GET /v1/executions` | as read |
 | `cartografo_list_sessions` | Reads sessions, optionally for one job or one round. | `GET /v1/sessions` | `sessionDigest` |
 | `cartografo_read_transcript` | Reads a slice of one session's transcript, from the start or the end, declaring both the stored cut and its own. | `GET /v1/sessions/:id/transcript` | `TRANSCRIPT_DEFAULT_CHARS`/`TRANSCRIPT_MAX_CHARS` slice |
@@ -65,9 +65,8 @@ a small wire body passed through whole.
 
 ## 2. What this server cannot do, and who a write says it is
 
-Verbatim from the catalogue's own header comment
-([`tools.ts`](../../packages/mcp/src/tools.ts), lines 1–45), the three
-exclusions:
+From the catalogue's own header comment
+([`tools.ts`](../../packages/mcp/src/tools.ts)), the exclusions:
 
 - **Nothing decides a proposal.** `approve`, `apply`, `reject` and `revert` are
   absent, and their absence IS principle 5 (README): the surveyor's proposals
@@ -82,6 +81,12 @@ exclusions:
   none did — and the log is what the surveyor reads to propose the next version.
   `blocks`/`unblocks` ARE here, because stopping and resuming a job is an
   operator's fact about an operator's decision.
+- **Nothing cancels a job.** There is no `cancel` tool, and the absence is
+  deliberate: cancelling is for good (the control plane has no un-cancel) and it
+  cascades to every open child, and D26 keeps this server from deciding or
+  moving jobs. `blocks`/`unblocks` are here because they have an inverse.
+  Dropping a job is the operator's hand: `cartografo cancel` ([`cli.md`](cli.md)
+  §1).
 - Also absent, for a different reason: **anything that starts or stops a
   process.** The control plane, the runner and the surveyor are long-lived
   commands an operator brings up (D21), and a request/response tool is the wrong

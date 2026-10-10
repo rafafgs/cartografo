@@ -195,6 +195,18 @@ export interface Job {
    * classified it — and neither means `trivial`.
    */
   tier?: 'trivial' | 'standard' | null;
+
+  /**
+   * The job's relations, as t636 publishes them (read by t638).
+   *
+   * `children` is what the subgraph dispatch reconciles against — every direct
+   * child, in position order, whichever node opened it. All three are optional
+   * so a control plane older than t636 still parses: no list reads as no
+   * children.
+   */
+  children?: number[];
+  parent_job_id?: number | null;
+  parent_node_id?: string | null;
 }
 
 /** Configuration of a dispatch. */

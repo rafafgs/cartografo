@@ -63,6 +63,22 @@ export interface Job {
   completed: boolean;
   execution_id: number | null;
   graph_version_id: string | null;
+  /**
+   * Why this job may not be dispatched right now, as t636 derives it —
+   * `'cancelled'`, `'dependencies'`, `'children'` — or `null` when nothing holds
+   * it. A held job is dropped by {@link ControlPlaneClient.listReleasedJobs}
+   * (t638); the core's `job_held` lease refusal stays the backstop.
+   *
+   * This field and the five below are optional, so that a control plane older
+   * than t636 still parses: absent reads as "not held", "no children".
+   */
+  dispatch_hold?: 'cancelled' | 'dependencies' | 'children' | null;
+  /** Direct children, in position order (t636). Read by the children watcher. */
+  children?: number[];
+  parent_job_id?: number | null;
+  parent_node_id?: string | null;
+  cancelled_at?: string | null;
+  block_reason?: string | null;
 }
 
 /**
@@ -579,6 +595,12 @@ export class ControlPlaneClient {
    * first crossing hit. Every lease this client asks for is already scoped
    * (`requestLease`), so the controller has the number to send.
    *
+   * And since t638 a third filter: a job with a `dispatch_hold` — cancelled,
+   * waiting on a dependency, or waiting on its children — is not a candidate
+   * either. The core refuses its lease with `job_held` anyway; asking costs one
+   * `POST /v1/leases` per held job per tick to be told so. An absent field (a
+   * control plane older than t636) reads as not held.
+   *
    * @param projectId Project whose board to read; omitted, the server's own
    *   default (project 1) answers, which is what every caller written before
    *   the partition meant.
@@ -586,9 +608,44 @@ export class ControlPlaneClient {
    *   them.
    */
   async listReleasedJobs(projectId?: number): Promise<Job[]> {
+    const jobs = await this.listJobs(projectId);
+    return jobs.filter(
+      (job) =>
+        job.blocked === false &&
+        job.completed === false &&
+        (job.dispatch_hold === undefined || job.dispatch_hold === null),
+    );
+  }
+
+  /**
+   * The whole board of one project, unfiltered (t638).
+   *
+   * What the children watcher reads: a parent waiting on its children is held,
+   * and so is exactly the job {@link ControlPlaneClient.listReleasedJobs} drops.
+   *
+   * @param projectId Project whose board to read; omitted, the server's default.
+   * @returns Every job of the project, in the order the server sent them.
+   */
+  async listJobs(projectId?: number): Promise<Job[]> {
     const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
     const { jobs } = await this.#get<{ jobs: Job[] }>(`/v1/jobs${scope}`);
-    return jobs.filter((job) => job.blocked === false && job.completed === false);
+    return jobs;
+  }
+
+  /**
+   * Stops a job with a reason, as the runner (t638).
+   *
+   * The same `POST /v1/jobs/:id/blocks` every dispatch block uses, with the
+   * same actor — `{type: 'system', ref: 'runner'}` — so a log groups them.
+   *
+   * @param jobId The job to stop.
+   * @param reason What a person reads first when they open it.
+   */
+  async blockJob(jobId: number, reason: string): Promise<void> {
+    await this.#post(`/v1/jobs/${String(jobId)}/blocks`, {
+      reason,
+      actor: { type: 'system', ref: 'runner' },
+    });
   }
 
   /**
@@ -676,12 +733,16 @@ export class ControlPlaneClient {
    * One graph version, with the whole snapshot.
    *
    * @param id Id of the version (the snapshot's hash, with `:` — hence the encode).
+   * @param projectId Project the version is registered in; omitted, the
+   *   server's default. Versions are partitioned (t354), so a reader outside
+   *   project 1 has to name its own (t638's watcher does).
    * @returns The version and the document it freezes.
    * @throws {ControlPlaneClientError} 404 when the version does not exist.
    */
-  async getGraphVersion(id: string): Promise<GraphVersion> {
+  async getGraphVersion(id: string, projectId?: number): Promise<GraphVersion> {
+    const scope = projectId === undefined ? '' : `?project_id=${String(projectId)}`;
     const { graph_version: version } = await this.#get<{ graph_version: GraphVersion }>(
-      `/v1/graph-versions/${encodeURIComponent(id)}`,
+      `/v1/graph-versions/${encodeURIComponent(id)}${scope}`,
     );
     return version;
   }

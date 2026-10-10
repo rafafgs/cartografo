@@ -65,6 +65,7 @@ import {
   type ProbeReport,
 } from '../controller/control-plane-client.ts';
 import { Controller } from '../controller/controller.ts';
+import { createChildrenWatcher } from '../controller/watch-children.ts';
 import { createMainLineAdvancer } from '../dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
 import { createDispatchControlPlaneClient } from '../dispatch/control-plane-client.ts';
@@ -1054,6 +1055,10 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       runnerCap: options.runnerCap,
       projectCap: options.projectCap,
       ttlSeconds: options.leaseTtlSeconds,
+      // A parent waiting on children that are stuck is blocked, once per tick,
+      // before the controller looks for work (t638): nothing else ever looks at a
+      // held job.
+      watchChildren: createChildrenWatcher(client, options.projectId),
       dispatch: createClaudeCodeDispatch({
         urlBase: options.url,
         token: options.token,

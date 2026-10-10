@@ -187,6 +187,9 @@ export function createExternalCallRecorder(
  *   `graph_version_id` from another project since that ticket, so a job's
  *   version is now always registered in the job's OWN project.
  * @param resolveInput What this node's `{{input.<caminho>}}` resolve against.
+ * @param preResolved The node, when the caller already read the graph version
+ *   (t638: `dispatch.ts` reads it first, to tell a subgraph node apart). Absent
+ *   means this function reads it; `null` is the ordinary "no node" answer.
  * @returns The node, the route, the rendered skill and the bytes to write.
  */
 export async function resolveSessionPlan(
@@ -194,15 +197,19 @@ export async function resolveSessionPlan(
   job: Job,
   options: SessionPlanOptions,
   resolveInput: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>,
+  preResolved?: ResolvedNode | null,
 ): Promise<SessionPlan> {
   const { engines, projectId } = options;
   // ONE read of the graph version, and it is the first thing the dispatch does:
   // the engine, the skill, the contract and the edges all come out of this
   // (t141, FR1). A version the work points at and that does not resolve stops
   // right here, which is where stopping is cheapest.
-  const resolved = await resolveNode(job, (versionRoute) =>
-    call<GraphVersionBody>(withProject(versionRoute, projectId), 'GET'),
-  );
+  const resolved =
+    preResolved !== undefined
+      ? preResolved
+      : await resolveNode(job, (versionRoute) =>
+          call<GraphVersionBody>(withProject(versionRoute, projectId), 'GET'),
+        );
 
   // Resolved before anything is read for the prompt and long before a session
   // opens: an engine nobody registered has to stop the dispatch while stopping

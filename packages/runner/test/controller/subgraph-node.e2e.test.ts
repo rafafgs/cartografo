@@ -13,6 +13,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -102,6 +103,63 @@ const ASKS = JSON.stringify([
   { stream: 'stdout', text: '```' },
 ]);
 
+/** Canonical JSON: keys sorted at every depth, the shape a manifest hash is taken over. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonical(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The manifest the plan step pins, with a REAL output schema.
+ *
+ * `resolvePins` would register an empty-schema stand-in, and then the contract
+ * check at registration cannot see `plan.items` being produced for the fan-out
+ * to read. The hash is the pin's own rule: `sha256:` over the canonical JSON of
+ * the content fields.
+ */
+function planSkill(): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id: 'plan-notes',
+    version: '1.0.0',
+    hash: '',
+    role: 'work',
+    description: 'Lists the notes to write, one item each.',
+    input: { type: 'object' },
+    output: {
+      type: 'object',
+      required: ['items'],
+      properties: { items: { type: 'array' } },
+    },
+    preconditions: [],
+    checks: [
+      {
+        id: 'plan-exists',
+        type: 'deterministic',
+        description: 'The plan exists.',
+        command: 'true',
+      },
+    ],
+    permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
+    instructions: 'List the notes to write, one item per note.',
+    origin: { type: 'native' },
+  };
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+  };
+  manifest.hash = `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
+  return manifest;
+}
+
 /** Directories as worktrees, one per session, so nothing touches a real repository. */
 function directoryWorktrees(root: string): WorktreeManager {
   let serial = 0;
@@ -146,6 +204,11 @@ async function crossing(
     return body.graph_version.id;
   };
   await register(example('graph-valid-minimal.json'));
+  const skill = planSkill();
+  await api('POST', '/v1/skills', skill, 201);
+  const plan = parentDocument.nodes.find((node) => node.id === 'plan');
+  assert.ok(plan !== undefined);
+  plan.skill_ref = { id: skill.id, version: skill.version, hash: skill.hash };
   const parentVersion = await register(parentDocument);
 
   const parent = await api<Work>(

@@ -172,13 +172,14 @@ import {
   type Outcome,
 } from './report.ts';
 import { createMergedInputResolver } from './resolve-input.ts';
-import { resolveEscalationPolicy } from './resolve-node.ts';
+import { resolveEscalationPolicy, resolveNode, type GraphVersionBody } from './resolve-node.ts';
 import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
 import {
   createExternalOutputWriter,
   settleAnsweredOutputWrite,
 } from '../mcp/write-external-outputs.ts';
 import { createSessionCollector } from './session-collector.ts';
+import { runSubgraphNode } from './subgraph-run.ts';
 import { openSession, type Session } from './open-session.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { WorktreeRelease, type SessionWorktree } from './session-worktree.ts';
@@ -268,7 +269,17 @@ export function createClaudeCodeDispatch(
     // of throwing — and why exactly eight — is the paragraph at the top of this
     // file, and where the line is drawn is `pre-session-failure.ts`.
     try {
-      plan = await resolveSessionPlan(call, job, options, resolveInput);
+      // A subgraph node opens no session (t638): its children, its wait and its
+      // resume are `subgraph-run.ts`'s, and its throws are this catch's.
+      const node = await resolveNode(job, (route) =>
+        call<GraphVersionBody>(withProject(route, options.projectId), 'GET'),
+      );
+      if (node?.node.node_type === 'subgraph') {
+        const ran = await runSubgraphNode(call, job, node, options);
+        preSession.reset(job.id);
+        return ran;
+      }
+      plan = await resolveSessionPlan(call, job, options, resolveInput, node);
     } catch (error) {
       // The first of the three sites that route through ONE decision (t272,
       // FR5), so the three cannot drift into three policies. `null` is "this one

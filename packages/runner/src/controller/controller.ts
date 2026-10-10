@@ -98,6 +98,16 @@ export interface ControllerOptions {
    * larger than the TTL lets the lease itself expire under the dispatch.
    */
   heartbeatIntervalMs?: number;
+  /**
+   * One pass of the children watcher, awaited at the start of every
+   * {@link Controller.tick} (t638; `watch-children.ts`).
+   *
+   * Optional and injected, like `dispatch`: this file knows nothing about
+   * subgraphs. A failure is stored in {@link Controller.lastWatchError} and
+   * never stops the tick — a parent blocked one tick late is a delay, a tick
+   * that dispatched nothing because a sweep failed is an outage.
+   */
+  watchChildren?: () => Promise<void>;
 }
 
 /** What one `tick()` won. */
@@ -132,6 +142,14 @@ export class Controller {
    * irreplaceable one for the recoverable one.
    */
   lastReleaseError: unknown = null;
+
+  /**
+   * Last error from the children watcher, for whoever wants to watch (t638).
+   *
+   * {@link Controller.lastReleaseError}'s posture: a background pass that must
+   * be observable and must not take the tick down with it.
+   */
+  lastWatchError: unknown = null;
 
   constructor(options: ControllerOptions) {
     this.#options = options;
@@ -178,6 +196,14 @@ export class Controller {
    *   did blocked itself.
    */
   async tick(): Promise<DispatchResult | null> {
+    if (this.#options.watchChildren !== undefined) {
+      try {
+        await this.#options.watchChildren();
+      } catch (error: unknown) {
+        this.lastWatchError = error;
+      }
+    }
+
     // The board of THIS runner's project (t410): the poll carries the same
     // scope every lease below already declares.
     const candidates = await this.#options.client.listReleasedJobs(this.#options.projectId);

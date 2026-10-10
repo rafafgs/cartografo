@@ -29,6 +29,8 @@
  * (`DECISIONS.md`, D18 amendment).
  */
 
+import type { SubgraphCall } from './subgraph-map.ts';
+
 /**
  * One external input a node declares, as t369's format writes it (t370, FR4).
  *
@@ -177,6 +179,14 @@ export interface GraphNode {
    * for one. {@link isUnsafeToRetry} is what turns it into an answer.
    */
   unsafe_to_retry?: unknown;
+  /**
+   * What a `subgraph` node calls (t637; run by t638). Present exactly when
+   * `node_type` is `subgraph`, which is the one kind that pins no skill and
+   * opens no engine session: `dispatch.ts` hands such a node to
+   * `subgraph-run.ts` before anything about a session is resolved. Typed as
+   * that module reads it; the registration gate is what refuses a malformed one.
+   */
+  subgraph?: SubgraphCall;
 }
 
 /** One transition of a graph snapshot. */

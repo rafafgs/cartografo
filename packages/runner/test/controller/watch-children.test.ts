@@ -158,7 +158,11 @@ test('t638 AT28 — no problem child, or a parent on a non-subgraph node, means 
   assert.deepEqual(manual.versionReads, [PLAIN_VERSION]);
 
   // Neither a blocked nor a cancelled parent is touched, whatever its children do.
-  for (const parentExtra of [{ blocked: true }, { cancelled_at: 'x', dispatch_hold: 'cancelled' }]) {
+  const settledParents: Array<Partial<Job>> = [
+    { blocked: true },
+    { cancelled_at: 'x', dispatch_hold: 'cancelled' },
+  ];
+  for (const parentExtra of settledParents) {
     const settled = fakeClient(board(2, { blocked: true, block_reason: 'stuck' }, parentExtra));
     await createChildrenWatcher(settled.client, 1)();
     assert.deepEqual(settled.blocks, []);

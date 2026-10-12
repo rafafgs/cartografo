@@ -20,13 +20,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import * as policyModule from '../../src/engine/copilot-permission-policy.ts';
 import { CopilotAdapter } from '../../src/engine/copilot-adapter.ts';
 import {
   CLOSED_NETWORK_FLAGS,
   DOMAIN_SCOPED_NETWORK_REASON,
-  EMPTY_WRITE_SCOPE_REASON,
   NARROW_WRITE_SCOPE_REASON,
   PERMISSION_REFUSAL_PREFIX,
+  TOOL_FREE_FLAGS,
   WHOLE_WORKSPACE,
   resolveCopilotPermissions,
 } from '../../src/engine/copilot-permission-policy.ts';
@@ -116,14 +117,26 @@ test('a write scope narrower than the workspace is refused, with a reason', () =
   assert.equal(several.outcome, 'refuse', 'a list that is not exactly the whole workspace is narrower');
 });
 
-test('an EMPTY write scope is refused too: shell writes regardless of any tool deny', () => {
-  const decision = resolveCopilotPermissions(policy([], { allowed: false }));
+test('t684 AT11 — an EMPTY write scope runs the node tool-free instead of refusing it', () => {
+  assert.deepEqual([...TOOL_FREE_FLAGS], ['--available-tools=none'], 'ONE argv element');
 
-  assert.equal(decision.outcome, 'refuse');
-  assert.deepEqual([...decision.permissionArgs], []);
-  assert.deepEqual([...decision.refusals], [EMPTY_WRITE_SCOPE_REASON]);
-  assert.match(EMPTY_WRITE_SCOPE_REASON, /shell/);
-  assert.ok(EMPTY_WRITE_SCOPE_REASON.includes('escrita'));
+  const closed = resolveCopilotPermissions(policy([], { allowed: false }));
+  assert.equal(closed.outcome, 'enforce');
+  assert.deepEqual([...closed.permissionArgs], ['--available-tools=none', '--deny-tool', 'url']);
+  assert.deepEqual([...closed.refusals], []);
+
+  const open = resolveCopilotPermissions(policy([], { allowed: true }));
+  assert.equal(open.outcome, 'enforce');
+  assert.deepEqual([...open.permissionArgs], ['--available-tools=none', '--allow-all-urls']);
+
+  const whole = resolveCopilotPermissions(policy(WHOLE, { allowed: false }));
+  assert.ok(!whole.permissionArgs.some((argument) => argument.startsWith('--available-tools')));
+
+  const domains = resolveCopilotPermissions(policy([], { allowed: true, domains: ['x.example'] }));
+  assert.equal(domains.outcome, 'refuse');
+  assert.deepEqual([...domains.refusals], [DOMAIN_SCOPED_NETWORK_REASON]);
+
+  assert.ok(!('EMPTY_WRITE_SCOPE_REASON' in policyModule), 'the refusal is gone');
 });
 
 test('both axes refusing add up: filesystem before network', () => {
@@ -188,7 +201,6 @@ test('a refusal happens before any spawn, asserted through CopilotAdapter', asyn
 
   for (const refused of [
     policy(['src/**'], { allowed: false }),
-    policy([], { allowed: false }),
     policy(WHOLE, { allowed: true, domains: ['x.example'] }),
   ]) {
     await assert.rejects(

@@ -41,7 +41,7 @@ import {
 function transcript(name: string): string[] {
   const file = fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
   assert.ok(existsSync(file), `artifact does not exist yet: ${file}`);
-  return readFileSync(file, 'utf8').split('\n').filter((line) => line !== '');
+  return readFileSync(file, 'utf8').split(/\r?\n/).filter((line) => line !== '');
 }
 
 // --- AT1: the Claude Code decoder, case for case with the inline original ----

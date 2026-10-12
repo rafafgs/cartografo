@@ -59,6 +59,8 @@ test('FR2 — the argv is exactly the measured headless shape', () => {
     'json',
     '--allow-all-tools',
     '--disable-builtin-mcps',
+    '--no-custom-instructions',
+    '--no-ask-user',
     '--log-level',
     'none',
     '-C',

@@ -76,7 +76,7 @@ function copilotFixture(): string {
   const file = fileURLToPath(
     new URL('../../runner/test/fixtures/copilot-frames.jsonl', import.meta.url),
   );
-  return readFileSync(file, 'utf8').replace(/\n$/, '');
+  return readFileSync(file, 'utf8').replace(/\r\n/g, '\n').replace(/\n$/, '');
 }
 
 /**
@@ -116,4 +116,34 @@ test('t676 — shell and an unknown engine still pass a copilot-looking frame th
   assert.equal(decodeSessionText('shell', frame), frame);
   assert.equal(decodeSessionText('no-such-engine', frame), frame);
   assert.equal(decodeSessionText('shell', copilotFixture()), copilotFixture());
+});
+
+// --- t684: a transcript written with CRLF line endings ----------------------------
+
+test('t684 AT12 — CRLF and LF transcripts of the three frame engines decode alike', () => {
+  const frames: Record<string, string[]> = {
+    'claude-code': [
+      'a plain line that is not a frame',
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'said' }] } }),
+    ],
+    codex: [
+      'a plain line that is not a frame',
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'said' } }),
+    ],
+    copilot: [
+      'a plain line that is not a frame',
+      JSON.stringify({ type: 'assistant.message', data: { content: 'said' } }),
+    ],
+  };
+  for (const [engine, lines] of Object.entries(frames)) {
+    const lf = decodeSessionText(engine, lines.join('\n'));
+    const crlf = decodeSessionText(engine, lines.join('\r\n'));
+    assert.equal(crlf, lf, engine);
+    assert.ok(lf.includes('a plain line that is not a frame'), `${engine}: the plain line is kept`);
+  }
+});
+
+test('t684 AT12 — shell and unknown engines keep a printed \\r byte for byte', () => {
+  assert.equal(decodeSessionText('shell', 'a\r\nb'), 'a\r\nb');
+  assert.equal(decodeSessionText('some-future-engine', 'a\r\nb'), 'a\r\nb');
 });

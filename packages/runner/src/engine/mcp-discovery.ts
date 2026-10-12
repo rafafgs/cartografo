@@ -6,11 +6,16 @@
  * keeping it side-effect free is what lets both formats be checked against
  * their real captures without a CLI, without credentials and without a network.
  *
- * Two engines, two formats, and the asymmetry is measured rather than assumed
- * (2026-09-06, `claude 2.1.263` and `codex-cli 0.147.0`): `codex mcp list` has
- * a `--json` mode, `claude mcp list` has none at all and prints a human list
- * nobody versions. That is why only the name is read from either — see
+ * Three engines, three formats, and the asymmetry is measured rather than
+ * assumed (2026-09-06, `claude 2.1.263` and `codex-cli 0.147.0`; 2026-10-12,
+ * `@github/copilot@1.0.95`): `codex mcp list` and `copilot mcp list` have a
+ * `--json` mode, `claude mcp list` has none at all and prints a human list
+ * nobody versions. That is why only the name is read from any of them — see
  * `McpServerRef` for why the status text is not a fact this format promises.
+ * The one thing besides the name that is read is whether a server is DISABLED,
+ * and only to leave it out: Copilot's CLI reports `enabled: false`, and its own
+ * file keeps a disabled server's entry untouched and names it in the sibling
+ * `settings.json` instead.
  *
  * One discipline runs through every reader below: a missing, unreadable or
  * corrupt source returns an empty list and never throws. The same as
@@ -116,6 +121,83 @@ export function readMcpServersJsonFile(path: string): McpServerRef[] {
     // a reason to bring a preflight down.
     return [];
   }
+}
+
+/**
+ * The names in the output of `copilot mcp list --json`.
+ *
+ * `{"mcpServers": {"<name>": {…, "source": "user"|"builtin"|…, "enabled": bool}}}`,
+ * an object keyed by name where Codex's is an array. Two kinds of entry are left
+ * out, and both for the same reason — a node cannot use them:
+ *
+ * - `enabled: false`, what `copilot mcp disable` produces. Only the boolean
+ *   `false` counts; a missing or odd value is not read as "turned off".
+ * - `source: "builtin"`, the `github-mcp-server` the CLI always lists. Sessions
+ *   run under `--disable-builtin-mcps`, and it has no entry in the user file, so
+ *   keeping it would name a server this adapter could never resolve.
+ *
+ * Anything that does not parse, or is not that shape, is zero servers and never
+ * a throw — the same discipline as {@link parseCodexMcpListJson}, for the same
+ * reason: what the adapter above decides is which `origin` to report.
+ */
+export function parseCopilotMcpListJson(output: string): McpServerRef[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return [];
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return [];
+  const servers = (parsed as { mcpServers?: unknown }).mcpServers;
+  if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return [];
+
+  const refs: McpServerRef[] = [];
+  for (const [name, entry] of Object.entries(servers)) {
+    if (name.trim() === '') continue;
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+    const { enabled, source } = entry as { enabled?: unknown; source?: unknown };
+    if (enabled === false || source === 'builtin') continue;
+    refs.push({ name });
+  }
+
+  return refs;
+}
+
+/**
+ * The names `settings.json` lists under `disabledMcpServers`.
+ *
+ * Where `copilot mcp disable <name>` writes (measured against 1.0.95: the entry
+ * in `mcp-config.json` stays exactly as it was, `{"disabledMcpServers":
+ * ["<name>"]}` appears here, and `copilot mcp enable` leaves `{}`). A missing,
+ * unreadable or corrupt file disables nothing.
+ */
+export function readCopilotDisabledMcpServers(settingsPath: string): ReadonlySet<string> {
+  try {
+    const content: unknown = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    if (typeof content !== 'object' || content === null) return new Set();
+
+    const disabled = (content as { disabledMcpServers?: unknown }).disabledMcpServers;
+    if (!Array.isArray(disabled)) return new Set();
+
+    return new Set(disabled.filter((name): name is string => typeof name === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * The servers of Copilot's user-scope `mcp-config.json`, minus the disabled ones.
+ *
+ * The keys of `mcpServers` ({@link readMcpServersJsonFile}'s own shape), with
+ * what `settings.json` disables taken out: the file itself carries no marker.
+ * The fallback of `discoverMcpServers`, so it reports what the CLI would have —
+ * for the user scope, which is all a file read can see (the CLI also merges a
+ * workspace's `.mcp.json`, and the runner has no workspace of its own here).
+ */
+export function readCopilotMcpConfigFile(configPath: string, settingsPath: string): McpServerRef[] {
+  const disabled = readCopilotDisabledMcpServers(settingsPath);
+  return readMcpServersJsonFile(configPath).filter((ref) => !disabled.has(ref.name));
 }
 
 /**

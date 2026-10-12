@@ -28,6 +28,12 @@
  *   adapter generates the UUID, passes it as `--session-id` ("set the UUID for a
  *   new session") and reports it through `onEngineRef` as soon as the process
  *   has spawned. Nothing is parsed for it.
+ * - **MCP and models (t676).** `discoverMcpServers` asks `copilot mcp list --json`
+ *   first and falls back to `$COPILOT_HOME/mcp-config.json`;
+ *   `resolveMcpServerConnection` reads that file; `listModels` is a static
+ *   catalog. None of it reaches the session: the runner itself calls a node's
+ *   declared server. `reportsUsage` stays undeclared, because the `result`
+ *   frame's `usage` carries request counts, not tokens.
  * - **The status is the exit code AND the terminal `result` frame.** A `result`
  *   frame with `exitCode != 0` is `failed` even if the process then exits 0; with
  *   no `result` frame (a process that died first) the exit code alone decides.
@@ -35,21 +41,35 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import {
   buildCommand,
   buildEnvironment,
   buildProbeCommand,
+  COPILOT_BINARY,
   ENGINE_STDIO,
   type EngineCommand,
 } from './copilot-command.ts';
 import { PERMISSION_REFUSAL_PREFIX, resolveCopilotPermissions } from './copilot-permission-policy.ts';
+import {
+  mcpServerConnectionFromEntry,
+  parseCopilotMcpListJson,
+  readCopilotDisabledMcpServers,
+  readCopilotMcpConfigFile,
+  readMcpServerConfigJsonFile,
+} from './mcp-discovery.ts';
 import {
   SessionStartError,
   UnknownSessionError,
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type EngineModel,
+  type McpDiscovery,
+  type McpServerConnection,
+  type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
@@ -84,6 +104,71 @@ export const COPILOT_CREDENTIAL_VARIABLES = [
   'GITHUB_TOKEN',
 ] as const;
 
+/** Variable that relocates the CLI's configuration and state (`copilot help environment`). */
+const COPILOT_HOME_VARIABLE = 'COPILOT_HOME';
+
+/** The user-scope MCP configuration `copilot mcp add` writes, under the home. */
+const MCP_CONFIG_FILE = 'mcp-config.json';
+
+/**
+ * Where `copilot mcp disable` records what it turned off, in the same directory
+ * as {@link MCP_CONFIG_FILE}: the entry in `mcp-config.json` is left untouched.
+ */
+const SETTINGS_FILE = 'settings.json';
+
+/**
+ * The models `copilot` can be pointed at, plus `auto` (t676).
+ *
+ * Static, `origin: 'catalog'` on every entry, for the same measured reason the
+ * other two catalogs are: `copilot --help` documents `--model <model>` ("Set the
+ * AI model to use (use 'auto' to let Copilot pick automatically)") and nothing
+ * that LISTS them non-interactively; the list lives behind the interactive
+ * `/model`. These ids are the ones `copilot help config` prints under `model` for
+ * `@github/copilot@1.0.95`, read on 2026-10-12, in the order it prints them.
+ *
+ * The list ages, and nothing validates against it: which of them an account may
+ * use depends on its plan and its organization's policy, and an id nobody
+ * validated is refused by the CLI at session start, which is where the truth
+ * lives. `auto` is not a model but the CLI's own name for "route for me", and it
+ * is listed because it is a value `--model` accepts; this adapter never sends it
+ * by default (see the "No default model" choice in the spec).
+ */
+export const COPILOT_MODELS: readonly EngineModel[] = [
+  { id: 'auto', label: 'Auto', origin: 'catalog' },
+  ...[
+    'claude-sonnet-5.5',
+    'claude-sonnet-5',
+    'claude-fable-5.1',
+    'claude-fable-5',
+    'claude-opus-5.5',
+    'claude-opus-5',
+    'claude-opus-4.8',
+    'claude-opus-4.8-fast',
+    'claude-sonnet-4.6',
+    'claude-haiku-5.5',
+    'claude-haiku-4.5',
+    'gpt-6.1-sol',
+    'gpt-6-sol',
+    'gpt-6-luna',
+    'gpt-6-astra',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+    'gpt-5.5',
+    'gpt-5.4',
+    'gpt-5.4-mini',
+    'gpt-5.3-codex',
+    'gpt-5-mini',
+    'mai-code-1.1-flash',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'grok-4.7',
+    'grok-4.6',
+    'grok-4.5',
+    'kimi-k3',
+  ].map((id): EngineModel => ({ id, origin: 'catalog' })),
+];
+
 /**
  * Refusal of a session asked to continue an earlier one.
  *
@@ -112,6 +197,16 @@ export interface CopilotAdapterOptions {
   readonly probeCommandBuilder?: () => EngineCommand;
   /** Environment the preflight reads. Default `process.env`. */
   readonly probeEnvironment?: NodeJS.ProcessEnv;
+  /** Test seam: the MCP discovery command. Default `copilot mcp list --json`. */
+  readonly mcpListCommandBuilder?: () => EngineCommand;
+  /**
+   * Configuration file the file fallback and the connection reader use. Default
+   * `$COPILOT_HOME/mcp-config.json` (`~/.copilot/mcp-config.json`). The
+   * `settings.json` that names disabled servers is read from the same directory.
+   */
+  readonly mcpConfigPath?: string;
+  /** Test seam: deadline of the MCP discovery probe. Default 10s. */
+  readonly mcpProbeDeadlineMs?: number;
 }
 
 /** Which of the two watchdogs stopped a session, when one of ours did. */
@@ -200,6 +295,9 @@ export class CopilotAdapter implements EngineAdapter {
   readonly #graceMs: number;
   readonly #probeCommandBuilder: () => EngineCommand;
   readonly #probeEnvironment: NodeJS.ProcessEnv;
+  readonly #mcpListCommandBuilder: () => EngineCommand;
+  readonly #mcpConfigPath: string;
+  readonly #mcpProbeDeadlineMs: number;
 
   constructor(options: CopilotAdapterOptions = {}) {
     this.#commandBuilder = options.commandBuilder ?? ((spec, engineRef) => buildCommand(spec, engineRef));
@@ -207,6 +305,11 @@ export class CopilotAdapter implements EngineAdapter {
     this.#graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
     this.#probeCommandBuilder = options.probeCommandBuilder ?? buildProbeCommand;
     this.#probeEnvironment = options.probeEnvironment ?? process.env;
+    this.#mcpListCommandBuilder =
+      options.mcpListCommandBuilder ??
+      (() => ({ command: COPILOT_BINARY, args: ['mcp', 'list', '--json'] }));
+    this.#mcpConfigPath = options.mcpConfigPath ?? this.#defaultMcpConfigPath();
+    this.#mcpProbeDeadlineMs = options.mcpProbeDeadlineMs ?? PROBE_DEADLINE_MS;
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
@@ -414,6 +517,91 @@ export class CopilotAdapter implements EngineAdapter {
   }
 
   /**
+   * The static catalog, stamped now (t676). `async` with nothing to await, on the
+   * same terms as the other two adapters: the promise belongs to the interface.
+   */
+  async listModels(): Promise<ModelCatalog> {
+    return { models: COPILOT_MODELS, resolvedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Which MCP servers this machine's `copilot` currently sees (t676).
+   *
+   * The CLI first, on the principle both other adapters follow, and here for the
+   * Codex reason: `copilot mcp list --json` is a machine-readable mode (measured
+   * against 1.0.95), and it reflects `enabled` and every source the CLI merges,
+   * which a hand-read of one file does not. The file is the fallback.
+   *
+   * **Exit 0 is the CLI having answered, whatever it printed**, as for Codex:
+   * unparsable output is zero servers from the CLI, not a reason to report a
+   * different source for a question the engine already answered.
+   *
+   * What it leaves out is what a node cannot use: a server the CLI marks
+   * `enabled: false`, and its builtin `github-mcp-server` (sessions run under
+   * `--disable-builtin-mcps`). Nothing is carried about WHY — `McpServerRef` is
+   * `{name}` by design.
+   *
+   * Nothing here is passed INTO a session: `SessionSpec` has no MCP field and no
+   * adapter has one. The runner itself calls a declared server, through this and
+   * {@link resolveMcpServerConnection}.
+   *
+   * It never rejects.
+   */
+  async discoverMcpServers(): Promise<McpDiscovery> {
+    const output = await this.#probeMcpList();
+    const resolvedAt = new Date().toISOString();
+
+    if (output !== null) {
+      return { servers: parseCopilotMcpListJson(output), origin: 'cli', resolvedAt };
+    }
+
+    return {
+      servers: readCopilotMcpConfigFile(this.#mcpConfigPath, this.#settingsPath()),
+      origin: 'file',
+      resolvedAt,
+    };
+  }
+
+  /**
+   * How to reach one of those servers, by name (t676).
+   *
+   * The file half only, as the other two adapters do: `mcp-config.json` entries
+   * are `{"type": "local", "command", "args", "env"}` or `{"type": "http",
+   * "url", "headers"}`, which `mcpServerConnectionFromEntry` already reads for
+   * Claude Code's `.mcp.json` (everything that is not http/sse is stdio).
+   *
+   * `null` for a name the file does not declare, for an entry that is neither
+   * shape, and for a server `settings.json` lists as disabled: the CLI would not
+   * start it. A server only a workspace's `.mcp.json` declares is not here
+   * either, and resolves `null` — the runner has no workspace of its own to read.
+   * An unset `${VAR}` placeholder rejects, exactly as it does for the others.
+   */
+  async resolveMcpServerConnection(name: string): Promise<McpServerConnection | null> {
+    if (readCopilotDisabledMcpServers(this.#settingsPath()).has(name)) return null;
+
+    const entry = readMcpServerConfigJsonFile(this.#mcpConfigPath, name);
+    if (entry === null) return null;
+
+    return mcpServerConnectionFromEntry(entry, this.#probeEnvironment);
+  }
+
+  /** `$COPILOT_HOME`, falling back to `~/.copilot` — the directory the CLI itself uses. */
+  #home(): string {
+    const home = this.#probeEnvironment[COPILOT_HOME_VARIABLE]?.trim();
+    return home ? home : join(homedir(), '.copilot');
+  }
+
+  /** `$COPILOT_HOME/mcp-config.json`, falling back to `~/.copilot/mcp-config.json`. */
+  #defaultMcpConfigPath(): string {
+    return join(this.#home(), MCP_CONFIG_FILE);
+  }
+
+  /** `settings.json` beside the MCP configuration file, wherever that was put. */
+  #settingsPath(): string {
+    return join(dirname(this.#mcpConfigPath), SETTINGS_FILE);
+  }
+
+  /**
    * (Re)arms the inactivity watchdog, if this session has one.
    *
    * Called at the start and on every raw chunk, which is what makes "silence"
@@ -617,6 +805,52 @@ export class CopilotAdapter implements EngineAdapter {
         const version = out.trim().split('\n')[0]?.trim() ?? '';
         settle(code === 0 && version !== '' ? version : null);
       });
+    });
+  }
+
+  /**
+   * `copilot mcp list --json`: the stdout of a run that exited 0, or `null`.
+   *
+   * The shape of `#probeVersion`, with `COPILOT_AUTO_UPDATE=false` added for the
+   * reason the session environment carries it: a runner must never change engine
+   * version as a side effect of a preflight. `null` is every way the question went
+   * unanswered (missing binary, non-zero exit, deadline); exit 0 is an answer even
+   * when what came back is prose.
+   */
+  #probeMcpList(): Promise<string | null> {
+    const command = this.#mcpListCommandBuilder();
+
+    return new Promise((resolve) => {
+      let child: ChildProcess;
+      try {
+        child = spawn(command.command, [...command.args], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...this.#probeEnvironment, COPILOT_AUTO_UPDATE: 'false' },
+        });
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      let out = '';
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        out += chunk;
+      });
+
+      const deadline = setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve(null);
+      }, this.#mcpProbeDeadlineMs);
+
+      const settle = (output: string | null): void => {
+        clearTimeout(deadline);
+        resolve(output);
+      };
+
+      // A missing binary arrives here as ENOENT: the file fallback, no throw.
+      child.once('error', () => settle(null));
+      child.once('close', (code: number | null) => settle(code === 0 ? out : null));
     });
   }
 

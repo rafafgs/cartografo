@@ -3,8 +3,9 @@
  *
  * One function per engine, because the frame formats have nothing in common:
  * Claude Code streams Anthropic's `stream-json` (`type: "result"`,
- * `message.content[].text`), Codex streams its own thread/turn/item vocabulary.
- * They share only the contract this module publishes — `readonly string[]` of
+ * `message.content[].text`), Codex streams its own thread/turn/item vocabulary
+ * and Copilot streams a dotted event vocabulary (`assistant.message`,
+ * `assistant.message_delta`, `result`). They share only the contract this module publishes — `readonly string[]` of
  * the lines that reached `onOutput`, in, the text the session produced, out —
  * which is exactly what `ClaudeCodeDispatchOptions.engines` routes on.
  *
@@ -15,12 +16,13 @@
  * plain lines, which fall through untouched — which is precisely why that trap
  * survives CI and only a manual run against a real CLI catches it.
  *
- * Both decoders share one rule, and it is the rule that keeps noise out of the
- * parser: a line that IS a recognized frame contributes only its text, even when
+ * All three decoders share one rule, and it is the rule that keeps noise out of
+ * the parser: a line that IS a recognized frame contributes only its text, even when
  * that text is empty; a line that is not a frame at all passes through raw. The
  * second half is not sloppiness — plain-text runtime errors interleave with the
- * JSON on both engines (`docs/formats/engine-adapter.md`'s viability table
- * measured it on Codex), and dropping them would throw away the only account of
+ * JSON on every engine (`docs/formats/engine-adapter.md`'s viability table
+ * measured it on Codex, and the `Error: Access denied by policy settings` line
+ * of a GitHub-routed Copilot run is another), and dropping them would throw away the only account of
  * a session that died mid-stream.
  *
  * English per D18.
@@ -168,6 +170,46 @@ function codexFrameText(line: string): string[] | null {
   return [];
 }
 
+/**
+ * The text a Copilot `--output-format json` frame carries, or `null` when the
+ * line is not one (t676).
+ *
+ * Pinned on a REAL capture against `@github/copilot@1.0.95`
+ * (`test/fixtures/copilot-frames.jsonl`). The model's words live in exactly one
+ * place, an `assistant.message` frame's `data.content`, which holds the WHOLE
+ * message. The `assistant.message_delta` frames before it carry the same text in
+ * pieces (`data.deltaContent`), so a decoder that read both would print every
+ * answer twice and, worse, split a fenced block across two fragments.
+ *
+ * Everything else the CLI prints as JSON is its own envelope — `session.*`,
+ * `user.message`, `assistant.turn_*`, `model.call_*`, the terminal `result` — and
+ * is recognized and dropped, not echoed: `session.mcp_servers_loaded` lists the
+ * machine's servers and `result` carries a session id and usage, none of which
+ * the model said. An `assistant.message` whose `data.content` is not a string (a
+ * tool-call-only turn carries `toolRequests` and an empty one) is that same
+ * recognized-textless case.
+ *
+ * The test for "this is a frame" is the one the other two use: a JSON object
+ * with a string `type`. A line that is not JSON, or an object with no `type`,
+ * passes through raw — which is what keeps the interleaved plain-text errors.
+ */
+function copilotFrameText(line: string): string[] | null {
+  const frame = asFrame(line);
+  if (frame === null) return null;
+  if (typeof frame.type !== 'string') return null;
+
+  if (frame.type === 'assistant.message') {
+    const { data } = frame as { data?: unknown };
+    if (typeof data === 'object' && data !== null) {
+      const { content } = data as { content?: unknown };
+      if (typeof content === 'string') return [content];
+    }
+  }
+
+  // A frame of this engine that said nothing: recognized, and therefore dropped.
+  return [];
+}
+
 /** Everything a Claude Code session said, with its frames decoded back to text. */
 export function decodeClaudeCodeSessionText(lines: readonly string[]): string {
   return decode(lines, claudeCodeFrameText);
@@ -176,6 +218,11 @@ export function decodeClaudeCodeSessionText(lines: readonly string[]): string {
 /** Everything a Codex session said, with its frames decoded back to text. */
 export function decodeCodexSessionText(lines: readonly string[]): string {
   return decode(lines, codexFrameText);
+}
+
+/** Everything a Copilot session said, with its frames decoded back to text. */
+export function decodeCopilotSessionText(lines: readonly string[]): string {
+  return decode(lines, copilotFrameText);
 }
 
 /**
@@ -187,13 +234,13 @@ export function decodeCodexSessionText(lines: readonly string[]): string {
  * and a program's output is already the text. Anything else here would be this
  * module inventing a format for somebody else's program.
  *
- * It exists as its own function rather than reusing one of the two above, and
- * for a reason a passing test would hide: both of those RECOGNIZE frames, and a
+ * It exists as its own function rather than reusing one of the three above, and
+ * for a reason a passing test would hide: all of those RECOGNIZE frames, and a
  * command that legitimately prints a JSON object — a `jq` filter, a `--json`
  * flag on some tool — would hit `claudeCodeFrameText`'s `type: "result"` branch
- * or `codexFrameText`'s "any object with a string `type` is this engine
- * talking" rule and have its own output rewritten, or dropped, on the way to the
- * report parser.
+ * or the "any object with a string `type` is this engine talking" rule of the
+ * Codex and Copilot ones, and have its own output rewritten, or dropped, on the
+ * way to the report parser.
  */
 export function decodeShellSessionText(lines: readonly string[]): string {
   return lines.join('\n');

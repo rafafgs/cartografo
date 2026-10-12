@@ -436,12 +436,23 @@ const DEFAULT_ENGINE = 'claude-code';
 interface EngineProfile {
   binary: string;
   installCommand: string | null;
+  /**
+   * What introduces `installCommand`, when "or run it with no install at all"
+   * would be false: only an `npx` command runs the CLI without installing it.
+   */
+  installLead?: string;
   credentialVariables: readonly string[];
+  /**
+   * Where the CLI's own login lands. A path when the runner reads it
+   * (`storedLoginReadable` is not `false`); otherwise the sentence saying why it
+   * cannot.
+   */
   credentialsFile: string | null;
+  storedLoginReadable?: boolean;
   mcpAddCommand: string | null;
 }
 
-/** The two adapters this product ships, and the honest answer for anything else. */
+/** The three adapters this product ships, and the honest answer for anything else. */
 function engineProfile(engine: string): EngineProfile {
   if (engine === 'claude-code') {
     return {
@@ -460,6 +471,28 @@ function engineProfile(engine: string): EngineProfile {
       credentialVariables: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'],
       credentialsFile: '$CODEX_HOME/auth.json (~/.codex/auth.json by default)',
       mcpAddCommand: `export CARTOGRAFO_URL=${CONTROL_PLANE_HINT}\nexport CARTOGRAFO_MCP_TOKEN=${TOKEN_HINT}\ncodex mcp add ${MCP_SERVER_NAME} -- ${MCP_ENTRYPOINT}`,
+    };
+  }
+
+  if (engine === 'copilot') {
+    return {
+      binary: 'copilot',
+      // The package's own README (1.0.95) lists an install script first, then
+      // Homebrew, WinGet and this one. npm is named because it is the one
+      // installer every machine that runs this runner already has (the runner is
+      // a Node package), and the README documents it verbatim.
+      installCommand: 'npm install -g @github/copilot',
+      installLead: 'Install the `copilot` CLI on this machine (its own README lists other installers too):',
+      credentialVariables: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'],
+      // Measured (t675, t676): `copilot login` stores the token in the system
+      // credential store, with an unnamed plain-text fallback, and COPILOT_HOME
+      // holds configuration only. No file name is invented here.
+      credentialsFile:
+        'none readable by the runner — the login is stored in the system credential store, so set one of the variables above (COPILOT_HOME, ~/.copilot by default, holds configuration only)',
+      storedLoginReadable: false,
+      // `copilot mcp add` exists (measured against 1.0.95) and writes
+      // `$COPILOT_HOME/mcp-config.json`.
+      mcpAddCommand: `export CARTOGRAFO_URL=${CONTROL_PLANE_HINT}\nexport CARTOGRAFO_MCP_TOKEN=${TOKEN_HINT}\ncopilot mcp add ${MCP_SERVER_NAME} -- ${MCP_ENTRYPOINT}`,
     };
   }
 
@@ -526,7 +559,8 @@ function engineLine(probe: RunnerProbeRead, profile: EngineProfile): CheckLine {
           `Install the \`${profile.binary}\` CLI on this machine — its own installation documentation is the source of truth, and this repository records no package name for it.`,
         ]
       : [
-          `Install the \`${profile.binary}\` CLI on this machine, or run it with no install at all:`,
+          profile.installLead ??
+            `Install the \`${profile.binary}\` CLI on this machine, or run it with no install at all:`,
           profile.installCommand,
         ];
 
@@ -550,7 +584,7 @@ function credentialLine(probe: RunnerProbeRead, profile: EngineProfile): CheckLi
       met: false,
       headline: 'no model credential — the CLI reported none',
       fix: [
-        `This runner is configured with the engine \`${profile.binary}\`, which is neither of the two adapters this product ships, so nothing here knows which variables it reads. Authenticate its CLI the way its own documentation says.`,
+        `This runner is configured with the engine \`${profile.binary}\`, which is none of the adapters this product ships, so nothing here knows which variables it reads. Authenticate its CLI the way its own documentation says.`,
       ],
     };
   }
@@ -566,7 +600,9 @@ function credentialLine(probe: RunnerProbeRead, profile: EngineProfile): CheckLi
       `# any one of the three\n${exports}`,
       profile.credentialsFile === null
         ? `Or log in with the \`${profile.binary}\` CLI itself.`
-        : `Or log in with the \`${profile.binary}\` CLI itself, which writes the credential file the runner also reads: ${profile.credentialsFile}.`,
+        : profile.storedLoginReadable === false
+          ? `Credential file: ${profile.credentialsFile}.`
+          : `Or log in with the \`${profile.binary}\` CLI itself, which writes the credential file the runner also reads: ${profile.credentialsFile}.`,
     ],
   };
 }

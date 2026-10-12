@@ -122,6 +122,34 @@ function codexFrameText(line: string): string[] | null {
   return [];
 }
 
+/**
+ * The text a Copilot `--output-format json` frame carries, or `null` when the
+ * line is not one.
+ *
+ * The model's words live in exactly one place: an `assistant.message` frame's
+ * `data.content`, the WHOLE message. `assistant.message_delta` frames carry the
+ * same text in pieces and are dropped like every other recognized frame (the
+ * `session.*` and `model.call_*` envelope, the terminal `result`), or each
+ * answer would print twice. Anything that is not a JSON object with a string
+ * `type` passes through raw, which is what keeps a plain-text runtime error.
+ */
+function copilotFrameText(line: string): string[] | null {
+  const frame = asFrame(line);
+  if (frame === null) return null;
+  if (typeof frame.type !== 'string') return null;
+
+  if (frame.type === 'assistant.message') {
+    const { data } = frame as { data?: unknown };
+    if (typeof data === 'object' && data !== null) {
+      const { content } = data as { content?: unknown };
+      if (typeof content === 'string') return [content];
+    }
+  }
+
+  // A frame of this engine that said nothing: recognized, and therefore dropped.
+  return [];
+}
+
 /** Everything a Claude Code session said, with its frames decoded back to text. */
 export function decodeClaudeCodeSessionText(lines: readonly string[]): string {
   return decode(lines, claudeCodeFrameText);
@@ -130,6 +158,11 @@ export function decodeClaudeCodeSessionText(lines: readonly string[]): string {
 /** Everything a Codex session said, with its frames decoded back to text. */
 export function decodeCodexSessionText(lines: readonly string[]): string {
   return decode(lines, codexFrameText);
+}
+
+/** Everything a Copilot session said, with its frames decoded back to text. */
+export function decodeCopilotSessionText(lines: readonly string[]): string {
+  return decode(lines, copilotFrameText);
 }
 
 /**
@@ -149,7 +182,7 @@ export function decodeShellSessionText(lines: readonly string[]): string {
  *
  * `shell` and every engine this module does not recognize share one answer —
  * the passthrough — mirroring `session-text.ts`'s own default: a decoder that
- * only exists for the two engines that emit frames has nothing to do with a
+ * only exists for the engines that emit frames has nothing to do with a
  * program's raw stdout, or with an engine string nobody has taught it yet.
  *
  * @param engine The session's `engine` column.
@@ -161,5 +194,6 @@ export function decodeSessionText(engine: string, text: string): string {
   const lines = text.split('\n');
   if (engine === 'claude-code') return decodeClaudeCodeSessionText(lines);
   if (engine === 'codex') return decodeCodexSessionText(lines);
+  if (engine === 'copilot') return decodeCopilotSessionText(lines);
   return decodeShellSessionText(lines);
 }

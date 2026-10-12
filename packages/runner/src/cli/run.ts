@@ -83,6 +83,7 @@ import {
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
+  decodeCopilotSessionText,
   decodeShellSessionText,
 } from '../dispatch/session-text.ts';
 import { GitWorktreeManager } from '../dispatch/session-worktree.ts';
@@ -333,19 +334,6 @@ export interface RunnerOptions {
   /** Called once that session's outcome is known: there is nothing to cancel now. */
   onSessionEnded?: () => void;
 }
-
-/**
- * How a Copilot session's output becomes text (t675): the lines, joined, which
- * is what the escalation parser sees until somebody decodes the frames.
- *
- * A raw passthrough on purpose and ONE named seam: decoding `copilot`'s JSONL
- * (`assistant.message` and its `data.content`) is the follow-up ticket's work,
- * and when it lands it changes this line and nothing else. It reuses the shell
- * decoder rather than a copy of it, for what it does and not for what it is
- * called — the two frame decoders above RECOGNIZE frames, and these frames are
- * not theirs.
- */
-const decodeCopilotSessionText = decodeShellSessionText;
 
 /**
  * The real adapters, each paired with the decoder for its own frames.

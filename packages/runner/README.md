@@ -41,7 +41,9 @@ Three subpaths, and they exist because two siblings needed exactly these:
 `EngineAdapter` is the extension point this package was shaped around, and it was
 frozen only once the rule of two consumers was satisfied: `claude-code-adapter`
 and `codex-adapter` both live in `src/engine/`, with `conformance-kit.ts` as the
-shared test a third adapter would have to pass.
+shared test a third adapter has to pass. `copilot-adapter` (GitHub Copilot CLI,
+`--engine copilot`) is that third one, and it passed with no change to the
+interface.
 
 ## What is inside
 

@@ -292,8 +292,11 @@ nodes at the end and remove them from the end. `--dry-run` sends nothing and
 **`cartografo-runner`** — pairs with the control plane, then asks for released
 work, takes the lease and dispatches an agent session per job, one per tick
 (`--interval-ms`, default 2000). One engine per process
-(`--engine claude-code|codex`); it is that engine's CLI, installed and
-authenticated on the machine, that actually runs.
+(`--engine claude-code|codex|copilot`); it is that engine's CLI, installed and
+authenticated on the machine, that actually runs. `copilot` is the GitHub Copilot
+CLI: it authenticates through `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`
+(or a stored login), and its permission policy is tool-level gating, not a
+sandbox (`docs/formats/engine-adapter.md`).
 
 Every session works in a `git worktree` of its own on a `ticket-<id>` branch.
 `--working-dir` is the repository the worktree is cut from; `--worktrees-root`

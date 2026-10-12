@@ -9,6 +9,10 @@
 > inactivity watchdog added C9, ten since session continuation added C10
 >, eleven since a prompt too big for the argv added C11.
 >
+> **A third adapter changed nothing.** `packages/runner/src/engine/copilot-adapter.ts`
+> (t675, GitHub Copilot CLI) implements this interface as written and passes the
+> same kit; see "Feasibility: a third CLI (GitHub Copilot)".
+>
 > **Gap recorded at the freeze:** the manual proof of the Codex adapter
 > against the real CLI ran as far as the 401 — the machine has no OpenAI
 > credential (`codex doctor`: "no Codex credentials were found") — so its
@@ -1071,7 +1075,157 @@ all of them fall exactly where the adapter's boundary was drawn to absorb them:
 how the instructions go in, what the terminal frame is called, and what the
 authentication probe can promise. None of them leaks upwards.
 
-What the review *changed* is in the next section.
+What the review *changed* is in the section "Adjustments made in review", after the third CLI's feasibility below.
+
+## Feasibility: a third CLI (GitHub Copilot)
+
+v1 was frozen on two consumers. A third engine is a test of the freeze, not a
+reason to reopen it: `CopilotAdapter` (t675) implements the interface **with no
+change** — the same `EngineAdapter`, `SessionSpec`, `SessionListener` and
+`SessionPermissions`, certified by the same kit (C1–C11) against the unchanged
+fake engine. The founder's first external operator has only a GitHub Copilot
+subscription, which is why this CLI and not Gemini, the alternative set aside
+above.
+
+The evidence was gathered on 2026-10-12 against `@github/copilot@1.0.95`
+(`npx -y @github/copilot@1.0.95`, binary `copilot`), the same method the second
+CLI's review used. The primary sources:
+
+- `copilot --help`, `copilot help environment`, `copilot help permissions`,
+  `copilot help providers` and `copilot login --help`, run here and transcribed
+  below.
+- Real headless runs of `copilot -p … --output-format json` against a **local
+  stub provider** (BYOK: `COPILOT_PROVIDER_BASE_URL`, `COPILOT_MODEL`), which
+  answered scripted text or a scripted tool call, plus a local HTTP target that
+  counted its hits. This is the credential-free path: `help providers` says
+  "GitHub authentication is not required when using a custom provider".
+- The official repository and docs: `https://github.com/github/copilot-cli` and
+  `https://docs.github.com/copilot/concepts/agents/about-copilot-cli`.
+
+### A method-by-method mapping
+
+| Element of the interface | The mechanics in `copilot` | Evidence |
+|---|---|---|
+| `engineName` | `"copilot"`. | — |
+| `startSession` | `copilot -p <text> --output-format json …`. Headless is a **flag**, not a subcommand ("Execute a prompt in non-interactive mode (exits after completion)"), and `--allow-all-tools` is "required for non-interactive mode". An ordinary subprocess. | `copilot --help` |
+| `SessionSpec.workingDir` | `-C <directory>`. The CLI's own path verification treats it as the workspace. | `copilot --help`; a `create` outside it was denied, inside it succeeded |
+| `SessionSpec.instructions` | **No system-prompt flag.** `--agent` and `init` write files into the repository, so the adapter composes into the prompt with `composeSingleArgument`, in ONE argv element. | `copilot --help` lists none |
+| `SessionSpec.prompt` | `-p <text>`, with two measured traps. A text that **starts with `-`** breaks it: `-p "-1 apples"` answers `error: Invalid command format.`, while `-p=-1 apples` delivers the text intact — so a composition starting with `-` goes joined, still one element. And a **piped stdin is a prompt source**: with no `-p` it is the whole prompt (300 KB, dash-leading, arrived byte for byte); with `-p` it is ignored. Above 64 KiB the adapter therefore drops `-p` and writes the composition to stdin, which is what C11 certifies. | the `-1` error and both successes measured against 1.0.95 |
+| `SessionSpec.timeoutSeconds` | **There is no timeout flag**, as for the other two. The adapter's clocks (wall clock and the t163 inactivity watchdog) over the process. | its absence in `copilot --help` |
+| `SessionSpec.envOverrides` | The subprocess's environment. `COPILOT_HOME` relocates config and state. | `copilot help environment` |
+| `SessionSpec.permissions` | Mapped onto the CLI's own permission flags — see below. Tool-level gating, **not** OS isolation. | measured, see below |
+| `SessionSpec.resumeFrom` | `-r/--resume` exists; **not wired**, and `startSession` refuses `resumeFrom` as the other two adapters do (C10). | `copilot --help` |
+| `SessionListener.onOutput` | `--output-format json`: JSONL, one object per line, each with a `type`. Observed in order: `session.indexed_search`, `session.warning`, `session.mcp_servers_loaded`, `session.tools_updated`, `user.message`, `assistant.turn_start`, `model.call_start`, `assistant.message_start`, `assistant.message_delta`, `model.call_finished`, `assistant.message` (`data.content`, `data.toolRequests`), `model.call_final_result`, `assistant.turn_end`, `assistant.idle`, then `result`. Most frames are `"ephemeral":true`; `assistant.message` and `result` are not. | a real run against the stub |
+| `SessionListener.onEngineRef` | **There is no start frame.** The session id appears only in the final `{"type":"result","sessionId":"<uuid>","exitCode":0,"usage":{…}}`. `--session-id <id>` ("set the UUID for a new session") lets the adapter **choose** it: the adapter generates a UUID, passes it, and calls `onEngineRef` once, as soon as the process has spawned. Nothing is parsed for it. | the `result` frame's `sessionId` equalled the id passed, in every run |
+| `SessionListener.onFinished` (status) | Classified from the exit code **and** the terminal `result` frame: a frame with `exitCode != 0` is `failed` even if the process exits 0; with no frame (a process that died first) the exit code alone decides. | a provider that could not be reached ended with `session.error` and `"exitCode":1` in the frame |
+| `SessionListener.onFinished` (exit code) | **1** on a failed run, the same in the process and in the frame — it does not mask the failure behind a 0. | the run above: `exit=1` |
+| `getStatus` | The adapter's local state: the CLI has no state query. | — |
+| `cancel` | A signal to the process group: SIGTERM, SIGKILL after a grace period. | its absence in `copilot --help` |
+| `capabilities` | `{ hasStructuredOutput: true }`. `hasResume` stays undeclared until a consumer exists, `reportsUsage` is left to the follow-up. | — |
+| `verifyCli` | `copilot --version` answers **without network**: "GitHub Copilot CLI 1.0.95." and an update hint on a second line, of which the probe keeps the first. `authenticated` is **env-only**: `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`. | `copilot --version`; see the credential note below |
+| `SessionStartError` / `UnknownSessionError` | The same classes of error as on both other engines. | — |
+
+### The choices made
+
+- **The session id is chosen up front** (above), because the stream carries none
+  until its last frame. The command builder stays pure: the id is its second
+  parameter, and the injectable `commandBuilder` seam takes the same two
+  arguments.
+- **Hygiene flags and variables.** `--disable-builtin-mcps` (otherwise
+  `github-mcp-server` and `githubiq` load into every session), `--log-level none`
+  (logs otherwise go to `~/.copilot/logs/`; measured, the per-process file is
+  created empty), and `COPILOT_AUTO_UPDATE=false` (the CLI self-updates outside
+  CI, and a runner must never change engine version mid-wave).
+- **`--allow-all-tools` is a flag, never `COPILOT_ALLOW_ALL`.** Per `copilot help
+  environment`, exactly `true` on that variable additionally trusts the working
+  directory and loads its hooks. The adapter strips it from the engine's
+  environment whoever set it.
+- **No default model.** `--model auto` lets Copilot route, and the runner could
+  then no longer say which model a session ran on. A node's own pin becomes
+  `--model <m>`; `modelTier: 'trivial'` changes the argv only when
+  `COPILOT_TRIVIAL_MODEL` names a model.
+- **A third copy of the process lifecycle.** The three adapters duplicate it on
+  purpose, and extracting a common base is a ticket of its own.
+
+### The permission mapping
+
+`SessionPermissions` maps onto the CLI's own flags, and **all of it is tool-level
+gating, not OS isolation.** There is no sandbox here as there is in `codex -s`.
+A program run through `shell` is not stopped: under `--deny-tool write`, a
+`python3` one-liner run by `shell` still wrote a file outside the working
+directory, and under `--deny-tool url` one that assembled its URL at run time
+still reached the target. An operator who needs isolation has to run the runner
+somewhere that provides it. A refusal always happens before any spawn.
+
+| Declared | Flags | Why |
+|---|---|---|
+| no `permissions` | none | pass-through: the argv of a spec that says nothing |
+| write `["**"]` (the whole workspace) | **no path flag** | "By default, file access is restricted to paths within the current working directory and its subdirectories, plus the system temporary directory" (`copilot help permissions`); `-C <workingDir>` is the workspace. `--allow-all-paths` and `--allow-all` are never emitted. The temporary directory stays reachable (`--disallow-temp-dir` is not used: builds write there). |
+| write narrower than `["**"]` | **refused** | the CLI has no per-path write allowlist |
+| write `[]` (empty) | **refused** | cannot be enforced: `shell` writes regardless of any tool deny |
+| network closed | `--deny-tool url` | measured, below |
+| network open | `--allow-all-urls` | explicit, although `--allow-all-tools` already let every URL through in the measurements |
+| network domain-scoped | **refused** | measured, below |
+
+The measurements behind the URL rows, each run under `--allow-all-tools
+--disable-builtin-mcps -C <dir>` with a scripted tool call and a hit-counting
+local target:
+
+| Flags added | Tool call | Result |
+|---|---|---|
+| none | shell `curl` of the target | reached |
+| `--deny-url '*'` | shell `curl` of the target | **reached**: accepted, no effect |
+| `--deny-url '*'` | `web_fetch` of a public URL | **fetched**: no effect |
+| `--deny-url '*://*'` | — | `Invalid --deny-url value. Error: Invalid URL pattern` |
+| `--deny-url http://127.0.0.1:18082` | shell `curl` of the target | denied: `url(http://127.0.0.1:18082)` |
+| `--deny-url 127.0.0.1` | shell `curl` of an `http` target | reached: patterns default to `https://` |
+| `--deny-tool url` | shell `curl` of the target | denied |
+| `--deny-tool url` | `web_fetch` of a public URL | denied: "Permission to access this URL was denied." |
+| `--deny-tool url` | shell `python3` building the URL at run time | **reached**: tool-level only |
+| `--allow-url http://example.invalid` | shell `curl` of the target | reached: an allow alone restricts nothing |
+| `--allow-url <target> --deny-tool url` | shell `curl` of the target | denied: deny wins |
+| `--allow-url <target> --deny-url '*'` | shell `curl` of the target | reached: the glob is inert |
+
+Two consequences. **The ticket's `--deny-url '*'` is not used**: the CLI accepts
+it and it denies nothing, so the closed network is spelled with the tool rule the
+CLI documents for exactly this ("`url(domain-or-url?)` … If omitted, matches all
+URLs"; "Denial rules always take precedence over allow rules, even
+--allow-all-tools"). **A domain allowlist is refused**, because "closed network
+plus these hosts" has no spelling: `--allow-url` alone restricts nothing under
+`--allow-all-tools`, and the only rule that closes the rest also beats the allow.
+A closed network ignores `dominios`, as the manifest format says.
+
+### The credential note
+
+`authenticated` reads the environment only. `copilot login --help` says the token
+is stored "securely in the system credential store" and falls back to "a plain
+text config file under ~/.copilot/" without naming the file, and a fresh
+`COPILOT_HOME` after the very first headless run already holds a `config.json`
+(`{"firstLaunchAt": …}`) with nobody logged in — a presence check would answer
+true for a CLI that never authenticated. A stored login is invisible to the
+probe, and `authenticated: false` is "no environment credential", not "will
+fail".
+
+### The open gap
+
+**No credentialed run exists.** On the founder's account a headless prompt
+against GitHub's own routing exits at once with `Error: Access denied by policy
+settings (Request ID: …)`, so nothing here was proven against GitHub's model
+routing: every session above ran against the stub provider. What that proves is
+everything the adapter owns — the argv, the frames, the id, the exit codes, the
+permission flags — and not what a real subscription's models do with them. The
+credentialed run belongs to the external operator's machine. The BYOK stub proof
+as a script, the decoding of Copilot's session text for escalation parsing, MCP
+discovery, `listModels()` and `reportsUsage` are the follow-up ticket's.
+
+### Conclusion
+
+The interface serves a third CLI with no structural change. The divergences all
+fall where the adapter's boundary was drawn to absorb them: how the session id
+is obtained (chosen, not read), how the prompt goes in (a flag, with a dash trap
+and a stdin that is a prompt source), and what the permission policy can promise
+(tool-level gating only, with a closed network that needs a different rule from
+the one the ticket named). None of them leaks upwards.
 
 ## Adjustments made in review
 

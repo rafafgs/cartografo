@@ -228,6 +228,7 @@ test('AT5 — an unknown --engine exits 2 and the message lists the engines ther
   assert.deepEqual(spy.seen, []);
   assert.match(stderr.written(), /claude-code/);
   assert.match(stderr.written(), /codex/);
+  assert.match(stderr.written(), /copilot/);
 });
 
 test('AT6 — an unrecognized flag and an extra positional argument both exit 2', async () => {
@@ -692,6 +693,7 @@ test('t404 AT5 — an unknown --engine is a UsageError in both modes, before any
         assert.ok(error instanceof UsageError, `"${args.join(' ')}" has to die on the command line`);
         assert.match(error.message, /claude-code/);
         assert.match(error.message, /codex/);
+        assert.match(error.message, /copilot/);
         assert.match(error.message, /not-a-real-engine/);
         return true;
       },
@@ -843,3 +845,84 @@ test('t491 AT2 — two checkouts on one host are two runners', async () => {
     'the path is resolved first: the same directory spelled two ways is one runner',
   );
 });
+
+/* --- the third engine, GitHub Copilot (t675) -------------------------------------- */
+
+test('t675 — --engine copilot is accepted and parsed to engine === "copilot"', async () => {
+  const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  assert.equal(parseRunnerOptions(['--engine', 'copilot'], {}).engine, 'copilot');
+  assert.equal(
+    parseRunnerOptions(['--engine', 'copilot', '--working-dir', SOME_REPO, ...ELSEWHERE], {}).engine,
+    'copilot',
+    'in either mode, flags or settings',
+  );
+});
+
+test('t675 — an unknown --engine names all three engines', async () => {
+  const { parseRunnerOptions, UsageError } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  assert.throws(
+    () => parseRunnerOptions(['--engine', 'other'], {}),
+    (error: unknown) => {
+      assert.ok(error instanceof UsageError);
+      for (const name of ['claude-code', 'codex', 'copilot']) assert.match(error.message, new RegExp(name));
+      return true;
+    },
+  );
+});
+
+test('t675 — the usage text lists the three engines', async () => {
+  const { USAGE } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  assert.match(USAGE, /claude-code\|codex\|copilot/);
+});
+
+test('t675 — defaultEngineFactory routes copilot to the Copilot adapter and leaves the other two alone', async () => {
+  const { defaultEngineFactory } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  // The factory used to be a two-way ternary whose else branch was Claude Code:
+  // appending a name to ENGINE_NAMES alone would have run `--engine copilot`
+  // on the wrong CLI without a word.
+  assert.equal(defaultEngineFactory('copilot').adapter.engineName, 'copilot');
+  assert.equal(defaultEngineFactory('codex').adapter.engineName, 'codex');
+  assert.equal(defaultEngineFactory('claude-code').adapter.engineName, 'claude-code');
+  assert.equal(typeof defaultEngineFactory('copilot').decodeSessionText, 'function');
+
+  // A raw passthrough for now: what the session printed, joined. The decoding
+  // of Copilot's frames belongs to the follow-up ticket.
+  assert.equal(defaultEngineFactory('copilot').decodeSessionText(['a', 'b']), 'a\nb');
+});
+
+test('t675 — a name the factory does not know is refused, never routed to Claude Code', async () => {
+  const { defaultEngineFactory } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  assert.throws(() => defaultEngineFactory('nonesuch' as never), /nonesuch/);
+});
+
+test('t675 — the settings fallback accepts copilot and its refusal lists the three names', async () => {
+  const { resolveRunnerPaths, SettingsFallbackError } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+  const clientWith = (engine: string) =>
+    ({
+      getSettings: async () => ({
+        workspace_root: SOME_REPO,
+        worktrees_root: SOME_WORKTREES,
+        engine,
+      }),
+    }) as never;
+  const options = { projectId: 7 } as never;
+
+  const accepted = await resolveRunnerPaths(clientWith('copilot'), options);
+  assert.equal(accepted.engine, 'copilot');
+
+  await assert.rejects(
+    () => resolveRunnerPaths(clientWith('other'), options),
+    (error: unknown) => {
+      assert.ok(error instanceof SettingsFallbackError);
+      assert.match(error.message, /claude-code, codex, copilot/);
+      return true;
+    },
+  );
+});
+

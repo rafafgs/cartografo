@@ -1816,7 +1816,7 @@ test('t332 — the engines map always carries a shell route, on top of --engine'
 
   assert.deepEqual(
     [...ENGINE_NAMES],
-    ['claude-code', 'codex'],
+    ['claude-code', 'codex', 'copilot'],
     '`shell` is not a value on the --engine axis: that flag says which agent CLI this ' +
       'process authenticates as, and this adapter authenticates as nobody',
   );

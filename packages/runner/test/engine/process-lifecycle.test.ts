@@ -331,13 +331,20 @@ test('t678 AT5 — a second cancel while a stop is in flight is a no-op: the fir
   const workingDir = scratch(t);
   const helper = lifecycle();
   const heard = recorder();
-  const { command, env } = fakeEngine({ FAKE_ENGINE_HANG: '1', FAKE_ENGINE_IGNORE_SIGTERM: '1' });
+  // The line goes out after the SIGTERM handler is in place, so the stop
+  // really has to escalate: the second cancel lands mid-flight.
+  const { command, env } = fakeEngine({
+    FAKE_ENGINE_LINES: lines(['stdout', 'up']),
+    FAKE_ENGINE_HANG: '1',
+    FAKE_ENGINE_IGNORE_SIGTERM: '1',
+  });
 
   const id = await helper.start({ ...SPEC, workingDir }, heard.listener, {
     command,
     env,
     state: undefined,
   });
+  await within(heard.firstOutput, 'AT5 first line');
   helper.cancel(id, 'cancelled');
   helper.cancel(id, 'timed_out');
 

@@ -1,0 +1,9 @@
+### t684 (developing, unverified)
+
+- --available-tools=none re-checked on the real copilot 1.0.95 through the stub provider (--log-tools): 18 tools offered without the flag, an empty list with it; --no-custom-instructions and --no-ask-user are accepted. The literal 'none' works, so the DoD stop condition did not trigger.
+- Red state: AT1-AT11, AT13-AT15 failed on a missing export or module (the test files commit separately, as fa47b99). AT12 (CRLF) first passed vacuously because the plain non-frame line was the LAST line, so the join added no trailing \r; the plain line has to come first to be red.
+- AT5's first draft was hollow: it cancelled right after start, before the child's SIGTERM handler existed, so the child died by signal with a null exit code and the win32 half passed for the wrong reason. The cancel now waits for the child's 'ready' line, and the linux half proves the real exit code 3.
+- Outside the ticket's declared files: the 'refusal before any spawn' test in copilot-permission-policy.test.ts listed policy([], closed) as a refused policy and had to drop it, since empty is no longer refused (it was the same test file the ticket already named). The runner README gained the 'Windows' subsection before 'What is inside'.
+- The lifecycle's win32 stop warning goes through #emit, so it also reaches the onLine hook and the engine-ref extractor like any stderr line; harmless for the three adapters today.
+- Stale prose left alone, out of surface: shell-adapter.ts header (lines 22-33) still says the lifecycle is 'DELIBERATELY DUPLICATED' although the stop is now shared; the other stale t678 items recorded earlier also remain.
+- escrita: [] now means 'no tools at all' on Copilot, read tools included (the operator's chosen mapping). It is written into the permission table and item 14, but a node that declares an empty write scope and expects to read the working directory will be blind on this engine.

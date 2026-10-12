@@ -122,11 +122,11 @@ function scratch(t: TestContext): string {
 /** The fake engine's command, with its controls in the environment. */
 function fakeEngine(controls: Record<string, string>): {
   command: { command: string; args: string[] };
-  env: NodeJS.ProcessEnv;
+  environment: () => NodeJS.ProcessEnv;
 } {
   return {
     command: { command: process.execPath, args: [FAKE_ENGINE] },
-    env: { ...process.env, ...controls },
+    environment: () => ({ ...process.env, ...controls }),
   };
 }
 
@@ -209,7 +209,7 @@ test('t678 AT1 — a split line arrives whole and once; tails drain on close and
 
   await helper.start({ ...SPEC, workingDir }, heard.listener, {
     command: { command: process.execPath, args: ['--input-type=module', '-e', script] },
-    env: process.env,
+    environment: () => process.env,
     state: undefined,
   });
   const end = await within(heard.finished, 'AT1');
@@ -236,9 +236,9 @@ test('t678 AT2 — a natural exit finishes exactly once with the exit code decid
     const workingDir = scratch(t);
     const helper = lifecycle();
     const heard = recorder();
-    const { command, env } = fakeEngine({ FAKE_ENGINE_EXIT_CODE: code });
+    const { command, environment } = fakeEngine({ FAKE_ENGINE_EXIT_CODE: code });
 
-    await helper.start({ ...SPEC, workingDir }, heard.listener, { command, env, state: undefined });
+    await helper.start({ ...SPEC, workingDir }, heard.listener, { command, environment, state: undefined });
     const end = await within(heard.finished, `AT2 exit ${code}`);
     await sleep(100);
 
@@ -281,7 +281,7 @@ for (const stop of STOPS) {
     const helper = lifecycle();
     const heard = recorder();
     // The C4 scenario: an engine and a grandchild that both ignore SIGTERM.
-    const { command, env } = fakeEngine({
+    const { command, environment } = fakeEngine({
       FAKE_ENGINE_HANG: '1',
       FAKE_ENGINE_IGNORE_SIGTERM: '1',
       FAKE_ENGINE_SPAWN_CHILD: '1',
@@ -290,7 +290,7 @@ for (const stop of STOPS) {
 
     const id = await helper.start({ ...stop.spec, workingDir }, heard.listener, {
       command,
-      env,
+      environment,
       state: undefined,
     });
     const record = await readRecord(t, recordPath);
@@ -317,9 +317,9 @@ test('t678 AT4 — a natural exit leaves no engine process and no group behind',
   const recordPath = join(workingDir, 'record.json');
   const helper = lifecycle();
   const heard = recorder();
-  const { command, env } = fakeEngine({ FAKE_ENGINE_RECORD: recordPath });
+  const { command, environment } = fakeEngine({ FAKE_ENGINE_RECORD: recordPath });
 
-  await helper.start({ ...SPEC, workingDir }, heard.listener, { command, env, state: undefined });
+  await helper.start({ ...SPEC, workingDir }, heard.listener, { command, environment, state: undefined });
   const record = await readRecord(t, recordPath);
   await within(heard.finished, 'AT4 natural');
 
@@ -333,7 +333,7 @@ test('t678 AT5 — a second cancel while a stop is in flight is a no-op: the fir
   const heard = recorder();
   // The line goes out after the SIGTERM handler is in place, so the stop
   // really has to escalate: the second cancel lands mid-flight.
-  const { command, env } = fakeEngine({
+  const { command, environment } = fakeEngine({
     FAKE_ENGINE_LINES: lines(['stdout', 'up']),
     FAKE_ENGINE_HANG: '1',
     FAKE_ENGINE_IGNORE_SIGTERM: '1',
@@ -341,7 +341,7 @@ test('t678 AT5 — a second cancel while a stop is in flight is a no-op: the fir
 
   const id = await helper.start({ ...SPEC, workingDir }, heard.listener, {
     command,
-    env,
+    environment,
     state: undefined,
   });
   await within(heard.firstOutput, 'AT5 first line');
@@ -358,11 +358,11 @@ test('t678 AT6 — a finished handle answers forever; a never-opened one throws'
   const workingDir = scratch(t);
   const helper = lifecycle();
   const heard = recorder();
-  const { command, env } = fakeEngine({ FAKE_ENGINE_HANG: '1' });
+  const { command, environment } = fakeEngine({ FAKE_ENGINE_HANG: '1' });
 
   const id = await helper.start({ ...SPEC, workingDir }, heard.listener, {
     command,
-    env,
+    environment,
     state: undefined,
   });
   assert.equal(helper.getStatus(id), 'running');
@@ -393,7 +393,7 @@ test('t678 AT7 — no onOutput after onFinished, even from an engine still print
     index % 2 === 0 ? 'stdout' : 'stderr',
     `line ${index}`,
   ]);
-  const { command, env } = fakeEngine({
+  const { command, environment } = fakeEngine({
     FAKE_ENGINE_LINES: lines(...many),
     FAKE_ENGINE_HEARTBEAT_MS: '5',
     FAKE_ENGINE_IGNORE_SIGTERM: '1',
@@ -402,7 +402,7 @@ test('t678 AT7 — no onOutput after onFinished, even from an engine still print
 
   const id = await helper.start({ ...SPEC, workingDir }, heard.listener, {
     command,
-    env,
+    environment,
     state: undefined,
   });
   await within(heard.firstOutput, 'AT7 first line');
@@ -573,7 +573,7 @@ test('t678 AT9 — a binary that does not exist rejects with SessionStartError a
   await assert.rejects(
     helper.start({ ...SPEC, workingDir }, heard.listener, {
       command: { command: join(workingDir, 'no-such-engine'), args: [] },
-      env: process.env,
+      environment: () => process.env,
       state: undefined,
     }),
     (error: unknown) => {
@@ -587,4 +587,21 @@ test('t678 AT9 — a binary that does not exist rejects with SessionStartError a
   );
   assert.equal(helper.liveSessionCount, 0);
   assert.equal(heard.heard.length, 0, 'a session that never came up reports nothing');
+
+  // An environment builder that throws is a session that could not start.
+  await assert.rejects(
+    helper.start({ ...SPEC, workingDir }, heard.listener, {
+      command: { command: process.execPath, args: [FAKE_ENGINE] },
+      environment: () => {
+        throw new Error('no environment');
+      },
+      state: undefined,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof SessionStartError, `expected SessionStartError: ${String(error)}`);
+      assert.equal(error.message, `could not start "${process.execPath}"`);
+      return true;
+    },
+  );
+  assert.equal(helper.liveSessionCount, 0);
 });

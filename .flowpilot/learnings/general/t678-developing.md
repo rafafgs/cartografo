@@ -1,0 +1,6 @@
+### t678 (developing, unverified)
+
+- fake-engine.mjs writes its FAKE_ENGINE_RECORD sidecar and only THEN installs the SIGTERM-ignoring handler. A cancel issued right after startSession resolves kills it on SIGTERM with no escalation (AT5 first finished in 4ms). To force a real escalation, emit a FAKE_ENGINE_LINES line and wait for the first onOutput before stopping.
+- fake-engine.mjs writes each line whole in one write(), so a line split across chunks cannot be produced with it. AT1 uses a small `node --input-type=module -e` script instead.
+- Stale 'deliberately duplicated' prose survives outside this ticket's surface and was left alone: shell-adapter.ts header (:22-33), item 11 of engine-adapter.md's 'Adjustments made in review' ('this is the third copy of the process lifecycle'), and the headers of session-cleanup.{codex,copilot}.test.ts (FR5 forbids editing tests). Worth a doc-sweep ticket.
+- Claude Code's ephemeral-file listener wrapper must not spread the caller's listener ({...listener}): a class-instance listener's methods live on its prototype and would be lost. It forwards explicitly, and adds onEngineRef only if the caller has one, because the lifecycle skips ref extraction for a listener without it.

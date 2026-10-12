@@ -64,6 +64,12 @@ and reporting the outcome back. Node instructions come from the database through
 the API — there is no dependency on a `CLAUDE.md` or on resident markdown in the
 target repository.
 
+`src/engine/` holds one adapter per engine. The three that run an agent CLI
+(Claude Code, Codex, Copilot) share one process lifecycle,
+`src/engine/process-lifecycle.ts`: spawn, line pump, wall clock and inactivity
+watchdog, SIGTERM→SIGKILL escalation and the single `onFinished`. Each adapter
+keeps only what its engine does differently.
+
 `src/controller/control-plane-client.ts` is the **only door** between this
 package and the state of the system.
 

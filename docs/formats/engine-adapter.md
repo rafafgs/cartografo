@@ -1144,8 +1144,9 @@ CLI's review used. The primary sources:
   then no longer say which model a session ran on. A node's own pin becomes
   `--model <m>`; `modelTier: 'trivial'` changes the argv only when
   `COPILOT_TRIVIAL_MODEL` names a model.
-- **A third copy of the process lifecycle.** The three adapters duplicate it on
-  purpose, and extracting a common base is a ticket of its own.
+- **A third copy of the process lifecycle.** The three adapters duplicated it on
+  purpose, and extracting a common base was a ticket of its own: t678 did it
+  (item 13 of "Adjustments made in review").
 
 ### The permission mapping
 
@@ -1329,8 +1330,9 @@ the one the ticket named). None of them leaks upwards.
 
 ## Adjustments made in review
 
-Eleven changes and two explicit rejections — four from the original review, plus
-what grew after the v1 freeze (items 5 to 11). Nothing here is decorative: items 1, 3, 6, 7,
+Thirteen changes and two explicit rejections — four from the original review,
+what grew after the v1 freeze (items 5 to 12), and one runner-internal
+refactor that changed nothing in the interface (item 13). Nothing here is decorative: items 1, 3, 6, 7,
 8 and 10 came out of running the CLIs, not out of reading documentation.
 
 1. **A closed `stdin` became a normative invariant (new).** Running `codex exec`
@@ -1717,6 +1719,37 @@ and the kit's C2, which verifies it by what the process received.
     **No conformance-kit case**, on item 6's posture for `listModels`: an
     optional method the kit does not demand. `ShellAdapter` implements neither,
     and is conformant.
+
+13. **The process lifecycle, extracted after the third consumer** (2026-10-12).
+    A runner-internal refactor, not a growth: the `EngineAdapter` interface
+    (v1, `types.ts`) did not change by a character. t119 duplicated Claude
+    Code's lifecycle into Codex on purpose, with no evidence yet of the shape
+    the abstraction should take, and t675 made the third copy for Copilot.
+    Three copies read side by side were that evidence, so the spawn, the line
+    pump, the two clocks, the SIGTERM→SIGKILL escalation and its safety net,
+    the group signals, the exit backstop, the single `onFinished` and the
+    status bookkeeping now live once, in
+    `packages/runner/src/engine/process-lifecycle.ts`.
+
+    **The two-consumers rule, applied one level down.** It is a composition
+    helper each adapter owns, not a base class, and it has exactly five hooks,
+    each admitted only because at least two adapters already did that thing
+    differently: the command and environment the adapter builds; the engine
+    ref, either chosen up front (Copilot) or read off a line (Claude Code,
+    Codex); a per-line hook with its channel (Claude Code's harvest, Copilot's
+    `result` frame); a status classifier (Copilot's frame can turn exit 0 into
+    `failed`); and the finish detail beyond `timeoutReason` (Claude Code's
+    usage, models, refusal and quota). What only one adapter does got no hook:
+    Claude Code's ephemeral system-prompt file is written, and removed, by that
+    adapter around the helper.
+
+    **Certified by the kit, unchanged.** Every existing engine test — the
+    conformance kit against all three, the session-cleanup suites, the
+    command, policy, quota, refusal and oversized-content suites — passed
+    without an edit, which is the whole claim of a behaviour-preserving
+    refactor. `process-lifecycle.test.ts` pins the shared contract once.
+    `ShellAdapter` keeps its own lifecycle: it runs no engine CLI and has no
+    clocks of this kind.
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

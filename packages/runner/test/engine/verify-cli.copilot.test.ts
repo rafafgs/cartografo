@@ -48,6 +48,21 @@ test('available is true and the version comes from the binary that answered', as
   assert.equal(probe.version, '9.9.9 (Fake Engine)');
 });
 
+test('a multi-line --version answer is reduced to its first line', async () => {
+  // Measured against 1.0.95: `copilot --version` prints the version AND a hint
+  // ("Run 'copilot update' to check for updates."). The probe reports the
+  // version, not the hint.
+  const probe = await adapterWith({
+    command: {
+      command: process.execPath,
+      args: ['-e', 'console.log("GitHub Copilot CLI 1.0.95.\\nRun \'copilot update\' to check for updates.")'],
+    },
+  }).verifyCli();
+
+  assert.equal(probe.available, true);
+  assert.equal(probe.version, 'GitHub Copilot CLI 1.0.95.');
+});
+
 test('a missing binary returns available false, without throwing', async () => {
   const probe = await adapterWith({
     command: { command: MISSING_BINARY, args: ['--version'] },

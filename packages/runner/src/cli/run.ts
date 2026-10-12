@@ -88,6 +88,7 @@ import {
 import { GitWorktreeManager } from '../dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../engine/claude-code-adapter.ts';
 import { CodexAdapter } from '../engine/codex-adapter.ts';
+import { CopilotAdapter } from '../engine/copilot-adapter.ts';
 import { ShellAdapter } from '../engine/shell-adapter.ts';
 import { SHELL_ENGINE_NAME } from '../engine/shell-command.ts';
 import type { EngineAdapter } from '../engine/types.ts';
@@ -95,9 +96,10 @@ import type { EngineAdapter } from '../engine/types.ts';
 /**
  * The engines a packaged runner can be pointed at.
  *
- * The two AGENT adapters, and it is not a coincidence that there are two: t141
- * froze the `EngineAdapter` interface only once a second consumer had shipped
- * (rule of two consumers).
+ * The three AGENT adapters. Two came first because t141 froze the
+ * `EngineAdapter` interface only once a second consumer had shipped (rule of
+ * two consumers); the third, `copilot` (t675), arrived after the freeze and
+ * needed no interface change.
  *
  * `shell` is deliberately NOT here, and the third adapter arriving in t332 did
  * not change it. What `--engine` selects is which agent CLI this process
@@ -106,7 +108,7 @@ import type { EngineAdapter } from '../engine/types.ts';
  * registered unconditionally instead, beside whatever this flag picked
  * ({@link buildEngineRoutes}).
  */
-export const ENGINE_NAMES = ['claude-code', 'codex'] as const;
+export const ENGINE_NAMES = ['claude-code', 'codex', 'copilot'] as const;
 
 export type EngineName = (typeof ENGINE_NAMES)[number];
 
@@ -332,11 +334,40 @@ export interface RunnerOptions {
   onSessionEnded?: () => void;
 }
 
-/** The real adapters, each paired with the decoder for its own frames. */
+/**
+ * How a Copilot session's output becomes text (t675): the lines, joined, which
+ * is what the escalation parser sees until somebody decodes the frames.
+ *
+ * A raw passthrough on purpose and ONE named seam: decoding `copilot`'s JSONL
+ * (`assistant.message` and its `data.content`) is the follow-up ticket's work,
+ * and when it lands it changes this line and nothing else. It reuses the shell
+ * decoder rather than a copy of it, for what it does and not for what it is
+ * called — the two frame decoders above RECOGNIZE frames, and these frames are
+ * not theirs.
+ */
+const decodeCopilotSessionText = decodeShellSessionText;
+
+/**
+ * The real adapters, each paired with the decoder for its own frames.
+ *
+ * An exhaustive three-way route, not a ternary with a default branch: the
+ * previous two-way form fell through to Claude Code for any name that was not
+ * `codex`, so appending a name to {@link ENGINE_NAMES} alone would have run
+ * `--engine copilot` on the wrong CLI without a word. A name that matches
+ * nothing throws here instead, which is also what the type system cannot say
+ * about a string that arrived from the control plane's settings.
+ */
 export function defaultEngineFactory(engine: EngineName): EngineRoute {
-  return engine === 'codex'
-    ? { adapter: new CodexAdapter(), decodeSessionText: decodeCodexSessionText }
-    : { adapter: new ClaudeCodeAdapter(), decodeSessionText: decodeClaudeCodeSessionText };
+  switch (engine) {
+    case 'claude-code':
+      return { adapter: new ClaudeCodeAdapter(), decodeSessionText: decodeClaudeCodeSessionText };
+    case 'codex':
+      return { adapter: new CodexAdapter(), decodeSessionText: decodeCodexSessionText };
+    case 'copilot':
+      return { adapter: new CopilotAdapter(), decodeSessionText: decodeCopilotSessionText };
+    default:
+      throw new Error(`no adapter for engine "${String(engine)}"`);
+  }
 }
 
 /**
@@ -845,7 +876,7 @@ async function maybeServeRecheck(
  * @throws {SettingsFallbackError} When the settings answered with no path, or
  *   with an engine this runner has no adapter for.
  */
-async function resolveRunnerPaths(
+export async function resolveRunnerPaths(
   client: ControlPlaneClient,
   options: RunnerOptions,
 ): Promise<ResolvedRunnerPaths> {

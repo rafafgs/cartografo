@@ -164,6 +164,12 @@ function alive(pid: number): boolean {
   }
 }
 
+/** What the fake engine writes about itself (`FAKE_ENGINE_RECORD`). */
+interface Sidecar {
+  pid: number;
+  grandchildPid: number | null;
+}
+
 interface Ending {
   status: SessionStatus;
   exitCode: number | null;
@@ -223,18 +229,22 @@ async function endedBy(
     );
 
     // The fake writes its sidecar once its grandchild is up: wait for it.
-    let record: { pid: number; grandchildPid: number | null } | null = null;
-    const wanted = (): boolean => (how === 'exit' ? record?.pid != null : record?.grandchildPid != null);
-    for (let attempt = 0; attempt < 100 && !wanted(); attempt += 1) {
-      await sleep(50);
+    const readRecord = (): Sidecar | null => {
       try {
-        record = JSON.parse(readFileSync(recordPath, 'utf8')) as typeof record;
+        return JSON.parse(readFileSync(recordPath, 'utf8')) as Sidecar;
       } catch {
-        record = null;
+        return null;
       }
+    };
+    const ready = (found: Sidecar | null): found is Sidecar =>
+      found !== null && (how === 'exit' || found.grandchildPid !== null);
+    let record = readRecord();
+    for (let attempt = 0; attempt < 100 && !ready(record); attempt += 1) {
+      await sleep(50);
+      record = readRecord();
     }
-    assert.ok(record && wanted(), 'the fake engine never wrote its sidecar');
-    const pids = [record.pid, ...(record.grandchildPid == null ? [] : [record.grandchildPid])];
+    assert.ok(ready(record), 'the fake engine never wrote its sidecar');
+    const pids = [record.pid, ...(record.grandchildPid === null ? [] : [record.grandchildPid])];
 
     if (how === 'cancel') await adapter.cancel(handle);
 

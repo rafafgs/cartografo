@@ -94,7 +94,11 @@ export interface LifecycleHooks<State> {
 /** One session's launch, built by the adapter after its refusals. */
 export interface LifecycleLaunch<State> {
   readonly command: LifecycleCommand;
-  readonly env: NodeJS.ProcessEnv;
+  /**
+   * The engine's environment, built inside the spawn's `try`: a builder that
+   * throws is a session that could not start, like a spawn that throws.
+   */
+  readonly environment: () => NodeJS.ProcessEnv;
   /** The adapter's own per-session state, handed to every hook. */
   readonly state: State;
   /**
@@ -193,7 +197,7 @@ export class ProcessLifecycle<State> {
     try {
       child = spawn(command.command, [...command.args], {
         cwd: spec.workingDir,
-        env: launch.env,
+        env: launch.environment(),
         stdio,
         // Its own group: that is what allows signalling grandchildren along
         // with the parent.

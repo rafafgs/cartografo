@@ -9,42 +9,23 @@
  * (`docs/formats/engine-adapter.md:378-395`) and measured it method by method
  * against `codex-cli 0.147.0`; this file is that analysis cashed in.
  *
- * The process lifecycle is DELIBERATELY DUPLICATED from `claude-code-adapter.ts`
- * instead of extracted into a common base. The duplication is real and it is a
- * decision, not an oversight: with only two adapters there is not yet evidence
- * of what shape the abstraction should have, and generalizing early is the same
- * mistake the two-consumers rule exists to prevent one level up. It is recorded
- * as a candidate for a simplification ticket if a third adapter ever appears.
- *
- * What the two lifecycles share, and why:
- *
- * - **The process comes up detached, and signals go to the GROUP.** It is what
- *   makes C4 pass: an engine that leaves a child alive brings the runner's
- *   machine down after the hundredth session, not the first
- *   (`engine-adapter.md:367-369`).
- * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
- *   the pipes are closed, and that is what guarantees invariant 4 (every line
- *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
- * - **The clocks are ours.** This CLI has no timeout flag either
- *   (`engine-adapter.md:407`), so the adapter arms them, escalates
- *   SIGTERM→SIGKILL and disarms them. Since t163 there are two: the wall clock,
- *   armed once, and the inactivity watchdog, re-armed on every chunk the process
- *   writes. They are independent because they answer different questions — "this
- *   already cost too much" and "this stopped happening" — and whichever fires
- *   first wins outright.
+ * The process lifecycle — the detached spawn and group signals, the end decided
+ * on `close`, the two clocks and the SIGTERM→SIGKILL escalation — lives in
+ * `process-lifecycle.ts`, shared with the other two CLI adapters since t678.
+ * What is this engine's own: the resume and permission refusals before the
+ * spawn, and the engine ref read off the `thread.started` frame
+ * ({@link extractEngineRef}).
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 import {
   buildCommand,
   buildEnvironment,
   CODEX_BINARY,
-  ENGINE_STDIO,
   type EngineCommand,
 } from './codex-command.ts';
 import { PERMISSION_REFUSAL_PREFIX, resolveCodexPermissions } from './codex-permission-policy.ts';
@@ -54,9 +35,9 @@ import {
   readMcpConfigToml,
   readMcpServerConfigToml,
 } from './mcp-discovery.ts';
+import { ProcessLifecycle } from './process-lifecycle.ts';
 import {
   SessionStartError,
-  UnknownSessionError,
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
@@ -64,7 +45,6 @@ import {
   type McpDiscovery,
   type McpServerConnection,
   type ModelCatalog,
-  type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
   type SessionStatus,
@@ -178,41 +158,6 @@ export interface CodexAdapterOptions {
   readonly mcpProbeDeadlineMs?: number;
 }
 
-/** Which of the two watchdogs stopped a session, when one of ours did. */
-type TimeoutReason = NonNullable<SessionFinishDetail['timeoutReason']>;
-
-/** Local state of a live session. The adapter persists nothing (D1). */
-interface Session {
-  /** This adapter's own handle, so a timer can order a stop by it. */
-  readonly id: string;
-  readonly child: ChildProcess;
-  readonly listener: SessionListener;
-  status: SessionStatus;
-  /** Terminal status asked for by whoever ordered the stop (cancel or clock). */
-  requestedStatus: SessionStatus | null;
-  /**
-   * Which watchdog of OURS ordered the stop. `null` for a `cancel()` somebody
-   * else drove — the caller knows their own reason, and inventing one here
-   * would put a cause in the telemetry that nobody measured.
-   */
-  timeoutReason: TimeoutReason | null;
-  finished: boolean;
-  refSent: boolean;
-  clock: NodeJS.Timeout | null;
-  /** Inactivity watchdog, re-armed on every raw chunk (t163). */
-  silence: NodeJS.Timeout | null;
-  /** Silence tolerated, in milliseconds. `0` = this session has no inactivity watchdog. */
-  readonly silenceMs: number;
-  escalation: NodeJS.Timeout | null;
-  safetyNet: NodeJS.Timeout | null;
-  /**
-   * The `process.on('exit')` listener that takes this session's group down with
-   * the runner, while it is live (t193, FR11). `null` once it is not.
-   */
-  exitBackstop: (() => void) | null;
-  leftovers: { stdout: string; stderr: string };
-}
-
 /**
  * The session id the engine itself gave, if this line is a recognized frame of
  * the `--json` stream.
@@ -249,29 +194,11 @@ export function extractEngineRef(line: string): string | null {
 export class CodexAdapter implements EngineAdapter {
   readonly engineName = 'codex';
 
-  /** The sessions with a process still on the other side. */
-  readonly #sessions = new Map<string, Session>();
-
-  /**
-   * One terminal status per session that already ended (t207).
-   *
-   * Mirrored from `claude-code-adapter.ts`, like the rest of this lifecycle and
-   * for the same recorded reason: with two adapters there is not yet evidence of
-   * what the shared abstraction should look like. The stub is what lets
-   * `#finish` drop everything else while invariant 3 of the frozen contract —
-   * "`getStatus` only returns a terminal status after `onFinished` has run"
-   * (`docs/formats/engine-adapter.md:844`) — keeps answering, for this adapter's
-   * run of C1, C3, C8 and C9 as much as for the other's.
-   *
-   * It grows by one short string per session this process ever dispatched, which
-   * is an accepted trade: a TTL would make `getStatus` answer differently
-   * depending on WHEN it is asked, and that is the invariant itself.
-   */
-  readonly #terminalStatus = new Map<string, SessionStatus>();
+  /** The session lifecycle, shared with the other two CLI adapters (t678). */
+  readonly #lifecycle: ProcessLifecycle<undefined>;
 
   readonly #commandBuilder: (spec: SessionSpec) => EngineCommand;
   readonly #environmentBuilder: (spec: SessionSpec) => NodeJS.ProcessEnv;
-  readonly #graceMs: number;
   readonly #probeCommandBuilder: () => EngineCommand;
   readonly #probeEnvironment: NodeJS.ProcessEnv;
   readonly #credentialsPath: string;
@@ -282,7 +209,10 @@ export class CodexAdapter implements EngineAdapter {
   constructor(options: CodexAdapterOptions = {}) {
     this.#commandBuilder = options.commandBuilder ?? ((spec) => buildCommand(spec));
     this.#environmentBuilder = options.environmentBuilder ?? ((spec) => buildEnvironment(spec));
-    this.#graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+    this.#lifecycle = new ProcessLifecycle<undefined>({
+      graceMs: options.graceMs ?? DEFAULT_GRACE_MS,
+      extractEngineRef,
+    });
     this.#probeCommandBuilder =
       options.probeCommandBuilder ?? (() => ({ command: CODEX_BINARY, args: ['--version'] }));
     this.#probeEnvironment = options.probeEnvironment ?? process.env;
@@ -322,128 +252,15 @@ export class CodexAdapter implements EngineAdapter {
 
     // `stdin` piped only when there is something to write into it (t203). This
     // is the engine that MADE invariant 6 normative, so the conditional is the
-    // invariant and not an exception to it: what the invariant forbids is a
-    // pipe left open with nothing written and nothing closing it, and the write
-    // below runs under exactly the same condition as the pipe above. No
-    // ephemeral file on this side — this CLI has no system-prompt flag to point
-    // at one, and an `AGENTS.md` would collide with a real one in the target
-    // repository (`codex-command.ts`).
-    const stdio = [...ENGINE_STDIO] as Array<'ignore' | 'pipe'>;
-    if (command.stdin !== undefined) stdio[0] = 'pipe';
-
-    let child: ChildProcess;
-    try {
-      child = spawn(command.command, [...command.args], {
-        cwd: spec.workingDir,
-        env: this.#environmentBuilder(spec),
-        stdio,
-        // Its own group: that is what allows signalling grandchildren along
-        // with the parent.
-        detached: true,
-      });
-    } catch (cause) {
-      throw new SessionStartError(`could not start "${command.command}"`, { cause });
-    }
-
-    // Synchronously, right after the spawn, and the error listener FIRST: an
-    // engine that exits before reading its stdin breaks the pipe, and an
-    // unhandled `'error'` on a stream is an uncaught exception — the runner
-    // dying over one session's fast exit. Hand-duplicated from
-    // `claude-code-adapter.ts`, like the rest of this lifecycle and for the
-    // reason this file's header records.
-    if (command.stdin !== undefined && child.stdin) {
-      child.stdin.on('error', () => {
-        /* the engine went away without reading; its exit is the real outcome */
-      });
-      child.stdin.end(command.stdin, 'utf8');
-    }
-
-    const id = randomUUID();
-    const session: Session = {
-      id,
-      child,
-      listener,
-      status: 'pending',
-      requestedStatus: null,
-      timeoutReason: null,
-      finished: false,
-      refSent: false,
-      clock: null,
-      silence: null,
-      // Same `> 0` posture the wall clock has: absent, zero or negative is no
-      // watchdog at all, which is what every session had before this existed.
-      silenceMs:
-        typeof spec.silenceSeconds === 'number' && spec.silenceSeconds > 0
-          ? spec.silenceSeconds * 1_000
-          : 0,
-      escalation: null,
-      safetyNet: null,
-      exitBackstop: null,
-      leftovers: { stdout: '', stderr: '' },
-    };
-    this.#sessions.set(id, session);
-
-    // Every handler is registered NOW, synchronously: a process that dies fast
-    // would fire `close` before a registration deferred by an `await`, and the
-    // session would hang forever.
-    let started = false;
-    let announceStart: (error: Error | null) => void = () => {};
-    const start = new Promise<Error | null>((resolve) => {
-      announceStart = resolve;
+    // invariant and not an exception to it. No ephemeral file on this side —
+    // this CLI has no system-prompt flag to point at one, and an `AGENTS.md`
+    // would collide with a real one in the target repository
+    // (`codex-command.ts`).
+    return await this.#lifecycle.start(spec, listener, {
+      command,
+      environment: () => this.#environmentBuilder(spec),
+      state: undefined,
     });
-
-    child.once('spawn', () => {
-      started = true;
-      session.status = 'running';
-      this.#armExitBackstop(session);
-      announceStart(null);
-    });
-
-    child.once('error', (error: Error) => {
-      if (!started) {
-        announceStart(error);
-        return;
-      }
-      this.#finish(id, session.requestedStatus ?? 'failed', null);
-    });
-
-    for (const channel of ['stdout', 'stderr'] as const) {
-      const stream = child[channel];
-      if (!stream) continue;
-      stream.setEncoding('utf8');
-      stream.on('data', (chunk: string) => {
-        this.#pump(session, channel, chunk);
-      });
-    }
-
-    child.once('close', (code: number | null) => {
-      if (!started) {
-        announceStart(new Error(`the engine process closed before coming up (code ${code})`));
-        return;
-      }
-      this.#complete(id, code);
-    });
-
-    const failure = await start;
-    if (failure) {
-      this.#sessions.delete(id);
-      throw new SessionStartError(
-        `could not open a session with "${command.command}" in "${spec.workingDir}"`,
-        { cause: failure },
-      );
-    }
-
-    // Two watchdogs, armed independently and cleared together. Whichever fires
-    // first wins outright: `#stop` is a complete no-op once a stop is in
-    // flight, which is the same discipline C8 already demands of `cancel()`.
-    if (spec.timeoutSeconds > 0) {
-      session.clock = setTimeout(() => {
-        this.#stop(id, 'timed_out', 'wall_clock');
-      }, spec.timeoutSeconds * 1_000);
-    }
-    this.#armSilence(session);
-
-    return id;
   }
 
   /**
@@ -457,37 +274,15 @@ export class CodexAdapter implements EngineAdapter {
    * sessions and are not counted.
    */
   get liveSessionCount(): number {
-    return this.#sessions.size;
+    return this.#lifecycle.liveSessionCount;
   }
 
   async getStatus(sessionId: string): Promise<SessionStatus> {
-    const session = this.#sessions.get(sessionId);
-    if (session) return session.status;
-
-    // A session that ended: everything but its outcome was dropped on the way
-    // through `#finish`, and the outcome is what invariant 3 promises.
-    const terminal = this.#terminalStatus.get(sessionId);
-    if (terminal !== undefined) return terminal;
-
-    throw new UnknownSessionError(sessionId);
+    return this.#lifecycle.getStatus(sessionId);
   }
 
   async cancel(sessionId: string, status: SessionStatus = 'cancelled'): Promise<void> {
-    const session = this.#sessions.get(sessionId);
-    if (session) {
-      // A silent no-op, not an error: whoever cancels races with the adapter's
-      // own streaming thread and has no way of knowing it lost the race. It
-      // survives here for the window between `#finish` clearing the map and a
-      // caller that still holds the handle — the same "already finished" C5
-      // covers, now answered from the stub below.
-      if (session.finished) return;
-      this.#stop(sessionId, status);
-      return;
-    }
-
-    if (this.#terminalStatus.has(sessionId)) return;
-
-    throw new UnknownSessionError(sessionId);
+    this.#lifecycle.cancel(sessionId, status);
   }
 
   /**
@@ -622,199 +417,6 @@ export class CodexAdapter implements EngineAdapter {
   #defaultConfigPath(): string {
     const home = this.#probeEnvironment[CODEX_HOME_VARIABLE]?.trim();
     return join(home ? home : join(homedir(), '.codex'), CONFIG_FILE);
-  }
-
-  /**
-   * (Re)arms the inactivity watchdog, if this session has one.
-   *
-   * Called at the start and on every raw chunk, which is what makes "silence"
-   * mean what it says: the session is alive while the process is producing,
-   * whatever the produce happens to parse into.
-   */
-  #armSilence(session: Session): void {
-    if (session.silenceMs <= 0 || session.finished) return;
-    if (session.silence) clearTimeout(session.silence);
-    session.silence = setTimeout(() => {
-      this.#stop(session.id, 'timed_out', 'silence');
-    }, session.silenceMs);
-  }
-
-  /** Splits the stream into lines, keeping the `\n`-less tail for the next chunk. */
-  #pump(session: Session, channel: 'stdout' | 'stderr', chunk: string): void {
-    // On the RAW chunk, before any line-splitting: an engine that writes one
-    // long unbroken line is producing output, and judging it silent because no
-    // `\n` arrived yet would kill a session that is working.
-    this.#armSilence(session);
-
-    const accumulated = session.leftovers[channel] + chunk;
-    const parts = accumulated.split('\n');
-    session.leftovers[channel] = parts.pop() ?? '';
-    for (const line of parts) this.#emit(session, line);
-  }
-
-  #emit(session: Session, line: string): void {
-    // Invariant 2: after onFinished, no onOutput.
-    if (session.finished) return;
-    session.listener.onOutput(line);
-
-    if (session.refSent || !session.listener.onEngineRef) return;
-    const ref = extractEngineRef(line);
-    if (ref === null) return;
-    session.refSent = true;
-    session.listener.onEngineRef(ref);
-  }
-
-  /** Natural end of the process: drains what is left and classifies the outcome. */
-  #complete(id: string, code: number | null): void {
-    const session = this.#sessions.get(id);
-    if (!session || session.finished) return;
-
-    for (const channel of ['stdout', 'stderr'] as const) {
-      const leftover = session.leftovers[channel];
-      session.leftovers[channel] = '';
-      if (leftover !== '') this.#emit(session, leftover);
-    }
-
-    // Whoever ordered the stop has the last word on the status; without that,
-    // the exit code decides. No `turn.completed`/`turn.failed` parsing: the
-    // feasibility run measured a failed turn leaving with exit code 1, and it
-    // "does not mask the failure behind a 0" (`engine-adapter.md:411-412, 429`),
-    // so the exit code alone already is the source of truth the interface asks
-    // for. `code` already arrives `null` when the process died by a signal — in
-    // POSIX there is no exit code in that case, and `null` is "there was none",
-    // never "zero" (`engine-adapter.md:227-234`).
-    const status = session.requestedStatus ?? (code === 0 ? 'completed' : 'failed');
-    this.#finish(id, status, code);
-  }
-
-  /**
-   * Asks for a stop: SIGTERM to the group, SIGKILL after the grace.
-   *
-   * @param id The session's handle.
-   * @param status Terminal status to report.
-   * @param timeoutReason Which watchdog of ours ordered it, when one did. A
-   *   `cancel()` from outside passes nothing: reporting a cause the caller
-   *   never gave would be telemetry this adapter made up.
-   */
-  #stop(id: string, status: SessionStatus, timeoutReason: TimeoutReason | null = null): void {
-    const session = this.#sessions.get(id);
-    if (!session || session.finished) return;
-    // A stop is already in flight: this call is a COMPLETE no-op — it does not
-    // overwrite the status, does not signal again, does not re-arm anything.
-    // The order matters, and it is the whole point: the escalation timer below
-    // captures `status` in its closure, so a second writer to
-    // `requestedStatus` would make the reported outcome depend on whether the
-    // process died from the SIGTERM (the closure's status) or from the SIGKILL
-    // (the last writer's). Whoever ordered the stop FIRST is the one who
-    // decides — which is what `cancel()`'s contract already promises
-    // (`types.ts:236-241`).
-    if (session.escalation) return;
-
-    session.requestedStatus = status;
-    session.timeoutReason = timeoutReason;
-    this.#signalGroup(session, 'SIGTERM');
-
-    session.escalation = setTimeout(() => {
-      this.#signalGroup(session, 'SIGKILL');
-
-      // Safety net for invariant 1 ("onFinished exactly once, always"): if not
-      // even after the SIGKILL the `close` arrives, the outcome is reported all
-      // the same. A session hanging forever is worse than a session reported
-      // without its last line, and this path should not happen — killing the
-      // group closes the pipes.
-      session.safetyNet = setTimeout(() => {
-        this.#finish(id, status, null);
-      }, this.#graceMs);
-    }, this.#graceMs);
-  }
-
-  #finish(id: string, status: SessionStatus, exitCode: number | null): void {
-    const session = this.#sessions.get(id);
-    if (!session || session.finished) return;
-
-    this.#disarm(session);
-    session.finished = true;
-    // Invariant 3: the status only turns terminal together with onFinished,
-    // never before.
-    session.status = status;
-    // The cause only travels when one of our own watchdogs produced it; it is
-    // set beside `requestedStatus`, so it can only ever accompany the status
-    // that watchdog asked for.
-    const reason = session.timeoutReason;
-    session.listener.onFinished(
-      status,
-      exitCode,
-      reason === null ? undefined : { timeoutReason: reason },
-    );
-
-    // AFTER the listener has been told, and only then (t207): everything this
-    // session was holding — the `ChildProcess`, the caller's listener, the
-    // leftovers — becomes garbage the moment the map lets go, and what is left
-    // is the one string `getStatus` owes invariant 3. The order is the whole
-    // point: dropping it BEFORE the call would hand `onFinished` an adapter that
-    // no longer knows the session it is reporting.
-    this.#sessions.delete(id);
-    this.#terminalStatus.set(id, status);
-  }
-
-  #disarm(session: Session): void {
-    for (const name of ['clock', 'silence', 'escalation', 'safetyNet'] as const) {
-      const timer = session[name];
-      if (timer) clearTimeout(timer);
-      session[name] = null;
-    }
-    if (session.exitBackstop !== null) {
-      process.off('exit', session.exitBackstop);
-      session.exitBackstop = null;
-    }
-  }
-
-  /**
-   * Takes this session's process group down with the runner (t193, FR11).
-   *
-   * Hand-duplicated from `claude-code-adapter.ts`, like the rest of this
-   * lifecycle and for the reason this file's header records: with two adapters
-   * there is still no evidence of what the shared abstraction should look like,
-   * and this change follows that precedent rather than reopening it.
-   *
-   * The backstop, and only that: t193 gave the runner an explicit shutdown that
-   * cancels a live session through {@link CodexAdapter.cancel}, and this covers
-   * every OTHER way the process can end — an uncaught exception somewhere else,
-   * a bare `process.exit()`, a `finally` that never ran.
-   *
-   * SIGTERM only, and no escalation: `'exit'` is the last synchronous turn this
-   * process gets, there is no event loop left for a SIGKILL five seconds later,
-   * and `await` is not allowed here. The one honest limit stays a limit: a
-   * `SIGKILL` of the runner itself runs no JavaScript at all, `'exit'` never
-   * fires, and nothing in this process can prevent that orphan.
-   */
-  #armExitBackstop(session: Session): void {
-    session.exitBackstop = () => {
-      this.#signalGroup(session, 'SIGTERM');
-    };
-    process.on('exit', session.exitBackstop);
-  }
-
-  /**
-   * Signals the process's whole group (negative pid).
-   *
-   * The process came up `detached`, so it leads its own group: the signal
-   * reaches the child the engine left behind. If the group no longer exists, it
-   * falls back to the direct process, and the final failure is ignored — the
-   * target is already dead.
-   */
-  #signalGroup(session: Session, signal: NodeJS.Signals): void {
-    const pid = session.child.pid;
-    if (pid === undefined) return;
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        session.child.kill(signal);
-      } catch {
-        /* already dead; nothing to do */
-      }
-    }
   }
 
   /** `codex --version`: a preflight that opens no session and spends no quota. */

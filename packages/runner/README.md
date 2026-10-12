@@ -45,6 +45,15 @@ shared test a third adapter has to pass. `copilot-adapter` (GitHub Copilot CLI,
 `--engine copilot`) is that third one, and it passed with no change to the
 interface.
 
+All three engines are proven by hand against the real CLI: `npm run spike` (Claude
+Code), `npm run spike:codex` and `npm run spike:copilot`, each needing that
+engine's credential. Copilot can also be proven **without a subscription**:
+`npm run spike:copilot:stub` runs the real `copilot` binary against
+`scripts/stub-openai-provider.mjs`, a scripted local provider, and checks the
+lifecycle, the decoded text, an escalation and the taxonomy events. The
+`spike:copilot` run against a real account is still pending
+(`docs/formats/engine-adapter.md`, "The credential-free proof, and the open gap").
+
 ## What is inside
 
 `src/dispatch/` is the bulk of it, and it is the session protocol rather than

@@ -296,7 +296,10 @@ work, takes the lease and dispatches an agent session per job, one per tick
 authenticated on the machine, that actually runs. `copilot` is the GitHub Copilot
 CLI: it authenticates through `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`
 (or a stored login), and its permission policy is tool-level gating, not a
-sandbox (`docs/formats/engine-adapter.md`).
+sandbox (`docs/formats/engine-adapter.md`). Copilot can be proven without a
+subscription: `npm run spike:copilot:stub` in `packages/runner` runs the real CLI
+against a scripted local provider, and the same script with `npm run
+spike:copilot` is the credentialed proof.
 
 Every session works in a `git worktree` of its own on a `ticket-<id>` branch.
 `--working-dir` is the repository the worktree is cut from; `--worktrees-root`

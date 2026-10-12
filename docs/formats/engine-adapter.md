@@ -1121,7 +1121,7 @@ CLI's review used. The primary sources:
 | `SessionListener.onFinished` (exit code) | **1** on a failed run, the same in the process and in the frame — it does not mask the failure behind a 0. | the run above: `exit=1` |
 | `getStatus` | The adapter's local state: the CLI has no state query. | — |
 | `cancel` | A signal to the process group: SIGTERM, SIGKILL after a grace period. | its absence in `copilot --help` |
-| `capabilities` | `{ hasStructuredOutput: true }`. `hasResume` stays undeclared until a consumer exists, `reportsUsage` is left to the follow-up. | — |
+| `capabilities` | `{ hasStructuredOutput: true }`. `hasResume` stays undeclared until a consumer exists, and `reportsUsage` is deliberately not declared: see "What the usage frame cannot carry". | — |
 | `verifyCli` | `copilot --version` answers **without network**: "GitHub Copilot CLI 1.0.95." and an update hint on a second line, of which the probe keeps the first. `authenticated` is **env-only**: `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`. | `copilot --version`; see the credential note below |
 | `SessionStartError` / `UnknownSessionError` | The same classes of error as on both other engines. | — |
 
@@ -1206,17 +1206,117 @@ true for a CLI that never authenticated. A stored login is invisible to the
 probe, and `authenticated: false` is "no environment credential", not "will
 fail".
 
-### The open gap
+### Decoding the session text
+
+`--output-format json` prints frames, so the model's words reach `onOutput`
+inside JSON: the quotes of a fenced `input-request` block arrive as `\"` and its
+newlines as `\n`, and `parseInputRequest` over the raw lines never finds a block.
+`decodeCopilotSessionText` (runner) and its duplicate in `domain/session-log.ts`
+(core, which cannot import the runner) turn the lines back into text under the
+rule the other two decoders share:
+
+- A line that parses as a JSON object with a string `type` is a **recognized
+  frame**, and contributes only its text, even when that is nothing.
+- The only frame that carries text is `assistant.message`, and only when
+  `data.content` is a string: it holds the **whole** message. `assistant.message_delta`
+  (`data.deltaContent`) carries the same text in pieces and is dropped like every
+  other frame (`session.*`, `user.message`, `assistant.turn_*`, `model.call_*`,
+  `tool.*`, `result`); reading both would print each answer twice and split a
+  fenced block across fragments. A tool-call-only turn is an `assistant.message`
+  with `content: ""` and a `toolRequests` list, and contributes an empty string.
+- A line that is not a JSON object, or has no string `type`, **passes through
+  raw**. On the GitHub-routed path the CLI prints plain text beside the JSON
+  (`Error: Access denied by policy settings (Request ID: …)`), and that is the only
+  account of a session that died.
+
+The fixture, `packages/runner/test/fixtures/copilot-frames.jsonl`, is a real
+capture of the stub run below with one real plain-text line (that policy error,
+from a GitHub-routed run) spliced in, because the stub path prints none. Runner
+and core are pinned to the same bytes, with the expected text as a literal on the
+core side. `shell` and unknown engines still pass a Copilot-looking frame
+through.
+
+### MCP servers: what was measured, and what is not done
+
+Measured on 2026-10-12 against `@github/copilot@1.0.95` in a throwaway
+`COPILOT_HOME`:
+
+| Probe | Result |
+|---|---|
+| `copilot mcp --help` | `list`, `get`, `add`, `remove`, `enable`, `disable`. User scope is `~/.copilot/mcp-config.json`; the CLI also merges a workspace's `.mcp.json` or `.github/mcp.json` and plugins. |
+| `copilot mcp list --json` | **Exists.** `{"mcpServers": {"<name>": {…, "source": "user"\|"builtin", "enabled": true\|false}}}`, an object keyed by name (Codex's is an array). It always lists a builtin `github-mcp-server`. Exit 0 with nothing configured. |
+| `copilot mcp add <name> -- <cmd> [args]` / `--transport http <name> <url>` | Writes `mcp-config.json`: a stdio server is `{"type": "local", "command", "args", "env", "tools": ["*"]}`, a remote one `{"type": "http", "url", "headers", "tools"}`. |
+| `copilot mcp disable <name>` | The entry in `mcp-config.json` is **left untouched**; `settings.json` beside it gains `{"disabledMcpServers": ["<name>"]}` (`enable` leaves `{}`). `mcp list --json` then says `"enabled": false` and prose says `(local, disabled)`; `mcp get` says `Status: Disabled`. |
+
+So the **disabled marker is `enabled: false` in the CLI's JSON listing, and
+`disabledMcpServers` in `settings.json` for the file** — the config file itself
+carries none. `discoverMcpServers()` asks the CLI first (`origin: 'cli'`, exit 0
+counts as an answer even when the output does not parse) and falls back to
+`$COPILOT_HOME/mcp-config.json` minus `settings.json`'s disabled names
+(`origin: 'file'`). A disabled server is omitted, and so is the builtin
+`github-mcp-server`: sessions run under `--disable-builtin-mcps`, and it has no
+entry in the user file, so listing it would name a server this adapter could never
+resolve. `resolveMcpServerConnection(name)` reads the file entry through the same
+`mcpServerConnectionFromEntry` the Claude adapter uses (everything that is not
+http/sse is stdio) and returns `null` for an absent, malformed or disabled one. A
+server only a workspace's `.mcp.json` declares is visible to the CLI listing and
+resolves `null`, which the runner reports as "could not read how to reach this
+server". The preflight's fix for a missing cartografo server is
+`copilot mcp add cartografo -- <entrypoint>`, with the two `export` lines the
+Codex one has.
+
+**Nothing is passed into the session.** `SessionSpec` has no MCP field and the
+interface is frozen; the runner itself calls a node's declared server through
+those two adapter methods (`resolve-external-inputs.ts`, `write-external-outputs.ts`).
+No `--additional-mcp-config`, no file written by the adapter. The listing carries
+no reason for an omission: `McpServerRef` is `{name}` by design.
+
+### The model catalog
+
+`listModels()` is a static catalog (`origin: 'catalog'`) of `auto` plus the ids
+`copilot help config` prints under `model` for 1.0.95, read on 2026-10-12. The
+CLI documents `--model <model>` and `/model` and nothing that lists them without a
+terminal, which is why it is static, and it ages the way the other two do: an id
+nobody validated is refused by the CLI at session start, and nothing gates on it.
+
+### What the usage frame cannot carry
+
+The adapter does **not** declare `reportsUsage`. The terminal frame's `usage` is
+`{premiumRequests, totalApiDurationMs, sessionDurationMs, codeChanges}`: request
+counts and durations, no tokens. `SessionFinishDetail` has only `timeoutReason`
+and a token `usage`, so there is nowhere to put `premiumRequests` or
+`sessionDurationMs`, and widening a frozen interface for one engine is not this
+document's call. The gap is recorded, not papered over.
+
+### The credential-free proof, and the open gap
+
+`npm run spike:copilot:stub` (in `packages/runner`) runs the REAL `copilot` binary
+through the whole runner path with **no GitHub credential**. It starts
+`scripts/stub-openai-provider.mjs`, a dependency-free server that answers
+`POST /v1/chat/completions` with SSE chunks and `GET /v1/models` from a scripted
+list of turns, and points the CLI at it with BYOK (`COPILOT_PROVIDER_BASE_URL`,
+`COPILOT_PROVIDER_TYPE=openai`, a throwaway `COPILOT_HOME`). Two sessions run:
+one whose scripted model asks a question in a fenced `input-request` block, and
+one whose scripted model calls `create` to write a file in the working directory.
+It checks the lifecycle and exit 0, the frames, the decoded text, that
+`parseInputRequest` finds the block in the decoded text **and not in the raw
+lines**, that the file exists, that `discoverMcpServers()` answers with
+`origin: 'cli'`, and that `session.opened` and `session.finished` validate with
+`ajv` against the taxonomy schemas. The run for t676 passed on `copilot 1.0.95`
+(`completed`, exit 0, about 4 s per session).
 
 **No credentialed run exists.** On the founder's account a headless prompt
-against GitHub's own routing exits at once with `Error: Access denied by policy
-settings (Request ID: …)`, so nothing here was proven against GitHub's model
-routing: every session above ran against the stub provider. What that proves is
-everything the adapter owns — the argv, the frames, the id, the exit codes, the
-permission flags — and not what a real subscription's models do with them. The
-credentialed run belongs to the external operator's machine. The BYOK stub proof
-as a script, the decoding of Copilot's session text for escalation parsing, MCP
-discovery, `listModels()` and `reportsUsage` are the follow-up ticket's.
+against GitHub's own routing exits 1 at once with `Error: Access denied by policy
+settings (Request ID: …)`, after a `session.warning` frame saying "Third-party MCP
+servers are disabled by your organization's Copilot policy. Only built-in servers
+are available." So nothing here was proven against GitHub's model routing: the stub
+proves everything the adapter and the decoder own, and not what a real
+subscription's models do with these instructions. The `github` mode of the same
+script (`npm run spike:copilot`) is that proof: it needs a credentialed account and
+checks that the file the prompt asked for exists with the requested content. It is
+**pending the external operator's run**: install the CLI (`npm install -g
+@github/copilot`), `copilot login` (or export `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or
+`GITHUB_TOKEN`), then `npm run spike:copilot` in `packages/runner`.
 
 ### Conclusion
 

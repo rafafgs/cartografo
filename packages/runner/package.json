@@ -35,6 +35,8 @@
     "typecheck": "tsc --noEmit",
     "spike": "node scripts/spike-real-session.mjs",
     "spike:codex": "node scripts/spike-real-session-codex.mjs",
+    "spike:copilot": "COPILOT_SPIKE_MODE=github node scripts/spike-real-session-copilot.mjs",
+    "spike:copilot:stub": "COPILOT_SPIKE_MODE=stub node scripts/spike-real-session-copilot.mjs",
     "spike:escalation": "node scripts/spike-human-escalation.mjs",
     "spike:permissions": "node scripts/spike-permission-enforcement.mjs",
     "spike:resume": "node scripts/spike-session-resume.mjs",

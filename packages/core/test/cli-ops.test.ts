@@ -413,3 +413,98 @@ test('AT16/17 — settings set/get round-trip; an unknown key exits 2 before any
   assert.equal(withNoServer.code, 2);
   assert.equal(withNoServer.stderr, withRealServer.stderr);
 });
+
+/** Pairs a runner with the operator credential and returns the credential it was given. */
+async function pairRunner(plane: RunningControlPlane, id: string): Promise<string> {
+  const paired = await post<{ token: string | null }>(plane, '/v1/runners', { id });
+  assert.equal(typeof paired.token, 'string', 'pairing is where a runner credential comes from');
+  return paired.token ?? '';
+}
+
+/** A probe in which nothing is there: no CLI, no credential, an MCP list without cartografo. */
+function emptyProbe(): Record<string, unknown> {
+  return {
+    cli: { available: false, version: null, authenticated: false },
+    mcp: { supported: true, servers: [], origin: 'file', resolved_at: '2026-10-12T12:00:00.000Z' },
+    workspace: {
+      working_dir: '/home/op/cartografo',
+      working_dir_resolved: '/home/op/cartografo',
+      is_git_repo: true,
+      worktrees_root: '/home/op/worktrees',
+      worktrees_root_resolved: '/home/op/worktrees',
+      worktrees_root_exists: true,
+      worktrees_root_writable: true,
+    },
+  };
+}
+
+/** Reports `probe` as `runnerId` and returns what `cartografo runners` then prints. */
+async function runnersAfter(
+  plane: RunningControlPlane,
+  engine: string,
+  runnerId: string,
+  runnerToken: string,
+): Promise<string> {
+  const set = await runCli(['settings', 'set', 'engine', engine, '--url', plane.url], { token: plane.token });
+  assert.equal(set.code, 0, `stderr:\n${set.stderr}`);
+
+  const reported = await fetch(`${plane.url}/v1/runners/${runnerId}/probes`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${runnerToken}` },
+    body: JSON.stringify(emptyProbe()),
+  });
+  assert.equal(reported.status, 200, await reported.text());
+
+  const shown = await runCli(['runners', '--url', plane.url], { token: plane.token });
+  assert.equal(shown.code, 0, `stderr:\n${shown.stderr}`);
+  return shown.stdout;
+}
+
+test('t676 — runners names the copilot install, the three credential variables and the MCP command', { timeout: 180_000 }, async (t) => {
+  const area = temporaryArea(t, 'cartografo-t676-runners-');
+  const plane = await startControlPlane(t, { databasePath: path.join(area, 'cartografo.db') });
+  const runnerToken = await pairRunner(plane, 'runner-copilot');
+
+  const stdout = await runnersAfter(plane, 'copilot', 'runner-copilot', runnerToken);
+
+  // The engine line: the binary, and the install command the package README documents.
+  assert.match(stdout, /engine not found — the runner could not run `copilot`/);
+  assert.match(stdout, /^\s+npm install -g @github\/copilot$/m);
+
+  // The credential line: the adapter's own three variables, in its order.
+  const exportsInOrder = ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'].map((variable) =>
+    stdout.indexOf(`export ${variable}=…`),
+  );
+  assert.ok(exportsInOrder.every((position) => position >= 0), stdout);
+  assert.deepEqual([...exportsInOrder].sort((a, b) => a - b), exportsInOrder, 'the order of the adapter');
+  assert.match(stdout, /system credential store/);
+  assert.match(stdout, /COPILOT_HOME/);
+  // The file nobody measured: `copilot login` writes no readable `auth.json` the runner looks at.
+  assert.doesNotMatch(stdout, /auth\.json/);
+
+  // The MCP line: registered with the engine's own `mcp add`, like Codex's.
+  assert.match(stdout, /MCP servers — cartografo is not registered with this engine/);
+  assert.match(stdout, /export CARTOGRAFO_URL=http:\/\/127\.0\.0\.1:4317/);
+  assert.match(stdout, /export CARTOGRAFO_MCP_TOKEN=<the token printed when the control plane started>/);
+  assert.match(
+    stdout,
+    /copilot mcp add cartografo -- node \/absolute\/path\/to\/cartografo\/packages\/mcp\/bin\/mcp\.mjs/,
+  );
+});
+
+test('t676 — the claude-code and codex lines are exactly what they were', { timeout: 180_000 }, async (t) => {
+  const area = temporaryArea(t, 'cartografo-t676-unchanged-');
+  const plane = await startControlPlane(t, { databasePath: path.join(area, 'cartografo.db') });
+  const runnerToken = await pairRunner(plane, 'runner-unchanged');
+
+  const codex = await runnersAfter(plane, 'codex', 'runner-unchanged', runnerToken);
+  assert.match(codex, /Install the `codex` CLI on this machine, or run it with no install at all:/);
+  assert.match(codex, /^\s+npx --yes @openai\/codex@latest$/m);
+  assert.match(codex, /\$CODEX_HOME\/auth\.json \(~\/\.codex\/auth\.json by default\)/);
+  assert.match(codex, /codex mcp add cartografo -- node /);
+
+  const claude = await runnersAfter(plane, 'claude-code', 'runner-unchanged', runnerToken);
+  assert.match(claude, /Install the `claude` CLI on this machine — its own installation documentation/);
+  assert.match(claude, /~\/\.claude\.json/);
+  assert.match(claude, /claude mcp add cartografo \\/);
+});

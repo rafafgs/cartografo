@@ -9,7 +9,9 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { decodeSessionText } from '../src/domain/session-log.ts';
 
@@ -61,4 +63,57 @@ test('t368 — a shell session passes through exactly what it printed', () => {
 test('t368 — an engine this module does not recognize also passes through unchanged', () => {
   const text = 'whatever an unknown engine printed';
   assert.equal(decodeSessionText('some-future-engine', text), text);
+});
+
+// --- t676: the Copilot decoder, duplicated from the runner's ----------------------
+
+/**
+ * The runner's REAL capture of a `copilot` 1.0.95 session, read from its own
+ * package: core cannot import runner CODE, but a fixture is data, and reading
+ * the same bytes is what makes the parity claim checkable at all.
+ */
+function copilotFixture(): string {
+  const file = fileURLToPath(
+    new URL('../../runner/test/fixtures/copilot-frames.jsonl', import.meta.url),
+  );
+  return readFileSync(file, 'utf8').replace(/\n$/, '');
+}
+
+/**
+ * What the runner's `decodeCopilotSessionText` returns on that fixture, pinned as
+ * a literal: the plain-text policy error that was interleaved, then the one
+ * assistant message, whose escapes are undone.
+ */
+const EXPECTED_COPILOT_TEXT =
+  'Error: Access denied by policy settings (Request ID: FA86:214D9C:5866C:60D07:6ACCB33D)\n' +
+  'I need a decision before I continue.\n\n```input-request\n' +
+  '{"question":"Which migration number should be reserved: 0002 or 0003?",' +
+  '"context":"The migrations directory is empty and a parallel ticket may claim the same range.",' +
+  '"options":["0002","0003"],"recommendation":"Reserve 0002.","default":"0002"}\n```';
+
+test('t676 — a copilot session decodes to what the model said, plus the raw error line', () => {
+  assert.equal(decodeSessionText('copilot', copilotFixture()), EXPECTED_COPILOT_TEXT);
+});
+
+test('t676 — the copilot decoder keeps the runner rule: a recognized frame speaks only through its message', () => {
+  const lines = [
+    JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'half' } }),
+    JSON.stringify({ type: 'assistant.message', data: { content: 'whole' } }),
+    JSON.stringify({ type: 'assistant.message', data: { content: 42 } }),
+    JSON.stringify({ type: 'result', sessionId: 'x', exitCode: 0 }),
+    '{"data":{"content":"no type"}}',
+    'plain text',
+  ].join('\n');
+
+  assert.equal(
+    decodeSessionText('copilot', lines),
+    'whole\n{"data":{"content":"no type"}}\nplain text',
+  );
+});
+
+test('t676 — shell and an unknown engine still pass a copilot-looking frame through', () => {
+  const frame = JSON.stringify({ type: 'assistant.message', data: { content: 'hi' } });
+  assert.equal(decodeSessionText('shell', frame), frame);
+  assert.equal(decodeSessionText('no-such-engine', frame), frame);
+  assert.equal(decodeSessionText('shell', copilotFixture()), copilotFixture());
 });

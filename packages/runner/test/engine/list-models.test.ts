@@ -23,12 +23,14 @@ import { test } from 'node:test';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { CodexAdapter } from '../../src/engine/codex-adapter.ts';
+import { CopilotAdapter } from '../../src/engine/copilot-adapter.ts';
 import type { EngineAdapter, ModelCatalog } from '../../src/engine/types.ts';
 
-/** The two adapters, each named as it names itself. */
+/** The three adapters, each named as it names itself. */
 const ADAPTERS: ReadonlyArray<() => EngineAdapter> = [
   () => new ClaudeCodeAdapter(),
   () => new CodexAdapter(),
+  () => new CopilotAdapter(),
 ];
 
 /** Calls `listModels()`, failing by name when an adapter did not implement it. */
@@ -96,4 +98,27 @@ test('t166 — the two catalogs are the two adapters, not one list shared by acc
     .map((entry) => entry.id)
     .filter((id) => codex.models.some((entry) => entry.id === id));
   assert.deepEqual(shared, [], 'the two engines cannot offer the same model identifier');
+});
+
+test('t676 — the copilot catalog offers "auto" and ids the CLI documents', async () => {
+  const catalog = await catalogOf(new CopilotAdapter());
+  const ids = catalog.models.map((entry) => entry.id);
+
+  // `--model auto` is how the CLI itself says "let Copilot pick" (`copilot
+  // --help`), and it is the one entry that is not a model id.
+  assert.ok(ids.includes('auto'), 'the catalog has no "auto" entry');
+  // A few ids `copilot help config` lists for 1.0.95, across the vendors it routes.
+  for (const id of ['claude-sonnet-5.5', 'gpt-5.5', 'gemini-3.8-flash']) {
+    assert.ok(ids.includes(id), `the documented id "${id}" is missing`);
+  }
+  for (const entry of catalog.models) assert.equal(entry.origin, 'catalog');
+});
+
+test('t676 — the copilot adapter still does not declare reportsUsage', () => {
+  // `result.usage` carries request counts and durations, not tokens, and
+  // `SessionFinishDetail` has no slot for them: declaring the capability would
+  // promise a number nobody reports.
+  const capabilities = new CopilotAdapter().capabilities();
+  assert.notEqual(capabilities.reportsUsage, true);
+  assert.equal(capabilities.reportsUsage ?? false, false);
 });

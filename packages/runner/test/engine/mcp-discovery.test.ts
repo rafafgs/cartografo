@@ -24,6 +24,9 @@ import {
   mergeServerRefs,
   parseClaudeMcpListOutput,
   parseCodexMcpListJson,
+  parseCopilotMcpListJson,
+  readCopilotDisabledMcpServers,
+  readCopilotMcpConfigFile,
   readMcpConfigToml,
   readMcpServerConfigJsonFile,
   readMcpServerConfigToml,
@@ -336,3 +339,108 @@ test('t370 AT16 — a table with no command at all is null, never a half connect
     assert.equal(readMcpServerConfigToml(path, 'my-tool'), null);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* t676 — the Copilot source, measured against `@github/copilot@1.0.95`.       */
+/* -------------------------------------------------------------------------- */
+
+/** Real output of `copilot mcp list --json` (builtin entry trimmed to what is read). */
+const COPILOT_MCP_LIST_JSON = JSON.stringify({
+  mcpServers: {
+    alpha: { tools: ['*'], type: 'local', command: 'node', args: ['/x/server.js'], source: 'user', enabled: true },
+    beta: { tools: ['*'], type: 'http', url: 'https://example.com/mcp', source: 'user', enabled: true },
+    gamma: { tools: ['*'], type: 'local', command: 'echo', source: 'user', enabled: false },
+    'github-mcp-server': { type: 'http', url: 'https://x', source: 'builtin', enabled: true },
+  },
+});
+
+test('t676 — copilot mcp list --json: the enabled, non-builtin servers, in the CLI order', () => {
+  assert.deepEqual(parseCopilotMcpListJson(COPILOT_MCP_LIST_JSON), [{ name: 'alpha' }, { name: 'beta' }]);
+});
+
+test('t676 — copilot mcp list --json: a missing "enabled" is enabled, a non-boolean is not "false"', () => {
+  const output = JSON.stringify({
+    mcpServers: { a: { command: 'x' }, b: { command: 'y', enabled: 'no' }, c: { command: 'z', enabled: false } },
+  });
+  assert.deepEqual(parseCopilotMcpListJson(output), [{ name: 'a' }, { name: 'b' }]);
+});
+
+test('t676 — copilot mcp list --json: prose, a corrupt body and a wrong shape are zero servers', () => {
+  assert.deepEqual(parseCopilotMcpListJson('No MCP servers configured.'), []);
+  assert.deepEqual(parseCopilotMcpListJson(''), []);
+  assert.deepEqual(parseCopilotMcpListJson('{"mcpServers": '), []);
+  assert.deepEqual(parseCopilotMcpListJson('[]'), []);
+  assert.deepEqual(parseCopilotMcpListJson('{"mcpServers": []}'), []);
+  assert.deepEqual(parseCopilotMcpListJson('{"mcpServers": {"a": 3, "b": null}}'), []);
+});
+
+/** Real `mcp-config.json` after `copilot mcp add` of three servers. */
+const COPILOT_MCP_CONFIG = JSON.stringify({
+  mcpServers: {
+    alpha: { tools: ['*'], type: 'local', command: 'node', args: ['/x/server.js', '--flag'], env: { FOO: 'bar' } },
+    beta: { tools: ['*'], type: 'http', url: 'https://example.com/mcp' },
+    gamma: { tools: ['*'], type: 'local', command: 'echo', args: ['hi'] },
+  },
+});
+
+function inTempDir(body: (root: string) => void): () => void {
+  return () => {
+    const root = mkdtempSync(join(tmpdir(), 'cartografo-mcp-discovery-676-'));
+    try {
+      body(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+}
+
+test(
+  't676 — mcp-config.json: its keys are the servers, and settings.json disabledMcpServers removes some',
+  inTempDir((root) => {
+    const config = join(root, 'mcp-config.json');
+    const settings = join(root, 'settings.json');
+    writeFileSync(config, COPILOT_MCP_CONFIG);
+
+    // No settings file at all: nothing is disabled.
+    assert.deepEqual(readCopilotMcpConfigFile(config, settings), [
+      { name: 'alpha' },
+      { name: 'beta' },
+      { name: 'gamma' },
+    ]);
+
+    // The real file after `copilot mcp disable gamma`.
+    writeFileSync(settings, '{\n  "disabledMcpServers": [\n    "gamma"\n  ]\n}\n');
+    assert.deepEqual([...readCopilotDisabledMcpServers(settings)], ['gamma']);
+    assert.deepEqual(readCopilotMcpConfigFile(config, settings), [{ name: 'alpha' }, { name: 'beta' }]);
+
+    // After `copilot mcp enable gamma` the CLI leaves `{}`.
+    writeFileSync(settings, '{}');
+    assert.equal(readCopilotDisabledMcpServers(settings).size, 0);
+  }),
+);
+
+test(
+  't676 — mcp-config.json: a missing, corrupt or wrong-shaped file is zero servers, never a throw',
+  inTempDir((root) => {
+    const config = join(root, 'mcp-config.json');
+    const settings = join(root, 'settings.json');
+
+    assert.deepEqual(readCopilotMcpConfigFile(config, settings), []);
+    assert.equal(readCopilotDisabledMcpServers(settings).size, 0);
+
+    writeFileSync(config, '{ not json');
+    writeFileSync(settings, '{ not json either');
+    assert.deepEqual(readCopilotMcpConfigFile(config, settings), []);
+    assert.equal(readCopilotDisabledMcpServers(settings).size, 0);
+
+    writeFileSync(config, '{"mcpServers": 7}');
+    writeFileSync(settings, '{"disabledMcpServers": "gamma"}');
+    assert.deepEqual(readCopilotMcpConfigFile(config, settings), []);
+    assert.equal(readCopilotDisabledMcpServers(settings).size, 0);
+
+    // A corrupt settings file must not hide the servers of a good config.
+    writeFileSync(config, COPILOT_MCP_CONFIG);
+    writeFileSync(settings, '{ not json');
+    assert.equal(readCopilotMcpConfigFile(config, settings).length, 3);
+  }),
+);

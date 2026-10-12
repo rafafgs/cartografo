@@ -33,6 +33,7 @@ import { parseInputRequest } from '../../src/dispatch/parse-input-request.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
+  decodeCopilotSessionText,
   decodeShellSessionText,
 } from '../../src/dispatch/session-text.ts';
 
@@ -289,4 +290,116 @@ test('AT2 — an agent_message is the frame that carries text; other items are d
   });
 
   assert.equal(decodeCodexSessionText([said, did]), 'File created.');
+});
+
+// --- t676: the Copilot decoder -------------------------------------------------
+//
+// `copilot-frames.jsonl` is a REAL capture: a `copilot` 1.0.95 session against
+// the BYOK stub provider (`scripts/stub-openai-provider.mjs`), which scripted
+// one turn carrying a fenced `input-request` block. One line is spliced in from
+// a second real run, the GitHub-routed one, because the stub path prints no
+// plain text: the `Error: Access denied by policy settings` line the founder's
+// account answers with.
+
+/** What the stub's one scripted turn said, verbatim, escapes already undone. */
+const COPILOT_FIXTURE_MESSAGE =
+  'I need a decision before I continue.\n\n```input-request\n' +
+  '{"question":"Which migration number should be reserved: 0002 or 0003?",' +
+  '"context":"The migrations directory is empty and a parallel ticket may claim the same range.",' +
+  '"options":["0002","0003"],"recommendation":"Reserve 0002.","default":"0002"}\n```';
+
+const COPILOT_POLICY_ERROR =
+  'Error: Access denied by policy settings (Request ID: FA86:214D9C:5866C:60D07:6ACCB33D)';
+
+test('t676 — the Copilot decoder returns the assistant messages and the raw error line, in order', () => {
+  const lines = transcript('copilot-frames.jsonl');
+  const text = decodeCopilotSessionText(lines);
+
+  // One recognized `assistant.message` plus the one plain-text line, both
+  // contributed once, in the order they arrived: the error line sits before the
+  // message in the capture.
+  assert.equal(text, `${COPILOT_POLICY_ERROR}\n${COPILOT_FIXTURE_MESSAGE}`);
+});
+
+test('t676 — no frame JSON survives, and the deltas are not added on top of the message', () => {
+  const text = decodeCopilotSessionText(transcript('copilot-frames.jsonl'));
+
+  for (const marker of ['"type"', 'deltaContent', 'sessionId', 'ephemeral']) {
+    assert.ok(!text.includes(marker), `frame JSON leaked into the text (${marker}):\n${text}`);
+  }
+  // The block's own first words come from the message; a decoder that also
+  // concatenated `assistant.message_delta` would print them twice.
+  assert.equal(text.split('I need a decision before I continue.').length - 1, 1);
+  assert.equal(text.split('```input-request').length - 1, 1);
+});
+
+test('t676 — the interleaved plain-text error line is present verbatim', () => {
+  const lines = transcript('copilot-frames.jsonl');
+  assert.ok(lines.includes(COPILOT_POLICY_ERROR), 'the fixture carries the plain-text line');
+
+  const text = decodeCopilotSessionText(lines).split('\n');
+  assert.ok(text.includes(COPILOT_POLICY_ERROR));
+});
+
+test('t676 — the fenced input-request inside a content string with escaped quotes and newlines parses', () => {
+  const lines = transcript('copilot-frames.jsonl');
+
+  // The trap this module exists for: the frame's own JSON-escaped text carries
+  // `\"` and `\n`, so the RAW lines never contain a parseable block.
+  assert.equal(parseInputRequest(lines.join('\n')), null, 'raw frames hide the block');
+
+  const request = parseInputRequest(decodeCopilotSessionText(lines));
+  assert.ok(request !== null, 'the block survived the decoding');
+  assert.equal(request.question, 'Which migration number should be reserved: 0002 or 0003?');
+  assert.deepEqual(request.options, ['0002', '0003']);
+  assert.equal(request.default, '0002');
+  assert.equal(request.recommendation, 'Reserve 0002.');
+});
+
+test('t676 — a message whose content is not a string, and a result frame, yield nothing', () => {
+  const emptyContent = JSON.stringify({ type: 'assistant.message', data: { content: null } });
+  const noData = JSON.stringify({ type: 'assistant.message' });
+  const result = JSON.stringify({ type: 'result', sessionId: 'x', exitCode: 0, usage: {} });
+  const warning = JSON.stringify({ type: 'session.warning', data: { message: 'policy' } });
+  const delta = JSON.stringify({ type: 'assistant.message_delta', data: { deltaContent: 'half' } });
+
+  assert.equal(decodeCopilotSessionText([emptyContent, noData, result, warning, delta]), '');
+  // Nothing at all, not even a blank line between the one that speaks.
+  const said = JSON.stringify({ type: 'assistant.message', data: { content: 'hello' } });
+  assert.equal(decodeCopilotSessionText([result, said, result]), 'hello');
+});
+
+test('t676 — a JSON object with no type, and a line that is not JSON, pass through raw', () => {
+  const noType = '{"data":{"content":"not a frame"}}';
+  const numericType = '{"type":3,"data":{"content":"not a frame either"}}';
+  const prose = 'Error: something broke';
+  const array = '[{"type":"assistant.message","data":{"content":"x"}}]';
+
+  assert.equal(
+    decodeCopilotSessionText([noType, numericType, prose, array]),
+    [noType, numericType, prose, array].join('\n'),
+  );
+});
+
+test('t676 — the new decoder changed nothing for the other three', () => {
+  // A Copilot-looking frame is a Copilot frame only to the Copilot decoder.
+  const copilotFrame = JSON.stringify({ type: 'assistant.message', data: { content: 'hi' } });
+  assert.equal(decodeShellSessionText([copilotFrame]), copilotFrame);
+
+  // A command's own JSON output is untouched by `shell`, as before.
+  const own = '{"type":"result","result":"a command printed this"}';
+  assert.equal(decodeShellSessionText([own]), own);
+
+  // And each frame decoder still drops the other's frames as recognized-textless
+  // or reads its own text, exactly as its own cases above pin.
+  assert.equal(
+    decodeClaudeCodeSessionText([JSON.stringify({ type: 'result', result: 'done' })]),
+    'done',
+  );
+  assert.equal(
+    decodeCodexSessionText([
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'said' } }),
+    ]),
+    'said',
+  );
 });

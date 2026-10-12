@@ -8,9 +8,11 @@
  * network; this is the manual gate on the other side, the half the conformance
  * kit cannot prove because it has no real CLI.
  *
- * Two modes, picked by `COPILOT_SPIKE_MODE`:
+ * Two modes, picked by the `--stub` flag (`copilot-spike-mode.mjs`; no
+ * `NAME=value` prefix, which PowerShell and `cmd` reject) or, as before, by
+ * `COPILOT_SPIKE_MODE`:
  *
- * - `stub` (`npm run spike:copilot:stub`): NO GitHub credential. The CLI is
+ * - `stub` (`npm run spike:copilot:stub`, which passes `--stub`): NO GitHub credential. The CLI is
  *   pointed at `stub-openai-provider.mjs` through BYOK (`COPILOT_PROVIDER_BASE_URL`;
  *   `copilot help environment`: "GitHub authentication is not required"), in a
  *   throwaway `COPILOT_HOME`. It proves everything this adapter and the runner
@@ -64,6 +66,7 @@ import { CopilotAdapter } from '../src/engine/copilot-adapter.ts';
 import { buildCommand, buildEnvironment } from '../src/engine/copilot-command.ts';
 import { parseInputRequest } from '../src/dispatch/parse-input-request.ts';
 import { decodeCopilotSessionText } from '../src/dispatch/session-text.ts';
+import { resolveSpikeMode } from './copilot-spike-mode.mjs';
 import { startStubProvider } from './stub-openai-provider.mjs';
 
 const Ajv2020 = AjvModule.default ?? AjvModule;
@@ -80,7 +83,14 @@ const REQUESTED_FILE = 'PROOF-T676.md';
 const PHRASE = 'real session of the Copilot EngineAdapter';
 const TIMEOUT_SECONDS = 300;
 
-const MODE = (process.env.COPILOT_SPIKE_MODE ?? 'github').trim();
+/** `stub` or `github`: the `--stub` flag, else `COPILOT_SPIKE_MODE`, else `github`. */
+let MODE = 'github';
+let MODE_ERROR = null;
+try {
+  MODE = resolveSpikeMode(process.argv.slice(2), process.env);
+} catch (error) {
+  MODE_ERROR = error instanceof Error ? error.message : String(error);
+}
 const BINARY_OVERRIDE = process.env.COPILOT_BINARY_PATH?.trim();
 
 /** SessionStatus -> the event taxonomy's `status` (t98); `cancelled` has no peer there. */
@@ -98,9 +108,7 @@ function die(message) {
   process.exit(1);
 }
 
-if (MODE !== 'stub' && MODE !== 'github') {
-  die(`COPILOT_SPIKE_MODE must be "stub" or "github", got "${MODE}"`);
-}
+if (MODE_ERROR !== null) die(MODE_ERROR);
 
 /** Is a plain `copilot` on the PATH? */
 function copilotOnPath() {

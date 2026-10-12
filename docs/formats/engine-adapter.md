@@ -1144,6 +1144,27 @@ CLI's review used. The primary sources:
   then no longer say which model a session ran on. A node's own pin becomes
   `--model <m>`; `modelTier: 'trivial'` changes the argv only when
   `COPILOT_TRIVIAL_MODEL` names a model.
+- **`--no-custom-instructions` and `--no-ask-user` on every session (t684).** The
+  CLI would otherwise load `AGENTS.md` and the related repository instructions on
+  top of the instructions the runner injected, and offer the model `ask_user`,
+  which blocks a headless session on an answer nobody can give (a question goes
+  through the `input-request` block instead). Both sit after
+  `--disable-builtin-mcps`, before `--log-level`.
+- **`CARTOGRAFO_TOKEN` is stripped from the engine's environment (t684)**, from
+  the base and from a node's `envOverrides` alike, like `COPILOT_ALLOW_ALL`: the
+  control-plane credential has no use in a worker. The engine's own credentials
+  (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) pass through untouched.
+- **A 12 KiB inline ceiling on Windows (t684).** `CreateProcess` caps the whole
+  command line at 32,767 UTF-16 units, so the composition leaves the argv for
+  stdin past 12 KiB there (64 KiB elsewhere), still counted in UTF-8 bytes.
+  Claude Code and Codex keep 64 KiB.
+- **The Windows stop is `taskkill /PID <pid> /T /F` (t684).** A negative pid is a
+  POSIX group and throws on Windows, so the lifecycle kills the whole tree with
+  `taskkill`, for SIGTERM and SIGKILL alike (there is no graceful signal). A
+  stop the adapter ordered reports exit code `null` there, because the code is
+  whatever `taskkill /F` produced; a natural exit keeps its real code. A
+  `taskkill` that fails on a live process says so on a `stderr` line and falls
+  back to killing the direct child.
 - **A third copy of the process lifecycle.** The three adapters duplicated it on
   purpose, and extracting a common base was a ticket of its own: t678 did it
   (item 13 of "Adjustments made in review").
@@ -1163,7 +1184,7 @@ somewhere that provides it. A refusal always happens before any spawn.
 | no `permissions` | none | pass-through: the argv of a spec that says nothing |
 | write `["**"]` (the whole workspace) | **no path flag** | "By default, file access is restricted to paths within the current working directory and its subdirectories, plus the system temporary directory" (`copilot help permissions`); `-C <workingDir>` is the workspace. `--allow-all-paths` and `--allow-all` are never emitted. The temporary directory stays reachable (`--disallow-temp-dir` is not used: builds write there). |
 | write narrower than `["**"]` | **refused** | the CLI has no per-path write allowlist |
-| write `[]` (empty) | **refused** | cannot be enforced: `shell` writes regardless of any tool deny |
+| write `[]` | `--available-tools=none` | the node runs tool-free and reasons only over its rendered input: denying the write tools would not stop `shell`, so every tool is closed instead. One argv element, because the CLI reads an empty or space-separated selection as "defaults". On this engine it also closes the read tools, unlike the other two adapters' meaning of `escrita: []` ("no writes"). |
 | network closed | `--deny-tool url` | measured, below |
 | network open | `--allow-all-urls` | explicit, although `--allow-all-tools` already let every URL through in the measurements |
 | network domain-scoped | **refused** | measured, below |
@@ -1330,9 +1351,10 @@ the one the ticket named). None of them leaks upwards.
 
 ## Adjustments made in review
 
-Thirteen changes and two explicit rejections — four from the original review,
-what grew after the v1 freeze (items 5 to 12), and one runner-internal
-refactor that changed nothing in the interface (item 13). Nothing here is decorative: items 1, 3, 6, 7,
+Fourteen changes and two explicit rejections — four from the original review,
+what grew after the v1 freeze (items 5 to 12), one runner-internal
+refactor that changed nothing in the interface (item 13), and the Windows
+stop shared with the shell adapter (item 14). Nothing here is decorative: items 1, 3, 6, 7,
 8 and 10 came out of running the CLIs, not out of reading documentation.
 
 1. **A closed `stdin` became a normative invariant (new).** Running `codex exec`
@@ -1749,7 +1771,29 @@ and the kit's C2, which verifies it by what the process received.
     without an edit, which is the whole claim of a behaviour-preserving
     refactor. `process-lifecycle.test.ts` pins the shared contract once.
     `ShellAdapter` keeps its own lifecycle: it runs no engine CLI and has no
-    clocks of this kind.
+    clocks of this kind (item 14 gives it the Windows stop all the same).
+
+14. **The Windows stop, and the Copilot adapter on Windows** (2026-10-12). The
+    first external operator runs the factory on native Windows with Copilot and
+    patched the adapter locally; this item is that patch re-implemented over
+    item 13's lifecycle. No interface change. `process-lifecycle.ts` exports
+    `stopProcessTree` (the group signal off Windows, `taskkill /PID <pid> /T /F`
+    on it, a warning line and a `child.kill` fallback when `taskkill` fails on a
+    live child) and `reportedExitCode` (`null` for an ordered stop on `win32`).
+    `ProcessLifecycle` uses both, so the three CLI adapters inherit them, and
+    `ShellAdapter`, which item 13 left on its own lifecycle, calls the same two
+    functions from its own `#signalGroup` and `#complete`: the stop is shared,
+    the lifecycle is not. Copilot also gained the 12 KiB Windows inline ceiling,
+    `--no-custom-instructions`, `--no-ask-user`, the stripping of
+    `CARTOGRAFO_TOKEN`, and an empty write scope that runs tool-free
+    (`--available-tools=none`) instead of being refused: on the real binary, the
+    stub provider saw 18 tools without the flag and none with it. The cost is a
+    semantic one, written in the permission table: on this engine `escrita: []`
+    also closes the read tools. The operator's Windows-specific tool list for
+    nodes with a write scope was deliberately not brought. A transcript with CRLF
+    endings decodes like an LF one for the three frame engines (`shell` stays
+    byte-exact). Proof on real Windows is owed by the operator
+    (`packages/runner/README.md`, "Windows").
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

@@ -54,6 +54,37 @@ lifecycle, the decoded text, an escalation and the taxonomy events. The
 `spike:copilot` run against a real account is still pending
 (`docs/formats/engine-adapter.md`, "The credential-free proof, and the open gap").
 
+## Windows
+
+The Copilot engine runs on native Windows (t684). Four behaviours differ there:
+
+- **The whole process tree is stopped.** A cancel or a timeout runs
+  `taskkill /PID <pid> /T /F`, since a POSIX process group does not exist. The
+  session is recorded with a `null` exit code. The shell adapter does the same.
+- **The command line stays under the ceiling.** Past 12 KiB (instructions plus
+  prompt, in bytes) the composition goes to stdin instead of the argv.
+- **The worker is isolated.** `CARTOGRAFO_TOKEN` is removed from its
+  environment, and the CLI runs with `--no-custom-instructions` and
+  `--no-ask-user`, so it neither loads `AGENTS.md` nor waits for an answer.
+- **An input-only node runs tool-free.** `permissoes.filesystem.escrita: []`
+  becomes `--available-tools=none`: the node reasons only over its rendered
+  input and cannot read the working directory either.
+
+The spike scripts use no `NAME=value` prefix, so they run from PowerShell.
+
+Proof on real Windows is owed by the external operator. With a logged-in
+Copilot CLI (`copilot login`, or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` /
+`GITHUB_TOKEN`), from a PowerShell prompt:
+
+1. `cd packages\runner; npm run spike:copilot` must complete, with the real model
+   creating the requested file, and `npm run spike:copilot:stub` must also run.
+2. Run one job through `--engine copilot` whose node skill declares
+   `permissoes.filesystem.escrita: []`. It must finish `completed` with no
+   `permission policy unsupported` error and no tool call in the transcript, and
+   cancelling a live session (for example by letting `timeoutSeconds` expire)
+   must leave no `copilot` or `node` child process in Task Manager, with the
+   session recorded with a `null` exit code.
+
 ## What is inside
 
 `src/dispatch/` is the bulk of it, and it is the session protocol rather than

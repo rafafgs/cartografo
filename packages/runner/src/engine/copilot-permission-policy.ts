@@ -73,11 +73,17 @@
  *   `--allow-all`/`--yolo`, which imply it. The system temporary directory stays
  *   reachable: `--disallow-temp-dir` exists, and is left off because builds and
  *   test runners write there and the policy language has no word for it.
- * - **A narrower write scope is refused, and so is an empty one.** The CLI has
- *   no per-path write allowlist to map a glob onto. The empty scope looks like
- *   the easy case ("deny every write tool") and is not: `shell` writes
- *   regardless of any `--deny-tool write` (last row), so "no writes" cannot be
- *   honoured and saying so beats pretending.
+ * - **A narrower write scope is refused.** The CLI has no per-path write
+ *   allowlist to map a glob onto.
+ * - **An empty write scope runs the node TOOL-FREE (t684).** Denying the write
+ *   tools would not do: `shell` writes regardless of any `--deny-tool write`
+ *   (last row). `--available-tools=none` ("Only these tools will be available
+ *   to the model", with an explicit `none`) closes every tool, so nothing is
+ *   left to write with and the enforcement is honest. The flag is ONE argv
+ *   element: an empty or space-separated selection means "defaults" to the CLI.
+ *   The cost is on this engine's meaning of `escrita: []`: it also closes the
+ *   read tools, so the node reasons only over its rendered input, where on
+ *   Claude Code and Codex the same declaration means "no writes".
  */
 
 import type { SessionPermissions } from './types.ts';
@@ -108,10 +114,11 @@ export const NARROW_WRITE_SCOPE_REASON =
   'write scope narrower than the whole workspace is not supported by the copilot adapter — ' +
   'the CLI has no per-path write allowlist; declare `escrita: ["**"]`';
 
-/** Refusal of an empty write scope: closing the write tools does not close `shell`. */
-export const EMPTY_WRITE_SCOPE_REASON =
-  'an empty write scope is not supported by the copilot adapter — `shell` can write ' +
-  'regardless of any tool deny, so no writes cannot be enforced; declare `escrita: ["**"]`';
+/**
+ * What an empty write scope becomes: no tools at all (t684). One argv element,
+ * because the CLI reads an empty or space-separated selection as "defaults".
+ */
+export const TOOL_FREE_FLAGS: readonly string[] = Object.freeze(['--available-tools=none']);
 
 /** Refusal of an allowlist per domain: allow rules restrict nothing, and a deny beats them. */
 export const DOMAIN_SCOPED_NETWORK_REASON =
@@ -137,9 +144,9 @@ const PASS_THROUGH: CopilotPermissionDecision = Object.freeze({
   refusals: Object.freeze([]),
 });
 
-/** The filesystem axis: only the whole workspace is expressible. */
+/** The filesystem axis: the whole workspace, or none at all (tool-free). */
 function filesystemRefusal(filesystem: SessionPermissions['filesystem']): string | null {
-  if (filesystem.write.length === 0) return EMPTY_WRITE_SCOPE_REASON;
+  if (filesystem.write.length === 0) return null;
   if (filesystem.write.length === 1 && filesystem.write[0] === WHOLE_WORKSPACE) return null;
   return NARROW_WRITE_SCOPE_REASON;
 }
@@ -182,9 +189,13 @@ export function resolveCopilotPermissions(
   ].filter((reason): reason is string => reason !== null);
   if (refusals.length > 0) return { outcome: 'refuse', permissionArgs: [], refusals };
 
+  const networkFlags = permissions.network.allowed ? OPEN_NETWORK_FLAGS : CLOSED_NETWORK_FLAGS;
   return {
     outcome: 'enforce',
-    permissionArgs: permissions.network.allowed ? OPEN_NETWORK_FLAGS : CLOSED_NETWORK_FLAGS,
+    // With no tool left the network flags are redundant, and kept anyway: the
+    // network axis resolves the same way whatever the filesystem axis says.
+    permissionArgs:
+      permissions.filesystem.write.length === 0 ? [...TOOL_FREE_FLAGS, ...networkFlags] : networkFlags,
     refusals: [],
   };
 }

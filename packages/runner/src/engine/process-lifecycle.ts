@@ -20,7 +20,10 @@
  * - **The process comes up detached, and signals go to the GROUP.** It is what
  *   makes C4 pass: an engine that leaves a child alive brings the runner's
  *   machine down after the hundredth session, not the first
- *   (`docs/formats/engine-adapter.md:367-369`).
+ *   (`docs/formats/engine-adapter.md:367-369`). On Windows there is no group
+ *   and no graceful signal: the stop is `taskkill /PID <pid> /T /F`, the whole
+ *   tree at once, and an ordered stop reports no exit code (t684,
+ *   {@link stopProcessTree} and {@link reportedExitCode}).
  * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
  *   the pipes are closed, and that is what guarantees invariant 4 (every line
  *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
@@ -36,7 +39,7 @@
  * ephemeral system-prompt file is written and removed by that adapter).
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -89,6 +92,10 @@ export interface LifecycleHooks<State> {
    * Default: none. An empty object adds nothing.
    */
   readonly finishDetail?: (state: State) => Omit<SessionFinishDetail, 'timeoutReason'>;
+  /** Test seam: the platform the stop is made for. Default `process.platform`. */
+  readonly platform?: NodeJS.Platform;
+  /** Test seam: `spawnSync` for the Windows stop. Default `node:child_process`'s. */
+  readonly spawnSync?: typeof spawnSync;
 }
 
 /** One session's launch, built by the adapter after its refusals. */
@@ -116,6 +123,91 @@ export type LifecycleSpec = Pick<SessionSpec, 'workingDir' | 'timeoutSeconds' | 
  * 6). The same value each command module exports and its own test pins.
  */
 const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
+
+/** What {@link stopProcessTree} needs of a child: a pid, whether it exited, and `kill`. */
+export type StoppableChild = Pick<ChildProcess, 'pid' | 'exitCode' | 'kill'>;
+
+/** Test seams of the stop: the platform, `spawnSync` and where a warning goes. */
+export interface StopSeams {
+  /** Default `process.platform`. */
+  readonly platform?: NodeJS.Platform;
+  /** Default `node:child_process`'s `spawnSync`. */
+  readonly spawnSync?: typeof spawnSync;
+  /** Default: nowhere. Receives one line, with no trailing newline. */
+  readonly onWarning?: (line: string) => void;
+}
+
+/**
+ * Stops a child and everything it started (t684).
+ *
+ * Off Windows the child came up `detached`, so it leads its own group and a
+ * signal to `-pid` reaches whatever it left behind; if the group no longer
+ * exists the call falls back to the direct process, and the final failure is
+ * ignored — the target is already dead.
+ *
+ * On Windows a negative pid is not a group and `process.kill(-pid)` throws,
+ * and the fallback would kill only the direct child while the engine's own
+ * children lived on. `taskkill /PID <pid> /T /F` takes the whole tree, and there
+ * is no graceful signal there, so SIGTERM and the SIGKILL of the escalation both
+ * take this path. A `taskkill` that fails while the child is still alive is
+ * reported once through `onWarning` and falls back to `child.kill`; one that
+ * fails on a child that already exited is the stop having arrived late, and is
+ * not a failure.
+ */
+export function stopProcessTree(
+  child: StoppableChild,
+  signal: NodeJS.Signals,
+  seams: StopSeams = {},
+): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+
+  const platform = seams.platform ?? process.platform;
+  if (platform !== 'win32') {
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      killDirectly(child, signal);
+    }
+    return;
+  }
+
+  const run = seams.spawnSync ?? spawnSync;
+  const result = run('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  const failed = result.error !== undefined || (result.status !== 0 && child.exitCode === null);
+  if (!failed) return;
+
+  const reason = result.error?.message ?? String(result.stderr ?? '').trim();
+  seams.onWarning?.(`could not stop process tree ${pid}: ${reason}`);
+  killDirectly(child, signal);
+}
+
+function killDirectly(child: StoppableChild, signal: NodeJS.Signals): void {
+  try {
+    child.kill(signal);
+  } catch {
+    /* already dead; nothing to do */
+  }
+}
+
+/**
+ * The exit code a finished session reports (t684).
+ *
+ * Windows gives no signal: a process an ordered stop took down ends with
+ * whatever `taskkill /F` produced, which says nothing about the engine. `null`
+ * is "there was none", the same answer a POSIX process killed by a signal gives.
+ * A natural exit keeps its real code everywhere.
+ */
+export function reportedExitCode(
+  code: number | null,
+  stopRequested: boolean,
+  platform: NodeJS.Platform = process.platform,
+): number | null {
+  return platform === 'win32' && stopRequested ? null : code;
+}
 
 /** Local state of a live session. The adapter persists nothing (D1). */
 interface Session<State> {
@@ -413,7 +505,11 @@ export class ProcessLifecycle<State> {
     const status =
       session.requestedStatus ??
       (classify ? classify(code, session.state) : code === 0 ? 'completed' : 'failed');
-    this.#finish(id, status, code);
+    this.#finish(
+      id,
+      status,
+      reportedExitCode(code, session.requestedStatus !== null, this.#hooks.platform),
+    );
   }
 
   /**
@@ -533,24 +629,18 @@ export class ProcessLifecycle<State> {
   }
 
   /**
-   * Signals the process's whole group (negative pid).
-   *
-   * The process came up `detached`, so it leads its own group: the signal
-   * reaches the child the engine left behind. If the group no longer exists, it
-   * falls back to the direct process, and the final failure is ignored — the
-   * target is already dead.
+   * Stops the process's whole tree, the way the platform allows it (see
+   * {@link stopProcessTree}). A failure to stop it reaches the listener as a
+   * `stderr` line, through `#emit`, so it respects invariant 2 (nothing after
+   * `onFinished`).
    */
   #signalGroup(session: Session<State>, signal: NodeJS.Signals): void {
-    const pid = session.child.pid;
-    if (pid === undefined) return;
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        session.child.kill(signal);
-      } catch {
-        /* already dead; nothing to do */
-      }
-    }
+    stopProcessTree(session.child, signal, {
+      platform: this.#hooks.platform,
+      spawnSync: this.#hooks.spawnSync,
+      onWarning: (line) => {
+        this.#emit(session, 'stderr', line);
+      },
+    });
   }
 }

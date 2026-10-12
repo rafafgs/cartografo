@@ -191,9 +191,11 @@ export function decodeShellSessionText(lines: readonly string[]): string {
  * @returns The decoded text.
  */
 export function decodeSessionText(engine: string, text: string): string {
-  const lines = text.split('\n');
-  if (engine === 'claude-code') return decodeClaudeCodeSessionText(lines);
-  if (engine === 'codex') return decodeCodexSessionText(lines);
-  if (engine === 'copilot') return decodeCopilotSessionText(lines);
-  return decodeShellSessionText(lines);
+  // The three frame engines tolerate CRLF (t684): a transcript written on
+  // Windows keeps a `\r` on every non-frame line otherwise. `shell` and unknown
+  // engines stay byte-exact, including a `\r` the program itself printed.
+  if (engine === 'claude-code') return decodeClaudeCodeSessionText(text.split(/\r?\n/));
+  if (engine === 'codex') return decodeCodexSessionText(text.split(/\r?\n/));
+  if (engine === 'copilot') return decodeCopilotSessionText(text.split(/\r?\n/));
+  return decodeShellSessionText(text.split('\n'));
 }

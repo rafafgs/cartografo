@@ -210,12 +210,18 @@ async function runLifecycle(
   const lifecycle = new ProcessLifecycle<undefined>({ graceMs: 200, platform, spawnSync: fake });
   let sessionId: string | null = null;
   let cancelled = false;
+  // Only once the process said it is ready: a SIGTERM before its handler is
+  // installed would end it by the signal, with no exit code at all.
+  let ready = false;
   const tryCancel = () => {
-    if (!cancel || cancelled || sessionId === null) return;
+    if (!cancel || cancelled || !ready || sessionId === null) return;
     cancelled = true;
     lifecycle.cancel(sessionId);
   };
-  const heard = listening(tryCancel);
+  const heard = listening(() => {
+    ready = true;
+    tryCancel();
+  });
   sessionId = await lifecycle.start(
     { workingDir: process.cwd(), timeoutSeconds: 30 },
     heard.listener,
@@ -265,12 +271,16 @@ async function runShell(
   });
   let sessionId: string | null = null;
   let cancelled = false;
+  let ready = false;
   const tryCancel = () => {
-    if (cancelled || sessionId === null) return;
+    if (cancelled || !ready || sessionId === null) return;
     cancelled = true;
     void adapter.cancel(sessionId);
   };
-  const heard = listening(tryCancel);
+  const heard = listening(() => {
+    ready = true;
+    tryCancel();
+  });
   sessionId = await adapter.startSession(
     { workingDir: process.cwd(), instructions: '', prompt: '', timeoutSeconds: 30 },
     heard.listener,

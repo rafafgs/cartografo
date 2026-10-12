@@ -46,14 +46,30 @@ export const TRIVIAL_MODEL_VARIABLE = 'COPILOT_TRIVIAL_MODEL';
 
 /**
  * Combined `instructions` + `prompt` byte size past which the composition
- * leaves the argv for stdin.
+ * leaves the argv for stdin, off Windows.
  *
  * The same 64 KiB the other two adapters take, DUPLICATED for the reason their
  * headers record, and counted in bytes (an accented character is two bytes to
  * the kernel and one unit to JavaScript). It is what the kit's C11 asks for: a
  * channel off the argv, because Linux caps one argument at 128 KiB.
  */
-export const ARGV_INLINE_LIMIT_BYTES = 64 * 1024;
+export const ARGV_INLINE_LIMIT_POSIX_BYTES = 64 * 1024;
+
+/**
+ * The same limit on Windows (t684): `CreateProcess` caps the WHOLE command line
+ * at 32,767 UTF-16 units, so a prompt of 30–64 KiB that was inlined made the
+ * spawn fail. 12 KiB leaves room for the other flags and the working directory,
+ * and it is conservative on purpose: bytes are always at least the unit count.
+ */
+export const ARGV_INLINE_LIMIT_WIN32_BYTES = 12 * 1024;
+
+/** The inline limit for a platform: Windows is the only one with the low ceiling. */
+export function argvInlineLimitBytes(platform: NodeJS.Platform): number {
+  return platform === 'win32' ? ARGV_INLINE_LIMIT_WIN32_BYTES : ARGV_INLINE_LIMIT_POSIX_BYTES;
+}
+
+/** The inline limit of the platform this process runs on. */
+export const ARGV_INLINE_LIMIT_BYTES = argvInlineLimitBytes(process.platform);
 
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
@@ -69,19 +85,26 @@ export interface EngineCommand {
 /**
  * Variables this adapter refuses to hand the engine, whoever set them.
  *
+ * `CARTOGRAFO_TOKEN` (t684): the control plane's own credential. A worker has
+ * no use for it and a model-driven session could print it; it is removed from
+ * the base environment and from a node's `envOverrides` alike. The engine's own
+ * credentials (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) are not on
+ * this list.
+ *
  * `COPILOT_ALLOW_ALL` (`copilot help environment`): exactly `true` "additionally
  * trusts the working directory and loads its hooks". The adapter says "no
  * prompts" with the `--allow-all-tools` FLAG and never with this variable,
  * because the variable grants more than the adapter ever asked for: a hook in a
  * repository a node works on would then run.
  */
-const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL'] as const;
+const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL', 'CARTOGRAFO_TOKEN'] as const;
 
 /**
  * Assembles the argv of the headless session.
  *
  * ```
  * copilot -p <composed> --output-format json --allow-all-tools --disable-builtin-mcps
+ *         --no-custom-instructions --no-ask-user
  *         --log-level none -C <workingDir> --session-id <engineRef>
  *         [--model <m>] [permission flags]
  * ```
@@ -95,6 +118,12 @@ const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL'] as const;
  *   never `COPILOT_ALLOW_ALL`.
  * - **`--disable-builtin-mcps`** — otherwise `github-mcp-server` and `githubiq`
  *   load into every session.
+ * - **`--no-custom-instructions`** (t684) — the CLI would otherwise load
+ *   `AGENTS.md` and the related repository instructions into the session, on top
+ *   of the instructions the runner injected from the database.
+ * - **`--no-ask-user`** (t684) — otherwise the model is offered the `ask_user`
+ *   tool, which blocks a headless session on an answer nobody can give. A
+ *   question goes through the `input-request` block instead.
  * - **`--log-level none`** — logs otherwise go to `~/.copilot/logs/`; measured,
  *   the per-process log file is created empty.
  * - **`-C <dir>`** — the working directory, which the CLI's path verification
@@ -110,7 +139,7 @@ const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL'] as const;
  *   opens, while `-p=-1 apples` delivers the text intact. Instructions are
  *   prose somebody else wrote, so a bullet list or a `---` line starting the
  *   text is ordinary. Still ONE argv element carrying the whole composition.
- * - **Past {@link ARGV_INLINE_LIMIT_BYTES} the composition goes to stdin and
+ * - **Past {@link argvInlineLimitBytes} the composition goes to stdin and
  *   `-p` goes away with it**: with no `-p`, piped stdin IS the prompt, and with
  *   `-p` it would be ignored — the two halves are one move. The kit's C11
  *   certifies that some channel off the argv exists.
@@ -125,18 +154,21 @@ const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL'] as const;
  * @param engineRef The UUID the adapter generated for this session.
  * @param env The adapter's own environment (only {@link TRIVIAL_MODEL_VARIABLE}
  *   is read).
+ * @param platform The platform whose command-line ceiling applies. Default
+ *   `process.platform`.
  */
 export function buildCommand(
   spec: SessionSpec,
   engineRef: string,
   env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): EngineCommand {
   const model = resolveModel(spec, env);
   const { permissionArgs } = resolveCopilotPermissions(spec.permissions);
   const composed = composeSingleArgument(spec);
   const inline =
     Buffer.byteLength(spec.instructions, 'utf8') + Buffer.byteLength(spec.prompt, 'utf8') <
-    ARGV_INLINE_LIMIT_BYTES;
+    argvInlineLimitBytes(platform);
 
   const prompt = !inline ? [] : composed.startsWith('-') ? [`-p=${composed}`] : ['-p', composed];
 
@@ -146,6 +178,8 @@ export function buildCommand(
     'json',
     '--allow-all-tools',
     '--disable-builtin-mcps',
+    '--no-custom-instructions',
+    '--no-ask-user',
     '--log-level',
     'none',
     '-C',
@@ -181,7 +215,8 @@ function resolveModel(spec: SessionSpec, env: NodeJS.ProcessEnv): string | undef
  *
  * - `COPILOT_AUTO_UPDATE=false`: the CLI self-updates outside CI, and a runner
  *   must never change engine version in the middle of a wave.
- * - `COPILOT_ALLOW_ALL` removed (see {@link FORBIDDEN_VARIABLES}).
+ * - `COPILOT_ALLOW_ALL` and `CARTOGRAFO_TOKEN` removed (see
+ *   {@link FORBIDDEN_VARIABLES}).
  *
  * Credentials — `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, in that
  * precedence — ride along in the base untouched: this function neither reads,

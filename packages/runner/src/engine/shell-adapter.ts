@@ -53,8 +53,10 @@
  *   what "optional" on the listener means.
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+
+import { reportedExitCode, stopProcessTree } from './process-lifecycle.ts';
 
 import {
   SHELL_ENGINE_NAME,
@@ -110,6 +112,10 @@ export interface ShellAdapterOptions {
   readonly environmentBuilder?: (spec: SessionSpec) => NodeJS.ProcessEnv;
   /** Wait between SIGTERM and SIGKILL. Default 5s. */
   readonly graceMs?: number;
+  /** Test seam: the platform the stop is made for. Default `process.platform`. */
+  readonly platform?: NodeJS.Platform;
+  /** Test seam: `spawnSync` for the Windows stop. Default `node:child_process`'s. */
+  readonly spawnSync?: typeof spawnSync;
 }
 
 /** Which of the two watchdogs stopped a session, when one of ours did. */
@@ -152,11 +158,15 @@ export class ShellAdapter implements EngineAdapter {
   readonly #commandBuilder: (spec: SessionSpec) => ShellCommand;
   readonly #environmentBuilder: (spec: SessionSpec) => NodeJS.ProcessEnv;
   readonly #graceMs: number;
+  readonly #platform: NodeJS.Platform | undefined;
+  readonly #spawnSync: typeof spawnSync | undefined;
 
   constructor(options: ShellAdapterOptions = {}) {
     this.#commandBuilder = options.commandBuilder ?? ((spec) => buildCommand(spec));
     this.#environmentBuilder = options.environmentBuilder ?? ((spec) => buildEnvironment(spec));
     this.#graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+    this.#platform = options.platform;
+    this.#spawnSync = options.spawnSync;
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
@@ -391,7 +401,7 @@ export class ShellAdapter implements EngineAdapter {
     // `null` when the process died by a signal — in POSIX there is no exit code
     // in that case, and `null` is "there was none", never "zero".
     const status = session.requestedStatus ?? (code === 0 ? 'completed' : 'failed');
-    this.#finish(id, status, code);
+    this.#finish(id, status, reportedExitCode(code, session.requestedStatus !== null, this.#platform));
   }
 
   /**
@@ -478,24 +488,17 @@ export class ShellAdapter implements EngineAdapter {
   }
 
   /**
-   * Signals the process's whole group (negative pid).
-   *
-   * The process came up `detached`, so it leads its own group: the signal
-   * reaches whatever the command spawned. If the group no longer exists it falls
-   * back to the direct process, and the final failure is ignored — the target is
-   * already dead.
+   * Stops the process's whole tree: the group off Windows, `taskkill /T /F` on
+   * it. The same function `ProcessLifecycle` calls (t684); a failure to stop the
+   * tree reaches the listener as an output line, before `onFinished`.
    */
   #signalGroup(session: Session, signal: NodeJS.Signals): void {
-    const pid = session.child.pid;
-    if (pid === undefined) return;
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        session.child.kill(signal);
-      } catch {
-        /* already dead; nothing to do */
-      }
-    }
+    stopProcessTree(session.child, signal, {
+      platform: this.#platform,
+      spawnSync: this.#spawnSync,
+      onWarning: (line) => {
+        this.#emit(session, line);
+      },
+    });
   }
 }

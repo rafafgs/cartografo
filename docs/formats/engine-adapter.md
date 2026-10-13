@@ -1795,6 +1795,22 @@ and the kit's C2, which verifies it by what the process received.
     byte-exact). Proof on real Windows is owed by the operator
     (`packages/runner/README.md`, "Windows").
 
+15. **A start failure names its cause, and an oversize command line is
+    permanent** (2026-10-13). Issue #2: on Windows a shell node whose argv
+    exceeded the command-line limit made `spawn` throw `ENAMETOOLONG`, and the
+    operator read `could not start "node"` five times, with a block reason that
+    called the cause transient. `process-lifecycle.ts` now exports
+    `describeStartFailure`, and both start sites (`ProcessLifecycle` and
+    `ShellAdapter`) build their `SessionStartError` message with it:
+    `could not start "<command>": <code> (<cause message>)`, or the message alone
+    when the cause has no string code, or the old bare text when there is nothing
+    to add. `error.cause` is still the original thrown value. The same module
+    exports `COMMAND_LINE_TOO_LONG_CODES` (`ENAMETOOLONG`, `E2BIG`), and the
+    pre-session classifier blocks the work at once on a `SessionStartError`
+    carrying one of them, instead of counting five attempts; every other cause
+    (`ENOENT`, `EMFILE`, `EACCES`, a builder that threw) still retries as before.
+    No interface change: `SessionStartError` keeps its constructor.
+
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).
 Tempting to promote to the baseline; wrong for now. A third engine with no

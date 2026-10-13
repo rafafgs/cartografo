@@ -23,7 +23,7 @@
  * and for those the retry IS the right answer; blocking one would make a person
  * undo a hiccup by hand.
  *
- * So the eight are a CLOSED set, each matching a reproduction somebody actually
+ * So the nine are a CLOSED set, each matching a reproduction somebody actually
  * hit. Everything else classifies to `null`, including the two error families'
  * own siblings: a wider net here is a work blocked over something that would
  * have healed itself, which is the failure mode in the other direction. The set
@@ -50,9 +50,12 @@
  * refusal is deterministic in the same strong sense the six above are: the same
  * skill hash resolves to the same policy, and the same policy gets the same
  * refusal on every tick. What is NOT in the set is the rest of
- * {@link SessionStartError}, which is one class for four causes — the two spawn
- * shapes carry nothing that tells a binary that is genuinely missing from an
- * `EMFILE`, so they keep classifying to `null` and get the weaker treatment
+ * {@link SessionStartError}, which is one class for four causes. Since t688 the
+ * spawn shapes carry their cause's `code` (`error.cause.code`), and one code
+ * joins the set — `ENAMETOOLONG`/`E2BIG`, a command line the platform refuses,
+ * which fails identically on every retry. A binary that is genuinely missing, an
+ * `EMFILE` or an `EACCES` still say nothing about whether a retry would behave
+ * differently, so they keep classifying to `null` and get the weaker treatment
  * `pre-session-retry.ts` gives them: bounded, not blocked.
  *
  * The prefix is imported from the `claude-code` adapter and matches BOTH
@@ -84,6 +87,7 @@
 
 import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
+import { COMMAND_LINE_TOO_LONG_CODES } from '../engine/process-lifecycle.ts';
 import { SessionStartError } from '../engine/types.ts';
 import { ExternalInputResolutionError } from '../mcp/resolve-external-inputs.ts';
 import {
@@ -122,6 +126,13 @@ function versionOf(job: PreSessionJob): string {
   return declared === undefined || declared === null || declared === ''
     ? 'that the job does not declare'
     : '`' + declared + '`';
+}
+
+/** Whether a start error's cause carries one of the oversize-command-line codes. */
+function hasTooLongCode(cause: unknown): boolean {
+  if (typeof cause !== 'object' || cause === null) return false;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === 'string' && COMMAND_LINE_TOO_LONG_CODES.includes(code);
 }
 
 /**
@@ -186,6 +197,21 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       'enforcing less than was declared, and the second is the one outcome a permission ' +
       'system may never have (D4). The same skill, at the same hash, is refused again on ' +
       'every retry — fix what the message points at in the manifest and unblock.'
+    );
+  }
+
+  // The ninth (t688). `spawn` throws a command line the platform refuses
+  // synchronously, and the same argv is refused again on every retry. The CODE
+  // on the cause is what decides, never the message text: it is the one field
+  // that tells this from a missing binary or an `EMFILE`. It reads after the
+  // prefix branch, which stays as it was.
+  if (error instanceof SessionStartError && hasTooLongCode(error.cause)) {
+    return (
+      `Node \`${job.current_node_id}\` runs a command line that exceeds the limit of ` +
+      `this platform (${(error.cause as { code: string }).code}). No session was opened: ` +
+      'the process could not even be started, and the same argv fails on every retry. ' +
+      'Pass large inputs by file rather than on the command line, change the input of ' +
+      'the node and unblock.'
     );
   }
 

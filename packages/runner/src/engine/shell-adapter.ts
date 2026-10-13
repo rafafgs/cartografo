@@ -56,7 +56,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { reportedExitCode, stopProcessTree } from './process-lifecycle.ts';
+import { describeStartFailure, reportedExitCode, stopProcessTree } from './process-lifecycle.ts';
 
 import {
   SHELL_ENGINE_NAME,
@@ -200,7 +200,7 @@ export class ShellAdapter implements EngineAdapter {
         detached: true,
       });
     } catch (cause) {
-      throw new SessionStartError(`could not start "${command.command}"`, { cause });
+      throw new SessionStartError(describeStartFailure(command.command, cause), { cause });
     }
 
     const id = randomUUID();

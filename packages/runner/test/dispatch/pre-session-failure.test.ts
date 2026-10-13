@@ -314,3 +314,59 @@ test('AT22 — the seven existing causes are unaffected, and everything else is 
     assert.equal(classifyPreSessionFailure(error, JOB), null, String(error));
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t688 — a command line too long for the platform never gets shorter.         */
+/*                                                                            */
+/* `spawn` throws ENAMETOOLONG (Windows) or E2BIG (POSIX) synchronously, and   */
+/* the same argv fails identically on every retry. The classifier reads the    */
+/* code off the error's `cause`, because the message is only a log line.       */
+/* -------------------------------------------------------------------------- */
+
+const startFailure = (code: string | undefined): SessionStartError =>
+  new SessionStartError(`could not start "node": ${code ?? 'boom'} (spawn ${code ?? 'boom'})`, {
+    cause: code === undefined ? new Error('spawn boom') : Object.assign(new Error(`spawn ${code}`), { code }),
+  });
+
+test('t688 AT7 — a too-long command line blocks, names the node and the code, and says what to do', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  for (const code of ['ENAMETOOLONG', 'E2BIG']) {
+    const reason = classifyPreSessionFailure(startFailure(code), JOB);
+
+    namesAll(reason, [JOB.current_node_id, code, 'No session was opened', 'every retry', 'by file']);
+    for (const forbidden of ['{{', 'input_file', 'TODO', 'transient']) {
+      assert.ok(!reason!.includes(forbidden), `the reason must not contain "${forbidden}": ${reason}`);
+    }
+  }
+});
+
+test('t688 AT8 — every other start failure still classifies to null', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  for (const code of ['ENOENT', 'EMFILE', 'EACCES']) {
+    assert.equal(classifyPreSessionFailure(startFailure(code), JOB), null, code);
+  }
+  assert.equal(classifyPreSessionFailure(new SessionStartError('could not start "node"'), JOB), null);
+  assert.equal(classifyPreSessionFailure(startFailure(undefined), JOB), null);
+  assert.equal(
+    classifyPreSessionFailure(
+      Object.assign(new Error('not a start error'), { cause: { code: 'E2BIG' } }),
+      JOB,
+    ),
+    null,
+    'only a SessionStartError counts',
+  );
+});
+
+test('t688 AT9 — the permission-refusal prefix still wins and keeps its reason', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  const refusal = new SessionStartError(`${PERMISSION_REFUSAL_PREFIX}${DOMAIN_SCOPED_NETWORK_REASON}`, {
+    cause: Object.assign(new Error('spawn E2BIG'), { code: 'E2BIG' }),
+  });
+  const reason = classifyPreSessionFailure(refusal, JOB);
+
+  namesAll(reason, [JOB.current_node_id, DOMAIN_SCOPED_NETWORK_REASON, 'permission policy']);
+  assert.ok(!reason!.includes('command line'), reason!);
+});

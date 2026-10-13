@@ -23,13 +23,19 @@
  * and for those the retry IS the right answer; blocking one would make a person
  * undo a hiccup by hand.
  *
- * So the eight are a CLOSED set, each matching a reproduction somebody actually
+ * So the nine are a CLOSED set, each matching a reproduction somebody actually
  * hit. Everything else classifies to `null`, including the two error families'
  * own siblings: a wider net here is a work blocked over something that would
  * have healed itself, which is the failure mode in the other direction. The set
  * grew twice, with t270 and t272, and both times it grew the way it is meant to
  * — a cause somebody reproduced arrived, its refusal reproduces on every retry,
  * and a cause nobody classifies is a loop nobody sees.
+ *
+ * **The ninth arrived with t689**, and it is the first one that measures rather
+ * than reads: a shell skill's argv that the platform cannot spawn
+ * (`command-line-limit.ts`). It is decided at render time, before the worktree,
+ * from the final argv and the templates it was built from, so the reason can
+ * name the placeholder to switch to `{{input_file.<path>}}`.
  *
  * **The eighth arrived with t370**, and it is the one that reaches off this
  * machine: a node declares `external.inputs`, the runner calls the named MCP
@@ -86,6 +92,7 @@ import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
 import { SessionStartError } from '../engine/types.ts';
 import { ExternalInputResolutionError } from '../mcp/resolve-external-inputs.ts';
+import { CommandLineTooLongError } from './command-line-limit.ts';
 import {
   SkillNotRegisteredError,
   SkillPinMismatchError,
@@ -231,6 +238,28 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       'opened: an input the node declared and did not get would open a session with a gap ' +
       'in it, and the same declaration gets the same answer on every retry. Fix the server, ' +
       'the tool, or the network, and unblock.'
+    );
+  }
+
+  // The ninth (t689). A shell skill's argv that the platform cannot spawn: the
+  // same manifest and the same input measure the same on every retry, so it is
+  // as permanent as an unresolved placeholder. The reason names the argv element
+  // and the placeholder to switch, because that is the whole fix.
+  if (error instanceof CommandLineTooLongError) {
+    const where = `argv element ${String(error.position)}`;
+    const fix =
+      error.placeholders.length === 0
+        ? `That element is a literal in the manifest: move its content into a file the ` +
+          'command reads instead of passing it as an argument.'
+        : `Switch ${error.placeholders.map((name) => `\`{{input.${name}}}\``).join(', ')} to ` +
+          `${error.placeholders.map((name) => `\`{{input_file.${name}}}\``).join(', ')} in that ` +
+          'element, and have the command read the file whose path it receives.';
+    return (
+      `Node \`${error.nodeId}\` pins skill \`${error.skillId}\`, whose command line measures ` +
+      `${String(error.measured)} ${error.unit} on ${error.platform}, over the limit of ` +
+      `${String(error.limit)} (${where}, the longest). ${fix} No session was opened and nothing ` +
+      'was spawned: the same manifest and the same input fail the same way on every retry. ' +
+      'Fix the manifest and unblock.'
     );
   }
 

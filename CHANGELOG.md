@@ -11,6 +11,19 @@ release.
 
 ## [Unreleased]
 
+### Added
+
+- `{{input_file.<path>}}` in a shell skill's `command.argv` and `instructions`:
+  it resolves to the absolute path of a file holding the value, so a whole JSON
+  document no longer has to travel as one argument. The files live in
+  `<worktrees-root>/.input-files/job-<id>/<16 hex>/`, outside the worktree, and
+  are removed on every exit of the dispatch. `{{input.<path>}}` renders as before.
+- A shell skill whose command line the platform cannot spawn — more than 32,000
+  UTF-16 units in all on Windows, or an argument over 131,072 bytes elsewhere —
+  is now refused before a worktree is cut or a process is started, and the job
+  is blocked with a reason naming the `argv` element and the placeholder to
+  switch to `{{input_file.<path>}}`.
+
 ### Removed
 
 - The screen: the `cartografo-screen` command and the `@cartografo/screen`

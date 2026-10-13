@@ -171,6 +171,7 @@ import {
   postSessionQuestion,
   type Outcome,
 } from './report.ts';
+import { createInputFiles } from './input-files.ts';
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy, resolveNode, type GraphVersionBody } from './resolve-node.ts';
 import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
@@ -324,12 +325,18 @@ export function createClaudeCodeDispatch(
     // manager answered are the tree's.
     const tree = new WorktreeRelease(options.worktrees, worktree);
 
+    // The files `{{input_file.<path>}}` asked for (t689): planned above, written
+    // below, and taken away by the `finally` of the `try` that follows — on every
+    // exit, whichever way it ends.
+    const inputFiles = createInputFiles(plan.inputFiles);
+
     try {
       // The MCP window's disk half, at the first line where a directory exists
       // and still before a session does (t370, FR4). Its failures are ordinary
       // throws and not a ninth classified cause — the split, and why, is
       // `src/mcp/resolve-external-inputs.ts`'s own header.
       await writeExternalInputs(worktree.path, plan.pendingWrites);
+      await inputFiles.write();
 
       // The two reads the prompt needs, and the spec they get packed into
       // (`session-spec.ts`). Inside the `try` and after the worktree, where they
@@ -715,6 +722,8 @@ export function createClaudeCodeDispatch(
       }
 
       throw error;
+    } finally {
+      await inputFiles.dispose();
     }
   };
 }

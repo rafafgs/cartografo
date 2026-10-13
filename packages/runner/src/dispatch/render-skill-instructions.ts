@@ -99,7 +99,9 @@ import {
   ESCALATION_PROTOCOL,
   NEVER_ESCALATION_PROTOCOL,
 } from './escalation-protocol.ts';
-import { interpolate } from './interpolate-input.ts';
+import { checkCommandLine, CommandLineTooLongError } from './command-line-limit.ts';
+import { interpolate, type InputFileCollector, type PlannedInputFile } from './interpolate-input.ts';
+import { renderCommand, type RenderedCommand } from './render-command.ts';
 import { renderInputValues } from './render-input-values.ts';
 import { resolveEscalationPolicy, type ResolvedNode } from './resolve-node.ts';
 import { hasOutputSchema, resultProtocol } from './result-protocol.ts';
@@ -150,20 +152,7 @@ export interface RegisteredSkill {
   command?: Record<string, unknown>;
 }
 
-/**
- * The command of a shell skill, rendered — in the ENGINE interface's spelling.
- *
- * The manifest is a product format and spells its keys `snake_case`
- * (`command.env_allowlist`); `SessionSpec` is the adapter's vocabulary and
- * spells them `camelCase`. This is the one place the two meet, exactly as
- * {@link resolveSkillPermissions} is for `permissions` — and for the same
- * reason: a manifest key that leaked into the interface would make every
- * third-party adapter learn a format it has no business reading.
- */
-export interface RenderedCommand {
-  readonly argv: readonly string[];
-  readonly envAllowlist?: readonly string[];
-}
+export type { RenderedCommand } from './render-command.ts';
 
 /** Everything a resolved skill gives one dispatch. */
 export interface RenderedSkill {
@@ -190,6 +179,25 @@ export interface RenderedSkill {
    * they got before this field existed.
    */
   command: RenderedCommand | undefined;
+  /**
+   * The files `{{input_file.<path>}}` asked for, planned and NOT written (t689).
+   *
+   * One entry per distinct path, shared by the instructions and the argv.
+   * `[]` for every skill that names none — which is every skill written before
+   * the placeholder existed. `input-files.ts` writes them.
+   */
+  inputFiles: readonly PlannedInputFile[];
+}
+
+/** What a caller may tell the render about the dispatch around it (t689). */
+export interface RenderOptions {
+  /**
+   * Where `{{input_file.<path>}}` files will live. Absent means nowhere: every
+   * file token is unresolved, never left in the text.
+   */
+  inputFilesDir?: string;
+  /** The platform the command will be spawned on. Default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /** Reads one route of the control plane, rejecting on a refusal. */
@@ -356,54 +364,6 @@ export function resolveSkillPermissions(permissions: unknown): SessionPermission
   };
 }
 
-/**
- * Resolves a shell skill's `command` block against this node's input (t332).
- *
- * Three decisions, each with a plausible opposite:
- *
- * - **Every argv element goes through the SAME interpolation the body goes through**
- *   (`interpolate-input.ts`), so the grammar, the substitution rules and the
- *   fail-closed refusal are one implementation and not two. Element by element,
- *   never over the joined string: a token that spans two elements is not a token
- *   this format has, and joining to interpolate would be inventing a quoting
- *   problem this engine exists to avoid.
- * - **`env_allowlist` is data, and is NOT interpolated.** Its entries are names
- *   of environment variables; a manifest that wrote a placeholder there would be
- *   naming a variable that cannot exist, and resolving it would let a node's
- *   input decide which of the operator's secrets the child may read — a
- *   permission chosen at run time by whoever fed the projection.
- * - **A malformed block is dropped, never guessed at.** The registry validates
- *   the manifest's shape at the door (`skill-manifest.schema.json`), so a
- *   `command` that is not an object with a string argv is a projection that
- *   changed underneath us. Absent is the safe reading: a `shell` node then meets
- *   the adapter's own refusal, with a message naming the field, instead of
- *   running an argv this function repaired.
- *
- * @param declared The manifest's `command` block, as the registry has it.
- * @param input The already-validated input object of this node.
- * @param unresolved Accumulator shared with the body's own pass.
- * @returns The rendered command, or `undefined` when the skill declares none.
- */
-export function renderCommand(
-  declared: unknown,
-  input: Record<string, unknown>,
-  unresolved: string[],
-): RenderedCommand | undefined {
-  if (!isObject(declared)) return undefined;
-
-  const argv = Array.isArray(declared.argv)
-    ? declared.argv.filter((element): element is string => typeof element === 'string')
-    : [];
-  if (argv.length === 0) return undefined;
-
-  const allowlist = textList(declared.env_allowlist);
-
-  return {
-    argv: argv.map((element) => interpolate(element, input, unresolved)),
-    ...(allowlist.length === 0 ? {} : { envAllowlist: allowlist }),
-  };
-}
-
 /** One fenced JSON section of the rendered text. */
 function fenced(title: string, value: unknown): string[] {
   return [title, '', '```json', JSON.stringify(value ?? null, null, 2), '```', ''];
@@ -545,13 +505,18 @@ function render(
  *   used for a graph-less work.
  * @throws {SkillNotRegisteredError} The registry answered 404.
  * @throws {SkillPinMismatchError} The registered hash is not the declared one.
+ * @param options Where the input files will live and the platform the command
+ *   will run on (t689).
  * @throws {UnresolvedPlaceholderError} The body names input this node does not
  *   carry.
+ * @throws {CommandLineTooLongError} The command line is one the platform cannot
+ *   spawn.
  */
 export async function renderSkillInstructions(
   resolved: ResolvedNode,
   read: ReadSkill,
   input: Record<string, unknown>,
+  options: RenderOptions = {},
 ): Promise<RenderedSkill | null> {
   const pin = resolved.node.skill_ref;
   if (pin === undefined || typeof pin.id !== 'string' || pin.id === '') return null;
@@ -583,16 +548,32 @@ export async function renderSkillInstructions(
   // at a time is a round trip per field — the same reason the body's own pass
   // collects instead of throwing at the first token.
   const unresolved: string[] = [];
-  const body = interpolate(skill.instructions, input, unresolved);
-  const command = renderCommand(skill.command, input, unresolved);
+  const files: InputFileCollector = { dir: options.inputFilesDir ?? null, planned: [] };
+  const body = interpolate(skill.instructions, input, unresolved, files);
+  const rendered = renderCommand(skill.command, input, unresolved, files);
   if (unresolved.length > 0) {
     throw new UnresolvedPlaceholderError(resolved.node.id, pin.id, unresolved);
+  }
+
+  // After the unresolved check, so a gap in the input keeps reporting first,
+  // and on the FINAL argv, file paths already in: a document handed over by
+  // file is what makes a line short enough (t689).
+  if (rendered !== undefined) {
+    const violation = checkCommandLine(
+      rendered.command.argv,
+      rendered.templates,
+      options.platform ?? process.platform,
+    );
+    if (violation !== null) {
+      throw new CommandLineTooLongError({ ...violation, nodeId: resolved.node.id, skillId: pin.id });
+    }
   }
 
   return {
     skill,
     instructions: render(resolved, skill, body, input),
     permissions: resolveSkillPermissions(skill.permissions),
-    command,
+    command: rendered?.command,
+    inputFiles: files.planned,
   };
 }

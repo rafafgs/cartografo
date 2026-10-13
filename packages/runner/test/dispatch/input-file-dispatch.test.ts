@@ -350,7 +350,7 @@ test('t689 — {{input_file.<path>}} through a real dispatch', async (parent) =>
     assert.equal(outcome.blocked, true);
     const measured = process.execPath.length + NODE.length + big.length + 3;
     const reason = outcome.reason ?? '';
-    for (const fact of ['conferir', String(measured), '32000', 'position 2', 'big', '{{input_file.big}}']) {
+    for (const fact of ['conferir', String(measured), '32000', 'argv element 2', 'big', '{{input_file.big}}']) {
       assert.ok(reason.includes(fact), `the reason names ${fact}: ${reason}`);
     }
     assert.ok(String(measured).startsWith('33'));

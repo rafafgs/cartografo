@@ -25,6 +25,8 @@ pins, refuses the dispatch if the hash does not match the registry's, and render
 Since `t332` it also renders `command`, for a skill that declares one: a node on
 the `shell` engine runs that argv instead of opening a session at all (see
 *`command`*).
+Since `t689` it also resolves `{{input_file.<path>}}`, which puts a value in a
+file instead of in the text (see *`{{input_file.<path>}}`*).
 Since `t204` it also **interpolates** `{{input.<path>}}` inside `instructions`,
 failing closed: a path that does not resolve aborts the dispatch before any
 session is opened. What still does not exist is whoever **builds** that input —
@@ -356,6 +358,34 @@ half is **not implemented yet**, and not by oversight: no code executes a check'
 `command` today, so there is nowhere to connect it. The rule holds identically for
 when there is — a command that still contains `{{` is never executed.
 
+### `{{input_file.<path>}}`
+
+Since `t689`. The same grammar and the same walk as `{{input.<path>}}` — one or
+more parts of `[a-zA-Z0-9_]+` separated by `.`, own properties only — but the
+token is replaced by the **absolute path** of a file, not by the value. It exists
+because a whole JSON document does not fit in one command line: Windows limits
+the line to 32,767 UTF-16 units and Linux limits one argument to 128 KiB (see
+*The size of an `argv`* under `command`).
+
+- **Where it resolves.** In every element of `command.argv` and in
+  `instructions`. Nowhere else: not in `env_allowlist`, and not in the arguments
+  of an MCP call.
+- **What the file holds.** The value as a string verbatim when it is a string
+  (an empty string is an empty file); any other JSON value as a compact
+  `JSON.stringify` (`null` is `null`). UTF-8, no byte-order mark. Two tokens for
+  the same path share one file.
+- **Where it lives.** `<root>/job-<id>/<16 hex>/<path>.json`, written once, after
+  the worktree exists and before the process starts. The root is
+  `<worktrees-root>/.input-files` and is **never inside the worktree** — the
+  worktree is a git checkout, and a file written there would be uncommitted work.
+  The dots of the path stay in the file name.
+- **How long.** One directory per dispatch attempt, never reused, removed on
+  every way the dispatch ends (completed, failed, timed out, cancelled, an error).
+  The command must read the file before it exits; nothing keeps it after.
+- **Failing closed.** A path that does not resolve aborts the dispatch exactly as
+  an unresolved `{{input.<path>}}` does, in the same error, reported as
+  `input_file.<path>`.
+
 ### `command`
 
 Optional, and what a **shell** skill runs instead of opening a session (`t332`).
@@ -398,7 +428,20 @@ Two decisions that look arbitrary and are not:
 
 `{{input.<path>}}` is resolved in every element of `argv`, by the same resolver
 and under the same fail-closed rule as `instructions` — an unresolved path aborts
-the dispatch before any process is spawned. It is **not** resolved inside
+the dispatch before any process is spawned. `{{input_file.<path>}}` is resolved in
+every element too, and is the way to hand a command a document too large to be
+an argument.
+
+**The size of an `argv`.** The final argv, with every path already substituted,
+is measured before anything is cut or spawned, and refused when the platform
+could not spawn it: on `win32`, when the sum of the lengths of all elements
+(UTF-16 units) plus one separator per element, the program included, is greater
+than 32,000; on every other platform, when any single element is greater than
+131,072 bytes (UTF-8). Exactly at the limit passes. The refusal blocks the job
+with a reason naming the node, the skill, the measured size and its unit, the
+limit, the position of the longest element and each `{{input.<path>}}` in it to
+switch to `{{input_file.<path>}}`; no session is opened, and the same manifest
+fails the same way on every retry. It is **not** resolved inside
 `env_allowlist`: those are variable names, and which of the operator's variables
 a command may read is not a decision a node's input gets to take.
 

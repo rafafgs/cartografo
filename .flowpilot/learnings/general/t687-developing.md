@@ -1,0 +1,6 @@
+### t687 (developing, unverified)
+
+- Red state: AT1, AT2, AT4 and AT5 failed before the implementation. AT1/AT4 failed because .gitattributes did not exist, AT2 because the eol attribute was `unspecified`, and AT5 because the README had no line. AT3 was already green, as the ticket expected. AT4 is also red without the file, which the ticket did not list.
+- `git add --renormalize .` was a no-op: the only thing it staged was the README edit, and .gitattributes itself added nothing else. All tracked files stay i/lf.
+- The full `npm test` run showed 7 failures in packages/runner, all unrelated to this change: t371 AT6, two EngineAdapter C9 inactivity cases, t400, two t678 AT3/AT4 cases, and dispatch.test.ts, which hit the 800s timeout. They pass when run alone: the process-lifecycle and conformance files (84 tests), discover-mcp-servers.claude-code (6), and dispatch.test.ts filtered to t371|t400 (9). I did not re-run the full dispatch.test.ts file in isolation. Another worktree's (ticket-688) core suite was running at the same time, which is the likely cause.
+- `node --test tests/` fails with a module-resolution error under node 25; use `node --test "tests/**/*.test.mjs"`, which is what scripts/run-all-tests.mjs effectively runs.

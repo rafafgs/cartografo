@@ -18,11 +18,20 @@
  * not change, so whatever reads that file next (a backup, an operator's
  * `sqlite3 -readonly`) goes on working.
  *
+ * On Windows the pid alone is not a liveness test. Windows recycles pids fast,
+ * so a number that once named the owner may now name something unrelated; and a
+ * process ended with `taskkill /T /F` whose handle is still held elsewhere keeps
+ * `OpenProcess` — hence `process.kill(pid, 0)` — succeeding. There `tasklist` is
+ * the confirmation: an owner is alive only when it lists that exact pid, and
+ * when `tasklist` cannot answer the lock is respected (fail closed), with the
+ * refusal saying which path decided.
+ *
  * The assumption, stated: one local filesystem and pids that mean something on
  * it. It is the same assumption the rest of the runner and CLI already make,
  * and the database is a local file by decision (D17).
  */
 
+import { spawnSync } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
@@ -55,14 +64,34 @@ export class LockHeldError extends Error {
   readonly pid: number;
   /** Lock file it holds. */
   readonly path: string;
+  /** Which Windows path decided "alive"; `undefined` off Windows. */
+  readonly liveness: WindowsLiveness | undefined;
 
-  constructor(pid: number, lockFilePath: string) {
-    super(`cartografo: another control plane already owns ${lockFilePath} (pid ${pid})`);
+  constructor(pid: number, lockFilePath: string, liveness?: WindowsLiveness) {
+    const base = `cartografo: another control plane already owns ${lockFilePath} (pid ${pid})`;
+    super(liveness === undefined ? base : `${base}. Windows liveness check: ${liveness}.`);
     this.name = 'LockHeldError';
     this.pid = pid;
     this.path = lockFilePath;
+    this.liveness = liveness;
   }
 }
+
+/** How a Windows refusal knows the owner is alive: `tasklist` said so, or could not say. */
+export type WindowsLiveness = 'confirmed by tasklist' | 'tasklist unavailable, assumed alive';
+
+/** Test seams of the liveness check: the platform, `kill` and `spawnSync`. */
+export interface LockSeams {
+  /** Default `process.platform`. */
+  readonly platform?: NodeJS.Platform;
+  /** Default `process.kill`, called as `kill(pid, 0)`. */
+  readonly kill?: typeof process.kill;
+  /** Default `node:child_process`'s `spawnSync`. */
+  readonly spawnSync?: typeof spawnSync;
+}
+
+/** What the liveness check concluded about a lock owner. */
+type Verdict = 'dead' | 'alive' | 'confirmed' | 'unconfirmed';
 
 /** A lock taken. Releasing it is the only thing its holder can do. */
 export interface Lock {
@@ -98,6 +127,64 @@ function readOwner(lockFile: string): number | null {
 }
 
 /**
+ * Splits one CSV row into its fields, honouring `"..."` quoting (a quoted field
+ * may hold commas, and `""` inside it is a literal quote).
+ */
+function csvFields(row: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < row.length; i += 1) {
+    const char = row[i];
+    if (quoted) {
+      if (char === '"' && row[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        current += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      fields.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+/**
+ * Asks `tasklist` whether a process with exactly this pid exists.
+ *
+ * Only CSV rows are read, never message text: with nothing to list `tasklist`
+ * prints a localized `INFO:` line and still exits 0. A row matches when its
+ * SECOND field is the decimal pid — the image name before it may hold a comma,
+ * and the pid appearing in another field (or as part of another pid) is no match.
+ *
+ * @returns `confirmed` when listed, `dead` when a clean run lists no such row,
+ *   `unconfirmed` when `tasklist` could not answer (fail closed).
+ */
+function confirmWithTasklist(pid: number, run: typeof spawnSync): Verdict {
+  const result = run('tasklist.exe', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+  });
+  if (result.error !== undefined || result.status !== 0 || typeof result.stdout !== 'string') {
+    return 'unconfirmed';
+  }
+  const listed = result.stdout
+    .split(/\r?\n/)
+    .some((row) => csvFields(row)[1] === String(pid));
+  return listed ? 'confirmed' : 'dead';
+}
+
+/**
  * Is there a process under this pid?
  *
  * Signal `0` runs no handler: it only asks the kernel whether the pid can be
@@ -105,16 +192,22 @@ function readOwner(lockFile: string): number | null {
  * to somebody else, and reading it as dead would hand the database to two
  * writers on a machine where two users share it.
  *
+ * On Windows that answer is only the first half: see the header for why, and
+ * {@link confirmWithTasklist} for the second.
+ *
  * @param pid Process id read from the lock file.
- * @returns `true` when the process exists.
+ * @returns `dead`; `alive` off Windows; `confirmed` or `unconfirmed` on Windows.
  */
-function isRunning(pid: number): boolean {
+function judgeOwner(pid: number, seams: LockSeams): Verdict {
+  const platform = seams.platform ?? process.platform;
+  const kill = seams.kill ?? process.kill;
   try {
-    process.kill(pid, 0);
-    return true;
+    kill(pid, 0);
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return 'dead';
   }
+  if (platform !== 'win32') return 'alive';
+  return confirmWithTasklist(pid, seams.spawnSync ?? spawnSync);
 }
 
 /**
@@ -156,10 +249,11 @@ function removeFile(lockFile: string): void {
  * non-negotiable (`notes/2026-08-14-extension-and-quality.md`).
  *
  * @param databaseFilePath Path of the database file to be guarded.
+ * @param seams Platform, `kill` and `spawnSync` of the liveness check; the real ones by default.
  * @returns The lock, with what gives it back.
  * @throws {LockHeldError} When a LIVE process already owns the file.
  */
-export function acquireLock(databaseFilePath: string): Lock {
+export function acquireLock(databaseFilePath: string, seams: LockSeams = {}): Lock {
   const lockFile = lockPath(databaseFilePath);
 
   // The directory, which until t209 was created by `openDatabase` — and which
@@ -188,7 +282,18 @@ export function acquireLock(databaseFilePath: string): Lock {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
 
       const holder = readOwner(lockFile);
-      if (holder !== null && isRunning(holder)) throw new LockHeldError(holder, lockFile);
+      const verdict = holder === null ? 'dead' : judgeOwner(holder, seams);
+      if (holder !== null && verdict !== 'dead') {
+        throw new LockHeldError(
+          holder,
+          lockFile,
+          verdict === 'confirmed'
+            ? 'confirmed by tasklist'
+            : verdict === 'unconfirmed'
+              ? 'tasklist unavailable, assumed alive'
+              : undefined,
+        );
+      }
       removeFile(lockFile);
     }
   }

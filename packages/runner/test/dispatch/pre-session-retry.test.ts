@@ -213,3 +213,22 @@ test('AT4 — a non-integer, zero or negative ceiling falls back to the default'
   assert.equal(resolvePreSessionFailureCeiling(1), 1, 'one attempt is a legitimate choice');
   assert.equal(resolvePreSessionFailureCeiling(12), 12);
 });
+
+test('t688 AT10 — a too-long command line blocks on the first failure and resets the streak', async () => {
+  const { PreSessionFailureTracker, handlePreSessionFailure } = await loadModule();
+  const { SessionStartError } = await import(new URL('../../src/engine/types.ts', import.meta.url).href);
+
+  const tracker = new PreSessionFailureTracker();
+  const { call, posted } = fakeCall();
+
+  const error = new SessionStartError('could not start "node": E2BIG (spawn E2BIG)', {
+    cause: Object.assign(new Error('spawn E2BIG'), { code: 'E2BIG' }),
+  });
+  const reason = await handlePreSessionFailure(error, JOB, call, tracker, 5);
+
+  assert.ok(reason !== null, 'a command line that is too long never waits for a streak');
+  assert.equal(blocks(posted).length, 1, 'exactly one block, on the very first failure');
+  assert.equal(reasonOf(blocks(posted)[0]), reason);
+  assert.ok(reason.includes('testar-alpha') && reason.includes('E2BIG'), reason);
+  assert.equal(tracker.recordFailure(JOB.id), 1, 'the streak is cleared');
+});

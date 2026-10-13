@@ -599,7 +599,7 @@ test('t678 AT9 — a binary that does not exist rejects with SessionStartError a
     }),
     (error: unknown) => {
       assert.ok(error instanceof SessionStartError, `expected SessionStartError: ${String(error)}`);
-      assert.equal(error.message, `could not start "${process.execPath}"`);
+      assert.equal(error.message, `could not start "${process.execPath}": no environment`);
       return true;
     },
   );

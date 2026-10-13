@@ -138,6 +138,34 @@ export interface StopSeams {
 }
 
 /**
+ * The `code` values `spawn` throws, synchronously, for a command line the
+ * platform refuses: `ENAMETOOLONG` on Windows, `E2BIG` on POSIX (t688).
+ *
+ * The same argv fails identically on every retry, which is what lets the
+ * pre-session classifier block on it at once instead of counting five attempts.
+ */
+export const COMMAND_LINE_TOO_LONG_CODES: readonly string[] = ['ENAMETOOLONG', 'E2BIG'];
+
+/**
+ * The message of a `SessionStartError` raised because `spawn` (or whatever
+ * built its environment) threw (t688).
+ *
+ * The cause's `code` and `message` are what tell an oversize argv from a missing
+ * binary, and the runner log and the block reason only ever show the message —
+ * so they go in it. A cause that is not an `Error`, or has no message to add,
+ * keeps the bare text.
+ */
+export function describeStartFailure(command: string, cause: unknown): string {
+  const bare = `could not start "${command}"`;
+  if (!(cause instanceof Error) || cause.message === '') return bare;
+
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === 'string' && code !== ''
+    ? `${bare}: ${code} (${cause.message})`
+    : `${bare}: ${cause.message}`;
+}
+
+/**
  * Stops a child and everything it started (t684).
  *
  * Off Windows the child came up `detached`, so it leads its own group and a
@@ -296,7 +324,7 @@ export class ProcessLifecycle<State> {
         detached: true,
       });
     } catch (cause) {
-      throw new SessionStartError(`could not start "${command.command}"`, { cause });
+      throw new SessionStartError(describeStartFailure(command.command, cause), { cause });
     }
 
     // Synchronously, right after the spawn, and the error listener FIRST: an

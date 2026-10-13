@@ -1,0 +1,8 @@
+### t690 (developing, unverified)
+
+- I wrote the tests first. They failed as intended: the seams were ignored and the real process.kill on 424242 said dead, so every refusal test missed its exception. The red is in the first commit (cbf667a), the implementation in the second (2c55891).
+- The first full `npm test` run had 4 failures in files this ticket doesn't touch: cli-watch.test.ts AT3a, and the runner's process-lifecycle and discover-mcp-servers tests (t400, t678 AT3/AT4). cli-watch passed 8/8 when re-run alone. The runner tests kept failing under load average ~48-58 from other worktrees. On a baseline worktree at HEAD~2 the same runner tests also failed (1 failure there, 3 on my branch), which points to load rather than this change. The runner does not import the db lock. This is the known contention pattern, so check it on a quiet machine before trusting that red.
+- The tasklist parser reads CSV rows only and matches when the SECOND field equals the decimal pid. It ignores message text because the localized `INFO:` line comes with status 0. The row is parsed as quoted fields, so an image name with a comma still works.
+- `LockSeams.kill` is typed as `typeof process.kill` and `spawnSync` as `typeof spawnSync`. The tests cast their fakes through `unknown`, the same way the runner's process-tree-stop test does.
+- No file outside the ticket's two declared files was touched. `index.ts` and `cli/index.ts` are unchanged, since the one-argument `acquireLock(path)` call still works through the default `seams = {}`.
+- Left alone, as ticket-specified: the last-resort refusal after the second round carries no liveness sentence.

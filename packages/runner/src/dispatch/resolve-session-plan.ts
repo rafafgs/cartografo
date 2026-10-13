@@ -53,7 +53,12 @@ import {
  * `DEFAULT_ESCALATION_POLICY` instead of making its callers hunt for them.
  */
 export { writeExternalInputs } from '../mcp/resolve-external-inputs.ts';
+import os from 'node:os';
+import path from 'node:path';
+
 import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
+import { newInputFilesDir } from './input-files.ts';
+import type { PlannedInputFile } from './interpolate-input.ts';
 import { DEFAULT_MCP_CALL_TIMEOUT_MS, type Job } from './options.ts';
 import {
   renderSkillInstructions,
@@ -88,6 +93,14 @@ export interface SessionPlan {
    * session exists (`resolve-external-inputs.ts` argues the split).
    */
   pendingWrites: readonly PendingExternalWrite[];
+  /**
+   * The files `{{input_file.<path>}}` asked for, planned and not written (t689).
+   *
+   * `[]` when there is no node or the skill names none. The dispatch wraps them
+   * in `input-files.ts`'s handle, writes them right after `pendingWrites` and
+   * removes them in a `finally`: same pure-window-then-one-impure-step shape.
+   */
+  inputFiles: readonly PlannedInputFile[];
 }
 
 /**
@@ -112,7 +125,17 @@ export interface SessionPlanOptions {
   projectId?: number;
   /** Deadline of each MCP `tools/call`. Default {@link DEFAULT_MCP_CALL_TIMEOUT_MS}. */
   mcpCallTimeoutMs?: number;
+  /**
+   * Root of the per-attempt directories that carry `{{input_file.<path>}}`
+   * (t689). Default `<os.tmpdir()>/cartografo-input-files`.
+   */
+  inputFilesRoot?: string;
+  /** Platform the command will be spawned on (t689). Default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
+
+/** Where input files go when the operator named no root. */
+const DEFAULT_INPUT_FILES_DIR = 'cartografo-input-files';
 
 /**
  * The recorder that writes a call's two phases through the dispatch's own
@@ -226,7 +249,7 @@ export async function resolveSessionPlan(
   // before a session exists and before a single token is spent (t161, FR3). A
   // refusal after the engine is running is a refusal that already let the
   // instructions out.
-  if (resolved === null) return { resolved, route, rendered: null, pendingWrites: [] };
+  if (resolved === null) return { resolved, route, rendered: null, pendingWrites: [], inputFiles: [] };
 
   // Between the merged input and the render, and in that order because both
   // sides of it are load-bearing (t370, FR4): the input has to be assembled
@@ -251,7 +274,22 @@ export async function resolveSessionPlan(
     resolved,
     (skillRoute) => call<RegisteredSkill>(withProject(skillRoute, projectId), 'GET'),
     fetched.input,
+    {
+      // Minted per render, so two attempts of one job never share a directory
+      // (t689, FR5). The name is the only thing minted here: nothing is created.
+      inputFilesDir: newInputFilesDir(
+        options.inputFilesRoot ?? path.join(os.tmpdir(), DEFAULT_INPUT_FILES_DIR),
+        job.id,
+      ),
+      ...(options.platform === undefined ? {} : { platform: options.platform }),
+    },
   );
 
-  return { resolved, route, rendered, pendingWrites: fetched.pendingWrites };
+  return {
+    resolved,
+    route,
+    rendered,
+    pendingWrites: fetched.pendingWrites,
+    inputFiles: rendered?.inputFiles ?? [],
+  };
 }

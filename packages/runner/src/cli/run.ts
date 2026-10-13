@@ -1088,6 +1088,9 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
         // not exist — a lease taken and given back on every tick, in silence.
         projectId: options.projectId,
         requestTimeoutMs: options.requestTimeoutMs,
+        // Beside the worktrees and never inside one (t689), like the skill
+        // sources above: a file in a worktree is uncommitted work.
+        inputFilesRoot: path.join(resolved.worktreesRoot, '.input-files'),
         // Passed straight through: what this function knows about a live session
         // is nothing, and what the process owner needs is the handle to it (t193).
         onSessionStarted: options.onSessionStarted,

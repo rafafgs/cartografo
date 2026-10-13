@@ -28,6 +28,15 @@ Address precedence is the core's: `--url` > `CARTOGRAFO_URL` >
 `http://127.0.0.1:4317`; the credential likewise comes from `--token` or
 `CARTOGRAFO_TOKEN`. Exit codes follow the same `0`/`1`/`2` convention.
 
+Next to the worktrees the runner keeps `<worktrees-root>/.input-files`, where a
+shell skill's `{{input_file.<path>}}` documents are written as
+`job-<id>/<16 hex>/<path>.json`: one directory per dispatch, created once the
+worktree exists and removed on every way the dispatch ends — never inside a
+worktree, and never reused. A runner that crashes leaves at most that one
+directory behind; `prune` lists it as unknown and does not touch it. Without a
+`--worktrees-root` of its own (a dispatch wired by hand) the root is
+`<os.tmpdir()>/cartografo-input-files`.
+
 ## What it exposes
 
 Three subpaths, and they exist because two siblings needed exactly these:

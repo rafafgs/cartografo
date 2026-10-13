@@ -460,6 +460,23 @@ export interface ClaudeCodeDispatchOptions {
    */
   mcpCallTimeoutMs?: number;
   /**
+   * Root of the directories that carry `{{input_file.<path>}}` (t689).
+   * Default `<os.tmpdir()>/cartografo-input-files`; `cli/run.ts` puts it beside
+   * the worktrees, as `<worktreesRoot>/.input-files`.
+   *
+   * Each attempt gets `job-<id>/<16 hex>` under it, written after the worktree is
+   * acquired and removed on every exit of the dispatch. It is never inside a
+   * worktree: the worktree is a git checkout, and a file written there would be
+   * uncommitted work.
+   */
+  inputFilesRoot?: string;
+  /**
+   * The platform a shell node's command will be spawned on (t689). Default
+   * `process.platform`. A test seam: it selects which command-line ceiling the
+   * render enforces (`command-line-limit.ts`), so one machine can prove both.
+   */
+  platform?: NodeJS.Platform;
+  /**
    * Attempts a SAFE node's declared output gets, in total (t371, FR4).
    * Default: {@link DEFAULT_MAX_OUTPUT_WRITE_ATTEMPTS}.
    *

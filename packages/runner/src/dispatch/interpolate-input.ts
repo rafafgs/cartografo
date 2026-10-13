@@ -22,10 +22,22 @@
  * piece of that file out with the prose that belongs to it.
  *
  * Everything here is pure: no reads, no clock, no network.
+ *
+ * **`{{input_file.<path>}}` (t689)** is the second form. The same grammar, the
+ * same own-property walk and the same fail-closed rule, but the token becomes
+ * the absolute path of a FILE holding the value instead of the value itself: a
+ * whole JSON document in `command.argv` does not fit one command line on
+ * Windows (32,767 UTF-16 units), and does not fit one argument on Linux
+ * (128 KiB). Nothing is written here. The caller hands over a collector that
+ * says which directory the files will live in and receives the PLAN of what is
+ * to be written there; `input-files.ts` is the one impure step that does it.
  */
 
+import path from 'node:path';
+
 /**
- * Every `{{input.…}}` token of a manifest body, whatever is written inside it.
+ * Every `{{input.…}}` and `{{input_file.…}}` token of a manifest body, whatever
+ * is written inside it.
  *
  * Deliberately wider than the path grammar the format declares
  * (`[a-zA-Z0-9_]+` segments joined by `.`): what is NOT a valid path — a dash, a
@@ -37,10 +49,13 @@
  * `[^{}]*` keeps the match inside one pair of braces, so a stray `{` cannot make
  * one token swallow the paragraph that follows it.
  */
-const PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
+const PLACEHOLDER = /\{\{(input|input_file)\.([^{}]*)\}\}/g;
 
 /** The path grammar the manifest format declares. */
 const PATH = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/** The `{{input.<path>}}` tokens only, for the guard that names them (t689). */
+const INPUT_PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
 
 /** Nothing resolved: the value the walk hands back when a segment is missing. */
 const UNRESOLVED = Symbol('unresolved');
@@ -99,6 +114,47 @@ function substitute(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+/** One file a render wants written: what it holds and where it will be. */
+export interface PlannedInputFile {
+  /** The dotted path the token named, which is also the file's base name. */
+  readonly placeholderPath: string;
+  /** Absolute path the token was replaced with. */
+  readonly filePath: string;
+  /** What the file holds: the string verbatim, anything else compact JSON. */
+  readonly content: string;
+}
+
+/**
+ * What a caller that wants `{{input_file.…}}` resolved hands to
+ * {@link interpolate}, and gets back filled.
+ *
+ * `dir` is where the files WILL be — `null` means the caller has nowhere to put
+ * any, which makes every file token unresolved rather than a pass. `planned`
+ * is owned by the caller, like the unresolved accumulator, and collects one
+ * entry per distinct path across every string interpolated with it.
+ */
+export interface InputFileCollector {
+  readonly dir: string | null;
+  readonly planned: PlannedInputFile[];
+}
+
+/**
+ * The paths of the `{{input.<path>}}` tokens one template names, in order of
+ * appearance and deduplicated. `{{input_file.…}}` is deliberately not listed:
+ * it is the remedy the block reason offers, never the cause.
+ *
+ * @param template One manifest string, as the registry has it.
+ * @returns The paths written inside the tokens.
+ */
+export function inputPlaceholderPaths(template: string): string[] {
+  const paths: string[] = [];
+  for (const match of template.matchAll(INPUT_PLACEHOLDER)) {
+    const found = match[1] ?? '';
+    if (!paths.includes(found)) paths.push(found);
+  }
+  return paths;
+}
+
 /**
  * Resolves every placeholder of one string against this node's input.
  *
@@ -108,21 +164,44 @@ function substitute(value: unknown): string {
  * why `unresolved` is an accumulator the caller owns rather than a return value
  * — since t332 there is more than one string per manifest to fill.
  *
+ * `{{input_file.<path>}}` is resolved only for a caller that passes `files`
+ * (t689). Without it the token is left in the text and reported as nothing: the
+ * MCP argument interpolation has no directory to offer and must behave byte for
+ * byte as it did before the form existed. An unresolved file token is recorded
+ * as `input_file.<path>`, so the one error tells the two kinds apart while
+ * every `{{input.…}}` entry keeps its bare path.
+ *
  * @param text The template, as the registry has it.
  * @param input The already-validated input object of this node.
  * @param unresolved Accumulator, filled in first-occurrence order, deduplicated.
+ * @param files Where file tokens point and what they plan; absent leaves them alone.
  * @returns The interpolated text — meaningless unless `unresolved` stayed empty.
  */
 export function interpolate(
   text: string,
   input: Record<string, unknown>,
   unresolved: string[],
+  files?: InputFileCollector,
 ): string {
-  return text.replace(PLACEHOLDER, (token, path: string) => {
-    const value = PATH.test(path) ? walk(input, path) : UNRESOLVED;
-    if (value !== UNRESOLVED) return substitute(value);
+  return text.replace(PLACEHOLDER, (token, form: string, tokenPath: string) => {
+    const asFile = form === 'input_file';
+    if (asFile && files === undefined) return token;
 
-    if (!unresolved.includes(path)) unresolved.push(path);
+    const value = PATH.test(tokenPath) ? walk(input, tokenPath) : UNRESOLVED;
+    if (value !== UNRESOLVED) {
+      if (!asFile) return substitute(value);
+      if (files !== undefined && files.dir !== null) {
+        const planned = files.planned.find((entry) => entry.placeholderPath === tokenPath);
+        if (planned !== undefined) return planned.filePath;
+
+        const filePath = path.join(files.dir, `${tokenPath}.json`);
+        files.planned.push({ placeholderPath: tokenPath, filePath, content: substitute(value) });
+        return filePath;
+      }
+    }
+
+    const recorded = asFile ? `input_file.${tokenPath}` : tokenPath;
+    if (!unresolved.includes(recorded)) unresolved.push(recorded);
     // Returned unchanged, and never read: the caller throws before this text
     // reaches anybody. Leaving the token in place is what keeps a half-rendered
     // body from ever looking like a rendered one while it is being inspected.

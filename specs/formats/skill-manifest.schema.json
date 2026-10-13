@@ -168,7 +168,7 @@
           "type": "array",
           "minItems": 1,
           "items": { "type": "string" },
-          "description": "the program and its arguments, spawned with no shell in between: no quoting, no globbing, no variable expansion, and one element per argument. The first element is the program — an absolute path, or a name resolved against a PATH the allowlist below has to name. Every element may carry {{input.<path>}} placeholders, resolved exactly as they are in `instructions` and failing closed the same way"
+          "description": "the program and its arguments, spawned with no shell in between: no quoting, no globbing, no variable expansion, and one element per argument. The first element is the program — an absolute path, or a name resolved against a PATH the allowlist below has to name. Every element may carry {{input.<path>}} placeholders, resolved exactly as they are in `instructions` and failing closed the same way. {{input_file.<path>}} (t689) resolves to the absolute path of a file holding the value, for a document too large to pass as an argument. The final argv is refused before anything is spawned when it measures more than 32,000 UTF-16 units in all on win32, or when any one element is over 131,072 UTF-8 bytes elsewhere"
         },
         "env_allowlist": {
           "type": "array",

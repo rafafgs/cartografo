@@ -475,3 +475,38 @@ test('t332 — a manifest that declares no command keeps the hash it always had'
     assert.equal(manifest.hash, manifestHash(manifest));
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t689 — `{{input_file.<path>}}` and the argv size rule                       */
+/* -------------------------------------------------------------------------- */
+
+const INTERPOLATE_SOURCE = fileURLToPath(
+  new URL('../../packages/runner/src/dispatch/interpolate-input.ts', import.meta.url),
+);
+
+/** The placeholder forms the runner's own `PLACEHOLDER` regex accepts. */
+function runnerPlaceholderForms() {
+  const source = readFileSync(INTERPOLATE_SOURCE, 'utf8');
+  const match = /const PLACEHOLDER = \/\\\{\\\{\(([^)]*)\)\\\./.exec(source);
+  assert.ok(match !== null, 'could not find the PLACEHOLDER regex in interpolate-input.ts');
+  return match[1].split('|');
+}
+
+test('t689 — the document names the file placeholder, both argv limits and the absolute path', () => {
+  const doc = readFileSync(DOC_PATH, 'utf8');
+
+  assert.ok(doc.includes('{{input_file.<path>}}'), 'the file placeholder is not documented');
+  assert.ok(doc.includes('32,000'), 'the Windows command-line limit is not documented');
+  assert.ok(doc.includes('131,072'), 'the per-argument limit is not documented');
+  assert.ok(doc.includes('absolute path'), 'what the placeholder resolves to is not documented');
+});
+
+test('t689 — every placeholder form the runner accepts appears in the document', () => {
+  const doc = readFileSync(DOC_PATH, 'utf8');
+  const forms = runnerPlaceholderForms();
+
+  assert.deepEqual(forms.sort(), ['input', 'input_file']);
+  for (const form of forms) {
+    assert.ok(doc.includes(`{{${form}.<path>}}`), `{{${form}.<path>}} is not in skill-manifest.md`);
+  }
+});

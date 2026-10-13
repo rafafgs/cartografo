@@ -72,6 +72,11 @@ The Copilot engine runs on native Windows (t684). Four behaviours differ there:
 
 The spike scripts use no `NAME=value` prefix, so they run from PowerShell.
 
+An existing Windows checkout made before `.gitattributes` (t687) still holds CRLF
+files, so `npm install` leaves it dirty. After pulling the change, commit or save
+your local changes first, because `git reset --hard` discards them, then run
+`git rm -r --cached . ; git reset --hard` to rewrite the working tree with LF.
+
 Proof on real Windows is owed by the external operator. With a logged-in
 Copilot CLI (`copilot login`, or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` /
 `GITHUB_TOKEN`), from a PowerShell prompt:

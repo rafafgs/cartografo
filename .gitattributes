@@ -1,0 +1,5 @@
+# Keep every text file LF on checkout, whatever core.autocrlf says. On a Windows
+# checkout with core.autocrlf=true the shebang files under packages/core/bin were
+# written with CRLF, and npm's bin-links step rewrote them, leaving the tree dirty
+# right after `npm install`.
+* text=auto eol=lf

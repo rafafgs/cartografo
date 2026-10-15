@@ -8,6 +8,14 @@
  * `graph propose` goes through the same door: the person who edited the file is
  * the judge, so approve and apply both carry that person as the actor.
  *
+ * The positional of `graph propose` is a graph file or a bundle directory (t741).
+ * A bundle with a `skills/` is the UPGRADE route for a class `import` already
+ * refused: the bundle is checked locally, its manifests are registered
+ * (idempotently, with `import.ts`'s own routine) and only then is the graph
+ * proposed. The registry step comes AFTER the frozen-field check, so a refused
+ * edit has registered nothing, and BEFORE the diff is acted on, so a graph that
+ * did not change still registers a manifest the registry lacks.
+ *
  * The operations come from `domain/diff.ts`'s `diffGraphs`, the same semantic
  * diff `routes/proposals.ts` trusts, and `--dry-run` runs the core's own
  * `applyOperations` + `validateGraph` locally, so its verdict is the one `/apply`
@@ -33,12 +41,14 @@
  * import — `packages/core` never depends on `packages/screen` (D11).
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 
 import { diffGraphs } from '../domain/diff.ts';
 import { validateGraph, type GraphDocument, type GraphNode } from '../domain/graph.ts';
 import { ApplicationError, applyOperations, type Operation } from '../domain/operations.ts';
 import { isObject } from '../util/is-object.ts';
+import { line, registerBundleSkills, verifyBundle } from './import.ts';
 import {
   errorText,
   extractFlag,
@@ -196,6 +206,32 @@ function readDocument(filePath: string): unknown {
 }
 
 /**
+ * Tells a file from a bundle directory, the way `import` does: `bundle` is set
+ * only for a directory with a `skills/`, a directory without one is read like a
+ * file (its `graph.json`), and a path that cannot be examined is
+ * left for `readDocument` to report as unreadable.
+ */
+function sourceOf(given: string): { graphPath: string; bundle: { directory: string } | null } {
+  let isDirectory: boolean;
+  try {
+    isDirectory = statSync(given).isDirectory();
+  } catch {
+    isDirectory = false;
+  }
+  if (!isDirectory) return { graphPath: given, bundle: null };
+
+  const directory = path.resolve(given);
+  const graphPath = path.join(directory, 'graph.json');
+  let hasSkills: boolean;
+  try {
+    hasSkills = statSync(path.join(directory, 'skills')).isDirectory();
+  } catch {
+    hasSkills = false;
+  }
+  return { graphPath, bundle: hasSkills ? { directory } : null };
+}
+
+/**
  * `--dry-run`: the operations, then the core's own apply and gate, locally.
  * Nothing is sent.
  */
@@ -222,11 +258,15 @@ function dryRun(loaded: GraphDocument, operations: Operation[]): number {
 }
 
 /**
- * `cartografo graph propose <file> [--graph <id>] [--by <name>]
+ * `cartografo graph propose <file|bundle dir> [--graph <id>] [--by <name>]
  * [--evidence <text>] [--dry-run] [--no-apply] [--json]`.
  *
  * `--json` prints each wire body the command received (the created proposal,
- * then approve's, then apply's), one per line.
+ * then approve's, then apply's), one per line. The `skills` line of a bundle is
+ * not among them: it is prose, and `--json` promises one JSON body per line.
+ *
+ * `--dry-run` with a bundle checks it and runs the gate, but registers nothing:
+ * registering is a write, and a dry run reports what would be PROPOSED.
  */
 async function runPropose(args: string[], ctx: GraphContext): Promise<number> {
   const fromGraph = extractValue(args, '--graph');
@@ -237,8 +277,10 @@ async function runPropose(args: string[], ctx: GraphContext): Promise<number> {
   const fromJson = extractFlag(fromNoApply.rest, '--json');
   requireNothingElse(fromJson.rest, 1, 'graph propose');
 
-  const file = fromJson.rest[0];
-  if (file === undefined) throw new UsageError('graph propose needs the path of an edited graph file');
+  const given = fromJson.rest[0];
+  if (given === undefined) {
+    throw new UsageError('graph propose needs the path of an edited graph file or of a bundle directory');
+  }
   if (fromDryRun.present && fromNoApply.present) {
     throw new UsageError(
       'graph propose: --dry-run and --no-apply contradict each other (--dry-run never contacts the server to create anything)',
@@ -247,11 +289,26 @@ async function runPropose(args: string[], ctx: GraphContext): Promise<number> {
   // Resolved before any request: an unresolvable operator is a wrong command line.
   const actor = fromDryRun.present || fromNoApply.present ? undefined : { type: 'user', ref: resolveOperator(fromBy.value) };
 
-  const edited = readDocument(file);
-  if (!isObject(edited)) throw new UsageError(`"${file}" is not a graph document (expected a JSON object)`);
+  const { graphPath, bundle } = sourceOf(given);
+  const edited = readDocument(graphPath);
+  if (!isObject(edited)) throw new UsageError(`"${graphPath}" is not a graph document (expected a JSON object)`);
   const graphId = fromGraph.value ?? edited.problem_class;
   if (typeof graphId !== 'string' || graphId === '') {
     throw new UsageError('graph propose needs --graph: the file carries no problem_class to default to');
+  }
+
+  // Before any request, like `import`: a bundle with a broken pin never becomes
+  // one (D4), and the output is the same.
+  if (bundle !== null) {
+    const problems = verifyBundle(bundle.directory, edited);
+    if (problems.length > 0) {
+      process.stderr.write(`cartografo: invalid bundle — ${bundle.directory}\n`);
+      for (const problem of problems) {
+        process.stderr.write(`  ${problem.scope.padEnd(10)} ${problem.message}\n`);
+      }
+      process.stderr.write('cartografo: nothing was sent to the control plane\n');
+      return 1;
+    }
   }
 
   const found = await currentVersion(graphId, ctx);
@@ -264,6 +321,21 @@ async function runPropose(args: string[], ctx: GraphContext): Promise<number> {
     for (const problem of frozen) process.stderr.write(`cartografo: ${problem}\n`);
     process.stderr.write('cartografo: nothing was sent to the control plane\n');
     return 1;
+  }
+
+  if (bundle !== null && !fromDryRun.present) {
+    const registry = await registerBundleSkills(
+      bundle.directory,
+      ctx.url,
+      ctx.projectId,
+      'no proposal was created',
+    );
+    if (registry === null) return 1;
+    if (!fromJson.present) {
+      process.stdout.write(
+        line('skills', `${registry.created} registered, ${registry.known} already in the registry`),
+      );
+    }
   }
 
   const operations = diffGraphs(loaded, edited as unknown as GraphDocument);

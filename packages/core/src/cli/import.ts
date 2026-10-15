@@ -249,7 +249,7 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
 }
 
 /** How the registry answered for the bundle as a whole. */
-interface RegistryOutcome {
+export interface RegistryOutcome {
   /** Versions the registry had never seen (201). */
   created: number;
   /** Versions already registered with this content (200) — a reimport. */
@@ -297,14 +297,21 @@ function readBundleSkills(directory: string): { file: string; manifest: unknown 
  * refusal stay registered — they passed the same gate on their own, and this
  * command owns no transaction across the API.
  *
+ * `graph propose <bundle dir>` (t741) reuses this routine for the same step, and
+ * only the last line of a refusal differs: what was NOT done is the graph for
+ * `import` and the proposal for `propose`.
+ *
  * @param directory Bundle directory, already checked.
  * @param url Base URL of the control plane.
+ * @param projectId Project the manifests are registered in.
+ * @param notDone Closing line of a refusal, after `cartografo: `.
  * @returns What the registry did, or `null` when it refused a manifest.
  */
-async function registerBundleSkills(
+export async function registerBundleSkills(
   directory: string,
   url: string,
   projectId: number,
+  notDone = 'the graph was not sent to the control plane',
 ): Promise<RegistryOutcome | null> {
   const outcome: RegistryOutcome = { created: 0, known: 0 };
 
@@ -336,7 +343,7 @@ async function registerBundleSkills(
     for (const detail of Array.isArray(body.details) ? body.details : []) {
       process.stderr.write(`  ${'registry'.padEnd(10)} ${String(detail)}\n`);
     }
-    process.stderr.write('cartografo: the graph was not sent to the control plane\n');
+    process.stderr.write(`cartografo: ${notDone}\n`);
     return null;
   }
 
@@ -344,7 +351,7 @@ async function registerBundleSkills(
 }
 
 /** One `label  value` line of the success output. */
-function line(label: string, value: string): string {
+export function line(label: string, value: string): string {
   return `  ${label.padEnd(18)}${value}\n`;
 }
 
@@ -416,6 +423,12 @@ export async function runImport(options: ImportOptions): Promise<number> {
 
   if (response.status === 409) {
     process.stderr.write(`cartografo: class_already_registered — ${String(body.message)}\n`);
+    // `import` is for a NEW class. The class exists, so the road to a new version
+    // is the proposal door, and for a bundle `graph propose` also registers the
+    // manifests (t741).
+    process.stderr.write(
+      `to register a new version of this class run: cartografo graph propose ${options.path} --by <name> --evidence "<why>"\n`,
+    );
     return 1;
   }
 

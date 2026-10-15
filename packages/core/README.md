@@ -18,7 +18,8 @@ cartografo [subcommand] [options]
 | Subcommand | What it does |
 |---|---|
 | `up` | starts the control plane. The default: `cartografo` with no argument does this |
-| `import <path>` | registers a graph file or bundle directory as a new base lineage |
+| `import <path>` | registers a graph file or bundle directory as a NEW base lineage |
+| `graph propose <file\|bundle dir>` | proposes an edit to an existing lineage; for a bundle directory it registers the manifests first |
 | `export <class>` | writes the current version of a class, in the format `import` accepts back |
 | `status` | reports the server and the registered projects |
 | `scan-skill <path>` | derives a draft manifest from a cloned skill's `SKILL.md` |
@@ -28,6 +29,9 @@ cartografo [subcommand] [options]
 The last three are D4's skill-import gate, in the three steps it requires: an
 imported skill is a prompt-injection vector, so it is scanned, approved by a
 person, and only then stored.
+
+A bundle is installed in two steps. The first time: `cartografo import <bundle>`.
+Every later version: `cartografo graph propose <bundle> --by <name> --evidence "<why>"`.
 
 Exit codes are the convention every command in this repository follows: `0` did
 what it promised, `1` ran and the result was negative, `2` the command line is

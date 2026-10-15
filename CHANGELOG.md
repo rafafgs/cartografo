@@ -13,6 +13,11 @@ release.
 
 ### Added
 
+- `cartografo graph propose <bundle dir>`: checks the bundle, registers its skill
+  manifests (idempotently) and then proposes the new graph version, so one
+  command upgrades an installed bundle. It prints a `skills` line, and an
+  unchanged graph still registers a missing manifest. `--dry-run` registers
+  nothing. `import` on a class that already exists now names this command.
 - `{{input_file.<path>}}` in a shell skill's `command.argv` and `instructions`:
   it resolves to the absolute path of a file holding the value, so a whole JSON
   document no longer has to travel as one argument. The files live in

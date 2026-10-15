@@ -186,13 +186,16 @@ subcommands:
 
   graph <verb>           edits a graph as a file and pushes the edit through
                          the proposal door (D26): export, edit, propose.
-                           graph propose <file> [--graph <id>] [--by <name>]
+                           graph propose <file|bundle dir> [--graph <id>] [--by <name>]
                                  [--evidence <text>] [--dry-run | --no-apply] [--json]
                            graph versions <id> [--json]
                            graph show <id> [--version <version-id>] [--json]
                          propose diffs the file against the lineage's current
                          version, then creates, approves and applies the
-                         proposal as --by. --graph defaults to the file's
+                         proposal as --by. A bundle directory (graph.json plus
+                         skills/) is checked locally and its manifests are
+                         registered first: the upgrade route for a class that
+                         import refused. --graph defaults to the file's
                          problem_class, which is right only for a base
                          lineage: for a variant, pass --graph <variant-id>.
                          A node's id (paired by position in the nodes array —

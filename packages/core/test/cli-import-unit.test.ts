@@ -530,6 +530,34 @@ test('a class already registered comes back as class_already_registered', async 
   assert.match(run.stderr, /class_already_registered — the class software-development already exists/);
 });
 
+test('a class already registered names the route to a new version (t741)', async (t) => {
+  const plane = await startFakeControlPlane(t, (request) =>
+    request.route === '/v1/skills'
+      ? { status: 200, body: request.body }
+      : {
+          status: 409,
+          body: { error: 'class_already_registered', message: 'the class software-development already exists' },
+        },
+  );
+  const directory = bundleCopy(t);
+  // Relative to the working directory, as a person types it: the hint echoes it
+  // exactly as given.
+  const given = path.relative(process.cwd(), directory);
+  assert.notEqual(given, directory);
+
+  const run = await capture(() => runImport({ path: given, url: plane.url }));
+
+  assert.equal(run.code, 1);
+  assert.match(run.stderr, /class_already_registered — the class software-development already exists\n/);
+  assert.ok(
+    run.stderr.endsWith(
+      `to register a new version of this class run: cartografo graph propose ${given} --by <name> --evidence "<why>"\n`,
+    ),
+    `the second line follows the first:\n${run.stderr}`,
+  );
+  assert.equal(run.stderr.trimEnd().split('\n').length, 2);
+});
+
 test('a graph the control plane refuses is printed rule by rule', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 422,

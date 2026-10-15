@@ -138,6 +138,12 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     assert.notEqual(result.code, 0, 'reimporting over an existing lineage cannot exit 0');
     assert.match(result.stderr, /class_already_registered/);
     assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
+    assert.ok(
+      result.stderr.includes(
+        `to register a new version of this class run: cartografo graph propose ${FACTORY_BUNDLE} --by <name> --evidence "<why>"`,
+      ),
+      `the refusal names the route to a new version:\n${result.stderr}`,
+    );
   });
 
   await t.test('reimporting is idempotent for the registry: an unchanged manifest is not an error', async () => {

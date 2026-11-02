@@ -128,7 +128,7 @@ const END_OF_OPTIONS = '--';
 
 /**
  * Combined `instructions` + `prompt` byte size past which the content leaves
- * the argv.
+ * the argv, off Windows.
  *
  * 64 KiB, with room on both sides of the two real ceilings: Linux caps a SINGLE
  * argv element at 128 KiB (`MAX_ARG_STRLEN`) and macOS caps the whole argv+envp
@@ -143,8 +143,28 @@ const END_OF_OPTIONS = '--';
  * Past it, nothing fails and nothing is truncated: `instructions` and `prompt`
  * take a channel with no practical ceiling. The limit is where the mechanism
  * changes, not where the session stops working.
+ *
+ * DUPLICATED from `copilot-command.ts` and `codex-command.ts`, not shared: the
+ * standing precedent recorded in `codex-adapter.ts:12-17`.
  */
-export const ARGV_INLINE_LIMIT_BYTES = 64 * 1024;
+export const ARGV_INLINE_LIMIT_POSIX_BYTES = 64 * 1024;
+
+/**
+ * The same limit on Windows (t957): `CreateProcess` caps the WHOLE command line
+ * at 32,767 UTF-16 units, so a prompt of 30–64 KiB that was inlined made the
+ * spawn fail with `ENAMETOOLONG`. 12 KiB leaves room for the other flags and
+ * the working directory, and it is conservative on purpose: bytes are always at
+ * least the unit count.
+ */
+export const ARGV_INLINE_LIMIT_WIN32_BYTES = 12 * 1024;
+
+/** The inline limit for a platform: Windows is the only one with the low ceiling. */
+export function argvInlineLimitBytes(platform: NodeJS.Platform): number {
+  return platform === 'win32' ? ARGV_INLINE_LIMIT_WIN32_BYTES : ARGV_INLINE_LIMIT_POSIX_BYTES;
+}
+
+/** The inline limit of the platform this process runs on. */
+export const ARGV_INLINE_LIMIT_BYTES = argvInlineLimitBytes(process.platform);
 
 /**
  * Name of the ephemeral file the oversized path writes under `spec.workingDir`.
@@ -248,8 +268,8 @@ export function resolveModel(
  * its own value and changes nothing else.
  *
  * **The trailer has two shapes since t203, chosen by SIZE and by nothing else.**
- * Below {@link ARGV_INLINE_LIMIT_BYTES} it is the one it always was, plus the
- * `--` guard; at or above it, `instructions` becomes an ephemeral file and
+ * Below {@link argvInlineLimitBytes} (for the platform) it is the one it always
+ * was, plus the `--` guard; at or above it, `instructions` becomes an ephemeral file and
  * `prompt` becomes stdin, and no positional is assembled at all. Both shapes
  * come out of `composeWithSystemPromptFlag` — the specification's own function
  * — so the normative rule (`instructions` and `prompt` NEVER concatenated)
@@ -261,13 +281,14 @@ export function resolveModel(
 export function buildCommand(
   spec: SessionSpec,
   env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): EngineCommand {
   const { deniedTools } = resolvePermissions(spec.permissions);
   const model = resolveModel(spec, env);
   // The document's own function, on both branches: rewriting the triple here
   // would satisfy the same assertions while quietly forking the format.
   const composed = composeWithSystemPromptFlag(spec);
-  const inline = combinedBytes(spec) < ARGV_INLINE_LIMIT_BYTES;
+  const inline = combinedBytes(spec) < argvInlineLimitBytes(platform);
 
   const args = [
     '--print',

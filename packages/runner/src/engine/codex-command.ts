@@ -102,7 +102,25 @@ const END_OF_OPTIONS = '--';
  * is Portuguese, and an accented character is two bytes to the kernel and one
  * unit to JavaScript.
  */
-export const ARGV_INLINE_LIMIT_BYTES = 64 * 1024;
+export const ARGV_INLINE_LIMIT_POSIX_BYTES = 64 * 1024;
+
+/**
+ * The same limit on Windows (t957): `CreateProcess` caps the WHOLE command line
+ * at 32,767 UTF-16 units, so a composition of 30–64 KiB that was inlined made
+ * the spawn fail with `ENAMETOOLONG`. 12 KiB leaves room for the other flags
+ * and the working directory, and it is conservative on purpose: bytes are
+ * always at least the unit count. It bites here too — the whole composition is
+ * ONE argv element.
+ */
+export const ARGV_INLINE_LIMIT_WIN32_BYTES = 12 * 1024;
+
+/** The inline limit for a platform: Windows is the only one with the low ceiling. */
+export function argvInlineLimitBytes(platform: NodeJS.Platform): number {
+  return platform === 'win32' ? ARGV_INLINE_LIMIT_WIN32_BYTES : ARGV_INLINE_LIMIT_POSIX_BYTES;
+}
+
+/** The inline limit of the platform this process runs on. */
+export const ARGV_INLINE_LIMIT_BYTES = argvInlineLimitBytes(process.platform);
 
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
@@ -141,7 +159,7 @@ export interface EngineCommand {
  *   part of the prompt or move the prompt out of last place, and one of those
  *   two is always true.
  *
- *   Past {@link ARGV_INLINE_LIMIT_BYTES} it goes to stdin instead, and the
+ *   Past {@link argvInlineLimitBytes} (by platform) it goes to stdin instead, and the
  *   positional goes away WITH it (t203). The two halves are one move, not two:
  *   `codex exec --help` says stdin is appended as a `<stdin>` block "if stdin
  *   is piped **and a prompt is also provided**", so keeping both would deliver
@@ -162,13 +180,14 @@ export interface EngineCommand {
 export function buildCommand(
   spec: SessionSpec,
   env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): EngineCommand {
   const model = resolveModel(spec, env);
   const { sandboxArgs } = resolveCodexPermissions(spec.permissions);
   const composed = composeSingleArgument(spec);
   const inline =
     Buffer.byteLength(spec.instructions, 'utf8') + Buffer.byteLength(spec.prompt, 'utf8') <
-    ARGV_INLINE_LIMIT_BYTES;
+    argvInlineLimitBytes(platform);
 
   const args = [
     CODEX_SUBCOMMAND,

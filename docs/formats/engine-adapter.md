@@ -1157,7 +1157,7 @@ CLI's review used. The primary sources:
 - **A 12 KiB inline ceiling on Windows (t684).** `CreateProcess` caps the whole
   command line at 32,767 UTF-16 units, so the composition leaves the argv for
   stdin past 12 KiB there (64 KiB elsewhere), still counted in UTF-8 bytes.
-  Claude Code and Codex keep 64 KiB.
+  Claude Code and Codex take the same ceiling since t957 (adjustment 16).
 - **The Windows stop is `taskkill /PID <pid> /T /F` (t684).** A negative pid is a
   POSIX group and throws on Windows, so the lifecycle kills the whole tree with
   `taskkill`, for SIGTERM and SIGKILL alike (there is no graceful signal). A
@@ -1599,10 +1599,12 @@ and the kit's C2, which verifies it by what the process received.
       `-s`, `-C`, `--disallowedTools`), which all still come BEFORE it.
 
     **The design is by size, and the old path stays intact.** Below 64 KiB
-    combined — UTF-8 bytes of `instructions` + `prompt`, never `.length`, because
-    this project's content is Portuguese and an accented character is two bytes
-    to the kernel and one unit to JavaScript — the argv is exactly the one from
-    before, with the extra `--`. Above it, `claude-code` writes the instructions
+    combined (12 KiB on Windows, where `CreateProcess` caps the whole command
+    line at 32,767 UTF-16 units; see adjustment 16) — UTF-8 bytes of
+    `instructions` + `prompt`, never `.length`, because this project's content
+    is Portuguese and an accented character is two bytes to the kernel and one
+    unit to JavaScript — the argv is exactly the one from before, with the extra
+    `--`. Above it, `claude-code` writes the instructions
     into an ephemeral 0600 file in the `workingDir` (`--system-prompt-file`,
     which the main `--help` does not list but the description of `--bare` cites
     as `--system-prompt[-file]`, and which was measured working) and sends the
@@ -1810,6 +1812,29 @@ and the kit's C2, which verifies it by what the process received.
     carrying one of them, instead of counting five attempts; every other cause
     (`ENOENT`, `EMFILE`, `EACCES`, a builder that threw) still retries as before.
     No interface change: `SessionStartError` keeps its constructor.
+
+16. **Claude Code and Codex take the Windows inline ceiling too** (2026-11-02).
+    Issue #3: on Windows a claude-code node whose `instructions` + `prompt`
+    weighed roughly 30 to 64 KiB made `spawn` throw `ENAMETOOLONG`, so the job
+    was blocked before any session opened and every retry failed the same way.
+    Both command modules still inlined up to 64 KiB, a ceiling chosen against
+    Linux and macOS only, while `CreateProcess` caps the WHOLE command line at
+    32,767 UTF-16 units. `command.ts` and `codex-command.ts` now export
+    `ARGV_INLINE_LIMIT_POSIX_BYTES` (64 KiB), `ARGV_INLINE_LIMIT_WIN32_BYTES`
+    (12 KiB), `argvInlineLimitBytes(platform)` and
+    `ARGV_INLINE_LIMIT_BYTES = argvInlineLimitBytes(process.platform)`, the
+    names and values `copilot-command.ts` has had since t684, and each
+    `buildCommand` gained a trailing `platform` parameter defaulting to
+    `process.platform`. The values stay duplicated per adapter, not shared. The
+    comparison is still strict and still in UTF-8 bytes. The oversized path is
+    unchanged (the `--system-prompt-file` plus stdin for Claude Code, stdin with
+    no positional for Codex), and for `linux` and `darwin` the argv is
+    byte-for-byte what it was. The reporter applied the same change to
+    `command.ts` locally and the same source ran end to end, so the oversized
+    path of Claude Code is known to work on Windows; the same evidence does not
+    exist for Codex. Proof on real Windows is owed by the operator: re-run the
+    reporter's objectify case on Windows 11 (issue #3), and a Codex node with
+    30–64 KiB of content (`packages/runner/README.md`, "Windows").
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

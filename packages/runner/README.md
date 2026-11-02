@@ -70,8 +70,11 @@ The Copilot engine runs on native Windows (t684). Four behaviours differ there:
 - **The whole process tree is stopped.** A cancel or a timeout runs
   `taskkill /PID <pid> /T /F`, since a POSIX process group does not exist. The
   session is recorded with a `null` exit code. The shell adapter does the same.
-- **The command line stays under the ceiling.** Past 12 KiB (instructions plus
-  prompt, in bytes) the composition goes to stdin instead of the argv.
+- **The command line stays under the ceiling.** On all three engines (Copilot
+  since t684, Claude Code and Codex since t957), past 12 KiB (instructions plus
+  prompt, in bytes) the content goes off the argv instead: to stdin for Copilot
+  and Codex, and to an ephemeral `--system-prompt-file` plus stdin for Claude
+  Code. Other platforms keep 64 KiB.
 - **The worker is isolated.** `CARTOGRAFO_TOKEN` is removed from its
   environment, and the CLI runs with `--no-custom-instructions` and
   `--no-ask-user`, so it neither loads `AGENTS.md` nor waits for an answer.

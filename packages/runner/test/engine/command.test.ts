@@ -14,6 +14,8 @@ import { test } from 'node:test';
 
 import {
   ARGV_INLINE_LIMIT_BYTES,
+  ARGV_INLINE_LIMIT_POSIX_BYTES,
+  ARGV_INLINE_LIMIT_WIN32_BYTES,
   CLAUDE_BINARY,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_TRIVIAL_MODEL,
@@ -21,6 +23,7 @@ import {
   PERMISSION_MODE_VARIABLE,
   SYSTEM_PROMPT_FILE_NAME,
   TRIVIAL_MODEL_VARIABLE,
+  argvInlineLimitBytes,
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/command.ts';
@@ -496,8 +499,10 @@ const promptBytes = Buffer.byteLength(PROMPT, 'utf8');
 /** Instructions sized so that `instructions + prompt` weigh exactly `total` bytes. */
 const fillingTo = (total: number): string => 'a'.repeat(total - promptBytes);
 
-test('t203 — the inline limit is 64 KiB, under both operating-system ceilings', () => {
-  assert.equal(ARGV_INLINE_LIMIT_BYTES, 64 * 1024);
+test('t203 — the POSIX inline limit is 64 KiB, under both operating-system ceilings', () => {
+  // The POSIX constant and not the platform one: on Windows the platform
+  // constant is 12 KiB (t957), and this suite has to be correct on every host.
+  assert.equal(ARGV_INLINE_LIMIT_POSIX_BYTES, 64 * 1024);
 });
 
 test('t203 — below the limit the argv is today\'s, plus a `--` before the prompt', () => {
@@ -583,6 +588,110 @@ test('t203 — the two fields are summed, not measured one at a time', () => {
   const { stdin } = buildCommand(spec({ instructions: half, prompt: half }), {});
 
   assert.equal(stdin, half, 'the sum of the two fields is what the kernel has to carry');
+});
+
+/* --- the Windows command-line ceiling (t957) -------------------------------- */
+
+/**
+ * `CreateProcess` caps the WHOLE command line at 32,767 UTF-16 units, so on
+ * Windows content of 30-64 KiB that was inlined made the spawn fail with
+ * `ENAMETOOLONG`. Every test passes `platform` explicitly, so they run on any
+ * host.
+ */
+const WIN_LIMIT = 12 * 1024;
+const THIRTY_KIB = 30 * 1024;
+
+test('t957 — the limit is 12 KiB on win32 and 64 KiB everywhere else', () => {
+  assert.equal(argvInlineLimitBytes('win32'), 12 * 1024);
+  assert.equal(argvInlineLimitBytes('linux'), 64 * 1024);
+  assert.equal(argvInlineLimitBytes('darwin'), 64 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_POSIX_BYTES, 64 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_WIN32_BYTES, 12 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_BYTES, argvInlineLimitBytes(process.platform));
+});
+
+test('t957 — win32, 30 KiB: the content leaves the argv for the file and stdin', () => {
+  const instructions = fillingTo(THIRTY_KIB);
+  const { args, stdin, ephemeralFile } = buildCommand(spec({ instructions }), {}, 'win32');
+
+  assert.ok(!args.includes('--system-prompt'), 'the inline flag has to go');
+  assert.ok(!args.includes('--'), 'no end-of-options marker: there is no positional left');
+  assert.deepEqual(args.slice(-2), ['--system-prompt-file', SYSTEM_PROMPT_FILE_NAME]);
+  assert.ok(
+    !args.some((argument) => argument === instructions || argument === PROMPT),
+    'no argv element may still carry the content',
+  );
+  assert.equal(stdin, PROMPT);
+  assert.deepEqual(ephemeralFile, {
+    relativePath: SYSTEM_PROMPT_FILE_NAME,
+    content: instructions,
+  });
+});
+
+test('t957 — win32 boundary: one byte below 12 KiB stays inline, 12 KiB itself leaves', () => {
+  const below = buildCommand(spec({ instructions: fillingTo(WIN_LIMIT - 1) }), {}, 'win32');
+  assert.ok(below.args.includes('--system-prompt'));
+  assert.equal(below.stdin, undefined);
+  assert.equal(below.args.at(-1), PROMPT);
+
+  const at = buildCommand(spec({ instructions: fillingTo(WIN_LIMIT) }), {}, 'win32');
+  assert.equal(at.stdin, PROMPT, 'strict `<`: at exactly the limit the content leaves');
+  assert.equal(at.args.at(-2), '--system-prompt-file');
+});
+
+test('t957 — win32 counts UTF-8 bytes, not UTF-16 units', () => {
+  const accented = '\u00e1'.repeat(WIN_LIMIT - 2_000);
+  assert.ok(accented.length < WIN_LIMIT, 'the fixture is under the limit by .length');
+  assert.ok(Buffer.byteLength(accented, 'utf8') > WIN_LIMIT, 'and over it by bytes');
+
+  const { args, stdin } = buildCommand(spec({ instructions: accented }), {}, 'win32');
+
+  assert.equal(stdin, PROMPT);
+  assert.equal(args.at(-2), '--system-prompt-file');
+});
+
+test('t957 — win32, the largest inline case, fits the whole command line under 32,000 units', () => {
+  const { command, args } = buildCommand(
+    spec({ instructions: fillingTo(WIN_LIMIT - 1) }),
+    {},
+    'win32',
+  );
+
+  const line = [command, ...args];
+  const units = line.reduce((sum, element) => sum + element.length, 0) + line.length;
+  assert.ok(units < 32_000, `the command line is ${units} UTF-16 units`);
+});
+
+test('t957 — linux and darwin keep today\'s argv and today\'s 64 KiB boundary', () => {
+  for (const platform of ['linux', 'darwin'] as const) {
+    const instructions = fillingTo(THIRTY_KIB);
+    const { args, stdin } = buildCommand(spec({ instructions }), {}, platform);
+    assert.deepEqual(args.slice(-4), ['--system-prompt', instructions, '--', PROMPT]);
+    assert.equal(stdin, undefined);
+
+    const below = buildCommand(
+      spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_POSIX_BYTES - 1) }),
+      {},
+      platform,
+    );
+    assert.equal(below.stdin, undefined);
+    assert.equal(below.args.at(-1), PROMPT);
+
+    const at = buildCommand(
+      spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_POSIX_BYTES) }),
+      {},
+      platform,
+    );
+    assert.equal(at.stdin, PROMPT);
+    assert.equal(at.args.at(-2), '--system-prompt-file');
+  }
+});
+
+test('t957 — omitting `platform` is the same as passing process.platform', () => {
+  for (const size of [THIRTY_KIB, WIN_LIMIT - 1, WIN_LIMIT, ARGV_INLINE_LIMIT_POSIX_BYTES]) {
+    const subject = spec({ instructions: fillingTo(size) });
+    assert.deepEqual(buildCommand(subject, {}), buildCommand(subject, {}, process.platform));
+  }
 });
 
 test('t175 — the tier flag obeys the same ordering discipline as every other flag', () => {

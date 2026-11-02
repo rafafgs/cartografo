@@ -22,10 +22,13 @@ import { test } from 'node:test';
 
 import {
   ARGV_INLINE_LIMIT_BYTES,
+  ARGV_INLINE_LIMIT_POSIX_BYTES,
+  ARGV_INLINE_LIMIT_WIN32_BYTES,
   CODEX_BINARY,
   ENGINE_STDIO,
   MODEL_FLAG,
   TRIVIAL_MODEL_VARIABLE,
+  argvInlineLimitBytes,
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/codex-command.ts';
@@ -354,8 +357,10 @@ const promptBytes = Buffer.byteLength(PROMPT, 'utf8');
 /** Instructions sized so that the composed argument crosses `total` bytes. */
 const fillingTo = (total: number): string => 'a'.repeat(total - promptBytes);
 
-test('t203 — the inline limit is 64 KiB, the same margin the other adapter takes', () => {
-  assert.equal(ARGV_INLINE_LIMIT_BYTES, 64 * 1024);
+test('t203 — the POSIX inline limit is 64 KiB, the same margin the other adapter takes', () => {
+  // The POSIX constant and not the platform one: on Windows the platform
+  // constant is 12 KiB (t957), and this suite has to be correct on every host.
+  assert.equal(ARGV_INLINE_LIMIT_POSIX_BYTES, 64 * 1024);
 });
 
 test('t203 — below the limit the composed argument is preceded by `--`', () => {
@@ -423,6 +428,101 @@ test('t203 — the decision counts UTF-8 bytes, not UTF-16 units', () => {
     composeSingleArgument(subject),
     'a `.length`-based check would have left this content in the argv',
   );
+});
+
+/* --- the Windows command-line ceiling (t957) -------------------------------- */
+
+/**
+ * `CreateProcess` caps the WHOLE command line at 32,767 UTF-16 units, and here
+ * the two fields travel composed in ONE argv element. Every test passes
+ * `platform` explicitly, so they run on any host.
+ */
+const WIN_LIMIT = 12 * 1024;
+const THIRTY_KIB = 30 * 1024;
+
+test('t957 — the limit is 12 KiB on win32 and 64 KiB everywhere else', () => {
+  assert.equal(argvInlineLimitBytes('win32'), 12 * 1024);
+  assert.equal(argvInlineLimitBytes('linux'), 64 * 1024);
+  assert.equal(argvInlineLimitBytes('darwin'), 64 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_POSIX_BYTES, 64 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_WIN32_BYTES, 12 * 1024);
+  assert.equal(ARGV_INLINE_LIMIT_BYTES, argvInlineLimitBytes(process.platform));
+});
+
+test('t957 — win32, 30 KiB: the composition leaves the argv for stdin', () => {
+  const subject = spec({ instructions: fillingTo(THIRTY_KIB) });
+  const { args, stdin } = buildCommand(subject, {}, 'win32');
+
+  assert.ok(!args.includes('--'), 'no positional, so no end-of-options marker');
+  assert.notEqual(args.at(-1), composeSingleArgument(subject));
+  assert.ok(
+    !args.some((argument) => argument.includes(PROMPT)),
+    'no argv element may still carry the content stdin carries',
+  );
+  assert.equal(stdin, composeSingleArgument(subject));
+});
+
+test('t957 — win32 boundary: one byte below 12 KiB stays inline, 12 KiB itself leaves', () => {
+  const inline = spec({ instructions: fillingTo(WIN_LIMIT - 1) });
+  const below = buildCommand(inline, {}, 'win32');
+  assert.equal(below.args.at(-1), composeSingleArgument(inline));
+  assert.equal(below.stdin, undefined);
+
+  const leaves = spec({ instructions: fillingTo(WIN_LIMIT) });
+  const at = buildCommand(leaves, {}, 'win32');
+  assert.equal(at.stdin, composeSingleArgument(leaves), 'strict `<`: at the limit it leaves');
+  assert.notEqual(at.args.at(-1), composeSingleArgument(leaves));
+});
+
+test('t957 — win32 counts UTF-8 bytes, not UTF-16 units', () => {
+  const accented = '\u00e1'.repeat(WIN_LIMIT - 2_000);
+  assert.ok(accented.length < WIN_LIMIT, 'the fixture is under the limit by .length');
+  assert.ok(Buffer.byteLength(accented, 'utf8') > WIN_LIMIT, 'and over it by bytes');
+
+  const subject = spec({ instructions: accented });
+  assert.equal(buildCommand(subject, {}, 'win32').stdin, composeSingleArgument(subject));
+});
+
+test('t957 — win32, the largest inline case, fits the whole command line under 32,000 units', () => {
+  const { command, args } = buildCommand(
+    spec({ instructions: fillingTo(WIN_LIMIT - 1) }),
+    {},
+    'win32',
+  );
+
+  const line = [command, ...args];
+  const units = line.reduce((sum, element) => sum + element.length, 0) + line.length;
+  assert.ok(units < 32_000, `the command line is ${units} UTF-16 units`);
+});
+
+test('t957 — linux and darwin keep today\'s argv and today\'s 64 KiB boundary', () => {
+  for (const platform of ['linux', 'darwin'] as const) {
+    const subject = spec({ instructions: fillingTo(THIRTY_KIB) });
+    const { args, stdin } = buildCommand(subject, {}, platform);
+    assert.deepEqual(args.slice(-2), ['--', composeSingleArgument(subject)]);
+    assert.equal(stdin, undefined);
+
+    const below = buildCommand(
+      spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_POSIX_BYTES - 1) }),
+      {},
+      platform,
+    );
+    assert.equal(below.stdin, undefined);
+
+    const at = buildCommand(
+      spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_POSIX_BYTES) }),
+      {},
+      platform,
+    );
+    assert.notEqual(at.stdin, undefined);
+  }
+});
+
+test('t957 — omitting `platform` is the same as passing process.platform', () => {
+  for (const size of [THIRTY_KIB, WIN_LIMIT - 1, WIN_LIMIT, ARGV_INLINE_LIMIT_POSIX_BYTES]) {
+    const subject = spec({ instructions: fillingTo(size) });
+    assert.deepEqual(buildCommand(subject, {}), buildCommand(subject, {}, process.platform));
+  }
 });
 
 test('t203 — the flags of the argv are untouched by the branch', () => {

@@ -21,6 +21,7 @@ import { test } from 'node:test';
 
 import {
   ARGV_INLINE_LIMIT_BYTES,
+  ARGV_INLINE_LIMIT_POSIX_BYTES,
   COPILOT_BINARY,
   ENGINE_STDIO,
   TRIVIAL_MODEL_VARIABLE,
@@ -256,7 +257,8 @@ const promptBytes = Buffer.byteLength(PROMPT, 'utf8');
 const fillingTo = (total: number): string => 'a'.repeat(total - promptBytes);
 
 test('past 64 KiB the composition leaves the argv for stdin, and -p goes with it', () => {
-  assert.equal(ARGV_INLINE_LIMIT_BYTES, 64 * 1024);
+  // The POSIX constant: the platform one is 12 KiB on Windows (t684, t957).
+  assert.equal(ARGV_INLINE_LIMIT_POSIX_BYTES, 64 * 1024);
 
   const subject = spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES + 100) });
   const { args, stdin } = buildCommand(subject, ENGINE_REF, {});

@@ -126,7 +126,7 @@ async function openSession(spec: Partial<SessionSpec> = {}): Promise<LiveSession
     workingDir,
     recordPath,
     ended,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }),
   };
 }
 
@@ -308,6 +308,6 @@ test('t203 AT — an engine that dies before reading stdin does not bring the ru
     // what makes this case able to see it at all.
     await new Promise((resolve) => setTimeout(resolve, 300));
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });

@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { SLOW_BOOT_DELAY_MS, START_UP_ALLOWANCE_MS } from '../../src/engine/conformance-kit.ts';
 import { CopilotAdapter } from '../../src/engine/copilot-adapter.ts';
 import { buildCommand } from '../../src/engine/copilot-command.ts';
 import {
@@ -183,6 +184,7 @@ interface Ending {
  */
 async function endedBy(
   how: 'exit' | 'cancel' | 'wall-clock' | 'inactivity',
+  controls: Record<string, string> = {},
 ): Promise<{ endings: Ending[]; survivors: number[] }> {
   const workingDir = mkdtempSync(join(tmpdir(), `cartografo-t675-copilot-${how}-`));
   // Outside the working directory: the fake reproduces the files of its cwd in
@@ -206,6 +208,7 @@ async function endedBy(
     FAKE_ENGINE_EXIT_CODE: '0',
   };
   if (how === 'exit') envOverrides.FAKE_ENGINE_DELAY_MS = '300';
+  Object.assign(envOverrides, controls);
 
   try {
     const handle = await adapter.startSession(
@@ -213,8 +216,10 @@ async function endedBy(
         workingDir,
         instructions: 'node instructions',
         prompt: 'the work of this turn',
-        timeoutSeconds: how === 'wall-clock' ? 1 : 60,
-        silenceSeconds: how === 'inactivity' ? 1 : undefined,
+        // These cases assert the status and the cleanup, not the window's length,
+        // so it only has to outlast the engine's boot (t960).
+        timeoutSeconds: how === 'wall-clock' ? START_UP_ALLOWANCE_MS / 1_000 : 60,
+        silenceSeconds: how === 'inactivity' ? START_UP_ALLOWANCE_MS / 1_000 : undefined,
         envOverrides,
       },
       {
@@ -239,7 +244,7 @@ async function endedBy(
     const ready = (found: Sidecar | null): found is Sidecar =>
       found !== null && (how === 'exit' || found.grandchildPid !== null);
     let record = readRecord();
-    for (let attempt = 0; attempt < 100 && !ready(record); attempt += 1) {
+    for (let attempt = 0; attempt < 400 && !ready(record); attempt += 1) {
       await sleep(50);
       record = readRecord();
     }
@@ -280,5 +285,23 @@ for (const how of ['exit', 'cancel', 'wall-clock', 'inactivity'] as const) {
     assert.equal(endings[0]?.status, expected[how]);
     if (how === 'wall-clock') assert.equal(endings[0]?.detail?.timeoutReason, 'wall_clock');
     if (how === 'inactivity') assert.equal(endings[0]?.detail?.timeoutReason, 'silence');
+  });
+}
+
+// t960: the two stops whose window opens at spawn, against an engine that takes
+// as long to come up as a loaded machine makes it.
+for (const [how, reason] of [
+  ['wall-clock', 'wall_clock'],
+  ['inactivity', 'silence'],
+] as const) {
+  test(`t960 — slow boot, ending by ${how}: the sidecar still lands and no process survives`, async () => {
+    const { endings, survivors } = await endedBy(how, {
+      FAKE_ENGINE_BOOT_DELAY_MS: String(SLOW_BOOT_DELAY_MS),
+    });
+
+    assert.equal(endings.length, 1, 'onFinished has to run exactly once');
+    assert.deepEqual(survivors, [], 'a process of the session\'s group outlived its end');
+    assert.equal(endings[0]?.status, 'timed_out');
+    assert.equal(endings[0]?.detail?.timeoutReason, reason);
   });
 }

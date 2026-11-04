@@ -46,6 +46,22 @@ a real engine.
 CI runs exactly those three commands on Node 22 and 24, and then checks that the
 suite wrote nothing inside the checkout.
 
+A red in `npm test` is meant to be a real one, on a loaded machine too. To check
+a test that depends on timing, run the suite under load:
+
+```
+node scripts/test-under-load.mjs [--multiple <x>] [--cores <n>] [-- <command...>]
+```
+
+`npm run test:load` is the same script with its defaults: `npm test` next to
+`--multiple` (2) times the core count of busy-looping processes, which stop when
+the command ends. The exit code is the command's.
+
+The measurement is noisy when other worktrees are running: their suites add to
+the load you asked for. Record the load average (`uptime`) with each run; the
+script prints it on stderr when it starts. Earlier measurements and what they
+found are in [`docs/test-reliability.md`](docs/test-reliability.md).
+
 ## Conventions this repository actually enforces
 
 **English, everywhere** ([D24](DECISIONS.md)). Code, identifiers, commit

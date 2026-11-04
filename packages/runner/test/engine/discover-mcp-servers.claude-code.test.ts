@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
+import { SLOW_BOOT_DELAY_MS, START_UP_ALLOWANCE_MS } from '../../src/engine/conformance-kit.ts';
 import {
   BASELINE_CAPABILITIES,
   type CliProbe,
@@ -166,7 +167,48 @@ test(
       probeEnvironment: {},
       credentialsPath: credentials,
       mcpWorkingDir: root,
-      mcpProbeDeadlineMs: 250,
+      // Only the deadline can settle this call, so how long it takes is not what
+      // these cases assert. It has to outlast the child's boot, or the pid file
+      // they read is never written (t960).
+      mcpProbeDeadlineMs: START_UP_ALLOWANCE_MS,
+    });
+
+    const discovery = await adapter.discoverMcpServers();
+
+    assert.equal(discovery.origin, 'file');
+    assert.deepEqual(discovery.servers, [{ name: 'flowpilot' }]);
+
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    assert.ok(Number.isInteger(pid) && pid > 0, 'the fixture never reported a pid');
+    assert.ok(await died(pid), `the probe left ${pid} running past its deadline`);
+  }),
+);
+
+test(
+  't960 AT7 — a probe child that boots late is still settled by the deadline, and leaves nothing',
+  withFixtures(async (root) => {
+    const pidFile = join(root, 'pid');
+    const credentials = join(root, '.claude.json');
+    writeFileSync(credentials, '{"mcpServers":{"flowpilot":{}}}');
+
+    const adapter = new ClaudeCodeAdapter({
+      // What a loaded machine does to `node -e`: the first line of the script
+      // runs a boot delay after the spawn.
+      mcpListCommandBuilder: () => ({
+        command: process.execPath,
+        args: [
+          '-e',
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)), ${String(SLOW_BOOT_DELAY_MS)});` +
+            'setInterval(() => {}, 1000);',
+        ],
+      }),
+      probeEnvironment: {},
+      credentialsPath: credentials,
+      mcpWorkingDir: root,
+      // Only the deadline can settle this call, so how long it takes is not what
+      // these cases assert. It has to outlast the child's boot, or the pid file
+      // they read is never written (t960).
+      mcpProbeDeadlineMs: START_UP_ALLOWANCE_MS,
     });
 
     const discovery = await adapter.discoverMcpServers();
@@ -248,9 +290,9 @@ test('t400 — an adapter without the method reports "not implemented", not zero
   assert.notEqual(answered, 'not implemented');
 });
 
-/** Polls until the pid is gone, up to two seconds. */
+/** Polls until the pid is gone, up to five seconds. */
 async function died(pid: number): Promise<boolean> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       process.kill(pid, 0);
     } catch {

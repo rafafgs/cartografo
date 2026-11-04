@@ -73,6 +73,31 @@ const SETTLE_MS = 300;
  */
 const SILENCE_TOLERANCE_MS = 3_000;
 
+/**
+ * How late a freshly spawned engine may come up in the slow-boot cases (t960).
+ *
+ * Set as `FAKE_ENGINE_BOOT_DELAY_MS`. It is at least the slowest spawn-to-sidecar
+ * time measured at a load of twice the core count, rounded up; the measurement
+ * is in `docs/test-reliability.md`.
+ */
+export const SLOW_BOOT_DELAY_MS = 3_000;
+
+/**
+ * What a window that opens at spawn leaves for the engine to come up (t960).
+ *
+ * The watchdogs are armed when the process is spawned, and a freshly spawned
+ * `node` needs CPU before it can read stdin, write a sidecar or print a line. A
+ * window shorter than that lets the watchdog kill an engine that has not said
+ * anything yet, and the case then fails on the sidecar it needed, which has
+ * nothing to do with what it certifies.
+ *
+ * So a case that asserts the escalation, the status or the cleanup uses this as
+ * its window, because those assertions do not depend on the window's length. It
+ * is the slow boot plus the same again, so the slow-boot cases still pass when
+ * the machine is loaded as well.
+ */
+export const START_UP_ALLOWANCE_MS = SLOW_BOOT_DELAY_MS * 2;
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -126,6 +151,14 @@ export interface KitOptions {
    * that the exemption is WRITTEN DOWN, next to the adapter it exempts.
    */
   readonly skip?: Readonly<Record<string, string>>;
+  /**
+   * Runs ONLY the named cases, with the engine told to boot late (t960).
+   *
+   * The cases keep what they certify. This is how a timing case proves it does
+   * not depend on how fast the machine starts a process, without needing a
+   * loaded machine to prove it on.
+   */
+  readonly slowBoot?: { readonly delayMs: number; readonly cases: readonly string[] };
 }
 
 /** One outcome, as the collector saw it — with the instant it landed (C9). */
@@ -379,11 +412,24 @@ export function runConformanceKit(
    * every other case stays the zero-argument function it was.
    */
   const kitTest = (title: string, body: (t: TestContext) => Promise<void>): void => {
-    const reason = options.skip?.[title.split(' ')[0] ?? ''];
+    const key = title.split(' ')[0] ?? '';
+    if (options.slowBoot !== undefined && !options.slowBoot.cases.includes(key)) return;
+    const reason = options.skip?.[key];
     test(title, reason === undefined ? {} : { skip: reason }, body);
   };
 
-  describe('EngineAdapter conformance kit', () => {
+  /** What every timing case adds to its environment; empty unless asked for. */
+  const bootControls: Record<string, string> =
+    options.slowBoot === undefined
+      ? {}
+      : { FAKE_ENGINE_BOOT_DELAY_MS: String(options.slowBoot.delayMs) };
+
+  const suite =
+    options.slowBoot === undefined
+      ? 'EngineAdapter conformance kit'
+      : 'EngineAdapter conformance kit, slow boot';
+
+  describe(suite, () => {
     kitTest('C1 — basic session', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
@@ -495,8 +541,10 @@ export function runConformanceKit(
         workingDir: scenario.workingDir,
         instructions: 'node instructions',
         prompt: 'work that never ends',
-        timeoutSeconds: 1,
+        // Not what this case measures: only that running out is `timed_out`.
+        timeoutSeconds: START_UP_ALLOWANCE_MS / 1_000,
         envOverrides: {
+          ...bootControls,
           FAKE_ENGINE_RECORD: scenario.recordPath,
           FAKE_ENGINE_HANG: '1',
         },
@@ -504,7 +552,10 @@ export function runConformanceKit(
 
       try {
         const handle = await adapter.startSession(spec, collector);
-        const end = await collector.awaitEnd('C3', deadline);
+        const end = await collector.awaitEnd(
+          'C3',
+          Math.max(deadline, START_UP_ALLOWANCE_MS + SILENCE_TOLERANCE_MS),
+        );
 
         assert.equal(end.status, 'timed_out', 'C3: running the clock out is "timed_out", not "failed"');
         requireBaselineStatus(end.status, 'C3');
@@ -513,7 +564,7 @@ export function runConformanceKit(
         await requireProcessDead((await scenario.readRecord()).pid, 'C3');
 
         // Past twice the original deadline, the clock must not fire again.
-        await sleep(1_000 + SETTLE_MS);
+        await sleep(START_UP_ALLOWANCE_MS + SETTLE_MS);
         assert.equal(collector.endings.length, 1, 'C3: onFinished happened more than once');
       } finally {
         scenario.cleanup();
@@ -786,13 +837,20 @@ export function runConformanceKit(
       // that a watchdog which never resets would fire visibly early: the
       // heartbeats span two whole silence windows, and an unreset timer would
       // stop the session in the middle of them.
+      //
+      // The window opens at spawn, so it has to cover the boot AND the wait
+      // before the first line (t960). A 1s window with a first line at 500ms
+      // left 500ms for `node` to boot, which is how a loaded machine stopped the
+      // session after 0 of 4. So the window and the interval scale up together
+      // and stay in the same ratio: half the window is left for the boot, and
+      // the assertions below keep their meaning relative to the window.
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
 
-      const silenceSeconds = 1;
-      const silenceMs = silenceSeconds * 1_000;
-      const heartbeatMs = silenceMs / 2;
+      const heartbeatMs = START_UP_ALLOWANCE_MS;
+      const silenceMs = heartbeatMs * 2;
+      const silenceSeconds = silenceMs / 1_000;
       const heartbeats: FakeLine[] = [1, 2, 3, 4].map((index) => ({
         stream: 'stdout',
         text: `heartbeat ${index}`,
@@ -806,6 +864,7 @@ export function runConformanceKit(
         timeoutSeconds: 60,
         silenceSeconds,
         envOverrides: {
+          ...bootControls,
           FAKE_ENGINE_RECORD: scenario.recordPath,
           FAKE_ENGINE_LINES: linesForEnv(heartbeats),
           // One line per interval instead of all at once — and then, with
@@ -818,7 +877,13 @@ export function runConformanceKit(
       try {
         const startedAt = Date.now();
         const handle = await adapter.startSession(spec, collector);
-        const end = await collector.awaitEnd('C9', deadline);
+        const end = await collector.awaitEnd(
+          'C9',
+          Math.max(
+            deadline,
+            START_UP_ALLOWANCE_MS + heartbeats.length * heartbeatMs + silenceMs + SILENCE_TOLERANCE_MS,
+          ),
+        );
 
         assert.equal(
           end.status,

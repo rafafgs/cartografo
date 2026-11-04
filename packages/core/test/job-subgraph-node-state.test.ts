@@ -210,7 +210,10 @@ test('t638 AT8 — the board costs the same statements with subgraph-node jobs i
     const original = handle.prepare.bind(ctx.db);
     let prepared = 0;
     handle.prepare = (sql: string): unknown => {
-      prepared += 1;
+      // The webhook and hook dispatchers tick once a second on this same handle.
+      // A tick inside this window is not the board's cost: three statements each,
+      // which is the 16 against 13 a loaded machine reported (t960).
+      if (!/\b(?:webhook|hook)_(?:subscription|delivery)\b/.test(sql)) prepared += 1;
       return original(sql);
     };
     try {

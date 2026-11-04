@@ -35,7 +35,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { runConformanceKit } from '../../src/engine/conformance-kit.ts';
+import { SLOW_BOOT_DELAY_MS, runConformanceKit } from '../../src/engine/conformance-kit.ts';
 import { ShellAdapter } from '../../src/engine/shell-adapter.ts';
 import {
   BASELINE_CAPABILITIES,
@@ -70,6 +70,19 @@ runConformanceKit(
       C11: 'oversized content inside command.argv is out of scope for t332',
     },
   },
+);
+
+// t960 AT6: the two cases with a window that opens at spawn, against an engine
+// that takes as long to come up as a loaded machine makes it. One adapter is
+// enough: the race is in the kit's windows, and this is the cheapest file.
+runConformanceKit(
+  (fakeEnginePath) =>
+    new ShellAdapter({
+      commandBuilder: () => ({ command: process.execPath, args: [fakeEnginePath] }),
+      graceMs: 300,
+    }),
+  FAKE_ENGINE,
+  { slowBoot: { delayMs: SLOW_BOOT_DELAY_MS, cases: ['C3', 'C9'] } },
 );
 
 test('engineName is the stable identifier persisted on the session row', () => {

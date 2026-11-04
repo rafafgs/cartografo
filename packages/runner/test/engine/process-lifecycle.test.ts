@@ -13,14 +13,19 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { reapIfAlive } from '../../src/engine/conformance-kit.ts';
+import {
+  SLOW_BOOT_DELAY_MS,
+  START_UP_ALLOWANCE_MS,
+  reapIfAlive,
+} from '../../src/engine/conformance-kit.ts';
 import {
   ProcessLifecycle,
   type LifecycleChannel,
@@ -40,7 +45,15 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 const GRACE_MS = 200;
 
 /** Ceiling on any one wait of this file. */
-const DEADLINE_MS = 10_000;
+const DEADLINE_MS = 20_000;
+
+/**
+ * A window these cases do not measure, in the unit a spec takes it.
+ *
+ * They assert the status, the reason and the cleanup, so the window only has to
+ * outlast the engine's boot (t960).
+ */
+const WINDOW_SECONDS = START_UP_ALLOWANCE_MS / 1_000;
 
 /** What a listener heard, in order. */
 type Heard =
@@ -260,22 +273,23 @@ const STOPS = [
   },
   {
     name: 'wall clock',
-    spec: { timeoutSeconds: 0.4 },
+    spec: { timeoutSeconds: WINDOW_SECONDS },
     status: 'timed_out',
     reason: 'wall_clock',
     order: false,
   },
   {
     name: 'inactivity watchdog',
-    spec: { timeoutSeconds: 30, silenceSeconds: 0.3 },
+    spec: { timeoutSeconds: 30, silenceSeconds: WINDOW_SECONDS },
     status: 'timed_out',
     reason: 'silence',
     order: false,
   },
 ] as const;
 
-for (const stop of STOPS) {
-  test(`t678 AT3/AT4 — ${stop.name}: finishes once, and the escalation leaves no process of the group`, async (t) => {
+/** One stop, end to end. `controls` is whatever else the engine is told. */
+function stopCase(stop: (typeof STOPS)[number], controls: Record<string, string> = {}) {
+  return async (t: TestContext): Promise<void> => {
     const workingDir = scratch(t);
     const recordPath = join(workingDir, 'record.json');
     const helper = lifecycle();
@@ -286,6 +300,7 @@ for (const stop of STOPS) {
       FAKE_ENGINE_IGNORE_SIGTERM: '1',
       FAKE_ENGINE_SPAWN_CHILD: '1',
       FAKE_ENGINE_RECORD: recordPath,
+      ...controls,
     });
 
     const id = await helper.start({ ...stop.spec, workingDir }, heard.listener, {
@@ -309,6 +324,82 @@ for (const stop of STOPS) {
     await requireGone(record.pid, `${stop.name}: engine`);
     await requireGone(record.grandchildPid, `${stop.name}: grandchild that ignores SIGTERM`);
     await requireGone(-record.pid, `${stop.name}: process group`);
+  };
+}
+
+for (const stop of STOPS) {
+  test(
+    `t678 AT3/AT4 — ${stop.name}: finishes once, and the escalation leaves no process of the group`,
+    stopCase(stop),
+  );
+}
+
+// t960 AT4: the same stops against an engine that takes as long to come up as a
+// loaded machine makes it. Cancelling is left out: it waits for the sidecar
+// before it stops anything, so there is no window for a late boot to miss.
+for (const stop of STOPS.filter((candidate) => !candidate.order)) {
+  test(
+    `t960 AT4 — slow boot, ${stop.name}: the sidecar still lands, finishes once, leaves no process`,
+    stopCase(stop, { FAKE_ENGINE_BOOT_DELAY_MS: String(SLOW_BOOT_DELAY_MS) }),
+  );
+}
+
+test('t960 AT5 — the boot delay holds a session back by about that long', (t) => {
+  const workingDir = scratch(t);
+  const recordPath = join(workingDir, 'record.json');
+
+  const startedAt = Date.now();
+  const run = spawnSync(process.execPath, [FAKE_ENGINE], {
+    cwd: workingDir,
+    input: '',
+    env: {
+      ...process.env,
+      FAKE_ENGINE_RECORD: recordPath,
+      FAKE_ENGINE_BOOT_DELAY_MS: String(SLOW_BOOT_DELAY_MS),
+    },
+  });
+
+  assert.equal(run.status, 0, String(run.stderr));
+  const waited = statSync(recordPath).mtimeMs - startedAt;
+  assert.ok(waited >= SLOW_BOOT_DELAY_MS - 50, `the sidecar landed only ${waited}ms after the spawn`);
+  const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { bootDelayMs: number };
+  assert.equal(record.bootDelayMs, SLOW_BOOT_DELAY_MS);
+});
+
+test('t960 AT5 — with no delay asked for, a session waits for nothing', (t) => {
+  const workingDir = scratch(t);
+  const recordPath = join(workingDir, 'record.json');
+
+  const run = spawnSync(process.execPath, [FAKE_ENGINE], {
+    cwd: workingDir,
+    input: '',
+    env: { ...process.env, FAKE_ENGINE_RECORD: recordPath },
+  });
+
+  assert.equal(run.status, 0, String(run.stderr));
+  const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { bootDelayMs: number };
+  assert.equal(record.bootDelayMs, 0);
+});
+
+for (const [name, args, expected] of [
+  ['--version', ['--version'], '9.9.9 (Fake Engine)\n'],
+  ['mcp list', ['mcp', 'list'], 'fake-listing'],
+] as const) {
+  test(`t960 AT5 — the ${name} probe is not delayed`, () => {
+    // A delay far past the ceiling: a probe that waited would be killed by it
+    // and report no status, whatever the machine's load does to the rest.
+    const run = spawnSync(process.execPath, [FAKE_ENGINE, ...args], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        FAKE_ENGINE_BOOT_DELAY_MS: '600000',
+        FAKE_ENGINE_MCP_LIST: 'fake-listing',
+      },
+    });
+
+    assert.equal(run.status, 0, `the probe did not end by itself: ${String(run.error)}`);
+    assert.equal(run.stdout, expected);
   });
 }
 
@@ -465,7 +556,7 @@ test('t678 AT8 — finish-detail keys travel beside timeoutReason; an empty resu
 
   const workingDir = scratch(t);
   const timed = recorder();
-  await helper.start({ timeoutSeconds: 0.4, workingDir }, timed.listener, {
+  await helper.start({ timeoutSeconds: WINDOW_SECONDS, workingDir }, timed.listener, {
     ...fakeEngine({ FAKE_ENGINE_LINES: lines(['stdout', 'model:m-1']), FAKE_ENGINE_HANG: '1' }),
     state: { models: null },
   });

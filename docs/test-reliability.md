@@ -14,7 +14,67 @@ and the load average reached 260 during these measurements.
 
 <!-- tables:start -->
 
-Measurements in progress: see the tables below once they are filled in.
+## Full suite, before and after
+
+Before is `main` at `63173d2`, after is this branch. "Multiple 0" is a plain `npm test` with no burners. The load average is the 1-minute figure when the run started. Runs of one tree at one multiple ran in sequence, in the order shown. The first before run at multiple 2 also shared the machine with this ticket's own development.
+
+| Tree | Multiple | Run | Load at start | Tests failed | Duration |
+|---|---|---|---|---|---|
+| before | 0 | 1 | 261.4 | 2 | 5m 38s |
+| before | 0 | 2 | 101.5 | 4 | 4m 54s |
+| before | 0 | 3 | 76.7 | 0 | 3m 56s |
+| before | 1 | 1 | 52.2 | 0 | 4m 39s |
+| before | 1 | 2 | 86.0 | 2 | 4m 46s |
+| before | 1 | 3 | 80.0 | 3 | 7m 17s |
+| before | 2 | 1 | 23.4 | 23 | 22m 18s |
+| before | 2 | 2 | 132.0 | 15 | 15m 11s |
+| before | 2 | 3 | 123.1 | 6 | 11m 54s |
+| after | 0 | 1 | 103.6 | 0 | 7m 43s |
+| after | 0 | 2 | 48.9 | 0 | 4m 59s |
+| after | 0 | 3 | 112.0 | 0 | 5m 09s |
+| after | 2 | 1 | 102.0 | 0 | 9m 14s |
+| after | 2 | 2 | 114.1 | 0 | 6m 40s |
+| after | 2 | 3 | 97.3 | 0 | 8m 07s |
+
+| Multiple | Before: runs, red runs, tests failed | After: runs, red runs, tests failed | Mean duration before | Mean duration after |
+|---|---|---|---|---|
+| 0 | 3, 2, 6 | 3, 0, 0 | 4m 49s | 5m 57s |
+| 1 | 3, 2, 5 | not run | 5m 34s | - |
+| 2 | 3, 3, 44 | 3, 0, 0 | 16m 28s | 8m 00s |
+| 4 | not run | not run | - | - |
+
+Runs in which each test was red, across every multiple:
+
+| Test | Before | After |
+|---|---|---|
+| `cli-watch.test.ts` AT1 | 4 | 0 |
+| `cli-watch.test.ts` AT2 | 4 | 0 |
+| `cli-watch.test.ts` AT3a | 3 | 0 |
+| `cli-watch.test.ts` AT5 | 4 | 0 |
+| `conformance-kit.ts` C3 | 2 | 0 |
+| `conformance-kit.ts` C9 | 3 | 0 |
+| `discover-mcp-servers.claude-code.test.ts` t400 | 3 | 0 |
+| `dispatch.test.ts` AT6 | 1 | 0 |
+| `dispatch.test.ts` AT7 | 1 | 0 |
+| `dispatch.test.ts` AT8 | 1 | 0 |
+| `job-relations.test.ts` t636 AT16 | 2 | 0 |
+| `job-subgraph-node-state.test.ts` t638 AT8 | 2 | 0 |
+| `process-lifecycle.test.ts` t678 AT3/AT4 inactivity watchdog | 5 | 0 |
+| `process-lifecycle.test.ts` t678 AT3/AT4 wall clock | 3 | 0 |
+| `process-lifecycle.test.ts` t678 AT8 finish-detail keys travel beside timeoutReason; an empty result is no detail | 4 | 0 |
+| `session-cleanup.copilot.test.ts` t675 AT ending by inactivity | 1 | 0 |
+| `session-cleanup.copilot.test.ts` t675 AT ending by wall-clock | 1 | 0 |
+
+A watchdog killed 7 leaked MCP servers older than 4 minutes during these runs, because each one would otherwise have held a run open forever. All of them were from runs on `main`, in t371 cases at8, at6, at7.
+
+## Still to be measured
+
+- full suite, before, multiple 4: 0 of 3 runs
+- full suite, after, multiple 1: 0 of 3 runs
+- full suite, after, multiple 4: 0 of 3 runs
+- each named file alone: 0 of 96 runs
+- concurrency sweep: 0 of 8 runs. No test is classified (c) so far, and that is not established until this is done
+
 
 <!-- tables:end -->
 

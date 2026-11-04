@@ -52,6 +52,10 @@ import { ClaudeCodeAdapter } from "../../src/engine/claude-code-adapter.ts";
 import { CodexAdapter } from "../../src/engine/codex-adapter.ts";
 import { buildCommand as buildCodexCommand } from "../../src/engine/codex-command.ts";
 import { buildCommand } from "../../src/engine/command.ts";
+import {
+  SLOW_BOOT_DELAY_MS,
+  START_UP_ALLOWANCE_MS,
+} from "../../src/engine/conformance-kit.ts";
 import { DOMAIN_SCOPED_NETWORK_REASON } from "../../src/engine/permission-policy.ts";
 import type {
   EngineAdapter,
@@ -8034,6 +8038,16 @@ test("t423 — a declared artifact is uploaded, the report carries its id, and t
 test("t371 — a node's declared output is delivered once, after the report is accepted", async (parent) => {
   const { baseUrl, token } = await bootUnpatched(parent);
 
+  /**
+   * The deadline of a delivery that hangs (t960).
+   *
+   * `write-external-outputs.ts` gives the handshake the same deadline as the
+   * call, and the server is a `node` that has to boot before it can answer one.
+   * These cases assert how many attempts happen and what a person is asked, so
+   * the window's length is not what they measure.
+   */
+  const DELIVERY_WINDOW_MS = START_UP_ALLOWANCE_MS;
+
   /** One row of `external_call`, as `/v1` publishes it. */
   interface ExternalCall {
     id: number;
@@ -8143,7 +8157,28 @@ test("t371 — a node's declared output is delivered once, after the report is a
   }
 
   /** Writes the `.mcp.json` an adapter reads, pointed at the delivery log. */
-  function mcpConfig(root: string, mode: string, logPath: string): string {
+  /**
+   * `lateBoot` is how a server comes up late without an edit to the fake: a
+   * module that runs before it, which reports the pid and then holds the boot
+   * for as long as a loaded machine would (t960).
+   */
+  function mcpConfig(
+    root: string,
+    mode: string,
+    logPath: string,
+    lateBoot?: { pidPath: string },
+  ): string {
+    const before =
+      lateBoot === undefined
+        ? []
+        : [
+            "--import=data:text/javascript," +
+              encodeURIComponent(
+                `import { writeFileSync } from "node:fs";` +
+                  `writeFileSync(${JSON.stringify(lateBoot.pidPath)}, String(process.pid));` +
+                  `await new Promise((resolve) => setTimeout(resolve, ${String(SLOW_BOOT_DELAY_MS)}));`,
+              ),
+          ];
     writeFileSync(
       path.join(root, ".mcp.json"),
       JSON.stringify({
@@ -8151,7 +8186,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
           reports: {
             type: "stdio",
             command: process.execPath,
-            args: [FAKE_MCP_SERVER],
+            args: [...before, FAKE_MCP_SERVER],
             env: {
               CARTOGRAFO_FAKE_MCP_MODE: mode,
               CARTOGRAFO_FAKE_MCP_CALL_LOG: logPath,
@@ -8199,7 +8234,12 @@ test("t371 — a node's declared output is delivered once, after the report is a
   }
 
   /** Everything one case needs on disk, torn down with the case. */
-  function scratch(t: TestHook, label: string, mode: string): {
+  function scratch(
+    t: TestHook,
+    label: string,
+    mode: string,
+    lateBoot?: { pidPath: string },
+  ): {
     configDir: string;
     workDir: string;
     logPath: string;
@@ -8212,7 +8252,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
       rmSync(workDir, { recursive: true, force: true });
     });
     const logPath = path.join(configDir, "deliveries.jsonl");
-    mcpConfig(configDir, mode, logPath);
+    mcpConfig(configDir, mode, logPath, lateBoot);
     return { configDir, workDir, logPath, opened: [] };
   }
 
@@ -8607,6 +8647,79 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
       assert.equal(after.current_node_id, "conferir", "the work moves on the person's word");
       assert.equal(after.blocked, false);
+    },
+  );
+
+  await parent.test(
+    "t960 AT10 — a server that boots late still gets its one attempt, inside a window that allows for it",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const pidPath = path.join(mkdtempSync(path.join(tmpdir(), "cartografo-t960-pid-")), "pid");
+      t.after(() => rmSync(path.dirname(pidPath), { recursive: true, force: true }));
+      const place = scratch(t, "t960-late", "deliver-hangs-once", { pidPath });
+      const job = await jobOn("delivery-t960-late", 39601, [delivery()], true);
+
+      const outcome = await dispatchWith(
+        createClaudeCodeDispatch,
+        place,
+        linesWithCrossingNote(),
+        { mcpCallTimeoutMs: DELIVERY_WINDOW_MS },
+      )(job.id);
+
+      assert.equal(outcome.blocked, false, JSON.stringify(outcome));
+      assert.deepEqual(
+        mcpDeliveryLog(place.logPath).map((entry) => entry.fate),
+        ["hang"],
+        "the handshake took as long as the machine made it, and the one attempt still happened",
+      );
+    },
+  );
+
+  await parent.test(
+    "t960 AT10 — a handshake that runs out of time closes the server it started",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const pidPath = path.join(mkdtempSync(path.join(tmpdir(), "cartografo-t960-pid-")), "pid");
+      const reapServer = (): void => {
+        if (!existsSync(pidPath)) return;
+        try {
+          process.kill(Number(readFileSync(pidPath, "utf8")), "SIGKILL");
+        } catch {
+          /* already gone: what this test wants */
+        }
+      };
+      // A server left behind keeps this file's process open through its pipes,
+      // so a red here has to end in a report and not in a hung suite.
+      t.after(() => {
+        reapServer();
+        rmSync(path.dirname(pidPath), { recursive: true, force: true });
+      });
+      const place = scratch(t, "t960-leak", "normal", { pidPath });
+      const job = await jobOn("delivery-t960-leak", 39602, [delivery()], true);
+
+      // Shorter than the boot, so the handshake is what runs out.
+      await dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote(), {
+        mcpCallTimeoutMs: 1_000,
+      })(job.id);
+
+      // A server stopped before it reported its pid left nothing to look for.
+      const limit = Date.now() + 5_000;
+      while (!existsSync(pidPath) && Date.now() < limit) await delay(50);
+      if (!existsSync(pidPath)) return;
+
+      const pid = Number(readFileSync(pidPath, "utf8"));
+      const isAlive = (): boolean => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      while (isAlive() && Date.now() < limit + 5_000) await delay(50);
+      assert.equal(isAlive(), false, `the MCP server ${String(pid)} outlived the dispatch`);
     },
   );
 

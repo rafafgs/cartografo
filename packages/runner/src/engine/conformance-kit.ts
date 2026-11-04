@@ -835,20 +835,21 @@ export function runConformanceKit(
       // one that goes quiet is stuck. The case is built so that ONLY the
       // inactivity clock can end it — the wall clock is a minute away — and so
       // that a watchdog which never resets would fire visibly early: the
-      // heartbeats span more than one whole silence window (4 x 1/3 of it), and
-      // an unreset timer would stop the session in the middle of them.
+      // heartbeats span two whole silence windows, and an unreset timer would
+      // stop the session in the middle of them.
       //
       // The window opens at spawn, so it has to cover the boot AND the wait
-      // before the first line (t960); a 1s window with a first line at 500ms
+      // before the first line (t960). A 1s window with a first line at 500ms
       // left 500ms for `node` to boot, which is how a loaded machine stopped the
-      // session after 0 of 4. Both scale together, and the assertions on the
-      // window below keep their meaning relative to it.
+      // session after 0 of 4. So the window and the interval scale up together
+      // and stay in the same ratio: half the window is left for the boot, and
+      // the assertions below keep their meaning relative to the window.
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
 
-      const heartbeatMs = START_UP_ALLOWANCE_MS / 2;
-      const silenceMs = START_UP_ALLOWANCE_MS + heartbeatMs;
+      const heartbeatMs = START_UP_ALLOWANCE_MS;
+      const silenceMs = heartbeatMs * 2;
       const silenceSeconds = silenceMs / 1_000;
       const heartbeats: FakeLine[] = [1, 2, 3, 4].map((index) => ({
         stream: 'stdout',

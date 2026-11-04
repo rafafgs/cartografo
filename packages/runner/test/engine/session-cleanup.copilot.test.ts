@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { SLOW_BOOT_DELAY_MS } from '../../src/engine/conformance-kit.ts';
+import { SLOW_BOOT_DELAY_MS, START_UP_ALLOWANCE_MS } from '../../src/engine/conformance-kit.ts';
 import { CopilotAdapter } from '../../src/engine/copilot-adapter.ts';
 import { buildCommand } from '../../src/engine/copilot-command.ts';
 import {
@@ -216,8 +216,10 @@ async function endedBy(
         workingDir,
         instructions: 'node instructions',
         prompt: 'the work of this turn',
-        timeoutSeconds: how === 'wall-clock' ? 1 : 60,
-        silenceSeconds: how === 'inactivity' ? 1 : undefined,
+        // These cases assert the status and the cleanup, not the window's length,
+        // so it only has to outlast the engine's boot (t960).
+        timeoutSeconds: how === 'wall-clock' ? START_UP_ALLOWANCE_MS / 1_000 : 60,
+        silenceSeconds: how === 'inactivity' ? START_UP_ALLOWANCE_MS / 1_000 : undefined,
         envOverrides,
       },
       {
@@ -242,7 +244,7 @@ async function endedBy(
     const ready = (found: Sidecar | null): found is Sidecar =>
       found !== null && (how === 'exit' || found.grandchildPid !== null);
     let record = readRecord();
-    for (let attempt = 0; attempt < 100 && !ready(record); attempt += 1) {
+    for (let attempt = 0; attempt < 400 && !ready(record); attempt += 1) {
       await sleep(50);
       record = readRecord();
     }

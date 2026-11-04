@@ -82,6 +82,22 @@ const SILENCE_TOLERANCE_MS = 3_000;
  */
 export const SLOW_BOOT_DELAY_MS = 3_000;
 
+/**
+ * What a window that opens at spawn leaves for the engine to come up (t960).
+ *
+ * The watchdogs are armed when the process is spawned, and a freshly spawned
+ * `node` needs CPU before it can read stdin, write a sidecar or print a line. A
+ * window shorter than that lets the watchdog kill an engine that has not said
+ * anything yet, and the case then fails on the sidecar it needed, which has
+ * nothing to do with what it certifies.
+ *
+ * So a case that asserts the escalation, the status or the cleanup uses this as
+ * its window, because those assertions do not depend on the window's length. It
+ * is the slow boot plus the same again, so the slow-boot cases still pass when
+ * the machine is loaded as well.
+ */
+export const START_UP_ALLOWANCE_MS = SLOW_BOOT_DELAY_MS * 2;
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -525,7 +541,8 @@ export function runConformanceKit(
         workingDir: scenario.workingDir,
         instructions: 'node instructions',
         prompt: 'work that never ends',
-        timeoutSeconds: 1,
+        // Not what this case measures: only that running out is `timed_out`.
+        timeoutSeconds: START_UP_ALLOWANCE_MS / 1_000,
         envOverrides: {
           ...bootControls,
           FAKE_ENGINE_RECORD: scenario.recordPath,
@@ -535,7 +552,10 @@ export function runConformanceKit(
 
       try {
         const handle = await adapter.startSession(spec, collector);
-        const end = await collector.awaitEnd('C3', deadline);
+        const end = await collector.awaitEnd(
+          'C3',
+          Math.max(deadline, START_UP_ALLOWANCE_MS + SILENCE_TOLERANCE_MS),
+        );
 
         assert.equal(end.status, 'timed_out', 'C3: running the clock out is "timed_out", not "failed"');
         requireBaselineStatus(end.status, 'C3');
@@ -544,7 +564,7 @@ export function runConformanceKit(
         await requireProcessDead((await scenario.readRecord()).pid, 'C3');
 
         // Past twice the original deadline, the clock must not fire again.
-        await sleep(1_000 + SETTLE_MS);
+        await sleep(START_UP_ALLOWANCE_MS + SETTLE_MS);
         assert.equal(collector.endings.length, 1, 'C3: onFinished happened more than once');
       } finally {
         scenario.cleanup();
@@ -815,15 +835,21 @@ export function runConformanceKit(
       // one that goes quiet is stuck. The case is built so that ONLY the
       // inactivity clock can end it — the wall clock is a minute away — and so
       // that a watchdog which never resets would fire visibly early: the
-      // heartbeats span two whole silence windows, and an unreset timer would
-      // stop the session in the middle of them.
+      // heartbeats span more than one whole silence window (4 x 1/3 of it), and
+      // an unreset timer would stop the session in the middle of them.
+      //
+      // The window opens at spawn, so it has to cover the boot AND the wait
+      // before the first line (t960); a 1s window with a first line at 500ms
+      // left 500ms for `node` to boot, which is how a loaded machine stopped the
+      // session after 0 of 4. Both scale together, and the assertions on the
+      // window below keep their meaning relative to it.
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();
 
-      const silenceSeconds = 1;
-      const silenceMs = silenceSeconds * 1_000;
-      const heartbeatMs = silenceMs / 2;
+      const heartbeatMs = START_UP_ALLOWANCE_MS / 2;
+      const silenceMs = START_UP_ALLOWANCE_MS + heartbeatMs;
+      const silenceSeconds = silenceMs / 1_000;
       const heartbeats: FakeLine[] = [1, 2, 3, 4].map((index) => ({
         stream: 'stdout',
         text: `heartbeat ${index}`,
@@ -850,7 +876,13 @@ export function runConformanceKit(
       try {
         const startedAt = Date.now();
         const handle = await adapter.startSession(spec, collector);
-        const end = await collector.awaitEnd('C9', deadline);
+        const end = await collector.awaitEnd(
+          'C9',
+          Math.max(
+            deadline,
+            START_UP_ALLOWANCE_MS + heartbeats.length * heartbeatMs + silenceMs + SILENCE_TOLERANCE_MS,
+          ),
+        );
 
         assert.equal(
           end.status,

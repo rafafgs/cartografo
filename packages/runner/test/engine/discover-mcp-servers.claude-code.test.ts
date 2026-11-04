@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
-import { SLOW_BOOT_DELAY_MS } from '../../src/engine/conformance-kit.ts';
+import { SLOW_BOOT_DELAY_MS, START_UP_ALLOWANCE_MS } from '../../src/engine/conformance-kit.ts';
 import {
   BASELINE_CAPABILITIES,
   type CliProbe,
@@ -167,7 +167,10 @@ test(
       probeEnvironment: {},
       credentialsPath: credentials,
       mcpWorkingDir: root,
-      mcpProbeDeadlineMs: 250,
+      // Only the deadline can settle this call, so how long it takes is not what
+      // these cases assert. It has to outlast the child's boot, or the pid file
+      // they read is never written (t960).
+      mcpProbeDeadlineMs: START_UP_ALLOWANCE_MS,
     });
 
     const discovery = await adapter.discoverMcpServers();
@@ -202,7 +205,10 @@ test(
       probeEnvironment: {},
       credentialsPath: credentials,
       mcpWorkingDir: root,
-      mcpProbeDeadlineMs: 250,
+      // Only the deadline can settle this call, so how long it takes is not what
+      // these cases assert. It has to outlast the child's boot, or the pid file
+      // they read is never written (t960).
+      mcpProbeDeadlineMs: START_UP_ALLOWANCE_MS,
     });
 
     const discovery = await adapter.discoverMcpServers();
@@ -284,9 +290,9 @@ test('t400 — an adapter without the method reports "not implemented", not zero
   assert.notEqual(answered, 'not implemented');
 });
 
-/** Polls until the pid is gone, up to two seconds. */
+/** Polls until the pid is gone, up to five seconds. */
 async function died(pid: number): Promise<boolean> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       process.kill(pid, 0);
     } catch {

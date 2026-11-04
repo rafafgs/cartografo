@@ -21,7 +21,11 @@ import { test, type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { SLOW_BOOT_DELAY_MS, reapIfAlive } from '../../src/engine/conformance-kit.ts';
+import {
+  SLOW_BOOT_DELAY_MS,
+  START_UP_ALLOWANCE_MS,
+  reapIfAlive,
+} from '../../src/engine/conformance-kit.ts';
 import {
   ProcessLifecycle,
   type LifecycleChannel,
@@ -41,7 +45,15 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 const GRACE_MS = 200;
 
 /** Ceiling on any one wait of this file. */
-const DEADLINE_MS = 10_000;
+const DEADLINE_MS = 20_000;
+
+/**
+ * A window these cases do not measure, in the unit a spec takes it.
+ *
+ * They assert the status, the reason and the cleanup, so the window only has to
+ * outlast the engine's boot (t960).
+ */
+const WINDOW_SECONDS = START_UP_ALLOWANCE_MS / 1_000;
 
 /** What a listener heard, in order. */
 type Heard =
@@ -261,14 +273,14 @@ const STOPS = [
   },
   {
     name: 'wall clock',
-    spec: { timeoutSeconds: 0.4 },
+    spec: { timeoutSeconds: WINDOW_SECONDS },
     status: 'timed_out',
     reason: 'wall_clock',
     order: false,
   },
   {
     name: 'inactivity watchdog',
-    spec: { timeoutSeconds: 30, silenceSeconds: 0.3 },
+    spec: { timeoutSeconds: 30, silenceSeconds: WINDOW_SECONDS },
     status: 'timed_out',
     reason: 'silence',
     order: false,
@@ -544,7 +556,7 @@ test('t678 AT8 — finish-detail keys travel beside timeoutReason; an empty resu
 
   const workingDir = scratch(t);
   const timed = recorder();
-  await helper.start({ timeoutSeconds: 0.4, workingDir }, timed.listener, {
+  await helper.start({ timeoutSeconds: WINDOW_SECONDS, workingDir }, timed.listener, {
     ...fakeEngine({ FAKE_ENGINE_LINES: lines(['stdout', 'model:m-1']), FAKE_ENGINE_HANG: '1' }),
     state: { models: null },
   });

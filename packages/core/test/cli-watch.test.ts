@@ -317,15 +317,13 @@ test('AT1 — arrival, ordering and the --job filter', { timeout: 90_000 }, asyn
   const jobA = await createTraveller(cp.url, version, 'traveller A');
   const jobB = await createTraveller(cp.url, version, 'traveller B');
 
-  const watch = spawnCliBackground(t, ['watch', '--job', String(jobA.id), '--json', '--url', cp.url], {
-    token: cp.token,
-  });
-  // No readiness signal of its own: give the SSE connection time to open
-  // before the events it needs to see are written. Generous on purpose — this
-  // machine sometimes runs several worktrees' suites at once (t491's own
-  // learning), and a spawned process can sit unscheduled for a while under
-  // that load.
-  await sleep(2_000);
+  // `--from-start`: an event written before the connection opens is still read,
+  // so nothing here depends on how fast a spawned process gets scheduled (t960).
+  const watch = spawnCliBackground(
+    t,
+    ['watch', '--job', String(jobA.id), '--from-start', '--json', '--url', cp.url],
+    { token: cp.token },
+  );
 
   await moveTo(cp.url, jobA.id, 'revisar');
   await moveTo(cp.url, jobB.id, 'revisar');
@@ -369,8 +367,9 @@ test('AT2 — reconnect after the control plane restarts, no duplicate lines', {
   t.after(() => first.kill());
   authorizeGlobalFetch(t, { baseUrl: first.url, token: first.token });
 
-  const watch = spawnCliBackground(t, ['watch', '--json', '--url', first.url], { token: first.token });
-  await sleep(2_000);
+  const watch = spawnCliBackground(t, ['watch', '--from-start', '--json', '--url', first.url], {
+    token: first.token,
+  });
 
   const jobOne = (await (
     await fetch(`${first.url}/v1/jobs`, {
@@ -439,11 +438,10 @@ test('AT3a — --until-done, execution-scoped, exits 0 once the round finishes',
   const job = await createTraveller(cp.url, version, 'traveller', execution);
 
   const watchPromise = runCli(
-    ['watch', '--execution', String(execution), '--until-done', '--url', cp.url],
+    ['watch', '--execution', String(execution), '--from-start', '--until-done', '--url', cp.url],
     { token: cp.token, timeoutMs: 60_000 },
   );
 
-  await sleep(2_000);
   await arrive(cp.url, job.id);
 
   const result = await watchPromise;
@@ -529,8 +527,9 @@ test('AT7 — --json envelope shape matches the REST read field for field', { ti
 test('AT5 — SIGINT exits 0 once the connection has closed', { timeout: 60_000 }, async (t) => {
   const cp = await startControlPlane(t, { databasePath: path.join(temporaryArea(t), 'cartografo.db') });
 
-  const watch = spawnCliBackground(t, ['watch', '--json', '--url', cp.url], { token: cp.token });
-  await sleep(2_000);
+  const watch = spawnCliBackground(t, ['watch', '--from-start', '--json', '--url', cp.url], {
+    token: cp.token,
+  });
 
   await fetch(`${cp.url}/v1/jobs`, {
     method: 'POST',

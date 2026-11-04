@@ -457,17 +457,25 @@ async function connect(
     ((one: McpServerConnection) =>
       createMcpClient(one, { requestTimeoutMs: wiring.callTimeoutMs })))(connection);
 
-  await client.initialize();
+  // The caller's `finally` only closes a client this function returned, so one
+  // that fails here is closed here. A stdio client has a process behind it by
+  // now, and nobody else holds what it takes to stop that process.
+  try {
+    await client.initialize();
 
-  const published = new Set((await client.listTools()).map((one) => one.name));
-  if (!published.has(tool)) {
-    throw new DeliverySetupError(
-      `server \`${server}\` publishes no tool named \`${tool}\` (it publishes: ` +
-        `${[...published].join(', ') || 'no tools at all'})`,
-    );
+    const published = new Set((await client.listTools()).map((one) => one.name));
+    if (!published.has(tool)) {
+      throw new DeliverySetupError(
+        `server \`${server}\` publishes no tool named \`${tool}\` (it publishes: ` +
+          `${[...published].join(', ') || 'no tools at all'})`,
+      );
+    }
+
+    return client;
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw error;
   }
-
-  return client;
 }
 
 /**

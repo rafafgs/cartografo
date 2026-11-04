@@ -7572,7 +7572,10 @@ test("t370 — external inputs are fetched before the session and land as files"
         engines: route(configDir, seen, [REPORT_AS]),
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
-        mcpCallTimeoutMs: 400,
+        // The handshake has its own deadline in this direction, but this one
+        // is all the call gets: not what the case measures, so it allows for a
+        // loaded machine too (t960).
+        mcpCallTimeoutMs: START_UP_ALLOWANCE_MS,
         resolveInput: () => Promise.resolve({ pedido: PEDIDO }),
       })(job.id);
 
@@ -8554,7 +8557,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
         createClaudeCodeDispatch,
         place,
         linesWithCrossingNote(),
-        { mcpCallTimeoutMs: 700 },
+        { mcpCallTimeoutMs: DELIVERY_WINDOW_MS },
       )(job.id);
 
       // Asking is a successful dispatch, exactly as every other question is:
@@ -8599,7 +8602,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const job = await jobOn("delivery-t371-at7", 3716, [delivery()], true);
 
       const dispatch = dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote(), {
-        mcpCallTimeoutMs: 700,
+        mcpCallTimeoutMs: DELIVERY_WINDOW_MS,
       });
       await dispatch(job.id);
 
@@ -8732,7 +8735,7 @@ test("t371 — a node's declared output is delivered once, after the report is a
       const job = await jobOn("delivery-t371-at8", 3717, [delivery()], true);
 
       const dispatch = dispatchWith(createClaudeCodeDispatch, place, linesWithCrossingNote(), {
-        mcpCallTimeoutMs: 700,
+        mcpCallTimeoutMs: DELIVERY_WINDOW_MS,
       });
       await dispatch(job.id);
 

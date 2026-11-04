@@ -564,3 +564,75 @@ test('AT6 — usage errors exit 2, none needing a running server', { timeout: 30
   const untilDoneWithBoth = await runCli(['watch', '--job', '1', '--execution', '2', '--until-done', '--url', url]);
   assert.equal(untilDoneWithBoth.code, 2, `stderr:\n${untilDoneWithBoth.stderr}`);
 });
+
+/* ------------------------------------------------- t960: what replaced the sleeps */
+
+test('t960 AT8 — by default watch starts from now, shown by observed readiness', { timeout: 90_000 }, async (t) => {
+  const cp = await startControlPlane(t, { databasePath: path.join(temporaryArea(t), 'cartografo.db') });
+
+  const postJob = async (title: string): Promise<CreatedJob> => {
+    const response = await fetch(`${cp.url}/v1/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title, entry_node_id: 'redigir' }),
+    });
+    assert.equal(response.status, 201, `POST /v1/jobs returned ${response.status}`);
+    return (await response.json()) as CreatedJob;
+  };
+
+  const before = await postJob('before the watch connected');
+
+  const watch = spawnCliBackground(t, ['watch', '--json', '--url', cp.url], { token: cp.token });
+
+  // There is no readiness signal, so readiness is observed: a job per round
+  // until the watch prints one. An event written before it connects is lost,
+  // and that is exactly the behaviour this test pins, so losing some of these
+  // is fine. The deadline is the one failure this loop can have.
+  const deadline = Date.now() + 60_000;
+  const printedEvents = (): EventEnvelope[] =>
+    watch
+      .stdout()
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as EventEnvelope);
+  while (printedEvents().length === 0) {
+    assert.ok(
+      Date.now() < deadline,
+      `the watch printed nothing within 60s\nstderr so far:\n${watch.stderr()}`,
+    );
+    await postJob('readiness probe');
+    await sleep(100);
+  }
+
+  watch.signal('SIGINT');
+  await watch.waitForExit();
+
+  const printedIds = printedEvents().map((event) => event.entity.id);
+  assert.ok(
+    !printedIds.includes(before.id),
+    `the job created before the watch connected was replayed: ${JSON.stringify(printedIds)}`,
+  );
+});
+
+test('t960 AT8 — no fixed sleep stands in for connection readiness', () => {
+  const source = readFileSync(import.meta.filename, 'utf8');
+
+  for (const title of ['AT1 —', 'AT3a —', 'AT5 —']) {
+    const start = source.indexOf(`test('${title}`);
+    assert.notEqual(start, -1, `${title} is gone from this file`);
+
+    // Everything between the test's first line and the first event written
+    // after the watch was spawned.
+    const spawned = source.slice(start).search(/spawnCliBackground\(|runCli\(/);
+    assert.notEqual(spawned, -1, `${title} spawns no watch`);
+    const afterSpawn = source.slice(start + spawned);
+    const firstWrite = afterSpawn.search(/moveTo\(|arrive\(|\/v1\/jobs/);
+    assert.notEqual(firstWrite, -1, `${title} writes no event`);
+    const leadIn = source.slice(start, start + spawned + firstWrite);
+
+    for (const match of leadIn.matchAll(/sleep\(\s*([\d_]+)\s*\)/g)) {
+      const milliseconds = Number((match[1] ?? '').replaceAll('_', ''));
+      assert.ok(milliseconds < 1_000, `${title} sleeps ${milliseconds}ms before its first event`);
+    }
+  }
+});

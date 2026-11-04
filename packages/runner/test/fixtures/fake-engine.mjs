@@ -39,6 +39,13 @@
  *                             actually write it.
  * - `FAKE_ENGINE_EXIT_CODE`   exit code (default 0).
  * - `FAKE_ENGINE_DELAY_MS`    wait before exiting.
+ * - `FAKE_ENGINE_BOOT_DELAY_MS` wait before anything else a SESSION does: before
+ *                             stdin is read and before the sidecar is written.
+ *                             It is what a loaded machine does to a freshly
+ *                             spawned `node`, on demand (t960,
+ *                             `docs/test-reliability.md`). The `--version` and
+ *                             `mcp list` probes are not delayed. The sidecar
+ *                             records the wait as `bootDelayMs`.
  * - `FAKE_ENGINE_HANG`        "1" = never ends on its own (C3).
  * - `FAKE_ENGINE_IGNORE_SIGTERM` "1" = installs a handler that ignores SIGTERM (C4).
  * - `FAKE_ENGINE_SPAWN_CHILD` "1" = leaves a grandchild alive that also ignores
@@ -171,6 +178,9 @@ async function main() {
     return;
   }
 
+  const bootDelayMs = Number(env.FAKE_ENGINE_BOOT_DELAY_MS ?? 0);
+  if (bootDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, bootDelayMs));
+
   const stdin = await readStdin();
 
   // The grandchild comes up BEFORE the sidecar so its pid is recorded even if
@@ -193,6 +203,7 @@ async function main() {
         {
           pid: process.pid,
           grandchildPid,
+          bootDelayMs,
           argv,
           env: { ...env },
           cwd: process.cwd(),

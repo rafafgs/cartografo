@@ -73,6 +73,15 @@ const SETTLE_MS = 300;
  */
 const SILENCE_TOLERANCE_MS = 3_000;
 
+/**
+ * How late a freshly spawned engine may come up in the slow-boot cases (t960).
+ *
+ * Set as `FAKE_ENGINE_BOOT_DELAY_MS`. It is at least the slowest spawn-to-sidecar
+ * time measured at a load of twice the core count, rounded up; the measurement
+ * is in `docs/test-reliability.md`.
+ */
+export const SLOW_BOOT_DELAY_MS = 3_000;
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -126,6 +135,14 @@ export interface KitOptions {
    * that the exemption is WRITTEN DOWN, next to the adapter it exempts.
    */
   readonly skip?: Readonly<Record<string, string>>;
+  /**
+   * Runs ONLY the named cases, with the engine told to boot late (t960).
+   *
+   * The cases keep what they certify. This is how a timing case proves it does
+   * not depend on how fast the machine starts a process, without needing a
+   * loaded machine to prove it on.
+   */
+  readonly slowBoot?: { readonly delayMs: number; readonly cases: readonly string[] };
 }
 
 /** One outcome, as the collector saw it — with the instant it landed (C9). */
@@ -379,11 +396,24 @@ export function runConformanceKit(
    * every other case stays the zero-argument function it was.
    */
   const kitTest = (title: string, body: (t: TestContext) => Promise<void>): void => {
-    const reason = options.skip?.[title.split(' ')[0] ?? ''];
+    const key = title.split(' ')[0] ?? '';
+    if (options.slowBoot !== undefined && !options.slowBoot.cases.includes(key)) return;
+    const reason = options.skip?.[key];
     test(title, reason === undefined ? {} : { skip: reason }, body);
   };
 
-  describe('EngineAdapter conformance kit', () => {
+  /** What every timing case adds to its environment; empty unless asked for. */
+  const bootControls: Record<string, string> =
+    options.slowBoot === undefined
+      ? {}
+      : { FAKE_ENGINE_BOOT_DELAY_MS: String(options.slowBoot.delayMs) };
+
+  const suite =
+    options.slowBoot === undefined
+      ? 'EngineAdapter conformance kit'
+      : 'EngineAdapter conformance kit, slow boot';
+
+  describe(suite, () => {
     kitTest('C1 — basic session', async () => {
       const scenario = buildScenario();
       const collector = new Collector();
@@ -497,6 +527,7 @@ export function runConformanceKit(
         prompt: 'work that never ends',
         timeoutSeconds: 1,
         envOverrides: {
+          ...bootControls,
           FAKE_ENGINE_RECORD: scenario.recordPath,
           FAKE_ENGINE_HANG: '1',
         },
@@ -806,6 +837,7 @@ export function runConformanceKit(
         timeoutSeconds: 60,
         silenceSeconds,
         envOverrides: {
+          ...bootControls,
           FAKE_ENGINE_RECORD: scenario.recordPath,
           FAKE_ENGINE_LINES: linesForEnv(heartbeats),
           // One line per interval instead of all at once — and then, with

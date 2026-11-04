@@ -44,3 +44,9 @@ release.
   (`docs/spec/screen.md`, `screen-proposal-inbox.md`, `screen-graph-editor.md`,
   `screen-interview.md`), superseded by `docs/spec/cli.md` and
   `docs/spec/mcp-server.md` (D27).
+
+### Fixed
+
+- On Windows, the claude-code and Codex adapters now take content off the
+  command line past 12 KiB (64 KiB elsewhere), so a session whose composition is
+  roughly 30 to 64 KiB no longer fails to start with `ENAMETOOLONG`.

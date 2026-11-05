@@ -38,7 +38,14 @@ npm test
 ```
 
 `npm test` runs two groups, the workspaces and the root, one after the other, so
-one red group never hides the state of the other. The suite runs against a fake
+one red group never hides the state of the other. Output streams live as it is
+produced. When anything fails, the last thing `npm test` prints, after the one
+`PASS`/`FAIL` line per group, is a `Failing tests:` block naming each failing
+test and its file, grouped by group. It is bounded (at most 15 entries, names cut
+at 120 characters, then a `+N more` line, in under 1,400 characters in all) so
+that it survives a tool that keeps only the tail of the output, which is how a
+gate report reads it. The full output above it is the source of truth: the block
+is a pointer into it, not a replacement. The suite runs against a fake
 engine on purpose: you do **not** need `claude` or `codex` installed to run it.
 You need one of them installed and authenticated only to run the product against
 a real engine.

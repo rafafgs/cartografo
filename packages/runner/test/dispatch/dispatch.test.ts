@@ -6445,6 +6445,143 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
   );
 });
 
+/**
+ * A `git` that could not START is a transient pre-session failure, one that ran
+ * and refused is a block (issue #4).
+ *
+ * The bench read happens before the worktree, so the dispatch wraps it in the
+ * same bounded retry as any unclassified failure: below the ceiling the dispatch
+ * REJECTS (the loop turns again) and posts nothing; a refusal blocks on the
+ * first dispatch. The seam is `executorEnvironment`, rejecting with the error
+ * the resolver would have thrown — POSIX cannot produce exit 3221225794.
+ */
+test("issue #4 — a bench git that could not start is retried; one that refused blocks at once", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  const { ExecutorEnvironmentError } = await import(
+    "../../src/dispatch/resolve-executor-environment.ts"
+  );
+
+  const posted: Array<{ route: string; body: unknown }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    if ((init?.method ?? "GET") === "POST") {
+      posted.push({
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+    }
+    return fetch(input, init);
+  };
+
+  async function workOn(className: string, executionId: number): Promise<Work> {
+    const versionId = await registerGraph(baseUrl, token, traversalGraph(className));
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: "a ticket whose bench read hit a git that could not start",
+        entry_node_id: "conferir",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  await parent.test("AT8 — exit 3221225794 with no output rejects below the ceiling and posts nothing", async (t) => {
+    const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+    const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-issue4-transient-"));
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+    const work = await workOn("travessia-issue4-transient", 10531);
+    posted.length = 0;
+
+    const dispatch = createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      executorEnvironment: () =>
+        Promise.reject(
+          new ExecutorEnvironmentError(
+            "the reference `main` of the test bench could not be read",
+            "git -C /srv/bench rev-parse main",
+            "",
+            { exitCode: 3221225794, errno: null, signal: null, stderrEmpty: true },
+          ),
+        ),
+    });
+
+    for (const attempt of [1, 2, 3, 4]) {
+      await assert.rejects(
+        async () => dispatch(work.id),
+        (error: unknown) => {
+          assert.ok(
+            String(error).includes("3221225794"),
+            `attempt ${String(attempt)} keeps the exit code in its message: ${String(error)}`,
+          );
+          return true;
+        },
+      );
+    }
+    assert.deepEqual(
+      posted.filter((call) => call.route.endsWith("/blocks")),
+      [],
+      "no block below the ceiling",
+    );
+    assert.deepEqual(
+      posted.filter((call) => call.route === "/v1/sessions"),
+      [],
+      "and no session was opened",
+    );
+  });
+
+  await parent.test("AT8 — exit 128 with a fatal message blocks on the first dispatch, naming the flags", async (t) => {
+    const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+    const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-issue4-refused-"));
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+    const work = await workOn("travessia-issue4-refused", 10532);
+    posted.length = 0;
+
+    const outcome = await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      executorEnvironment: () =>
+        Promise.reject(
+          new ExecutorEnvironmentError(
+            "the reference `main` of the test bench could not be read",
+            "git -C /srv/bench rev-parse main",
+            "fatal: not a git repository",
+            { exitCode: 128, errno: null, signal: null, stderrEmpty: false },
+          ),
+        ),
+    })(work.id);
+
+    assert.equal(outcome.blocked, true);
+    for (const needle of ["--test-bench-path", "--reference-repo", "--main-branch", "exit 128"]) {
+      assert.ok(
+        (outcome.reason ?? "").includes(needle),
+        `the reason names "${needle}": ${String(outcome.reason)}`,
+      );
+    }
+    assert.equal(posted.filter((call) => call.route.endsWith("/blocks")).length, 1);
+  });
+});
+
 // --- t273: the bench moves before the work does ------------------------------
 
 /**

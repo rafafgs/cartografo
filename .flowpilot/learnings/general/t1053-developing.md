@@ -1,0 +1,9 @@
+### t1053 (developing, unverified)
+
+- The acceptance tests were committed first (f4e577b) and confirmed red for the right reasons: `classifyGitFailure is not a function`, `toGitFailure is not a function`, a missing exit tag on the message, and the dispatch AT8 'Missing expected rejection'. Only the implementation commit followed.
+- The 0xC0000142 case is pinned through the pure mapper, the predicate, the error, the classifier and the retry handler. POSIX truncates exit statuses to 8 bits, so no real process can produce it. The real-process cases are a non-repository (exit 128), a `kill -9 $$` fake git (SIGKILL) and two fake gits that refuse or say nothing. The Windows operator who filed #4 still owes a check on a real host once this is done.
+- Exit 0 with empty stdout is tagged ' (exit 0)' in the message and block reason, because the tag is whatever of exit code, errno or signal is set. The classification is still permanent.
+- `GitFailure.stderrEmpty` is measured before `runGit` substitutes `error.message` for an empty stderr. Without that, an NTSTATUS death could not be told from a refusal: `.stderr` is never literally empty for it.
+- `toGitFailure` takes a small exported `GitExecError` shape `{code?, signal?, killed?}` rather than `ExecFileException`, so the synthetic errors in the mapper test typecheck without casts.
+- Files changed are exactly the declared five: resolve-executor-environment.ts, pre-session-failure.ts, the new executor-environment-failure.test.ts, dispatch.test.ts and CHANGELOG.md. The commit body carries `Closes #4`. The existing pre-session-failure, pre-session-retry and resolve-executor-environment tests pass unedited.
+- The `win32` skip in AT5 is the only skip added. No retry loop was added in `runGit`, and the retry ceiling and `WorktreeError` are untouched.

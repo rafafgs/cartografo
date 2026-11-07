@@ -8,7 +8,8 @@
  * reproduce IDENTICALLY on every retry: a placeholder the input does not carry,
  * a skill nobody registered, a pin that stopped matching, an engine with no
  * route, a `graph_version_id` the control plane no longer has, — since t270 — a
- * test bench `git` cannot read, and — since t370 — an external input no MCP
+ * test bench `git` ran on and refused (a `git` that could not even start is
+ * transient and retried — issue #4), and — since t370 — an external input no MCP
  * server would hand over. Until this ficha every one of them travelled up through `tick()` into
  * `cli/run.ts`, which logged one line and turned the loop again — and two
  * seconds later the same job was at the head of the same queue, being dispatched
@@ -26,8 +27,11 @@
  * So the nine are a CLOSED set, each matching a reproduction somebody actually
  * hit. Everything else classifies to `null`, including the two error families'
  * own siblings: a wider net here is a work blocked over something that would
- * have healed itself, which is the failure mode in the other direction. The set
- * grew twice, with t270 and t272, and both times it grew the way it is meant to
+ * have healed itself, which is the failure mode in the other direction. The
+ * bench read sits exactly on that line: it blocks only when `git` ran and
+ * refused, and a `git` that could not start (low memory, a signal kill, a
+ * Windows 0xC0000142) classifies to `null` like the control plane's bad day. The
+ * set grew twice, with t270 and t272, and both times it grew the way it is meant to
  * — a cause somebody reproduced arrived, its refusal reproduces on every retry,
  * and a cause nobody classifies is a loop nobody sees.
  *
@@ -103,7 +107,11 @@ import {
   UnresolvedPlaceholderError,
 } from './render-skill-instructions.ts';
 import { UnknownEngineError } from './resolve-engine.ts';
-import { ExecutorEnvironmentError } from './resolve-executor-environment.ts';
+import {
+  classifyGitFailure,
+  describeGitFailure,
+  ExecutorEnvironmentError,
+} from './resolve-executor-environment.ts';
 
 /**
  * The part of a work this classification names.
@@ -234,16 +242,21 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
   }
 
   // The bench read, which t270 brought in with the read that produces it. A
-  // bench that `git` could not read is a
-  // configuration error of THIS runner — a path that is not a repository, a
-  // main branch that does not resolve, a checkout somebody moved — and it
-  // answers identically on every retry. It is not the control plane having a
-  // bad day, so it never heals itself, and leaving it unclassified would have
-  // reopened t252's loop for the one failure mode this ficha invented.
+  // `git` that RAN and refused is a configuration error of THIS runner — a path
+  // that is not a repository, a main branch that does not resolve, a checkout
+  // somebody moved — and it answers identically on every retry, so leaving it
+  // unclassified would have reopened t252's loop for the one failure mode this
+  // ficha invented. A `git` that could not START (issue #4: a spawn ENOMEM, a
+  // signal kill, a Windows exit 0xC0000142 with no output) says nothing about
+  // the configuration and heals itself, so it classifies to `null` and takes the
+  // bounded retry. The code decides (`classifyGitFailure`), never the text.
   if (error instanceof ExecutorEnvironmentError) {
+    if (classifyGitFailure(error) === 'transient') return null;
+    const how = describeGitFailure(error);
     return (
       `The runner could not read the execution environment of this node: ` +
-      `\`${error.command}\` failed (${error.stderr === '' ? 'no output' : error.stderr}). ` +
+      `\`${error.command}\` failed (${error.stderr === '' ? 'no output' : error.stderr}` +
+      `${how === '' ? '' : `; ${how}`}). ` +
       'No session was opened — the test bench path and the reference commit are ' +
       'configuration of THIS process, and a bench that does not answer answers the same ' +
       'way on every retry. Fix the bench configuration (`--test-bench-path`, ' +

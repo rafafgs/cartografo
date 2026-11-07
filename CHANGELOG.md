@@ -47,6 +47,11 @@ release.
 
 ### Fixed
 
+- A `git` that could not start while reading the test bench (low memory, a
+  signal kill, a Windows exit 0xC0000142 with no output) is now retried like any
+  transient pre-session failure instead of blocking the job as a bench
+  misconfiguration. The block reason for a bench `git` that ran and refused now
+  quotes the exit code or errno. Fixes #4.
 - On Windows, the claude-code and Codex adapters now take content off the
   command line past 12 KiB (64 KiB elsewhere), so a session whose composition is
   roughly 30 to 64 KiB no longer fails to start with `ENAMETOOLONG`.

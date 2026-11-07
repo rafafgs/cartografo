@@ -43,16 +43,25 @@
  *   verification, because it is a fact about the repository and it advances with
  *   every integration." So it is read on every call, with nothing cached.
  *
- * ## A bench that cannot be read BLOCKS, it does not resolve
+ * ## A bench that cannot be read BLOCKS when git ran and refused — and only then
  *
- * A `git` that fails here fails for a reason that reproduces identically on
- * every retry — the path is not a repository, the branch does not exist, the
+ * A `git` that ran and refused fails for a reason that reproduces identically
+ * on every retry — the path is not a repository, the branch does not exist, the
  * checkout was moved. That is exactly the class t252 exists to stop instead of
  * loop, so this module throws {@link ExecutorEnvironmentError} rather than
  * handing back a placeholder value, and `pre-session-failure.ts` classifies it
  * into a block with a reason an operator can act on. Resolving something
  * plausible instead would open a session that verified containment against a
  * commit nobody chose.
+ *
+ * A `git` that could not START is a different thing (issue #4): under memory
+ * pressure a Windows host answered `rev-parse` with exit 3221225794 (0xC0000142)
+ * and nothing on stderr, and minutes later the very same command worked. The
+ * rule, recorded in {@link classifyGitFailure}: a git that ran and refused stays
+ * permanent whatever its text says; only a git that could not start (a spawn
+ * `ENOMEM`/`EAGAIN`/`EMFILE`/`ENFILE`, a signal kill, an NTSTATUS death with
+ * no output) is retried through the bounded pre-session retry. The CODE decides,
+ * never the message text — the rule t688 set for spawn failures.
  *
  * **Read-only, always.** Nothing here writes to the bench, advances a branch or
  * prepares a checkout: `git rev-parse` and nothing else. Keeping the bench true
@@ -70,6 +79,106 @@ import type { ResolvedNode } from './resolve-node.ts';
 import type { SkillSource, SkillSourceResult } from './resolve-skill-source.ts';
 
 /**
+ * How one `git` invocation failed — the facts the retry decision is made from.
+ *
+ * Kept apart from the printed text on purpose: `runGit` replaces an empty stderr
+ * with `error.message`, so "git printed nothing" cannot be read back from
+ * `.stderr` afterwards, and it is half of what tells an NTSTATUS death at start
+ * from a refusal.
+ */
+export interface GitFailure {
+  /** The numeric exit status; `null` when the process never produced one. */
+  exitCode: number | null;
+  /** The string `error.code` of a spawn failure (`ENOENT`, `ENOMEM`...), or `null`. */
+  errno: string | null;
+  /** `error.signal` when the process was killed by one, or `null`. */
+  signal: string | null;
+  /** True when git printed nothing on stderr. */
+  stderrEmpty: boolean;
+}
+
+/** What a failure without detail means: nothing known, so nothing transient. */
+const NO_FAILURE: GitFailure = Object.freeze({
+  exitCode: null,
+  errno: null,
+  signal: null,
+  stderrEmpty: false,
+});
+
+/** The part of `execFile`'s callback error this module reads. */
+export interface GitExecError {
+  code?: string | number | null;
+  signal?: string | null;
+  killed?: boolean;
+}
+
+/**
+ * Maps what `execFile`'s callback handed back to a {@link GitFailure}.
+ *
+ * @param error The callback's error.
+ * @param stderr What the process printed on stderr, BEFORE any substitution.
+ */
+export function toGitFailure(error: GitExecError, stderr: string): GitFailure {
+  return {
+    exitCode: typeof error.code === 'number' ? error.code : null,
+    errno: typeof error.code === 'string' ? error.code : null,
+    signal: typeof error.signal === 'string' && error.signal !== '' ? error.signal : null,
+    stderrEmpty: stderr === '',
+  };
+}
+
+/** Spawn errnos that mean "the machine could not start a process right now". */
+const TRANSIENT_ERRNOS: ReadonlySet<string> = new Set(['ENOMEM', 'EAGAIN', 'EMFILE', 'ENFILE']);
+
+/** The unsigned NTSTATUS error range, `0xC0000000..0xFFFFFFFF`. */
+const NTSTATUS_ERROR_FLOOR = 0xc0000000;
+const NTSTATUS_ERROR_CEILING = 0xffffffff;
+
+/**
+ * Says whether a git failure is worth retrying.
+ *
+ * A git that ran and refused stays permanent whatever its text says; only a git
+ * that could not start is transient. The code decides, never the message text.
+ * Precedence: errno first, then signal, then exit code — so `ENOENT` is
+ * permanent even if a signal were somehow set.
+ *
+ * - transient: errno in `ENOMEM`/`EAGAIN`/`EMFILE`/`ENFILE`; any signal (git
+ *   does not signal itself, so the kill came from outside — an OOM killer, a
+ *   shutdown — and says nothing about the configuration); or an unsigned
+ *   NTSTATUS exit (`0xC0000000..0xFFFFFFFF`) with nothing on stderr (0xC0000142
+ *   is the loader failing under memory pressure).
+ * - permanent: everything else — `ENOENT` and any other errno, any exit with
+ *   stderr, exit 0 with empty stdout, and the all-null default.
+ */
+export function classifyGitFailure(failure: GitFailure): 'transient' | 'permanent' {
+  if (failure.errno !== null) {
+    return TRANSIENT_ERRNOS.has(failure.errno) ? 'transient' : 'permanent';
+  }
+  if (failure.signal !== null) return 'transient';
+  if (
+    failure.exitCode !== null &&
+    failure.exitCode >= NTSTATUS_ERROR_FLOOR &&
+    failure.exitCode <= NTSTATUS_ERROR_CEILING &&
+    failure.stderrEmpty
+  ) {
+    return 'transient';
+  }
+  return 'permanent';
+}
+
+/**
+ * Names what happened to git, for a message or a block reason.
+ *
+ * @returns `exit N`, `errno X`, `signal S`, or `''` when none of the three is set.
+ */
+export function describeGitFailure(failure: Pick<GitFailure, 'exitCode' | 'errno' | 'signal'>): string {
+  if (failure.exitCode !== null) return `exit ${String(failure.exitCode)}`;
+  if (failure.errno !== null) return `errno ${failure.errno}`;
+  if (failure.signal !== null) return `signal ${failure.signal}`;
+  return '';
+}
+
+/**
  * The reference could not be read off the bench.
  *
  * Same shape as `session-worktree.ts`'s `WorktreeError`, deliberately: both are
@@ -83,13 +192,36 @@ export class ExecutorEnvironmentError extends Error {
   readonly command: string;
   /** What it printed on stderr, trimmed. */
   readonly stderr: string;
+  /** The numeric exit status, or `null` when the process never produced one. */
+  readonly exitCode: number | null;
+  /** The spawn errno (`ENOMEM`, `ENOENT`...), or `null`. */
+  readonly errno: string | null;
+  /** The signal that killed the process, or `null`. */
+  readonly signal: string | null;
+  /** True when git printed nothing on stderr, measured before any substitution. */
+  readonly stderrEmpty: boolean;
 
-  constructor(summary: string, command: string, stderr: string) {
+  /**
+   * @param summary What the runner was trying to read.
+   * @param command The command, as issued.
+   * @param stderr What it printed on stderr.
+   * @param failure How it failed. Omitted, the error classifies as permanent —
+   *   the only thing a caller that knows nothing about the cause may claim.
+   */
+  constructor(summary: string, command: string, stderr: string, failure: GitFailure = NO_FAILURE) {
     const detail = stderr.trim();
-    super(`${summary}: \`${command}\` failed — ${detail === '' ? '(no output)' : detail}`);
+    const tag = describeGitFailure(failure);
+    super(
+      `${summary}: \`${command}\` failed — ${detail === '' ? '(no output)' : detail}` +
+        (tag === '' ? '' : ` (${tag})`),
+    );
     this.name = 'ExecutorEnvironmentError';
     this.command = command;
     this.stderr = detail;
+    this.exitCode = failure.exitCode;
+    this.errno = failure.errno;
+    this.signal = failure.signal;
+    this.stderrEmpty = failure.stderrEmpty;
   }
 }
 
@@ -220,14 +352,11 @@ export interface ExecutorEnvironmentConfig {
 }
 
 /** What `git rev-parse` answered. */
-interface GitResult {
-  code: number;
+interface GitResult extends GitFailure {
   stdout: string;
+  /** What it printed, or `error.message` when it printed nothing and failed. */
   stderr: string;
 }
-
-/** Exit code reported when `git` itself could not be executed. */
-const SPAWN_FAILURE = -1;
 
 /**
  * Runs git in a repository and reports what happened, never throwing.
@@ -238,20 +367,23 @@ const SPAWN_FAILURE = -1;
  *
  * @param repoRoot Repository the command runs against.
  * @param args The command, minus `git -C <repoRoot>`.
- * @returns Exit code and both streams.
+ * @returns Both streams and the {@link GitFailure} fields.
  */
 function runGit(repoRoot: string, args: readonly string[]): Promise<GitResult> {
   return new Promise((resolve) => {
     execFile('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error === null) {
-        resolve({ code: 0, stdout, stderr });
+        resolve({ exitCode: 0, errno: null, signal: null, stderrEmpty: stderr === '', stdout, stderr });
         return;
       }
-      // A process that exited non-zero reports a numeric `code`; a `git` that
-      // could not be spawned at all reports a string one (`ENOENT`) and says
-      // what happened only in its message.
-      const code = typeof error.code === 'number' ? error.code : SPAWN_FAILURE;
-      resolve({ code, stdout, stderr: stderr === '' ? error.message : stderr });
+      // What happened to the process is kept as data (`toGitFailure`) BEFORE the
+      // empty stderr is replaced by the error's message: afterwards, "git
+      // printed nothing" can no longer be told from "git printed its message".
+      resolve({
+        ...toGitFailure(error, stderr),
+        stdout,
+        stderr: stderr === '' ? error.message : stderr,
+      });
     });
   });
 }
@@ -274,11 +406,17 @@ async function readCommit(repoRoot: string, revision: string): Promise<string> {
   const answered = await runGit(repoRoot, args);
   const commit = answered.stdout.trim();
 
-  if (answered.code !== 0 || commit === '') {
+  if (answered.exitCode !== 0 || commit === '') {
     throw new ExecutorEnvironmentError(
       `the reference \`${revision}\` of the test bench could not be read`,
       describe(repoRoot, args),
       answered.stderr,
+      {
+        exitCode: answered.exitCode,
+        errno: answered.errno,
+        signal: answered.signal,
+        stderrEmpty: answered.stderrEmpty,
+      },
     );
   }
 

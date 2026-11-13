@@ -335,6 +335,13 @@ export interface Settings {
   allow_git_clone?: string;
 }
 
+/** One project, as `GET /v1/projects` lists it (t1112). */
+export interface Project {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
 export interface Lease {
   id: number;
   runner_id: string;
@@ -525,6 +532,23 @@ export class ControlPlaneClient {
    */
   async getSettings(projectId: number): Promise<Settings> {
     return await this.#get<Settings>(`/v1/settings?project_id=${String(projectId)}`);
+  }
+
+  /**
+   * Every project the control plane holds (t1112).
+   *
+   * What a runner started with `--all-projects` reads before each pass, so a
+   * project created after it started is served with no restart. Operator-only,
+   * like {@link ControlPlaneClient.getSettings}: the route is not on a runner
+   * credential's surface, and a runner already holds the operator token.
+   *
+   * @returns The projects, in the order the control plane lists them.
+   * @throws {ControlPlaneClientError} On any non-2xx, the 401/403 of a
+   *   credential this route does not accept included.
+   */
+  async listProjects(): Promise<Project[]> {
+    const { projects } = await this.#get<{ projects: Project[] }>('/v1/projects');
+    return projects;
   }
 
   /**

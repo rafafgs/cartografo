@@ -85,9 +85,18 @@ npx cartografo --no-runner                      # the control plane alone
 ```
 
 That is also how you run a runner configured differently — a different
-repository, engine or project. Start `cartografo` with `--no-runner`, and run
+repository or engine. Start `cartografo` with `--no-runner`, and run
 `npx cartografo-runner --working-dir ~/proj --worktrees-root ~/proj-worktrees`
 in a second terminal.
+
+Another project does not need another runner. `npx cartografo-runner
+--projects 1,4` serves both projects from one process, and `npx
+cartografo-runner --all-projects` serves every project the control plane lists,
+including one created after it started. Each project's repository, worktrees
+root and engine come from that project's settings (`workspace_root`,
+`worktrees_root`, `engine`, set with `PATCH /v1/settings`), so these two flags
+do not take `--working-dir` or `--worktrees-root`. The runner still runs one
+session at a time, taking the projects in turn.
 
 **The terminal path.** Everything from here on is a CLI command:
 

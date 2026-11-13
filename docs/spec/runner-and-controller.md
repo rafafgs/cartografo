@@ -61,8 +61,9 @@ the project still have room?
 
 **The runner is not scoped to a project.** Pairing is identity alone;
 `projeto_id` is declared on every lease request. One physical runner can serve
-different projects over time, and nothing in the acceptance criteria asks for the
-opposite.
+different projects over time — and, since t1112, several projects at once from
+one process (`--projects`, `--all-projects`, §4): it is still ONE runner row,
+and each of its lease rows carries the project of its own job.
 
 Nothing is deleted, not even a dead lease: it becomes `expirada` with the reason
 recorded and stays in the table. It is the same append-only as
@@ -243,7 +244,62 @@ path
 [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
 already proves (§3). Running N sessions inside one process was refused by the
 founder, and it is still reversible by another decision if the need
-turns up concrete.
+turns up concrete. What one process MAY do since t1112 is serve several
+projects, one session at a time (next subsection): that changes which projects
+a process works for, never how many sessions it runs.
+
+### One process, several projects (t1112)
+
+`--projects <id,id,...>` (a fixed set) and `--all-projects` (every project
+`GET /v1/projects` lists, re-read before each pass) make one runner process
+serve several projects. The control plane needs no change for it: pairing was
+never scoped to a project, and every lease request already declares one.
+
+**One controller per project, behind a rotation.** The process pairs once,
+heartbeats once per loop turn and deregisters once. It builds one `Controller`
+per served project — each with its own `projectId`, children watcher, dispatch,
+`GitWorktreeManager`, input-files root, executor-environment resolver,
+skill-source resolver and main-line advancer — out of THAT project's
+repository, worktrees root and engine. The controller itself is unchanged, so
+each one polls and leases inside its own partition, and a lease is always asked
+under the project its job belongs to. Each pass asks the project AFTER the one
+served last, cyclically by project id (the cursor is an id, never an index, so a
+project that appears mid-run takes its turn in id order), and stops at the first
+dispatch. A project with nothing released is passed over without spending a
+turn; a project whose tick rejects still spends it, so a failing project cannot
+hold the rotation.
+
+**Per-project resolution.** Each project's paths and engine come from
+`GET /v1/settings?project_id=<id>`, with t404's rules: `workspace_root` and
+`worktrees_root` must both be there; the engine is `--engine`, else the
+project's `engine`, else the default. That is why a selection refuses
+`--project` and the four path flags. A project that fails any rule — or whose
+settings cannot be read — is skipped with one stderr line per distinct reason,
+the others are served, and it is read again at most every 30 seconds
+(`SKIPPED_PROJECT_RECHECK_MS`). A served project's settings are not read again,
+as in single-project mode. Under `--all-projects`, a listing that fails at
+startup is an exit 1 (for a 401/403 the line says listing projects needs the
+operator credential); one that fails later is logged once and the previous set
+is kept.
+
+**Engine facts are per engine.** One adapter, one model catalog and one MCP
+discovery per distinct engine name, shared by the projects on it.
+
+**One probe per runner.** The control plane stores one probe per runner,
+latest wins. A multi-project runner reports the workspace of its lowest served
+project id, says so on stderr, and serves a re-check request for that same
+project. The fleet page therefore shows that one workspace — a known limit.
+
+**Two caps, both the server's.** `--declared-runner-cap` is one number for the
+whole process, sent as `runner_cap` on every lease request of every project;
+`--project-cap` is sent as `project_cap` on every request, so it applies to each
+project. A `runner_cap` refusal ends only that project's pass (the controller's
+own rule), so a full runner costs at most one lease request per served project
+per pass.
+
+**Horizontal scaling is unchanged.** More throughput is still more runner
+processes; one process serving several projects is about not starting one
+process per project, not about running more at once.
 
 ### A failure before the session blocks, it does not retry forever
 

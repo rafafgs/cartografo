@@ -485,7 +485,6 @@ test('t1112 — one runner, two projects, against a real control plane', async (
     const space = initRepo(t, 'at29');
     const proxied = await countingProxy(t, plane);
 
-    let readyKeys: string[] = [];
     const original = process.stdout.write.bind(process.stdout);
     let captured = '';
     process.stdout.write = ((chunk: string | Uint8Array): boolean => {
@@ -527,7 +526,7 @@ test('t1112 — one runner, two projects, against a real control plane', async (
     }
 
     assert.equal(code, 0);
-    readyKeys = Object.keys(JSON.parse(captured.trim().split('\n')[0]) as object);
+    const readyKeys = Object.keys(JSON.parse(captured.trim().split('\n')[0]) as object);
     assert.deepEqual(readyKeys, ['event', 'url', 'runnerId', 'projectId', 'engine', 'repoRoot', 'worktreesRoot']);
     assert.equal(proxied.countOf('/v1/projects'), 0, 'GET /v1/projects was never called');
   });

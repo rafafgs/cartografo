@@ -63,6 +63,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   ControlPlaneClient,
   type ProbeReport,
+  type Settings,
 } from '../controller/control-plane-client.ts';
 import { Controller } from '../controller/controller.ts';
 import { createChildrenWatcher } from '../controller/watch-children.ts';
@@ -155,6 +156,26 @@ export class SettingsFallbackError extends Error {
   }
 }
 
+/**
+ * Which projects one runner process serves, when it serves more than one
+ * (t1112).
+ *
+ * `list` is `--projects <id,...>`: a fixed set, sorted and de-duplicated, never
+ * re-listed. `all` is `--all-projects`: every project `GET /v1/projects` lists,
+ * re-read before each pass, so a project created later is served with no
+ * restart. Absent, the runner serves {@link RunnerOptions.projectId} alone,
+ * exactly as before.
+ */
+export type ProjectSelection = { kind: 'list'; ids: number[] } | { kind: 'all' };
+
+/** One project a multi-project runner serves, as its ready line lists it (t1112). */
+export interface ServedProject {
+  projectId: number;
+  engine: EngineName;
+  repoRoot: string;
+  worktreesRoot: string;
+}
+
 /** Everything one runner process needs to know about itself. */
 export interface RunnerOptions {
   /** Control plane to dial, with no trailing slash. */
@@ -167,8 +188,22 @@ export interface RunnerOptions {
    * Cutting a credential that reaches exactly this surface is another ficha.
    */
   token?: string;
-  /** Project the leases are asked under. */
+  /**
+   * Project the leases are asked under.
+   *
+   * Ignored when {@link projects} is set: each served project's own id is the
+   * one its polls and leases carry.
+   */
   projectId: number;
+  /**
+   * Several projects served by this one process — `--projects` or
+   * `--all-projects` (t1112). Absent, one project, {@link projectId}, exactly as
+   * before. Present, each project's repository, worktrees root and engine come
+   * from ITS settings, so {@link repoRoot}, {@link worktreesRoot},
+   * {@link testBenchPath} and {@link referenceRepo} are not read; every other
+   * option applies to every project.
+   */
+  projects?: ProjectSelection;
   /** Identity this runner declares at pairing. */
   runnerId: string;
   /**
@@ -322,6 +357,13 @@ export interface RunnerOptions {
    */
   onReady?: (resolved: ResolvedRunnerPaths) => void;
   /**
+   * The multi-project counterpart of {@link onReady} (t1112): called once,
+   * after the first resolution round and before the first pass, with the
+   * projects served at that moment — possibly none. `onReady` is never called
+   * when {@link projects} is set, and this is never called when it is not.
+   */
+  onReadyProjects?: (projects: readonly ServedProject[]) => void;
+  /**
    * Called whenever a session goes live, with the one function that takes it
    * down (t193, FR8).
    *
@@ -405,7 +447,7 @@ export function buildEngineRoutes(
 }
 
 /** One line about a failure, for stderr: name and message, never a stack. */
-function describeError(error: unknown): string {
+export function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
@@ -491,7 +533,7 @@ async function verifyEngineCli(engine: string, adapter: EngineAdapter): Promise<
  * @param engine Name this runner's engine answers to.
  * @param adapter The adapter to ask.
  */
-async function reportModels(
+export async function reportModels(
   client: ControlPlaneClient,
   engine: string,
   adapter: EngineAdapter,
@@ -671,21 +713,33 @@ export async function buildProbeReport(
     }
   }
 
+  return { cli, mcp, workspace: buildWorkspaceReport(repoRoot, worktreesRoot) };
+}
+
+/**
+ * The workspace half of a probe: the two directories, and what the disk says
+ * about them (t401; split out in t1112).
+ *
+ * A function of its own so that a multi-project runner can pair one engine's
+ * CLI and MCP answer — asked once per engine — with the workspace of whichever
+ * project the probe reports, without asking the engine again.
+ *
+ * @param repoRoot The git repository, as it was settled.
+ * @param worktreesRoot The worktrees root, as it was settled.
+ * @returns The `workspace` field of a {@link ProbeReport}.
+ */
+export function buildWorkspaceReport(repoRoot: string, worktreesRoot: string): ProbeReport['workspace'] {
   const workingDirResolved = path.resolve(repoRoot);
   const worktreesRootResolved = path.resolve(worktreesRoot);
 
   return {
-    cli,
-    mcp,
-    workspace: {
-      working_dir: repoRoot,
-      working_dir_resolved: workingDirResolved,
-      is_git_repo: isGitRepository(workingDirResolved),
-      worktrees_root: worktreesRoot,
-      worktrees_root_resolved: worktreesRootResolved,
-      worktrees_root_exists: existsSync(worktreesRootResolved),
-      worktrees_root_writable: couldCreate(worktreesRootResolved),
-    },
+    working_dir: repoRoot,
+    working_dir_resolved: workingDirResolved,
+    is_git_repo: isGitRepository(workingDirResolved),
+    worktrees_root: worktreesRoot,
+    worktrees_root_resolved: worktreesRootResolved,
+    worktrees_root_exists: existsSync(worktreesRootResolved),
+    worktrees_root_writable: couldCreate(worktreesRootResolved),
   };
 }
 
@@ -711,7 +765,7 @@ export async function buildProbeReport(
  *   resolver calling `discoverMcpServers()` again would spend one more per
  *   session for an answer that cannot have changed inside a process.
  */
-async function reportProbe(
+export async function reportProbe(
   client: ControlPlaneClient,
   options: RunnerOptions,
   resolved: ResolvedRunnerPaths,
@@ -759,7 +813,7 @@ async function reportProbe(
  * @param client Client of the control plane.
  * @param runnerId Identity that is stopping.
  */
-async function deregisterQuietly(client: ControlPlaneClient, runnerId: string): Promise<void> {
+export async function deregisterQuietly(client: ControlPlaneClient, runnerId: string): Promise<void> {
   try {
     await client.deregisterRunner(runnerId);
   } catch (error) {
@@ -784,7 +838,7 @@ async function deregisterQuietly(client: ControlPlaneClient, runnerId: string): 
  * @param report What the startup probe found, or `null`.
  * @returns The discovery, as the dispatch's seam takes it.
  */
-function mcpDiscoveryOf(report: ProbeReport | null): McpDiscoveryResult {
+export function mcpDiscoveryOf(report: ProbeReport | null): McpDiscoveryResult {
   const mcp = report?.mcp;
   if (mcp === undefined || mcp.supported !== true) return { supported: false };
   return { supported: true, servers: mcp.servers.map((server) => server.name) };
@@ -811,7 +865,7 @@ function mcpDiscoveryOf(report: ProbeReport | null): McpDiscoveryResult {
  *   fresh report this may end up sending.
  * @param adapter The adapter to ask, when there is something to answer.
  */
-async function maybeServeRecheck(
+export async function maybeServeRecheck(
   client: ControlPlaneClient,
   options: RunnerOptions,
   resolved: ResolvedRunnerPaths,
@@ -879,17 +933,13 @@ export async function resolveRunnerPaths(
   }
 
   const settings = await client.getSettings(options.projectId);
-  const repoRoot = options.repoRoot ?? settings.workspace_root;
-  const worktreesRoot = options.worktreesRoot ?? settings.worktrees_root;
-  const engine = options.engine ?? (settings.engine as EngineName | undefined) ?? DEFAULT_ENGINE_NAME;
+  const checked = checkProjectSettings(settings, options);
+  if (checked.problem === undefined) return checked.resolved;
+  const { problem } = checked;
 
-  if (repoRoot === undefined || worktreesRoot === undefined) {
-    const missing = [
-      ...(repoRoot === undefined ? ['workspace_root'] : []),
-      ...(worktreesRoot === undefined ? ['worktrees_root'] : []),
-    ];
+  if (problem.kind === 'missing') {
     throw new SettingsFallbackError(
-      `the control plane holds no ${missing.join(' and no ')} for project ${String(options.projectId)}, ` +
+      `the control plane holds no ${problem.missing.join(' and no ')} for project ${String(options.projectId)}, ` +
         'and this runner was started without --working-dir/--worktrees-root: those two say which ' +
         'repository a session\'s worktree is cut from and where it is created, and there is no ' +
         'safe default for where a session may write — set them with `PATCH /v1/settings`, or ' +
@@ -897,19 +947,65 @@ export async function resolveRunnerPaths(
     );
   }
 
-  // Checked here rather than left to the dispatch: an engine name nothing
-  // answers to would come back as an `UnknownEngineError` on the first node,
-  // one lease and one blocked job later, saying nothing about the setting that
-  // caused it.
-  if (!(ENGINE_NAMES as readonly string[]).includes(engine)) {
-    throw new SettingsFallbackError(
-      `the control plane's engine for project ${String(options.projectId)} is "${engine}", which is ` +
-        `not one of ${ENGINE_NAMES.join(', ')} — fix it with \`PATCH /v1/settings\`, or start this ` +
-        'runner with --engine',
-    );
+  throw new SettingsFallbackError(
+    `the control plane's engine for project ${String(options.projectId)} is "${problem.engine}", which is ` +
+      `not one of ${ENGINE_NAMES.join(', ')} — fix it with \`PATCH /v1/settings\`, or start this ` +
+      'runner with --engine',
+  );
+}
+
+/** Why one project's settings cannot be run on (t1112). */
+export type SettingsProblem =
+  | { kind: 'missing'; missing: Array<'workspace_root' | 'worktrees_root'> }
+  | { kind: 'engine'; engine: string };
+
+/**
+ * The t404 rules over one project's settings, with no I/O and no message
+ * (extracted in t1112).
+ *
+ * Shared by the single-project fallback above, which turns a problem into its
+ * {@link SettingsFallbackError} and an exit 1, and by the multi-project runner,
+ * which turns it into a skipped project and goes on serving the others. The
+ * rules are the same in both: a value the caller gave wins, field by field; the
+ * engine is the caller's, else the setting, else {@link DEFAULT_ENGINE_NAME};
+ * both paths have to be present, and the engine has to be one this runner has
+ * an adapter for.
+ *
+ * Checked here rather than left to the dispatch: an engine name nothing
+ * answers to would come back as an `UnknownEngineError` on the first node, one
+ * lease and one blocked job later, saying nothing about the setting that
+ * caused it.
+ *
+ * @param settings What `GET /v1/settings` answered for the project.
+ * @param given What the caller already knows — the command line's paths and
+ *   engine, any of which may be absent.
+ * @returns The three values, or the first problem found.
+ */
+export function checkProjectSettings(
+  settings: Settings,
+  given: { repoRoot?: string; worktreesRoot?: string; engine?: EngineName },
+): { resolved: ResolvedRunnerPaths; problem?: undefined } | { problem: SettingsProblem } {
+  const repoRoot = given.repoRoot ?? settings.workspace_root;
+  const worktreesRoot = given.worktreesRoot ?? settings.worktrees_root;
+  const engine = given.engine ?? (settings.engine as EngineName | undefined) ?? DEFAULT_ENGINE_NAME;
+
+  if (repoRoot === undefined || worktreesRoot === undefined) {
+    return {
+      problem: {
+        kind: 'missing',
+        missing: [
+          ...(repoRoot === undefined ? (['workspace_root'] as const) : []),
+          ...(worktreesRoot === undefined ? (['worktrees_root'] as const) : []),
+        ],
+      },
+    };
   }
 
-  return { repoRoot, worktreesRoot, engine };
+  if (!(ENGINE_NAMES as readonly string[]).includes(engine)) {
+    return { problem: { kind: 'engine', engine } };
+  }
+
+  return { resolved: { repoRoot, worktreesRoot, engine } };
 }
 
 /**
@@ -940,7 +1036,7 @@ export async function resolveRunnerPaths(
  * @param worktreesRoot Where the worktrees go; the scratch root is its sibling.
  * @returns The `resolveSkillSource` hook of the executor environment.
  */
-function createConfiguredSkillSourceResolver(
+export function createConfiguredSkillSourceResolver(
   client: ControlPlaneClient,
   projectId: number,
   worktreesRoot: string,
@@ -974,6 +1070,126 @@ function createConfiguredSkillSourceResolver(
   };
 }
 
+/** What {@link createProjectController} builds one project's controller out of. */
+export interface ProjectControllerParts {
+  /** Control plane client, already paired. */
+  client: ControlPlaneClient;
+  /** The process-wide options: address, credential, identity, caps, bench knobs. */
+  options: RunnerOptions;
+  /** The project this controller polls, leases and dispatches in. */
+  projectId: number;
+  /** That project's repository, worktrees root and engine, as they were settled. */
+  resolved: ResolvedRunnerPaths;
+  /** The routing table the dispatch opens sessions through. */
+  engines: Record<string, EngineRoute>;
+  /** What the startup probe discovered about this engine's MCP servers (t360). */
+  mcpDiscovery: McpDiscoveryResult;
+}
+
+/**
+ * Builds the controller of one project, and the dispatch it drives — the
+ * composition `runRunner` has always built, out of one settled triple
+ * (extracted in t1112).
+ *
+ * The single-project runner calls this once. A multi-project runner calls it
+ * once per served project, each with that project's own id and paths, so every
+ * piece that is per repository — the worktree manager, the bench, the
+ * advancer, the input files, the skill-source scratch root — is per project
+ * and never shared: a project cannot reach into another's directories through
+ * anything built here.
+ *
+ * @param parts The client, the options and the project's settled values.
+ * @returns The project's controller.
+ */
+export function createProjectController(parts: ProjectControllerParts): Controller {
+  const { client, options, projectId, resolved, engines, mcpDiscovery } = parts;
+
+  // The client the precedent resolver speaks through: the same address, the
+  // same credential and the same deadline the dispatch itself uses. Built here
+  // because `executorEnvironment` is an OPTION of the dispatch and is therefore
+  // assembled before the dispatch exists — there is no earlier moment at which
+  // its own internal client could be borrowed.
+  const precedentsClient = createDispatchControlPlaneClient({
+    urlBase: options.url,
+    token: options.token,
+    ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+  });
+
+  return new Controller({
+    client,
+    runnerId: options.runnerId,
+    projectId,
+    runnerCap: options.runnerCap,
+    projectCap: options.projectCap,
+    ttlSeconds: options.leaseTtlSeconds,
+    // A parent waiting on children that are stuck is blocked, once per tick,
+    // before the controller looks for work (t638): nothing else ever looks at a
+    // held job.
+    watchChildren: createChildrenWatcher(client, projectId),
+    dispatch: createClaudeCodeDispatch({
+      urlBase: options.url,
+      token: options.token,
+      engines,
+      // The same project the controller polls and leases in (t410): three of
+      // the dispatch's reads are scoped to one partition, and a dispatch left
+      // reading the default project would be told the work it just leased does
+      // not exist — a lease taken and given back on every tick, in silence.
+      projectId,
+      requestTimeoutMs: options.requestTimeoutMs,
+      // Beside the worktrees and never inside one (t689), like the skill
+      // sources above: a file in a worktree is uncommitted work.
+      inputFilesRoot: path.join(resolved.worktreesRoot, '.input-files'),
+      // Passed straight through: what this function knows about a live session
+      // is nothing, and what the process owner needs is the handle to it (t193).
+      onSessionStarted: options.onSessionStarted,
+      onSessionEnded: options.onSessionEnded,
+      // One manager per project (so one for the whole process when it serves
+      // one), and one worktree per dispatch out of it: the isolation is per
+      // session, never per runner (t160, FR6).
+      worktrees: new GitWorktreeManager({
+        repoRoot: resolved.repoRoot,
+        worktreesRoot: resolved.worktreesRoot,
+      }),
+      // Built ONCE per project for the whole process, and that is what makes
+      // `instalacao_em_uso` mean anything: the single read it memoizes is
+      // memoized for the life of THIS runner, which is the process the mode is
+      // an assertion about (t270).
+      executorEnvironment: createExecutorEnvironmentResolver({
+        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
+        referenceMode: options.referenceMode ?? 'ponta_do_principal',
+        ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
+        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+        // A VALUE for the one that is a fact about this process, and a FUNCTION
+        // for the one that is a fact about each job (t360, FR4).
+        mcpDiscovery,
+        classPrecedents: createClassPrecedentsResolver(precedentsClient, projectId),
+        // ...and a function of the SOURCE for the third: what a person answered
+        // when the interview asked where their existing skills are (t440, FR7).
+        // It reads a folder, or clones a repository shallow and throws it away;
+        // nothing it finds is executed, and nothing enters the registry without
+        // somebody registering it (D4).
+        resolveSkillSource: createConfiguredSkillSourceResolver(
+          client,
+          projectId,
+          resolved.worktreesRoot,
+        ),
+      }),
+      // ...and the half that WRITES to that same bench (t273). Built once too,
+      // out of the same two paths: the bench to advance, and the repository the
+      // reported commit was born in — a worktree of `repoRoot` is where every
+      // session works, so its object store is the only one that has it.
+      advanceMainLine: createMainLineAdvancer({
+        testBenchPath: options.testBenchPath ?? resolved.repoRoot,
+        repoRoot: resolved.repoRoot,
+        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+        ...(options.benchInstallCommand === undefined
+          ? {}
+          : { installCommand: options.benchInstallCommand }),
+      }),
+    }),
+  });
+}
+
 /**
  * Runs a runner until it is asked to stop.
  *
@@ -982,6 +1198,16 @@ function createConfiguredSkillSourceResolver(
  *   dispatched is still in flight.
  */
 export async function runRunner(options: RunnerOptions): Promise<void> {
+  // A selection of projects is the other composition (t1112): one controller
+  // per project behind a rotation, each with its own repository. Loaded on
+  // demand, the way `index.ts` loads `prune`: `serve-projects.ts` imports the
+  // helpers above from this file, and a static import back would close a cycle.
+  if (options.projects !== undefined) {
+    const { serveProjects } = await import('./serve-projects.ts');
+    await serveProjects(options);
+    return;
+  }
+
   const client = new ControlPlaneClient({
     urlBase: options.url,
     token: options.token,
@@ -1056,88 +1282,13 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
     const probe = await reportProbe(client, options, resolved, route.adapter);
     if (stopped()) return;
 
-    // The client the precedent resolver speaks through: the same address, the
-    // same credential and the same deadline the dispatch itself uses. Built here
-    // because `executorEnvironment` is an OPTION of the dispatch and is therefore
-    // assembled before the dispatch exists — there is no earlier moment at which
-    // its own internal client could be borrowed.
-    const precedentsClient = createDispatchControlPlaneClient({
-      urlBase: options.url,
-      token: options.token,
-      ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
-    });
-
-    const controller = new Controller({
+    const controller = createProjectController({
       client,
-      runnerId: options.runnerId,
+      options,
       projectId: options.projectId,
-      runnerCap: options.runnerCap,
-      projectCap: options.projectCap,
-      ttlSeconds: options.leaseTtlSeconds,
-      // A parent waiting on children that are stuck is blocked, once per tick,
-      // before the controller looks for work (t638): nothing else ever looks at a
-      // held job.
-      watchChildren: createChildrenWatcher(client, options.projectId),
-      dispatch: createClaudeCodeDispatch({
-        urlBase: options.url,
-        token: options.token,
-        engines,
-        // The same project the controller polls and leases in (t410): three of
-        // the dispatch's reads are scoped to one partition, and a dispatch left
-        // reading the default project would be told the work it just leased does
-        // not exist — a lease taken and given back on every tick, in silence.
-        projectId: options.projectId,
-        requestTimeoutMs: options.requestTimeoutMs,
-        // Beside the worktrees and never inside one (t689), like the skill
-        // sources above: a file in a worktree is uncommitted work.
-        inputFilesRoot: path.join(resolved.worktreesRoot, '.input-files'),
-        // Passed straight through: what this function knows about a live session
-        // is nothing, and what the process owner needs is the handle to it (t193).
-        onSessionStarted: options.onSessionStarted,
-        onSessionEnded: options.onSessionEnded,
-        // One manager for the whole process, and one worktree per dispatch out of
-        // it: the isolation is per session, never per runner (t160, FR6).
-        worktrees: new GitWorktreeManager({
-          repoRoot: resolved.repoRoot,
-          worktreesRoot: resolved.worktreesRoot,
-        }),
-        // Built ONCE for the whole process, and that is what makes
-        // `instalacao_em_uso` mean anything: the single read it memoizes is
-        // memoized for the life of THIS runner, which is the process the mode is
-        // an assertion about (t270).
-        executorEnvironment: createExecutorEnvironmentResolver({
-          testBenchPath: options.testBenchPath ?? resolved.repoRoot,
-          referenceMode: options.referenceMode ?? 'ponta_do_principal',
-          ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
-          ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
-          // A VALUE for the one that is a fact about this process, and a FUNCTION
-          // for the one that is a fact about each job (t360, FR4).
-          mcpDiscovery: mcpDiscoveryOf(probe),
-          classPrecedents: createClassPrecedentsResolver(precedentsClient, options.projectId),
-          // ...and a function of the SOURCE for the third: what a person answered
-          // when the interview asked where their existing skills are (t440, FR7).
-          // It reads a folder, or clones a repository shallow and throws it away;
-          // nothing it finds is executed, and nothing enters the registry without
-          // somebody registering it (D4).
-          resolveSkillSource: createConfiguredSkillSourceResolver(
-            client,
-            options.projectId,
-            resolved.worktreesRoot,
-          ),
-        }),
-        // ...and the half that WRITES to that same bench (t273). Built once too,
-        // out of the same two paths: the bench to advance, and the repository the
-        // reported commit was born in — a worktree of `repoRoot` is where every
-        // session works, so its object store is the only one that has it.
-        advanceMainLine: createMainLineAdvancer({
-          testBenchPath: options.testBenchPath ?? resolved.repoRoot,
-          repoRoot: resolved.repoRoot,
-          ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
-          ...(options.benchInstallCommand === undefined
-            ? {}
-            : { installCommand: options.benchInstallCommand }),
-        }),
-      }),
+      resolved,
+      engines,
+      mcpDiscovery: mcpDiscoveryOf(probe),
     });
 
     options.onReady?.(resolved);

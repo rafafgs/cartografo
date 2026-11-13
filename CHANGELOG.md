@@ -13,6 +13,18 @@ release.
 
 ### Added
 
+- `cartografo-runner --projects <id,...>` and `--all-projects`: one runner
+  process serves several projects, round-robin by project id, each session in
+  its own project's repository and worktrees root, on its own project's engine,
+  all read from that project's settings. `--all-projects` re-lists the projects
+  before each pass, so a project created later is served with no restart. A
+  project whose settings cannot be used is skipped with one line and re-read
+  every 30 seconds. Both flags refuse `--project` and the four path flags; still
+  one session at a time, one probe per runner (the lowest served project's
+  workspace).
+- `cartografo-runner prune --project <id>`: reads each job inside that project,
+  so a project other than the default one can be pruned. Without it the read is
+  unchanged.
 - `cartografo graph propose <bundle dir>`: checks the bundle, registers its skill
   manifests (idempotently) and then proposes the new graph version, so one
   command upgrades an installed bundle. It prints a `skills` line, and an

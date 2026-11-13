@@ -144,7 +144,8 @@ its own ticket.
 
 A runner configured differently — another repository, another engine, another
 project — is still its own command, started by hand beside a `cartografo` that
-was told not to start one:
+was told not to start one (and one such runner can serve several projects at
+once with `--projects` or `--all-projects`, below):
 
 ```bash
 CARTOGRAFO_TOKEN=<the token from step 2> \
@@ -307,14 +308,38 @@ is where it lands. The second is **mandatory and has no default** — where a
 session may write is the operator's decision, never the code's guess — and it
 must be a *sibling* of the first, never inside it.
 
+**One process, several projects.** `--projects 1,4,7` serves those projects
+from one runner, and `--all-projects` serves every project the control plane
+lists, re-read before each pass, so a project created later is served with no
+restart (it needs the operator credential). Each project's repository,
+worktrees root and engine come from **its own settings** (`workspace_root`,
+`worktrees_root`, `engine`), so a selection refuses `--project`, the other
+selection and the four path flags (`--working-dir`, `--worktrees-root`,
+`--test-bench-path`, `--reference-repo`); `--engine` still wins over every
+project's engine. The projects are served round-robin by id, and each lease is
+asked in the project the job belongs to. A project whose settings cannot be
+used is skipped with one stderr line and looked at again every 30 seconds.
+Still one session at a time: `--declared-runner-cap` is one number for the whole
+process, and `--project-cap` applies to each project. The control plane keeps
+one probe per runner, so the fleet page shows the workspace of the lowest
+served project id.
+
+```bash
+npx cartografo-runner --all-projects    # every project, each in its own repository
+```
+
 A session that ends clean loses its worktree. One that fails, times out, is
 cancelled, or ends with uncommitted work keeps it, because that tree is the only
 place its work still exists. Those pile up, and `prune` collects them:
 
 ```bash
 npx cartografo-runner prune --working-dir ~/proj \
-  --worktrees-root ~/proj-worktrees --dry-run   # lists what it would collect
+  --worktrees-root ~/proj-worktrees --project 4 --dry-run   # lists what it would collect
 ```
+
+`prune` works on one repository at a time. `--project <id>` names the project
+its jobs belong to; it is needed for any project but the default one, so a
+runner serving several projects is pruned once per project.
 
 It only collects what the control plane calls finished, and removes branches with
 `git branch -d`, never `-D`: finished means the traversal reached a final node,

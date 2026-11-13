@@ -44,12 +44,16 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from '../controller/http-client.ts';
 // temporal dead zone and throws before a single test runs. A type import is
 // erased, and the dynamic one happens when this file is long since evaluated.
 import type { PruneSeams } from './prune.ts';
+// TYPE-only for the same reason: `serve-projects.ts` imports from `run.ts`,
+// and the class itself is checked by name below, never imported at runtime.
+import type { ProjectListingError } from './serve-projects.ts';
 import {
   DEFAULT_ENGINE_NAME,
   ENGINE_NAMES,
   SettingsFallbackError,
   runRunner,
   type EngineName,
+  type ProjectSelection,
   type RunnerOptions,
 } from './run.ts';
 import type { ReferenceMode } from '../dispatch/resolve-executor-environment.ts';
@@ -132,6 +136,23 @@ options:
                             it is printed when the control plane first starts
   --project <id>            project the leases are asked under
                             (default ${DEFAULT_PROJECT})
+  --projects <id,id,...>    serve SEVERAL projects from this one process,
+                            round-robin by project id: each pass takes a lease
+                            in the project the job belongs to and runs its
+                            session in THAT project's repository and worktrees
+                            root, on THAT project's engine — all three read
+                            from each project's settings (workspace_root,
+                            worktrees_root, engine). A project whose settings
+                            cannot be used is skipped with one line and looked
+                            at again every 30 s. Excludes --project,
+                            --all-projects and the four path flags
+                            (--working-dir, --worktrees-root, --test-bench-path,
+                            --reference-repo). Still one session at a time
+  --all-projects            the same, for every project the control plane
+                            lists, re-read before each pass: a project created
+                            later is served with no restart. Needs the
+                            operator credential. Excludes --project, --projects
+                            and the four path flags
   --runner-id <id>          identity this runner declares at pairing
                             (default: this host and the directory this process
                             runs in — one identity per installation, stable
@@ -182,9 +203,12 @@ options:
                             sessions in flight here: this process dispatches
                             one at a time whatever the value, because a tick
                             awaits the whole dispatch before asking again
-                            (default ${DEFAULT_DECLARED_RUNNER_CAP})
+                            (default ${DEFAULT_DECLARED_RUNNER_CAP}). One number
+                            for the whole process, also with --projects or
+                            --all-projects
   --project-cap <n>         simultaneous sessions of the project
-                            (default ${DEFAULT_PROJECT_CAP})
+                            (default ${DEFAULT_PROJECT_CAP}); with --projects or
+                            --all-projects it applies to each project
   --interval-ms <n>         wait between ticks, in milliseconds
                             (default ${DEFAULT_INTERVAL_MS})
   --lease-ttl-seconds <n>   term of the lease asked for
@@ -224,6 +248,7 @@ const VALUE_OPTIONS = [
   '--url',
   '--token',
   '--project',
+  '--projects',
   '--runner-id',
   '--engine',
   '--working-dir',
@@ -241,6 +266,12 @@ const VALUE_OPTIONS = [
   '--shutdown-grace-seconds',
 ] as const;
 
+/** Every option that is a bare flag, taking no value (t1112). */
+const FLAG_OPTIONS = ['--all-projects'] as const;
+
+/** The four flags that name a path, refused with a multi-project selection (t1112). */
+const PATH_OPTIONS = ['--working-dir', '--worktrees-root', '--test-bench-path', '--reference-repo'] as const;
+
 /** The two signals that ask a runner to stop. */
 const STOP_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 
@@ -254,6 +285,9 @@ const STOP_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
  * ignore: a runner started with a typo would otherwise run happily against the
  * wrong control plane.
  *
+ * A bare flag (`--all-projects`) carries no value and maps to `''`, the same
+ * shape `prune.ts` already reads `--dry-run` in.
+ *
  * @param args `process.argv.slice(2)`.
  * @returns The value of each option that was given.
  * @throws {UsageError} On an unknown option, a stray argument or a missing value.
@@ -265,6 +299,12 @@ function readOptions(args: string[]): Map<string, string> {
     const argument = args[index];
     const equals = argument.startsWith('--') ? argument.indexOf('=') : -1;
     const name = equals === -1 ? argument : argument.slice(0, equals);
+
+    if ((FLAG_OPTIONS as readonly string[]).includes(name)) {
+      if (equals !== -1) throw new UsageError(`${name} takes no value`);
+      given.set(name, '');
+      continue;
+    }
 
     if (!(VALUE_OPTIONS as readonly string[]).includes(name)) {
       throw new UsageError(`does not understand "${argument}"`);
@@ -438,6 +478,72 @@ export function defaultRunnerId(cwd: string = process.cwd()): string {
 }
 
 /**
+ * Reads the multi-project selection off the command line (t1112).
+ *
+ * Decided by the FLAG and never by the count: `--projects 4` is a selection of
+ * one, with every rule a selection has, because a rule that changed with the
+ * length of a list would be one more thing to explain.
+ *
+ * Checked before anything else reads a path: with a selection, each project's
+ * paths come from its settings, and a path flag that would apply to all of them
+ * at once is a command line somebody got wrong.
+ *
+ * @param given What `readOptions` read.
+ * @returns The selection, or `undefined` for a single-project runner.
+ * @throws {UsageError} On a bad list, two selections at once, or a path flag
+ *   given with a selection.
+ */
+function readProjectSelection(given: Map<string, string>): ProjectSelection | undefined {
+  const selections = (['--project', '--projects', '--all-projects'] as const).filter((name) =>
+    given.has(name),
+  );
+  if (selections.length > 1) {
+    throw new UsageError(
+      `${selections[0]} and ${selections[1]} cannot be used together: --project serves one project, ` +
+        '--projects a list of them and --all-projects every project the control plane lists',
+    );
+  }
+
+  const list = given.get('--projects');
+  const selection: ProjectSelection | undefined =
+    list !== undefined
+      ? { kind: 'list', ids: parseProjectList(list) }
+      : given.has('--all-projects')
+        ? { kind: 'all' }
+        : undefined;
+  if (selection === undefined) return undefined;
+
+  const paths = PATH_OPTIONS.filter((name) => given.has(name));
+  if (paths.length > 0) {
+    const flag = selection.kind === 'list' ? '--projects' : '--all-projects';
+    throw new UsageError(
+      `${paths.join(', ')} cannot be used with ${flag}: each project's paths come from its ` +
+        'settings (workspace_root and worktrees_root), and one path on the command line cannot ' +
+        'be right for several projects — set them per project with `PATCH /v1/settings`',
+    );
+  }
+
+  return selection;
+}
+
+/**
+ * Reads `--projects`: comma-separated positive integers, sorted, no duplicates.
+ *
+ * @param raw The value as it came.
+ * @returns The ids, ascending.
+ * @throws {UsageError} On an empty item or anything that is not a positive integer.
+ */
+function parseProjectList(raw: string): number[] {
+  const ids = raw.split(',').map((item) => (item.trim() === '' ? Number.NaN : Number(item)));
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new UsageError(
+      `--projects has to be a comma-separated list of positive integers, e.g. 1,4,7 (got: "${raw}")`,
+    );
+  }
+  return [...new Set(ids)].sort((left, right) => left - right);
+}
+
+/**
  * Turns a command line into the decision `runRunner` executes.
  *
  * Exported for the tests, and not only for them: this is the whole of what the
@@ -450,6 +556,7 @@ export function defaultRunnerId(cwd: string = process.cwd()): string {
  */
 export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): RunnerOptions {
   const given = readOptions(args);
+  const projects = readProjectSelection(given);
 
   const workingDir = given.get('--working-dir');
   const worktreesRootFlag = given.get('--worktrees-root');
@@ -510,7 +617,10 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
   return {
     url: resolveControlPlaneUrl(given.get('--url'), env),
     token: resolveToken(given.get('--token'), env),
+    // Still parsed with a selection, where it is ignored: the field is required,
+    // and the selection is what `runRunner` reads first (t1112).
     projectId: positiveInteger('--project', given.get('--project'), DEFAULT_PROJECT),
+    ...(projects === undefined ? {} : { projects }),
     runnerId: runnerId === undefined ? defaultRunnerId() : runnerId,
     engine: engine as EngineName | undefined,
     repoRoot,
@@ -582,6 +692,16 @@ export function failureMessage(error: unknown, url: string): string {
   // ways of supplying it — and rewrapping it in "could not talk to the control
   // plane" would blame the connection for a configuration that answered fine.
   if (error instanceof SettingsFallbackError) return error.message;
+
+  // Matched by name: the class lives in `serve-projects.ts`, which this file
+  // only imports as a type (see the imports). The pairing already went through
+  // when this is thrown, so it must never read as a refused pairing (t1112).
+  if (error instanceof Error && error.name === 'ProjectListingError') {
+    const status = (error as ProjectListingError).status;
+    return status === 401 || status === 403
+      ? `--all-projects could not list the projects: the control plane at ${url} refused the credential (${String(status)}) — listing every project needs the operator credential; set ${TOKEN_ENV} or pass --token with the token printed when the control plane started`
+      : `--all-projects could not list the projects at ${url} — ${describeError(error.cause)}`;
+  }
 
   if (error instanceof ControlPlaneClientError) {
     return error.status === 401 || error.status === 403
@@ -725,6 +845,24 @@ export async function runRunnerCli(
       // `options` (t404): in settings-fallback mode the options carry
       // `undefined` for all three, and a ready line that announced those would
       // be unreadable on exactly the startup this fallback exists for.
+      // The multi-project line (t1112): the projects served at that moment,
+      // each with the paths and engine its settings gave, and none of the
+      // single-project keys at the top level — there is no one project to name.
+      onReadyProjects: (projects) => {
+        process.stdout.write(
+          `${JSON.stringify({
+            event: READY_EVENT,
+            url: options.url,
+            runnerId: options.runnerId,
+            projects: projects.map((project) => ({
+              projectId: project.projectId,
+              engine: project.engine,
+              repoRoot: project.repoRoot,
+              worktreesRoot: project.worktreesRoot,
+            })),
+          })}\n`,
+        );
+      },
       onReady: (resolved) => {
         process.stdout.write(
           `${JSON.stringify({

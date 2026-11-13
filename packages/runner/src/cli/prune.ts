@@ -99,6 +99,12 @@ options:
                             (default: the current directory)
   --worktrees-root <path>   REQUIRED: directory those worktrees live under. A
                             SIBLING of --working-dir, never inside it
+  --project <id>            the project those jobs belong to; each job is read
+                            with \`?project_id=<id>\`. Needed for any project
+                            but the default one, whose jobs are the only ones an
+                            unscoped read answers for. A runner serving several
+                            projects is pruned once per project, each with its
+                            own --working-dir, --worktrees-root and --project
   --older-than <days>       only collect what has been sitting there for at
                             least this many days (default: no age filter — the
                             control plane's status is the only gate)
@@ -120,6 +126,7 @@ const VALUE_OPTIONS = [
   '--token',
   '--working-dir',
   '--worktrees-root',
+  '--project',
   '--older-than',
   '--request-timeout-ms',
 ] as const;
@@ -137,6 +144,12 @@ export interface PruneOptions {
   repoRoot: string;
   /** The directory they live under, absolute. */
   worktreesRoot: string;
+  /**
+   * The project the jobs are read in — `--project` (t1112). Absent, the job
+   * read carries no scope, exactly as before, and the control plane answers for
+   * its default project only.
+   */
+  projectId?: number;
   /** Age window in days; `0` means no age filter at all. */
   olderThanDays: number;
   /** Print what would happen and touch nothing. */
@@ -229,6 +242,21 @@ function nonNegativeInteger(name: string, raw: string | undefined, fallback: num
 }
 
 /**
+ * Reads an option that has to be a positive integer, when it was given at all.
+ *
+ * @returns The number, or `undefined` when the option was left out.
+ */
+function optionalPositiveInteger(name: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new UsageError(`${name} has to be a positive integer (got: "${raw}")`);
+  }
+  return parsed;
+}
+
+/**
  * Turns a command line into the decision the run executes.
  *
  * Exported for the tests, and not only for them: this is the whole of what the
@@ -252,11 +280,13 @@ export function parsePruneOptions(args: string[], env: NodeJS.ProcessEnv): Prune
   );
 
   const token = resolveToken(given.get('--token'), env);
+  const projectId = optionalPositiveInteger('--project', given.get('--project'));
   return {
     url: resolveControlPlaneUrl(given.get('--url'), env),
     ...(token === undefined ? {} : { token }),
     repoRoot,
     worktreesRoot,
+    ...(projectId === undefined ? {} : { projectId }),
     olderThanDays: nonNegativeInteger('--older-than', given.get('--older-than'), 0),
     dryRun: given.has('--dry-run'),
     requestTimeoutMs: nonNegativeInteger(
@@ -490,11 +520,15 @@ export async function runPrune(options: PruneOptions, seams: PruneSeams = {}): P
    */
   let answeredSomething = false;
 
+  // The job routes read inside one project (t1112): unscoped, a job of any
+  // other project is answered as not found and left alone as unanswered.
+  const scope = options.projectId === undefined ? '' : `?project_id=${String(options.projectId)}`;
+
   const eligible: Candidate[] = [];
   for (const candidate of candidates) {
     let status: JobStatus | null = null;
     try {
-      const response = await doFetch(`${options.url}/v1/jobs/${candidate.jobId}`, {
+      const response = await doFetch(`${options.url}/v1/jobs/${candidate.jobId}${scope}`, {
         headers: options.token === undefined ? {} : { authorization: `Bearer ${options.token}` },
         signal: AbortSignal.timeout(options.requestTimeoutMs),
       });

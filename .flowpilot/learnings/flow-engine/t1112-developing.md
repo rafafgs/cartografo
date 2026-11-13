@@ -1,0 +1,3 @@
+### t1112 (developing, unverified)
+
+- run.ts changed more than the ticket's table implies. The single-project controller composition moved verbatim into an exported `createProjectController`, which both paths use. The t404 settings rules became a pure `checkProjectSettings` that returns a structured problem; `resolveRunnerPaths` still formats byte-identical SettingsFallbackError messages. `buildWorkspaceReport` was split out of `buildProbeReport` so one engine's CLI/MCP answer can be paired with any project's workspace. reportModels, reportProbe, maybeServeRecheck, deregisterQuietly, mcpDiscoveryOf, describeError and createConfiguredSkillSourceResolver are now exported. controller.ts, dispatch/*, packages/core and packages/screen are untouched.

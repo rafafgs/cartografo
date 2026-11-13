@@ -1,0 +1,9 @@
+### t1112 (developing, unverified)
+
+- The acceptance tests were confirmed red before the implementation, each for the right reason: missing module (project-rotation.ts, serve-projects.ts), `does not understand "--projects"`, `client.listProjects is not a function`, prune `--project` exiting 2, and the e2e waits timing out. The test commit came first (574c4b9). Three fixes to my own new tests came after the red run, none of them changing what a test checks: a type-narrowing copy in project-rotation.test.ts, a tautological AT18 assertion made exact, and one lint fix (no-useless-assignment). That lint fix in multi-project.e2e.test.ts landed in the feat commit. No pre-existing test file is in `git diff main... --stat`.
+- runRunner loads serve-projects.ts with a dynamic import(), and index.ts imports ProjectListingError as a type only and matches it by `error.name`. Both avoid a static import cycle (serve-projects imports from run.ts), following the same pattern index.ts already uses for prune.ts.
+- A deregistered runner drops out of `GET /v1/runners` (only present runners are listed), so AT27's one-row check has to run while the runner is still up, not after stop.
+- `assert.deepEqual(x, [...])` is a TS assertion signature: it narrows `x` to the expected type, so a later `x.push(nullableValue)` fails typecheck. Compare a copy (`[...x]`) when the array is reused.
+- AT26 (`--all-projects`) also serves project 1 of the test's control plane, which the core seeds with paths under the operator's home. It has no jobs, so nothing is dispatched there; it only appears in the ready line and the probe, both of which are read-only on disk.
+- The full npm test ran green once, at load average about 50-116 (other worktrees busy). Nothing was skipped, retried or loosened. The new e2e file takes about 11s on its own.
+- Not verified on a Windows host: the operator who needs this on a small Windows laptop still owes one real `--all-projects` run there.

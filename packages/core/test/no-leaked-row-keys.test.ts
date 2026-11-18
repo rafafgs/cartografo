@@ -149,6 +149,7 @@ const SESSION_KEYS = Object.freeze([
   'prompt',
   'timeout_seconds',
   'silence_seconds',
+  'capability',
   'status',
   'exit_code',
   'timeout_reason',

@@ -136,6 +136,8 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
     // null — "this session states no inactivity policy", which is what every
     // row from before the watchdog existed reads as too.
     silence_seconds: null,
+    // The capability the node asked for (t1282): nobody asked here, so null.
+    capability: null,
   });
 });
 

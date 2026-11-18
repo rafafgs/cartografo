@@ -94,13 +94,15 @@ test('AT8 — MANIFEST_ROLES is exactly the schema\'s role enum', () => {
  * static configuration, read by the node input projection, and a document that
  * declares none projects `{}` instead of refusing. `max_consecutive_failures`
  * joined with t265, again under it: absent means the default of 3, resolved when
- * a session closes and never at validation time.
+ * a session closes and never at validation time. `capability` joined with
+ * t1282, again under it: absent means no capability, and a level the installation
+ * has not mapped is refused by the runner, never by validation.
  *
  * Naming it here instead of loosening the check to a subset keeps the claim
  * total — a top-level key that is neither required nor listed here still fails,
  * which is the property that catches a rename or a stray addition.
  */
-const OPTIONAL_DOCUMENT_FIELDS = ['hooks', 'project', 'max_consecutive_failures'];
+const OPTIONAL_DOCUMENT_FIELDS = ['hooks', 'project', 'max_consecutive_failures', 'capability'];
 
 test('AT8 — the document, node, edge and hook field sets are exactly the graph schema\'s', () => {
   const schema = readSchema(GRAPH_SCHEMA_PATH);

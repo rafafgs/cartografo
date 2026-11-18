@@ -315,8 +315,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    38,
-    'a fresh database applies the thirty-eight migrations of the package and nothing else',
+    39,
+    'a fresh database applies the thirty-nine migrations of the package and nothing else',
   );
 
   const objects = db
@@ -1142,8 +1142,8 @@ test('t491 AT7 — migration 0037 collapses one host\'s PID-suffixed rows withou
 
   assert.equal(
     counted(db, 'SELECT count(*) AS n FROM schema_migrations'),
-    38,
-    'a database taken all the way through carries the thirty-eight migrations of the package',
+    39,
+    'a database taken all the way through carries the thirty-nine migrations of the package',
   );
   assert.equal(
     counted(db, 'SELECT count(*) AS n FROM runner'),

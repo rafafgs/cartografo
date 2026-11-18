@@ -261,10 +261,12 @@ test(
       // reconciliation of the six rows one laptop had accumulated.
       // ...and t636 with `0038_job_relations.sql` — the parent link and the
       // cancellation, two new tables and no ALTER.
+      // ...and t1282 with `0039_session_capability.sql` — one nullable column
+      // recording the capability a session was asked for.
       assert.equal(
         first.readiness.migrationsApplied,
-        38,
-        'a brand-new database applies the thirty-eight migrations the package ships',
+        39,
+        'a brand-new database applies the thirty-nine migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

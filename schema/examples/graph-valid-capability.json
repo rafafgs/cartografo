@@ -1,0 +1,117 @@
+{
+  "problem_class": "capability-proof",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "A capability for the graph and one for a node",
+    "description": "Two agent nodes on one edge under a document-level capability \"general\": the first declares \"advanced\" and wins, the second says nothing and inherits \"general\". The smallest document that shows both precedence cases of the neutral capability field, which names no engine, model or effort.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-11-18",
+    "source": "a manual port (the capability field's example)"
+  },
+  "capability": "general",
+  "nodes": [
+    {
+      "id": "redigir",
+      "role": "redator",
+      "node_type": "work",
+      "description": "Writes the text. Declares its own capability, which beats the document-level one.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "tema"
+          ],
+          "properties": {
+            "tema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "texto"
+          ],
+          "properties": {
+            "texto": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s nota.md",
+            "description": "The note exists and is not empty."
+          }
+        ]
+      },
+      "capability": "advanced"
+    },
+    {
+      "id": "conferir",
+      "role": "revisor",
+      "node_type": "gate",
+      "description": "Checks the text. Declares nothing: it inherits the document-level capability.",
+      "skill_ref": {
+        "id": "cartografo/revisar-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "texto"
+          ],
+          "properties": {
+            "texto": {
+              "type": "string"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "resultado"
+          ],
+          "properties": {
+            "resultado": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s parecer.md",
+            "description": "The opinion exists and is not empty."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "redigir",
+      "to": "conferir",
+      "condition": "sempre",
+      "description": "A single exit: the drafted text always goes on to checking."
+    }
+  ],
+  "initial_node": "redigir",
+  "final_nodes": [
+    "conferir"
+  ],
+  "custom_fields": []
+}

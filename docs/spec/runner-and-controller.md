@@ -305,7 +305,7 @@ process per project, not about running more at once.
 
 A dispatch makes six reads **before** taking a worktree and opening a session:
 the job, the graph version, the engine's route, the executor environment, the
-external inputs the node declared and the skill it pinned. **Eight** failures on
+external inputs the node declared and the skill it pinned. **Nine** failures on
 the path to the session reproduce **identically** on every retry:
 
 | Cause | Where it comes from |
@@ -317,6 +317,7 @@ the path to the session reproduce **identically** on every retry:
 | a placeholder that does not resolve | `{{input.<path>}}` with no value in the node's input |
 | an unreadable test bench | `git` refused at the configured path |
 | a permission policy the engine cannot apply | `startSession` throws `SessionStartError` with the prefix `permission policy unsupported: `, before the spawn |
+| a capability the engine has no model for | `startSession` throws `SessionStartError` with the prefix `capability unmapped: `, before the spawn |
 | an external input no MCP server would hand over | `ExternalInputResolutionError`, in one of its five reasons ([mcp-client.md](mcp-client.md) §5) |
 
 The sixth arrived later, along with the read that produces it — the
@@ -342,6 +343,16 @@ the strong sense: the same skill, at the same hash, asks for the same policy and
 gets the same refusal on every tick. The blocking reason cites the adapter's
 message **literally**, because the field to fix is the one
 `engine/permission-policy.ts` names.
+
+The capability refusal (t1282) is the same kind, one field over: a node asked for
+`general` or `advanced`, and this runner's environment has no model mapped for
+that level on that engine (`<PREFIX>_MODEL_<LEVEL>` unset or blank). There is no
+default model, so the adapter refuses in `buildCommand`, before the spawn, and
+the permission refusal — which is checked first — wins when both apply. It blocks
+on the first occurrence, with no retry count, because nothing changes until
+somebody maps the level; the reason names the node, the engine, the level and the
+variable to set. Map it, restart the runner, and unblock. A node that pins its own
+`model` is never asked about its capability, so it is never refused for one.
 
 The other three causes of `SessionStartError` are **not** on that list: the two
 shapes of spawn failure carry nothing that tells a binary that does not exist

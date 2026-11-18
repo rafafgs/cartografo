@@ -282,6 +282,26 @@ export interface SessionSpec {
   readonly modelTier?: 'trivial' | 'standard';
 
   /**
+   * How capable a model this node needs, in THIS interface's two words (t1282).
+   *
+   * Like `modelTier`, and unlike `model`, it is the layer's own vocabulary and
+   * not an engine's: it names no model and no effort, and it is the ADAPTER that
+   * answers, each in its own language, from its own environment (item 17 of the
+   * additive-growth list). Precedence is `model`, then `capability`, then
+   * `modelTier`, and exactly one model flag is ever assembled: `model` wins
+   * entirely (the capability is not consulted — no effort flag, no refusal),
+   * and `capability` beats `modelTier` (the tier variable is not read).
+   *
+   * Unlike `modelTier` there is NO default model: a level the installation has
+   * not mapped is refused with a `SessionStartError` whose message starts with
+   * `capability unmapped: `, before the spawn. Absent means nobody asked, and
+   * the argv is byte-identical to what it was before this field existed.
+   *
+   * The set is closed: a third value is an error by whoever wrote it.
+   */
+  readonly capability?: 'general' | 'advanced';
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately untyped
    * from this layer's point of view: what the keys mean is the engine's
    * business.
@@ -1835,6 +1855,63 @@ and the kit's C2, which verifies it by what the process received.
     exist for Codex. Proof on real Windows is owed by the operator: re-run the
     reporter's objectify case on Windows 11 (issue #3), and a Codex node with
     30–64 KiB of content (`packages/runner/README.md`, "Windows").
+
+17. **`capability`: a neutral level, resolved to a model and an effort by the
+    adapter** (2026-11-18). `SessionSpec` gained the optional
+    `capability?: 'general' | 'advanced'`, next to `modelTier` and for the same
+    reason: it is this interface's vocabulary, and which model and effort a level
+    buys is each adapter's answer, from its own environment, below the boundary
+    where model names live. A graph, and a node where it needs one, declare it
+    (`docs/spec/graph.md`, "`capability`"); the dispatch resolves node, then
+    graph, then absent, and gives a `shell` node none.
+
+    - **Precedence is `model`, then `capability`, then `modelTier`, and exactly
+      one model flag is ever assembled.** `model` wins entirely: the capability
+      is not consulted, so there is no effort flag and no refusal even when the
+      level is unmapped. `capability` beats `modelTier`: when one is present the
+      `*_TRIVIAL_MODEL` variable is not read.
+    - **The mapping is the adapter's own environment**, read per session from
+      the `env` argument of `buildCommand`: `<PREFIX>_MODEL_<LEVEL>`, with
+      `PREFIX` one of `CLAUDE`, `CODEX`, `COPILOT` and `LEVEL` one of `GENERAL`,
+      `ADVANCED`; and, where the engine has an effort flag,
+      `<PREFIX>_EFFORT_<LEVEL>`. Values are trimmed and a blank is unset. The
+      effort value is passed through untouched (the CLI refuses an unknown effort,
+      as it refuses an unknown model). When the effort variable is unset only the
+      model flag is assembled.
+
+      | Adapter | Model | Effort |
+      |---|---|---|
+      | `claude-code` | `CLAUDE_MODEL_<LEVEL>` → `--model <m>` | `CLAUDE_EFFORT_<LEVEL>` → `--effort <v>`, right after `--model` (`claude 2.1.327`: low, medium, high, xhigh, max) |
+      | `codex` | `CODEX_MODEL_<LEVEL>` → `-m <m>` | `CODEX_EFFORT_<LEVEL>` → `-c model_reasoning_effort="<v>"`, two argv elements (`codex-cli 0.147.0`: `-c, --config <key=value>`, TOML) |
+      | `copilot` | `COPILOT_MODEL_<LEVEL>` → `--model <m>` | none: no effort flag is known to this repository, so `COPILOT_EFFORT_*` is **not read** |
+
+    - **There is no default model in code**, and that is the one place this
+      differs from `modelTier` (whose Claude Code default is
+      `claude-haiku-4-5`). A tier is a request for the cheap model and somebody
+      measured which one that is; a capability is a request for a PINNED model,
+      and a pin nobody wrote down is a guess — a guessed identifier kills the
+      session on an unknown model, or runs the work on a model nobody chose and
+      records the capability as satisfied.
+    - **An unmapped level is refused before the spawn.** `buildCommand` (pure,
+      called inside `startSession` after the permission-policy refusal) throws a
+      `SessionStartError` whose message starts with `capability unmapped: `
+      followed by `<engine> <level>` and the variable to set, for example
+      `capability unmapped: codex advanced (set CODEX_MODEL_ADVANCED)`. The prefix
+      is the named constant `CAPABILITY_REFUSAL_PREFIX` in
+      `packages/runner/src/engine/capability.ts`, shared by the three adapters;
+      `startSession` rejects with it and the listener is never called. If the
+      permission refusal also applies it fires first. The pre-session classifier
+      treats the prefix as permanent
+      (`docs/spec/runner-and-controller.md`).
+    - **No capability, no change:** with the field absent each adapter's argv is
+      byte-identical to the previous one, whatever `*_MODEL_*` and `*_EFFORT_*`
+      variables the environment holds.
+    - **Telemetry:** the session records the capability it was asked for
+      (`POST /v1/sessions`, the `session.opened` event and `session.capability`),
+      next to the `models` the engine reports at finish. Asked for versus ran.
+
+    Also in this change, additive: the Claude Code catalogue gained
+    `claude-sonnet-5-5` and `claude-opus-5-5`; the list stays advisory and ages.
 
 **Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
 quota/limit states of their own (the `Reconnecting... n/5` above is one of them).

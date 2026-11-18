@@ -118,6 +118,7 @@ const SUBGRAPH_FORBIDDEN_FIELDS = [
   'skill_ref',
   'engine',
   'model',
+  'capability',
   'escalation_policy',
   'escalation_recipient',
   'external',
@@ -200,6 +201,61 @@ const isWorktreeRelative = (value) =>
 
 /** How a message names a node: by its id, or by its position when it has none. */
 const nodeLabel = (node, index) => (isFilledText(node.id) ? node.id : `#${index}`);
+
+/**
+ * The two levels a capability may take (t1282): `schema/graph.schema.json`'s own
+ * closed enum, written down here because `POST /v1/graphs` compiles no ajv and
+ * so the schema alone would not be the gate.
+ */
+const CAPABILITIES = ['general', 'advanced'];
+
+/** The engine whose nodes open no session, and so have no model to pin. */
+const SHELL_ENGINE = 'shell';
+
+/** Whether a value is one of the two capability levels, in the one spelling accepted. */
+const isCapability = (value) => typeof value === 'string' && CAPABILITIES.includes(value);
+
+/**
+ * Checks the neutral capability of the document and of a node (t1282).
+ *
+ * Three rules, the schema's own, in the same codes as `packages/core`:
+ *
+ * - a value outside the two is `invalid_field`, at the node and at the top;
+ * - a `shell` node may not declare one — it opens no session, so there is no
+ *   model for it to pin, and silently ignoring it would be a field that lies —
+ *   `capability_on_shell_node`;
+ * - a `subgraph` node may not either, which is `SUBGRAPH_FORBIDDEN_FIELDS`'s.
+ *
+ * A document-level capability over a graph that holds shell or subgraph nodes is
+ * valid: it simply does not apply to them.
+ *
+ * Kept byte-for-byte with `packages/core/src/domain/graph.ts`, like every other
+ * rule here.
+ *
+ * @param {object} node The node being checked.
+ * @param {number} index Its position, for the message when it carries no id.
+ * @param {(code: string, message: string, target?: unknown) => void} annotate
+ */
+function checkNodeCapability(node, index, annotate) {
+  if (node.capability === undefined) return;
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+
+  if (!isCapability(node.capability)) {
+    annotate(
+      'invalid_field',
+      `"capability" of node "${label}" has to be "general" or "advanced"`,
+      target,
+    );
+  }
+  if (node.engine === SHELL_ENGINE) {
+    annotate(
+      'capability_on_shell_node',
+      `node "${label}" runs on the shell engine, which opens no session: it may not declare a "capability"`,
+      target,
+    );
+  }
+}
 
 /**
  * Checks a node's external surface and its retry flag (t369).
@@ -518,6 +574,9 @@ export function validarEstrutura(doc) {
   if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
     annotate('invalid_field', '"hooks" has to be a list', 'hooks');
   }
+  if (doc.capability !== undefined && !isCapability(doc.capability)) {
+    annotate('invalid_field', '"capability" has to be "general" or "advanced"', 'capability');
+  }
 
   const nodes = Array.isArray(doc.nodes) ? doc.nodes : [];
   const knownIds = new Set();
@@ -548,6 +607,8 @@ export function validarEstrutura(doc) {
     checkExternalSurface(node, index, annotate);
     // What it says about calling another class (t637), on the same posture.
     checkSubgraphCall(node, index, doc.problem_class, annotate);
+    // And the capability it asks for (t1282).
+    checkNodeCapability(node, index, annotate);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —

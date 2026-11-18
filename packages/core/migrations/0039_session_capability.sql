@@ -1,0 +1,27 @@
+-- 0039_session_capability — the capability a session was asked for (t1282, FR11).
+--
+-- One column, nullable, unconstrained, unindexed, with no default and no
+-- backfill — the shape `0036` took, and for the same reason: there is nothing to
+-- migrate old rows into. `NULL` means nobody asked for a capability, which is
+-- the honest reading of every session opened before this column existed and of
+-- every session whose node declared none.
+--
+-- **What it is for.** A graph, and a node where it needs one, may declare a
+-- neutral `capability` (`general` or `advanced`); the runner resolves it, per
+-- engine, to a pinned model and an effort. `models` (written at finish, t172) is
+-- what the engine REPORTED having run. This column is what was ASKED for, next
+-- to it, so that a person reading the session can tell a node that asked for
+-- `advanced` and got a model from one that asked for nothing. The two are
+-- allowed to differ and neither replaces the other.
+--
+-- **Why no CHECK.** The vocabulary is closed (`general`, `advanced`) and is
+-- enforced where it enters: the `session.opened` rule in
+-- `src/db/event-validation.ts` refuses a third value before any row is written.
+-- A second copy of the list in a CHECK is one more place to edit the day a
+-- level is added, and `status` already lives without one (migration `0003`).
+--
+-- English top to bottom (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE session ADD COLUMN capability TEXT;

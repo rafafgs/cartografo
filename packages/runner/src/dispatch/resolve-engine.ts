@@ -134,3 +134,43 @@ export function resolveModel(resolved: ResolvedNode | null): string | undefined 
   if (typeof declared !== 'string' || declared.trim() === '') return undefined;
   return declared;
 }
+
+/**
+ * Which neutral capability the node this work is sitting on asks for (t1282).
+ *
+ * Precedence is the node's own, then the graph's, then absent — read off the
+ * SAME resolved node the engine and the model came from, with no fetch of its
+ * own. The result crosses the boundary as `SessionSpec.capability`, and which
+ * model and effort it buys is the adapter's answer, below the line where model
+ * names live.
+ *
+ * Three decisions, each the same shape as {@link resolveModel}'s:
+ *
+ * - **No default.** Absent on both is `undefined`: no capability, and the argv
+ *   is what it was before the field existed.
+ * - **A node that opens no session gets none.** A `shell` node runs a command and
+ *   has no model to pin, so a graph-level capability is ignored for it even
+ *   though the graph declares one — and nothing is recorded on a session that
+ *   will not exist.
+ * - **A value that is not exactly `general` or `advanced` is absent.**
+ *   Registration is the refusal (`validateStructure`); a snapshot that bypassed
+ *   it runs on the engine's default and the dispatch does not guess which level
+ *   was meant. The node's value is the one examined when the node declares one:
+ *   an unusable node value does not fall through to the graph's, because the
+ *   node spoke.
+ *
+ * @param resolved The node this dispatch resolved, or `null`.
+ * @returns The capability to ask the adapter for, or `undefined` for none.
+ */
+export function resolveCapability(
+  resolved: ResolvedNode | null,
+): 'general' | 'advanced' | undefined {
+  if (resolved === null) return undefined;
+  if (resolved.node.engine === SHELL_ENGINE) return undefined;
+
+  const declared = resolved.node.capability ?? resolved.graphCapability;
+  return declared === 'general' || declared === 'advanced' ? declared : undefined;
+}
+
+/** The engine whose nodes open no session, and so have no model to pin. */
+const SHELL_ENGINE = 'shell';

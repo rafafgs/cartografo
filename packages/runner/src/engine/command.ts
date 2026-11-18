@@ -12,6 +12,7 @@
  * upwards (boundary 1 of the specification).
  */
 
+import { resolveCapabilityPin } from './capability.ts';
 import { resolvePermissions } from './permission-policy.ts';
 import { composeWithSystemPromptFlag, type SessionSpec } from './types.ts';
 
@@ -69,6 +70,23 @@ export const RESUME_FLAG = '--resume';
  * expanded one would be pinning a model the graph did not ask for.
  */
 export const MODEL_FLAG = '--model';
+
+/**
+ * The flag that sets the effort of one session (t1282).
+ *
+ * `--effort <level>`, measured against `claude 2.1.327 --help`: "Effort level
+ * for the current session (low, medium, high, xhigh, max)". The value is passed
+ * through untouched — the CLI refuses a level it does not know, and a list kept
+ * here would age the day it adds one. It is only ever assembled for a
+ * capability that has a `CLAUDE_EFFORT_<LEVEL>` set.
+ */
+export const EFFORT_FLAG = '--effort';
+
+/** What this adapter calls itself in a capability refusal: its `engineName`. */
+const CLAUDE_ENGINE_NAME = 'claude-code';
+
+/** The prefix of its capability variables: `CLAUDE_MODEL_GENERAL`, `CLAUDE_EFFORT_ADVANCED`, ... */
+const CAPABILITY_PREFIX = 'CLAUDE';
 
 /**
  * The model a `modelTier: 'trivial'` session runs on, when nothing overrides it.
@@ -205,18 +223,26 @@ export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): str
 }
 
 /**
- * The model this session pins, out of the node's own id and the work's tier.
+ * The model and effort this session pins, out of the node's own id, its
+ * capability and the work's tier.
  *
  * The precedence is the interesting half and it only has one honest answer:
- * `spec.model` is what the GRAPH declared for this node (t166), `modelTier` is
- * what the intake said this work costs (t175), and a triage heuristic does not
- * overrule a decision somebody wrote into a graph document. It is also not a
- * matter of taste — returning both would put two `--model` flags in one argv,
- * which is a command the CLI refuses.
+ * `spec.model` is what the GRAPH declared for this node (t166), then
+ * `spec.capability` is the neutral level the graph asked for (t1282), then
+ * `modelTier` is what the intake said this work costs (t175). A triage
+ * heuristic does not overrule a decision somebody wrote into a graph document,
+ * and returning two would put two `--model` flags in one argv, which is a
+ * command the CLI refuses.
  *
- * `'standard'` resolves to `undefined` alongside absence, on purpose: it says
- * "the engine's default is fine", and the honest way to ask for an engine's
- * default is to assemble no flag at all.
+ * - **`model` wins entirely.** The capability is not consulted: no effort, and
+ *   no refusal even when the level is unmapped. A pinned id is a complete
+ *   decision.
+ * - **`capability` reads `CLAUDE_MODEL_<LEVEL>` and `CLAUDE_EFFORT_<LEVEL>`**
+ *   and never the tier variable. There is NO default model: unlike the tier
+ *   below, an unmapped level is refused (see `capability.ts` for why).
+ * - **`'standard'` resolves to `undefined` alongside absence, on purpose**: it
+ *   says "the engine's default is fine", and the honest way to ask for an
+ *   engine's default is to assemble no flag at all.
  *
  * The blank guard on the override is `resolveModel`'s, on the dispatch side,
  * for the same reason: a `CLAUDE_TRIVIAL_MODEL=" "` would otherwise reach the
@@ -224,17 +250,36 @@ export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): str
  *
  * @param spec The session being assembled.
  * @param env The adapter's own environment.
- * @returns The model id to pin, or `undefined` for the engine's own default.
+ * @returns The model id to pin and the effort, each `undefined` when not asked.
+ * @throws {SessionStartError} When the capability's level is unmapped.
  */
+export function resolveModelAndEffort(
+  spec: SessionSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): { model: string | undefined; effort: string | undefined } {
+  if (spec.model !== undefined) return { model: spec.model, effort: undefined };
+  if (spec.capability !== undefined) {
+    const pinned = resolveCapabilityPin({
+      engine: CLAUDE_ENGINE_NAME,
+      prefix: CAPABILITY_PREFIX,
+      level: spec.capability,
+      env,
+      hasEffort: true,
+    });
+    return { model: pinned.model, effort: pinned.effort };
+  }
+  if (spec.modelTier !== 'trivial') return { model: undefined, effort: undefined };
+
+  const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();
+  return { model: declared ? declared : DEFAULT_TRIVIAL_MODEL, effort: undefined };
+}
+
+/** The model this session pins; {@link resolveModelAndEffort} without the effort. */
 export function resolveModel(
   spec: SessionSpec,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  if (spec.model !== undefined) return spec.model;
-  if (spec.modelTier !== 'trivial') return undefined;
-
-  const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();
-  return declared ? declared : DEFAULT_TRIVIAL_MODEL;
+  return resolveModelAndEffort(spec, env).model;
 }
 
 /**
@@ -284,7 +329,7 @@ export function buildCommand(
   platform: NodeJS.Platform = process.platform,
 ): EngineCommand {
   const { deniedTools } = resolvePermissions(spec.permissions);
-  const model = resolveModel(spec, env);
+  const { model, effort } = resolveModelAndEffort(spec, env);
   // The document's own function, on both branches: rewriting the triple here
   // would satisfy the same assertions while quietly forking the format.
   const composed = composeWithSystemPromptFlag(spec);
@@ -305,6 +350,9 @@ export function buildCommand(
     // own default, and the argv is what it was before either field existed.
     // Exactly one flag, whatever the two fields say — see `resolveModel`.
     ...(model === undefined ? [] : [MODEL_FLAG, model]),
+    // Only a capability brings an effort, and it goes right after the model it
+    // belongs to — before the denied list for the same reason the model does.
+    ...(effort === undefined ? [] : [EFFORT_FLAG, effort]),
     // Absent policy, absent flag: a session that declared nothing produces
     // exactly the argv it produced before this field existed.
     ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),

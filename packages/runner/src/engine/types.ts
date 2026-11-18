@@ -148,6 +148,33 @@ export interface SessionSpec {
   readonly modelTier?: 'trivial' | 'standard';
 
   /**
+   * How capable a model this node needs, in THIS interface's two words (t1282).
+   *
+   * Like {@link modelTier}, and unlike {@link model}, it is the layer's own
+   * vocabulary and not an engine's: it names no model and no effort, and it is
+   * the ADAPTER that answers, each in its own language, from its own
+   * environment — `<PREFIX>_MODEL_<LEVEL>` and, where the engine has an effort
+   * flag, `<PREFIX>_EFFORT_<LEVEL>` (`engine/capability.ts`).
+   *
+   * **Precedence is `model`, then `capability`, then `modelTier`, and exactly
+   * one model flag is ever assembled.** `model` wins entirely: a node that
+   * pinned an id made a complete decision, so the capability is not consulted —
+   * no effort flag, and no refusal even if the level is unmapped. `capability`
+   * beats `modelTier`, and then the tier variable is not read.
+   *
+   * **There is no default model.** Where `modelTier` can answer for silence, a
+   * capability that the installation has not mapped is REFUSED with a
+   * `SessionStartError` whose message starts with
+   * `CAPABILITY_REFUSAL_PREFIX`, before any spawn. The set is closed: a third
+   * value is a mistake, not new data some engine understands.
+   *
+   * Absent means nobody asked, and the argv is byte-identical to what it was
+   * before this field existed, whatever `*_MODEL_*` variables the environment
+   * holds.
+   */
+  readonly capability?: 'general' | 'advanced';
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately
    * untyped from this layer's point of view: what the keys mean is the
    * engine's business.

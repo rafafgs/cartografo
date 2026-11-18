@@ -69,6 +69,13 @@ export interface GraphNode {
    */
   model?: string;
   /**
+   * How capable a model this node needs (t1282). Absent = the document's own,
+   * and absent on both = none. Neutral on purpose: no engine, model or effort —
+   * the runner's environment maps each level. Refused on `shell` and `subgraph`
+   * nodes. NOT proposable (`CHANGEABLE_FIELDS`): a new graph version carries it.
+   */
+  capability?: Capability;
+  /**
    * When this node calls a human (t167). Absent = `on_uncertainty`, which is
    * what every node did before the field existed.
    *
@@ -260,6 +267,11 @@ export interface GraphDocument {
    * would break every graph written before this one existed.
    */
   max_consecutive_failures?: number;
+  /**
+   * The capability every agent node asks for unless it declares its own
+   * (t1282). Absent = none. Does not apply to `shell` and `subgraph` nodes.
+   */
+  capability?: Capability;
   [key: string]: unknown;
 }
 
@@ -353,6 +365,7 @@ const SUBGRAPH_FORBIDDEN_FIELDS = [
   'skill_ref',
   'engine',
   'model',
+  'capability',
   'escalation_policy',
   'escalation_recipient',
   'external',
@@ -440,6 +453,61 @@ function isWorktreeRelative(value: unknown): value is string {
 /** How a message names a node: by its id, or by its position when it has none. */
 function nodeLabel(node: PlainObject, index: number): string {
   return isFilledText(node.id) ? node.id : `#${index}`;
+}
+
+/**
+ * The two levels a capability may take (t1282): `schema/graph.schema.json`'s own
+ * closed enum, written down here because `POST /v1/graphs` compiles no ajv and
+ * so the schema alone would not be the gate.
+ */
+export const CAPABILITIES = ['general', 'advanced'] as const;
+
+/** One of the two levels. */
+export type Capability = (typeof CAPABILITIES)[number];
+
+/** The engine whose nodes open no session, and so have no model to pin. */
+const SHELL_ENGINE = 'shell';
+
+/** Whether a value is one of the two capability levels, in the one spelling accepted. */
+function isCapability(value: unknown): value is Capability {
+  return typeof value === 'string' && (CAPABILITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Checks the neutral capability of a node (t1282).
+ *
+ * Three rules, the schema's own, in the same codes as `scripts/validate-graph.mjs`:
+ *
+ * - a value outside the two is `invalid_field`, at the node and at the top;
+ * - a `shell` node may not declare one — it opens no session, so there is no
+ *   model for it to pin, and silently ignoring it would be a field that lies —
+ *   `capability_on_shell_node`;
+ * - a `subgraph` node may not either, which is `SUBGRAPH_FORBIDDEN_FIELDS`'s.
+ *
+ * A document-level capability over a graph that holds shell or subgraph nodes is
+ * valid: it simply does not apply to them.
+ *
+ * Kept byte-for-byte in `validarEstrutura`, like every other rule here.
+ */
+function checkNodeCapability(node: PlainObject, index: number, note: Note): void {
+  if (node.capability === undefined) return;
+  const target = node.id ?? index;
+  const label = nodeLabel(node, index);
+
+  if (!isCapability(node.capability)) {
+    note(
+      'invalid_field',
+      `"capability" of node "${label}" has to be "general" or "advanced"`,
+      target,
+    );
+  }
+  if (node.engine === SHELL_ENGINE) {
+    note(
+      'capability_on_shell_node',
+      `node "${label}" runs on the shell engine, which opens no session: it may not declare a "capability"`,
+      target,
+    );
+  }
 }
 
 /**
@@ -770,6 +838,9 @@ export function validateStructure(doc: unknown): StructureReport {
   if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
     note('invalid_field', '"hooks" has to be a list', 'hooks');
   }
+  if (doc.capability !== undefined && !isCapability(doc.capability)) {
+    note('invalid_field', '"capability" has to be "general" or "advanced"', 'capability');
+  }
 
   const nodes: unknown[] = Array.isArray(doc.nodes) ? doc.nodes : [];
   const knownIds = new Set<string>();
@@ -800,6 +871,8 @@ export function validateStructure(doc: unknown): StructureReport {
     checkExternalSurface(node, index, note);
     // What it says about calling another class (t637), on the same posture.
     checkSubgraphCall(node, index, doc.problem_class, note);
+    // And the capability it asks for (t1282).
+    checkNodeCapability(node, index, note);
     if (!isFilledText(node.id)) {
       // Present but not a filled text: the loop above only catches the ABSENT
       // id, and without this the node would leave the scene in silence —

@@ -87,6 +87,9 @@ export const TABLE = {
       'engine_session_ref',
       'timeout_seconds',
       'silence_seconds',
+      // The capability the node asked for (t1282), beside `models` at the end:
+      // asked-for versus ran. Optional, and null means nobody asked.
+      'capability',
     ],
   },
   'session.finished': {

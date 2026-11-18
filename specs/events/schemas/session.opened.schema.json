@@ -77,6 +77,14 @@
           ],
           "minimum": 0,
           "description": "The idleness budget the session was opened with: seconds with no output at all before it is stopped. Independent of the wall clock, because it measures something else — a session can stay alive and productive for an hour, and can stall in two minutes with the process still standing. null means the session declares no policy of its own."
+        },
+        "capability": {
+          "enum": [
+            "general",
+            "advanced",
+            null
+          ],
+          "description": "The capability the node asked for when the session opened (t1282): this project's own two words, resolved by the adapter to a model and an effort. What was ASKED for, beside session.finished's models, which is what RAN. null means nobody asked."
         }
       },
       "additionalProperties": false

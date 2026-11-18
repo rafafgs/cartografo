@@ -85,6 +85,14 @@ export interface Session {
    */
   silence_seconds: number | null;
   /**
+   * The capability the node asked for when this session opened (t1282).
+   *
+   * What was ASKED for, beside `models`, which is what RAN: the two may differ.
+   * `null` means no capability was asked for, which is also what every row from
+   * before the column existed reads as.
+   */
+  capability: 'general' | 'advanced' | null;
+  /**
    * The column's value, which is also the wire's word since t227.
    *
    * There is no map either way, and for the OPPOSITE reason there used to be
@@ -199,7 +207,7 @@ interface SessionRow
 const COLUMNS = `
   id, job_id, execution_id, node_id,
   engine, engine_session_ref, working_dir,
-  prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
+  prompt, timeout_seconds, silence_seconds, capability, status, exit_code, timeout_reason,
   usage, models, transcript,
   transcricao_truncada, transcricao_tamanho_original, transcript_artifact_id, output,
   partial_text, opened_at, finished_at
@@ -364,6 +372,7 @@ export interface OpenSessionInput {
   prompt?: unknown;
   timeout_seconds?: unknown;
   silence_seconds?: unknown;
+  capability?: unknown;
   execution_id?: unknown;
   project_id?: unknown;
   actor?: unknown;
@@ -392,6 +401,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
     prompt: input.prompt,
     timeout_seconds: input.timeout_seconds,
     silence_seconds: input.silence_seconds,
+    capability: input.capability,
   });
 
   const jobId = data.job_id as number | null;
@@ -418,9 +428,9 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
       .prepare(
         `INSERT INTO session (
            job_id, execution_id, node_id, engine, engine_session_ref, working_dir,
-           prompt, timeout_seconds, silence_seconds, status, exit_code, usage,
+           prompt, timeout_seconds, silence_seconds, capability, status, exit_code, usage,
            opened_at, finished_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, NULL, ?, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, NULL, ?, NULL)`,
       )
       .run(
         jobId,
@@ -432,6 +442,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
         data.prompt as string,
         data.timeout_seconds as number | null,
         data.silence_seconds as number | null,
+        data.capability as string | null,
         timestamp,
       );
 

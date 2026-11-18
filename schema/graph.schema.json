@@ -60,6 +60,11 @@
       "description": "Reactions the graph itself declares: entering a node or blocking on it fires a signed delivery (t169). Optional — absent means no reaction, and that is why every graph written before this field goes on being valid without touching anything, the same non-breaking posture as the node's engine field. They live HERE, and not in a subscription registered from outside through the API, so that the reaction is versioned and proposable like any other part of the graph (D2, D15).",
       "items": { "$ref": "#/$defs/hook" }
     },
+    "capability": {
+      "enum": ["general", "advanced"],
+      "description": "The capability every agent node of this graph asks for unless it declares its own (t1282). Optional: absent means no capability. A node's own value wins over this one. It does not apply to `shell` and `subgraph` nodes, which open no session, and a graph that holds them is still valid. Names no engine, model or effort: see the node's `capability`.",
+      "examples": ["general"]
+    },
     "max_consecutive_failures": {
       "type": "integer",
       "minimum": 1,
@@ -186,6 +191,7 @@
                 { "required": ["skill_ref"] },
                 { "required": ["engine"] },
                 { "required": ["model"] },
+                { "required": ["capability"] },
                 { "required": ["escalation_policy"] },
                 { "required": ["escalation_recipient"] },
                 { "required": ["external"] }
@@ -196,6 +202,10 @@
             "required": ["skill_ref"],
             "not": { "required": ["subgraph"] }
           }
+        },
+        {
+          "if": { "properties": { "engine": { "const": "shell" } }, "required": ["engine"] },
+          "then": { "not": { "required": ["capability"] } }
         }
       ],
       "properties": {
@@ -225,6 +235,11 @@
           "minLength": 1,
           "description": "Which model of the engine executes this node (t166). Optional: absent means the engine's own default — no model flag is assembled, and the argv comes out identical to what it was before this field existed. Free text on purpose, for the same reason as engine: a closed enum would force a schema edit for every new model, and what refuses an unknown id is the engine's CLI, at the opening of the session. The catalogue the API publishes is discovery, not validation.",
           "examples": ["claude-haiku-4-5", "gpt-5.6-luna"]
+        },
+        "capability": {
+          "enum": ["general", "advanced"],
+          "description": "How capable a model this node needs, in this project's own two words (t1282). Optional: absent means the document-level `capability`, and absent on both means no capability — no model or effort flag is assembled and the argv is what it was before this field existed. The set is closed because the vocabulary is ours, as escalation_policy's is: a third value is not new data some engine understands, it is a mistake by whoever wrote it. It names no engine, model or effort: the installation pins each level to a model and an effort per engine in the runner's own environment, and a level it has not mapped is refused before any session opens. A node that also declares `model` is a complete decision of its own: the capability is not consulted for it. Refused on a `shell` node (no session, so no model) and on a `subgraph` node (it opens none either).",
+          "examples": ["advanced"]
         },
         "escalation_policy": {
           "enum": ["always", "on_uncertainty", "never"],

@@ -330,6 +330,12 @@ wall-clock, `silence_seconds` is how long the session may go without producing
 any output at all. `null` in either of them is "declares no policy of its own",
 never "zero".
 
+`capability` (t1282) is the neutral level the node asked for — `general` or
+`advanced`, the project's own two words — which the adapter resolves to a model
+and an effort. It records what was ASKED for, beside `session.finished`'s
+`models`, which is what RAN; the two may differ. Optional: `null` means nobody
+asked, and it is what every event written before the field reads as.
+
 `engine_session_ref` is the session's id in the engine's own vocabulary, and it
 is what makes resuming possible after a quota pause — which is why it is
 recorded as soon as it is known, not at the end.

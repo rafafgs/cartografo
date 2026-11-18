@@ -97,6 +97,7 @@
 
 import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
+import { CAPABILITY_REFUSAL_PREFIX } from '../engine/capability.ts';
 import { COMMAND_LINE_TOO_LONG_CODES } from '../engine/process-lifecycle.ts';
 import { SessionStartError } from '../engine/types.ts';
 import { ExternalInputResolutionError } from '../mcp/resolve-external-inputs.ts';
@@ -212,6 +213,24 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       'enforcing less than was declared, and the second is the one outcome a permission ' +
       'system may never have (D4). The same skill, at the same hash, is refused again on ' +
       'every retry — fix what the message points at in the manifest and unblock.'
+    );
+  }
+
+  // The capability refusal (t1282), by the same road: the prefix decides. The
+  // installation has not mapped the level this node asked for, which is a fact
+  // about the runner's environment — the same on every retry until somebody
+  // sets the variable — so spending the pre-session ceiling on it would be
+  // spending attempts on a cause that cannot change on its own.
+  if (error instanceof SessionStartError && error.message.startsWith(CAPABILITY_REFUSAL_PREFIX)) {
+    const asked = /^capability unmapped: (\S+) (\S+)(?: \(set (\S+)\))?/.exec(error.message);
+    const [, engine = 'unknown', level = 'unknown', variable] = asked ?? [];
+    return (
+      `Node \`${job.current_node_id}\` asks for the \`${level}\` capability, and this ` +
+      `runner has no model mapped for it on engine \`${engine}\`: ${error.message}. No ` +
+      'session was opened: there is no default model, because a guessed identifier either ' +
+      'kills the session or runs the work on a model nobody chose. Map the level in the ' +
+      `runner's environment (${variable === undefined ? 'the model variable of that level' : `\`${variable}\``}), ` +
+      'restart the runner and unblock.'
     );
   }
 

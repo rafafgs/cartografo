@@ -16,6 +16,7 @@
  * run against GitHub's own routing is refused on the founder's account.
  */
 
+import { resolveCapabilityPin } from './capability.ts';
 import { resolveCopilotPermissions } from './copilot-permission-policy.ts';
 import { composeSingleArgument, type SessionSpec } from './types.ts';
 
@@ -43,6 +44,17 @@ export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
  * it rather than assuming it.
  */
 export const TRIVIAL_MODEL_VARIABLE = 'COPILOT_TRIVIAL_MODEL';
+
+/** What this adapter calls itself in a capability refusal: its `engineName`. */
+const COPILOT_ENGINE_NAME = 'copilot';
+
+/**
+ * The prefix of its capability variables: `COPILOT_MODEL_GENERAL`,
+ * `COPILOT_MODEL_ADVANCED` (t1282). There is NO `COPILOT_EFFORT_*`: no effort
+ * flag of `copilot` is known to this repository, and a variable nothing reads
+ * would be an operator setting a knob that does nothing.
+ */
+const CAPABILITY_PREFIX = 'COPILOT';
 
 /**
  * Combined `instructions` + `prompt` byte size past which the composition
@@ -152,8 +164,8 @@ const FORBIDDEN_VARIABLES = ['COPILOT_ALLOW_ALL', 'CARTOGRAFO_TOKEN'] as const;
  *
  * @param spec The session being assembled.
  * @param engineRef The UUID the adapter generated for this session.
- * @param env The adapter's own environment (only {@link TRIVIAL_MODEL_VARIABLE}
- *   is read).
+ * @param env The adapter's own environment ({@link TRIVIAL_MODEL_VARIABLE}, and
+ *   `COPILOT_MODEL_<LEVEL>` for a capability).
  * @param platform The platform whose command-line ceiling applies. Default
  *   `process.platform`.
  */
@@ -194,15 +206,30 @@ export function buildCommand(
 }
 
 /**
- * The model this session pins: the node's own pin, else the tier's override.
+ * The model this session pins: the node's own pin, else the capability's, else
+ * the tier's override.
  *
- * `spec.model` is what the GRAPH declared for the node and a triage heuristic
- * does not overrule it; a trivial tier resolves to `undefined` without
- * {@link TRIVIAL_MODEL_VARIABLE}, and a blank value is unset (an empty
- * `--model` would kill the session on a flag nobody typed).
+ * `spec.model` is what the GRAPH declared for the node and wins entirely — a
+ * triage heuristic does not overrule it, and the capability is not consulted.
+ * `spec.capability` (t1282) reads `COPILOT_MODEL_<LEVEL>`, never the tier
+ * variable, and an unmapped level is REFUSED rather than defaulted. A trivial
+ * tier resolves to `undefined` without {@link TRIVIAL_MODEL_VARIABLE}, and a
+ * blank value is unset (an empty `--model` would kill the session on a flag
+ * nobody typed). No effort is resolved: this CLI has no effort flag known here.
+ *
+ * @throws {SessionStartError} When the capability's level is unmapped.
  */
 function resolveModel(spec: SessionSpec, env: NodeJS.ProcessEnv): string | undefined {
   if (spec.model !== undefined) return spec.model;
+  if (spec.capability !== undefined) {
+    return resolveCapabilityPin({
+      engine: COPILOT_ENGINE_NAME,
+      prefix: CAPABILITY_PREFIX,
+      level: spec.capability,
+      env,
+      hasEffort: false,
+    }).model;
+  }
   if (spec.modelTier !== 'trivial') return undefined;
 
   const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();

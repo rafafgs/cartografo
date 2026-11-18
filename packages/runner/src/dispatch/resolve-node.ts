@@ -151,6 +151,15 @@ export interface GraphNode {
    * It stays graph data, visible through `GET /v1/graph-versions/:id`.
    */
   escalation_policy?: unknown;
+  /**
+   * How capable a model this node needs (t1282), `general` or `advanced`.
+   *
+   * `unknown` for the reason `engine` and `model` above are: the schema and
+   * `validateStructure` refuse a bad value on the way in, and this layer reads a
+   * snapshot rather than vouching for one. `resolveCapability` is what turns it
+   * into an answer — and into `undefined` for anything it does not recognize.
+   */
+  capability?: unknown;
   /** The skill this node runs. Required by the schema; optional here so a
    * malformed snapshot degrades instead of throwing a type error. */
   skill_ref?: SkillPin;
@@ -213,6 +222,12 @@ export interface GraphSnapshot {
    * Optional, and absence means the class declares none, which projects `{}`.
    */
   project?: Record<string, unknown>;
+  /**
+   * The capability every agent node of the graph asks for unless it declares its
+   * own (t1282). `unknown` for `GraphNode.capability`'s reason; `resolveNode`
+   * hands it on as {@link ResolvedNode.graphCapability} and nothing here reads it.
+   */
+  capability?: unknown;
 }
 
 /** What `GET /v1/graph-versions/:id` gives back. */
@@ -243,6 +258,14 @@ export interface ResolvedNode {
   node: GraphNode;
   /** The edges leaving that node, in document order. */
   edges: GraphEdge[];
+  /**
+   * The document-level capability of the snapshot (t1282), as it was written.
+   *
+   * Absent when the snapshot declares none — an absent key and not one holding
+   * `undefined`, so a `ResolvedNode` built before this field is deep-equal to
+   * one built now.
+   */
+  graphCapability?: unknown;
 }
 
 /** Reads one route of the control plane, rejecting on a refusal. */
@@ -333,7 +356,14 @@ export async function resolveNode(
 
   const edges = (version.snapshot?.edges ?? []).filter((edge) => edge.from === job.current_node_id);
 
-  return { versionId: version.id, node, edges };
+  const graphCapability = version.snapshot?.capability;
+
+  return {
+    versionId: version.id,
+    node,
+    edges,
+    ...(graphCapability === undefined ? {} : { graphCapability }),
+  };
 }
 
 /**

@@ -99,15 +99,20 @@ export const PERMISSION_REFUSAL_PREFIX = 'permission policy unsupported: ';
  * graph that pinned one would silently change model under a node that was
  * never re-proposed. Pinning is the whole point of the field.
  *
- * The list ages, and that is expected: it is a catalog, refreshed by restarting
- * the runner against a newer adapter, and a node may name a model that is not
- * here — nothing validates against this list (Out of Scope), and the CLI is
- * what refuses an identifier it does not know.
+ * The list is ADVISORY and it AGES, and that is expected: it is a catalog,
+ * refreshed by restarting the runner against a newer adapter, and a node — or an
+ * operator's `CLAUDE_MODEL_<LEVEL>` mapping — may name a model that is not here.
+ * Nothing validates against this list (Out of Scope), and the CLI is what
+ * refuses an identifier it does not know. Growing it is additive (t1282 added
+ * `claude-sonnet-5-5` and `claude-opus-5-5`, which `claude 2.1.327` accepts):
+ * an id that was ever listed stays listed.
  */
 export const CLAUDE_CODE_MODELS: readonly EngineModel[] = [
   { id: 'claude-fable-5', label: 'Claude Fable 5', origin: 'catalog' },
   { id: 'claude-opus-5', label: 'Claude Opus 5', origin: 'catalog' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', origin: 'catalog' },
   { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', origin: 'catalog' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', origin: 'catalog' },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', origin: 'catalog' },
 ];
 

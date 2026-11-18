@@ -316,6 +316,73 @@ inferring:
 The complete example:
 [`graph-valid-model.json`](../../schema/examples/graph-valid-model.json).
 
+### `capability`: how capable a model this graph, or this node, needs
+
+`model` names a model, and a model name is engine vocabulary: it ties the graph
+to one CLI and ages with every release. `capability` is the neutral half. A graph
+says **how capable** a model its agent nodes need in this project's own two
+words, `general` or `advanced`, and the installation decides what those buy.
+
+```json
+{
+  "problem_class": "note-writing",
+  "capability": "general",
+  "nodes": [
+    {
+      "id": "redigir",
+      "role": "writer",
+      "node_type": "work",
+      "capability": "advanced",
+      "skill_ref": { "id": "cartografo/write-note", "version": "1.0.0", "hash": "sha256:2745f9…" },
+      "contract": { "input_schema": {}, "output_schema": {}, "checks": [] }
+    }
+  ]
+}
+```
+
+What the field decides:
+
+- **Absent means no capability, and the argv does not change.** A graph or a
+  node that says nothing runs exactly as it did before this field existed: no
+  model flag and no effort flag are assembled, whatever the runner's environment
+  holds. Every graph written before the field is still valid.
+- **The set is closed:** `general` and `advanced`, an `enum` in the schema and
+  `invalid_field` in `validateStructure` and in `scripts/validate-graph.mjs`. The
+  vocabulary is ours, as `escalation_policy`'s is: a third value is not new data
+  some engine understands, it is a mistake by whoever wrote it.
+- **Precedence is the node, then the graph, then absent** — and, at the adapter,
+  **`model` beats both.** A node that pins a `model` has made a complete
+  decision: its capability is not consulted, there is no effort flag, and there
+  is no refusal even if the installation has not mapped that level. The
+  capability still reaches the telemetry (`session.capability`).
+- **It is refused where there is no model to pin.** A `shell` node runs a
+  command and opens no session, and a `subgraph` node opens none of its own, so a
+  `capability` on either is a field that would lie. The schema refuses it and the
+  two validators give the same verdict: `capability_on_shell_node` for a node
+  whose `engine` is `shell`, and `subgraph_node_forbidden_field` for a `subgraph`
+  node. A document-level `capability` over a graph that holds such nodes is
+  **valid**: it simply does not apply to them, and the dispatch ignores it for
+  them.
+- **It names no engine, no model and no effort.** The installation maps each level
+  per engine, in the runner's own environment
+  (`<PREFIX>_MODEL_<LEVEL>`, and `<PREFIX>_EFFORT_<LEVEL>` where the engine has an
+  effort flag — see [`engine-adapter.md`](../formats/engine-adapter.md), item 17).
+  There is no default model in code: a level the installation has not mapped is
+  refused before any session opens, and the job is blocked with the variable to
+  set.
+- **Changing it is a version change.** `capability` is graph data, so changing it
+  is a new graph version, and a job stays on the version it entered on. It is not
+  a `change_node_field` operation: a surveyor proposing a capability would extend
+  the proposal format, which stays closed until a second consumer exists.
+
+The complete example:
+[`graph-valid-capability.json`](../../schema/examples/graph-valid-capability.json),
+with the three refusals
+[`graph-invalid-capability-on-shell-node.json`](../../schema/examples/graph-invalid-capability-on-shell-node.json),
+[`graph-invalid-capability-on-subgraph-node.json`](../../schema/examples/graph-invalid-capability-on-subgraph-node.json)
+and
+[`graph-invalid-capability-unknown-value.json`](../../schema/examples/graph-invalid-capability-unknown-value.json).
+
 ### `escalation_policy`: when this node calls a person
 
 The answer was once one for the whole graph: every node asked when it got
@@ -615,7 +682,7 @@ requires `skill_ref` and refuses a `subgraph` key. The schema says it in
 lists only what every kind carries.
 
 **What a subgraph node does not carry.** It pins no skill and uses no session, so
-it refuses `skill_ref`, `engine`, `model`, `escalation_policy`,
+it refuses `skill_ref`, `engine`, `model`, `capability`, `escalation_policy`,
 `escalation_recipient` and `external`. `unsafe_to_retry` stays allowed: repeating
 the call opens new children, which is exactly what that flag is for.
 
@@ -717,7 +784,7 @@ registry:
 
 | Layer | What it judges | Codes |
 |---|---|---|
-| `validateStructure` (and `validarEstrutura`) — DB-free, byte-for-byte parity | The shape of the node and of the `subgraph` block | `subgraph_node_forbidden_field`, `subgraph_on_non_subgraph_node`, `subgraph_missing_title`, `subgraph_invalid_placeholder`, `subgraph_self_call`, `subgraph_multiple_exits`, and `invalid_field` / `missing_required_field` for a wrong type or an absent key. A longer cycle (A calls B calls A) cannot be seen from one document and is out of scope; registration order already prevents it for first versions. |
+| `validateStructure` (and `validarEstrutura`) — DB-free, byte-for-byte parity | The shape of the node and of the `subgraph` block | `subgraph_node_forbidden_field`, `capability_on_shell_node`, `subgraph_on_non_subgraph_node`, `subgraph_missing_title`, `subgraph_invalid_placeholder`, `subgraph_self_call`, `subgraph_multiple_exits`, and `invalid_field` / `missing_required_field` for a wrong type or an absent key. A longer cycle (A calls B calls A) cannot be seen from one document and is out of scope; registration order already prevents it for first versions. |
 | `validateSoundness` — DB-free | `node_with_contract` judges a subgraph node on its `contract` only; `reachable`, `terminates` and `edge_with_condition` apply unchanged | the four rule names of §6 |
 | `validateContracts` (§6.1) | Dataflow through the node, and the call against the node's own contract | `unproduced_input`, `subgraph_fan_out_not_a_list`, `subgraph_output_unmapped`, `subgraph_output_unknown_property`, `subgraph_output_not_a_list` |
 | `validateSubgraphCalls` — needs the registry, runs at registration | Whether the class exists in the same project and whether the mapped input satisfies its entry contract | `subgraph_unknown_class`, `subgraph_input_unknown_field`, `subgraph_input_missing_field` |
@@ -1273,6 +1340,10 @@ exercised by `tests/schema-grafo.test.mjs`.
 | [`graph-valid-flowpilot.json`](../../schema/examples/graph-valid-flowpilot.json) | **The master example.** See below. |
 | [`graph-valid-two-engines.json`](../../schema/examples/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
 | [`graph-valid-shell-engine.json`](../../schema/examples/graph-valid-shell-engine.json) | The same shape with `"engine": "shell"`: the smallest document that puts a deterministic node — a command, no session, no model — inside the trail (§2). |
+| [`graph-valid-capability.json`](../../schema/examples/graph-valid-capability.json) | A document-level `capability: "general"` over two agent nodes, one declaring `"advanced"` and one declaring nothing: both precedence cases of the neutral capability in one file (§2). |
+| [`graph-invalid-capability-on-shell-node.json`](../../schema/examples/graph-invalid-capability-on-shell-node.json) | A `capability` on a node whose `engine` is `shell`. Refused by the schema and by both validators (`capability_on_shell_node`). |
+| [`graph-invalid-capability-on-subgraph-node.json`](../../schema/examples/graph-invalid-capability-on-subgraph-node.json) | A `capability` on a `subgraph` node. Refused by the schema and by both validators (`subgraph_node_forbidden_field`). |
+| [`graph-invalid-capability-unknown-value.json`](../../schema/examples/graph-invalid-capability-unknown-value.json) | A `capability` of `"turbo"`, outside the closed set. Refused by the schema and by both validators (`invalid_field`). |
 | [`graph-valid-external-io.json`](../../schema/examples/graph-valid-external-io.json) | Two work nodes on one edge, the second declaring `external` and `unsafe_to_retry`: the smallest document that says what a step fetches from outside, what it hands over, and that the handing over cannot be taken back (§2). |
 | [`graph-valid-subgraph.json`](../../schema/examples/graph-valid-subgraph.json) | One `subgraph` node that calls the class of `graph-valid-minimal.json` and takes its text back: the smallest document that hands work to another class, pinning no skill (§2). |
 | [`graph-valid-subgraph-fan-out.json`](../../schema/examples/graph-valid-subgraph-fan-out.json) | A planning node producing a list, then a `subgraph` node with `fan_out` over it, ordered: one child per item, the texts collected in item order (§2). |

@@ -41,6 +41,13 @@ export interface OpeningSpec {
   prompt: string;
   timeoutSeconds?: number;
   silenceSeconds?: number;
+  /**
+   * The capability the node asked for (t1282), when it asked for one.
+   *
+   * Recorded beside the models the engine reports at finish: what was ASKED for,
+   * next to what RAN. Absent is "nobody asked", and posts no key at all.
+   */
+  capability?: 'general' | 'advanced';
 }
 
 /**
@@ -76,5 +83,8 @@ export async function openSession(
     prompt: spec.prompt,
     timeout_seconds: spec.timeoutSeconds,
     silence_seconds: spec.silenceSeconds,
+    // An absent capability is an absent KEY: the control plane reads absence as
+    // `null`, and one that never heard of the field never sees it.
+    ...(spec.capability === undefined ? {} : { capability: spec.capability }),
   });
 }

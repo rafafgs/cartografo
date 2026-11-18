@@ -17,7 +17,7 @@
  * choose one would be a second place able to choose one.
  *
  * **The conditional spreads are the content of this file.** `model`,
- * `modelTier`, `envOverrides` and `permissions` are all "absent or a value",
+ * `modelTier`, `capability`, `envOverrides` and `permissions` are all "absent or a value",
  * never "present holding nothing": `buildCommand` reads absence, not falsiness,
  * so a `model: undefined` key that survived into the spec would reach the CLI as
  * an empty `--model` and kill the session on a flag nobody typed.
@@ -29,7 +29,7 @@ import type { SessionPermissions, SessionSpec } from '../engine/types.ts';
 import { withProject, type ControlPlaneCall } from './control-plane-client.ts';
 import type { Job } from './options.ts';
 import { buildPrompt, type Event, type Question } from './prompt.ts';
-import { resolveModel } from './resolve-engine.ts';
+import { resolveCapability, resolveModel } from './resolve-engine.ts';
 import type { ResolvedNode } from './resolve-node.ts';
 
 /** What the caller has already resolved by the time a spec can be built. */
@@ -113,6 +113,12 @@ export async function buildSessionSpec(
   // Read from the SAME resolved node the engine came from.
   const model = resolveModel(resolved);
 
+  // The neutral level the graph asked for (t1282), read from the same node. Like
+  // `modelTier`, it is THIS layer's vocabulary: which model and effort it buys is
+  // the adapter's answer, from its own environment, and an absent one stays an
+  // absent key.
+  const capability = resolveCapability(resolved);
+
   // The tier comes off the WORK, not off the node — it is a property of what is
   // being done, not of the step doing it, so it is set once and travels to
   // whichever engine this node resolved to. Which model that buys is the
@@ -129,6 +135,7 @@ export async function buildSessionSpec(
     silenceSeconds: config.silenceSeconds,
     ...(model === undefined ? {} : { model }),
     ...(modelTier === undefined ? {} : { modelTier }),
+    ...(capability === undefined ? {} : { capability }),
     ...(config.envOverrides === undefined ? {} : { envOverrides: config.envOverrides }),
     ...(config.permissions === undefined ? {} : { permissions: config.permissions }),
     // Absent for every agent node, which is every node of every graph registered

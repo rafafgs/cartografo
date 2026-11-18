@@ -13,6 +13,19 @@ release.
 
 ### Added
 
+- A neutral `capability` (`general` or `advanced`) on a graph and on a node: the
+  graph says how capable a model it needs and names no engine, model or effort.
+  The runner resolves it per engine from its own environment:
+  `<PREFIX>_MODEL_<LEVEL>` (`CLAUDE_`, `CODEX_`, `COPILOT_`; `GENERAL`,
+  `ADVANCED`) and, for claude-code (`--effort`) and codex
+  (`-c model_reasoning_effort=...`), an optional `<PREFIX>_EFFORT_<LEVEL>`.
+  Precedence is `model`, then `capability`, then the job's tier; there is no
+  default model, so a level the installation has not mapped is refused before the
+  session opens (`capability unmapped: <engine> <level>`) and blocks the job on
+  the first occurrence. Refused on `shell` and `subgraph` nodes. The session
+  records the capability it was asked for (`session.capability`, new migration
+  `0039`); a graph that declares none runs exactly as before. The Claude Code
+  catalogue also lists `claude-sonnet-5-5` and `claude-opus-5-5`.
 - `cartografo-runner --projects <id,...>` and `--all-projects`: one runner
   process serves several projects, round-robin by project id, each session in
   its own project's repository and worktrees root, on its own project's engine,

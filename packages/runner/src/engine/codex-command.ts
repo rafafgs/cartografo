@@ -19,6 +19,7 @@
  * exports a function for.
  */
 
+import { resolveCapabilityPin } from './capability.ts';
 import { resolveCodexPermissions } from './codex-permission-policy.ts';
 import { composeSingleArgument, type SessionSpec } from './types.ts';
 
@@ -56,6 +57,27 @@ export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
  * cites.
  */
 export const MODEL_FLAG = '-m';
+
+/**
+ * The config override that sets the reasoning effort of one session (t1282).
+ *
+ * `codex exec` has no effort flag of its own; the way in is its generic
+ * `-c, --config <key=value>` ("Override a configuration value that would
+ * otherwise be loaded from `~/.codex/config.toml`... The `value` portion is
+ * parsed as TOML"), and the key is `model_reasoning_effort`. Measured against
+ * codex-cli 0.147.0: `codex exec --help` documents `-c`, and the binary's own
+ * config schema lists `model_reasoning_effort`. Two argv elements — `-c`, then
+ * `model_reasoning_effort="<value>"` — with the value quoted so TOML reads a
+ * string. Passed through untouched: the CLI refuses an effort it does not know.
+ */
+export const EFFORT_CONFIG_FLAG = '-c';
+export const EFFORT_CONFIG_KEY = 'model_reasoning_effort';
+
+/** What this adapter calls itself in a capability refusal: its `engineName`. */
+const CODEX_ENGINE_NAME = 'codex';
+
+/** The prefix of its capability variables: `CODEX_MODEL_GENERAL`, `CODEX_EFFORT_ADVANCED`, ... */
+const CAPABILITY_PREFIX = 'CODEX';
 
 /**
  * The variable that names the model a `modelTier: 'trivial'` session runs on.
@@ -182,7 +204,7 @@ export function buildCommand(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): EngineCommand {
-  const model = resolveModel(spec, env);
+  const { model, effort } = resolveModelAndEffort(spec, env);
   const { sandboxArgs } = resolveCodexPermissions(spec.permissions);
   const composed = composeSingleArgument(spec);
   const inline =
@@ -205,6 +227,8 @@ export function buildCommand(
     // resolves its own default, and the argv is what it was before either
     // field existed. Exactly one flag, whatever the two say.
     ...(model === undefined ? [] : [MODEL_FLAG, model]),
+    // Only a capability brings an effort, right after the model it belongs to.
+    ...(effort === undefined ? [] : [EFFORT_CONFIG_FLAG, `${EFFORT_CONFIG_KEY}="${effort}"`]),
     // Above the limit the two go away together, and the marker goes with the
     // positional it guards: there is nothing left after it to be misread.
     ...(inline ? [END_OF_OPTIONS, composed] : []),
@@ -214,29 +238,47 @@ export function buildCommand(
 }
 
 /**
- * The model this session pins, out of the node's own id and the work's tier.
+ * The model and effort this session pins, out of the node's own id, its
+ * capability and the work's tier (t1282).
  *
  * Same precedence as the first adapter's, for the same reason: `spec.model` is
- * what the GRAPH declared for this node (t166), `modelTier` is what the intake
- * said this work costs (t175), and a triage heuristic does not overrule a
+ * what the GRAPH declared for this node (t166) and wins entirely — no effort,
+ * no refusal; then `spec.capability`, the neutral level, which reads
+ * `CODEX_MODEL_<LEVEL>` and `CODEX_EFFORT_<LEVEL>` and never the tier variable;
+ * then `modelTier` (t175), which a triage heuristic must not let overrule a
  * decision somebody wrote into a graph document — quite apart from two `-m`
  * flags in one argv being a broken command.
  *
- * The difference from `command.ts` is the last line and it is the documented
- * gap: with no `CODEX_TRIVIAL_MODEL` there is nothing honest to return, so a
- * trivial tier resolves to `undefined` and this adapter changes nothing.
+ * The difference from `command.ts` on the tier is the documented gap: with no
+ * `CODEX_TRIVIAL_MODEL` there is nothing honest to return, so a trivial tier
+ * resolves to `undefined` and this adapter changes nothing. A capability does
+ * NOT get that softness: an unmapped level is refused, before the spawn.
  *
  * @param spec The session being assembled.
  * @param env The adapter's own environment.
- * @returns The model id to pin, or `undefined` for the CLI's own default.
+ * @returns The model id to pin and the effort, each `undefined` when not asked.
+ * @throws {SessionStartError} When the capability's level is unmapped.
  */
-function resolveModel(spec: SessionSpec, env: NodeJS.ProcessEnv): string | undefined {
-  if (spec.model !== undefined) return spec.model;
-  if (spec.modelTier !== 'trivial') return undefined;
+function resolveModelAndEffort(
+  spec: SessionSpec,
+  env: NodeJS.ProcessEnv,
+): { model: string | undefined; effort: string | undefined } {
+  if (spec.model !== undefined) return { model: spec.model, effort: undefined };
+  if (spec.capability !== undefined) {
+    const pinned = resolveCapabilityPin({
+      engine: CODEX_ENGINE_NAME,
+      prefix: CAPABILITY_PREFIX,
+      level: spec.capability,
+      env,
+      hasEffort: true,
+    });
+    return { model: pinned.model, effort: pinned.effort };
+  }
+  if (spec.modelTier !== 'trivial') return { model: undefined, effort: undefined };
 
   // Blank is unset: an empty `-m` would kill the session on a flag nobody typed.
   const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();
-  return declared ? declared : undefined;
+  return { model: declared ? declared : undefined, effort: undefined };
 }
 
 /**

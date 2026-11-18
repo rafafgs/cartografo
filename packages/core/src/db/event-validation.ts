@@ -323,6 +323,10 @@ const RULES: Record<string, TypeRule> = {
       // wall clock beside it: absent is "this session declares no policy", and
       // that is a different fact from a budget of zero seconds.
       silence_seconds: optional('integer', { min: 0 }),
+      // The capability the node asked for (t1282): this project's own two words,
+      // closed like `tier` above. Absent normalizes to `null` — nobody asked —
+      // which is also what every event written before the field reads as.
+      capability: optional('string', { values: ['general', 'advanced'] }),
     },
   },
   'session.finished': {

@@ -51,9 +51,11 @@ const TOP_LEVEL_KEYS = [
  * graph that declares none projects an empty object rather than refusing.
  * `max_consecutive_failures` entered with t265 under the same rule again: how
  * many failed sessions in a row stop a job, absent meaning the default of 3,
- * resolved at dispatch time and never at validation.
+ * resolved at dispatch time and never at validation. `capability` entered with
+ * t1282 under it too: absent means no capability, and the level the installation
+ * has not mapped is the runner's refusal, never validation's.
  */
-const OPTIONAL_TOP_LEVEL_KEYS = ['hooks', 'project', 'max_consecutive_failures'];
+const OPTIONAL_TOP_LEVEL_KEYS = ['hooks', 'project', 'max_consecutive_failures', 'capability'];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
 function readJson(filePath) {
@@ -130,9 +132,10 @@ test('AT1 — every fixture in schema/examples validates against the schema', as
   // Seven from t96, plus the `model` fixture t166 added, the
   // `escalation_policy` one t167 added, the two `hooks` ones t169 added, the
   // `shell` engine one t332 added, the `external`/`unsafe_to_retry` one t369
-  // added and the four `subgraph` ones t637 added. The count is asserted instead of merely iterated so that a fixture
+  // added and the four `subgraph` ones t637 added, plus the four `capability`
+  // ones t1282 added (one valid, three refused). The count is asserted instead of merely iterated so that a fixture
   // dropped by accident shows up here, and not as a silently smaller loop.
-  assert.equal(names.length, 17, `expected the seventeen committed fixtures, found ${names.length}`);
+  assert.equal(names.length, 21, `expected the twenty-one committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,
@@ -142,6 +145,11 @@ test('AT1 — every fixture in schema/examples validates against the schema', as
   const SHAPE_BREAKS = {
     'graph-invalid-edge-without-condition.json': ['/edges/0/condition'],
     'graph-invalid-node-without-contract.json': ['/nodes/1'],
+    // t1282: the three `capability` counterexamples are refused by the schema
+    // itself, each at the node that carries the field.
+    'graph-invalid-capability-on-shell-node.json': ['/nodes/0'],
+    'graph-invalid-capability-on-subgraph-node.json': ['/nodes/0'],
+    'graph-invalid-capability-unknown-value.json': ['/nodes/0/capability'],
   };
 
   for (const name of names) {

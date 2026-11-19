@@ -100,7 +100,8 @@ project of a session is read off its own `session.opened` event, exactly as
 
 There is **no paired event**, because there is no state transition to record: the
 table is append-only by construction, and the row *is* the fact that the artifact
-was created.
+was created. A repeat of the same session, name and content sha256 is not a second
+row: the upload answers the row that exists (t1338).
 
 `storage_ref` is the one column that never reaches `/v1`. Publishing it would tie
 the wire contract to whichever `ArtifactStore` is configured, and a client that
@@ -111,7 +112,7 @@ answers something else.
 
 | route | answers |
 |---|---|
-| `POST /v1/sessions/:id/artifacts` | `201` with the artifact. Raw body; `content-type` is the media type and the `x-artifact-name` header is the name — `400` without either, `404` for an unknown session, `413` over the size cap |
+| `POST /v1/sessions/:id/artifacts` | `201` with the new artifact, or `200` with the existing one when the same session already holds a row with the same `x-artifact-name` and content sha256 (the match key; `content-type` is not part of it, and the first row's media type stays). Raw body; `content-type` is the media type and the `x-artifact-name` header is the name — `400` without either, `404` for an unknown session, `413` over the size cap |
 | `GET /v1/artifacts/:id` | `200` with the artifact's metadata |
 | `GET /v1/artifacts/:id/content` | `200` with the bytes, `content-type` and `content-length` from the stored row |
 | `GET /v1/sessions/:id/artifacts` | `200` with `{artifacts: [...]}` |
@@ -146,6 +147,10 @@ proposes to change, a gate that failed, a cost that surprised somebody — all o
 those are re-read long after the session that produced them ended. The row is
 append-only and the bytes are content-addressed, which means even overwriting is
 not a thing that can happen: the same address always holds the same content.
+Nor does a retry add a row: re-sending the same file under the same name to the
+same session returns the existing record instead of appending another. Rows
+written before this rule may already hold duplicates (job 2's do); they are left
+as they are, because collapsing them would be a delete.
 
 Disk is therefore monotonic. An operator who has to reclaim space does it
 deliberately, from outside this system, knowing what they are dropping.

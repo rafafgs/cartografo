@@ -9,6 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import path from 'node:path';
@@ -92,20 +93,34 @@ async function eventsOf(ctx: TestContext, sessionId: number, type: string): Prom
   return (await sessionEvents(ctx, sessionId)).filter((event) => event.type === type);
 }
 
-/** An artifact row made straight through the repository, like the ticket says. */
-async function makeArtifact(ctx: TestContext, sessionId: number, name: string): Promise<number> {
+/**
+ * An artifact row made straight through the repository, like the ticket says.
+ *
+ * The fake store is content-addressed like the real one: since t1338 the same
+ * session, name and sha256 answer the existing row, so two DIFFERENT artifacts
+ * of one name need different `content`.
+ */
+async function makeArtifact(
+  ctx: TestContext,
+  sessionId: number,
+  name: string,
+  content = 'content',
+): Promise<number> {
   const { createArtifact } = (await import(
     new URL('../src/repositories/artifacts.ts', import.meta.url).href
   )) as typeof import('../src/repositories/artifacts.ts');
   const store = {
-    put: async (source: Buffer) => ({ ref: `fake-${String(source.length)}`, sha256: 'a', size: source.length }),
+    put: async (source: Buffer) => {
+      const sha256 = createHash('sha256').update(source).digest('hex');
+      return { ref: `fake-${sha256}`, sha256, size: source.length };
+    },
     open: () => Readable.from([]),
     exists: () => true,
   } as unknown as Parameters<typeof createArtifact>[3];
   const artifact = await createArtifact(
     ctx.db,
     sessionId,
-    { name, mediaType: 'text/markdown', buffer: Buffer.from('content') },
+    { name, mediaType: 'text/markdown', buffer: Buffer.from(content) },
     store,
   );
   assert.ok(artifact !== null);
@@ -360,7 +375,8 @@ test('t1339 AT7 — a different artifact for a settled name is a 409 and changes
   const jobId = await newJob(ctx);
   const session = await completedWithPending(ctx, jobId, { report: 'out/r.md' }, ['report']);
   const first = await makeArtifact(ctx, session.id, 'report');
-  const second = await makeArtifact(ctx, session.id, 'report');
+  const second = await makeArtifact(ctx, session.id, 'report', 'other content');
+  assert.notEqual(second, first);
 
   const settled = await settle(ctx, session.id, { name: 'report', artifact_id: first });
   assert.equal(settled.status, 201);

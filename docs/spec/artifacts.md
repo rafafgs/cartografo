@@ -116,6 +116,13 @@ answers something else.
 | `GET /v1/artifacts/:id/content` | `200` with the bytes, `content-type` and `content-length` from the stored row |
 | `GET /v1/sessions/:id/artifacts` | `200` with `{artifacts: [...]}` |
 
+The artifact's `id` is a JSON number on all four routes. A step's report carries
+it differently: the runner rewrites an `x-artifact` property to the **decimal
+string** of that id (`2` becomes `"2"`), because the manifest format declares the
+property a string and the control plane validates the report against it. Only a
+positive safe integer is accepted; anything else makes the upload fail loudly
+(t1311).
+
 The three reads are scoped to the caller's project, resolved through the owning
 session. An artifact of another project answers the **same `404`** an unknown id
 answers, and never a distinct "forbidden" code: a reference may not cross a

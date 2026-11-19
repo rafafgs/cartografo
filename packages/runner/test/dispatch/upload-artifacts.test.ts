@@ -60,11 +60,13 @@ interface Sent {
 }
 
 /**
- * A `fetch` that records every request and answers each one with an id.
+ * A `fetch` that records every request and answers each one with the record the
+ * control plane really serves: `repositories/artifacts.ts`'s `Artifact`, whose
+ * `id` is a NUMBER (t1311).
  *
- * The ids are handed out in order (`artifact-1`, `artifact-2`, …) rather than
- * fixed, because two of the cases below upload two files and the whole point of
- * the rewrite is that each property gets ITS own id.
+ * The ids are handed out in order (`1`, `2`, …) rather than fixed, because two
+ * of the cases below upload two files and the whole point of the rewrite is
+ * that each property gets ITS own id.
  */
 function recorder(status = 201): { sent: Sent[]; doFetch: typeof fetch } {
   const sent: Sent[] = [];
@@ -78,13 +80,34 @@ function recorder(status = 201): { sent: Sent[]; doFetch: typeof fetch } {
       body: init?.body as Uint8Array,
     });
     return Promise.resolve(
-      new Response(JSON.stringify({ id: `artifact-${String(sent.length)}` }), {
+      new Response(JSON.stringify(artifactRecord(sent.length)), {
         status,
         headers: { 'content-type': 'application/json' },
       }),
     );
   };
   return { sent, doFetch };
+}
+
+/** The core's `Artifact` record, with `id` as the number it really is. */
+function artifactRecord(id: number): Record<string, unknown> {
+  return {
+    id,
+    session_id: 77,
+    name: 'relatorio',
+    media_type: 'application/octet-stream',
+    size: 1,
+    sha256: 'a'.repeat(64),
+    created_at: '2026-11-19T00:00:00.000Z',
+  };
+}
+
+/** A `fetch` answering 201 with exactly the body it is given, as text. */
+function answering(text: string): typeof fetch {
+  return () =>
+    Promise.resolve(
+      new Response(text, { status: 201, headers: { 'content-type': 'application/json' } }),
+    );
 }
 
 /** A `fetch` that records nothing and fails the test if it is ever called. */
@@ -150,8 +173,8 @@ test('t423 AT — a declared artifact inside the worktree is uploaded, rewritten
 
   assert.deepEqual(
     result.output,
-    { nota: 'done', relatorio: 'artifact-1' },
-    'the report carries the id the store answered, never the local path',
+    { nota: 'done', relatorio: '1' },
+    'the report carries the id the store answered as a decimal string, never the local path',
   );
   assert.equal(result.problems, undefined);
   assert.ok(
@@ -328,6 +351,15 @@ test('t423 AT — two declared artifacts are uploaded and rewritten independentl
   assert.notEqual(output.relatorio, 'report.md');
   assert.notEqual(output.evidencia, 'evidence/log.txt');
   assert.notEqual(output.relatorio, output.evidencia, 'two files are two ids');
+  const ids = sent.map((call) => call.headers['x-artifact-name']);
+  assert.deepEqual(
+    { relatorio: output.relatorio, evidencia: output.evidencia },
+    {
+      relatorio: String(ids.indexOf('relatorio') + 1),
+      evidencia: String(ids.indexOf('evidencia') + 1),
+    },
+    'each property carries the decimal string of the id of ITS own upload',
+  );
   assert.ok(!existsSync(path.join(dir, 'report.md')));
   assert.ok(!existsSync(path.join(dir, 'evidence', 'log.txt')));
 });
@@ -401,4 +433,58 @@ test('t423 AT — with no token configured, no Authorization header goes out at 
     undefined,
     'an empty credential would look like a credential (t124/t147)',
   );
+});
+
+test('t1311 AT — a numeric id in the reply is written into the report as its decimal string', async (t) => {
+  const { uploadArtifacts } = await loadUpload();
+  const dir = worktree(t, { 'report.md': 'bytes' });
+
+  const result = await uploadArtifacts(
+    options(answering(JSON.stringify({ ...artifactRecord(2) }))),
+    77,
+    dir,
+    schemaWithArtifacts('relatorio'),
+    { nota: 'done', relatorio: 'report.md' },
+  );
+
+  assert.deepEqual(result.output, { nota: 'done', relatorio: '2' });
+  assert.equal(typeof result.output?.relatorio, 'string', 'the manifest declares it a string');
+});
+
+test('t1311 AT — every id shape the core does not serve is refused with the reply text', async (t) => {
+  const { uploadArtifacts } = await loadUpload();
+
+  const replies: Array<[string, string]> = [
+    ['a string id, even a decimal one', JSON.stringify({ id: '2' })],
+    ['a null id', JSON.stringify({ id: null })],
+    ['zero', JSON.stringify({ id: 0 })],
+    ['a negative id', JSON.stringify({ id: -1 })],
+    ['a fractional id', JSON.stringify({ id: 1.5 })],
+    ['a boolean id', JSON.stringify({ id: true })],
+    ['no id at all', JSON.stringify({ name: 'relatorio' })],
+    ['a number past the safe range', '{"id": 9007199254740993}'],
+    ['an empty body', ''],
+    ['a non-object body', '[]'],
+  ];
+
+  for (const [label, text] of replies) {
+    const dir = worktree(t, { 'report.md': 'bytes' });
+    await assert.rejects(
+      async () =>
+        await uploadArtifacts(options(answering(text)), 77, dir, schemaWithArtifacts('relatorio'), {
+          nota: 'done',
+          relatorio: 'report.md',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error, label);
+        assert.ok(
+          error.message.includes('answered 2xx with no artifact id'),
+          `${label}: ${error.message}`,
+        );
+        assert.ok(error.message.includes(text), `${label}: the reply text is in the message`);
+        return true;
+      },
+      label,
+    );
+  }
 });

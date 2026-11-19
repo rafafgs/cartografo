@@ -119,7 +119,9 @@ They are two distinct vocabularies and it is worth not confusing them.
 `expiration_reason` is a wire name **and**, since the database rename
 (`motivo_expiracao`), the column's: why a lease died. `reason` is a
 response field of `POST /v1/leases`: why a request **did not become** a lease
-(`job_already_leased`, `runner_cap`, `project_cap`).
+(`job_already_leased`, `runner_cap`, `project_cap`, `job_held` since t636, and
+`retry_backoff` / `retry_cap_reached` since t1312). Only the two caps end the
+controller's pass; every other reason sends it on to the next candidate.
 
 ---
 
@@ -644,6 +646,62 @@ What is still open, and is recorded as out of scope: if the runner dies between
 the `PATCH /finish` and the refusal's `POST /blocks`, the job stays leasable for
 one more session — which, being refused too, blocks on **its own** first
 occurrence. The cost is one extra session, not the infinite loop.
+
+### An attempt nobody closed also stops (t1312)
+
+The t265 ceiling counts sessions **closed** `failed`, and it runs only when one
+is closed. A runner that throws after the agent finished — in the incident, the
+artifact upload refused the reply and the dispatch never reached
+`finishSession` — closes nothing: the session row stays `open`, the job stays
+released on the same node, and the next tick leases and dispatches it again.
+Job 2 of the incident spent fourteen paid sessions in about two hours that way,
+and the t265 count never saw one of them.
+
+So the lease grant counts them, because it is the one point every redispatch
+passes. An **abandoned attempt** is a session of the job's current node with
+`status = 'open'` while the job holds **no** active lease. In
+`POST /v1/leases`, for a job that exists in the claim's project, the checks run
+in this order:
+
+1. the `cross_project_reference` refusal and the `job_held` hold (t412, t636);
+2. in one transaction: reconcile expired leases (`claimExpired`), then — only
+   if the job holds no active lease — count the **trailing** run of abandoned
+   attempts, newest first, stopping at the first session that is not `open`.
+   Sessions opened at or before the job's latest `job.unblocked` are ignored,
+   so a person's unblock starts the count at zero;
+3. **the cap**: at a run of `max_consecutive_failures` or more (default 3, the
+   same field t265 reads) the job is blocked in that same transaction — flag,
+   one `job.blocked` with `consecutive_failures`, and the `node_blocked` hook —
+   and the answer is `200 {lease: null, reason: 'retry_cap_reached'}`. The
+   reason names the node, the count and the last session's id and status, and
+   sends whoever reads it to the runner log, because the exception that left
+   the session open never reached the control plane. A job already blocked keeps
+   its reason and gets no second event;
+4. **the backoff**: with a run k, 1 ≤ k < N, the answer is
+   `200 {lease: null, reason: 'retry_backoff', retry_after}` while
+   `now < anchor + base · 2^(k−1)` seconds, the wait capped at 3600 s. The
+   anchor is the job's most recent lease: its `released_at`, or its
+   `expires_at` when it expired. `base` is `CARTOGRAFO_RETRY_BACKOFF_SECONDS`
+   (default 60, `0` turns the backoff off, anything that is not a non-negative
+   integer falls back to 60). Sessions opened with no lease at all have no
+   anchor and are bounded by the cap alone;
+5. `grantLease`, exactly as before. A job that holds an active lease reaches it
+   untouched and is answered `job_already_leased`: a live dispatch is never
+   counted.
+
+The block is raised at the **next grant** after the N-th abandoned attempt, not
+when that attempt dies. It costs at most one tick and needs no second write path
+in the release route. The controller needs nothing new: `retry_backoff` and
+`retry_cap_reached` are neither cap, so it moves on to the next candidate, and
+the blocked job leaves the candidate list (`blocked === true`).
+
+The known gap, left alone on purpose: a run that **mixes** `failed` and
+abandoned sessions (failed, abandoned, failed) is counted by neither rule, and
+`timed_out` sessions enter neither count. Counting `failed` here would also
+count quota-throttled sessions (t296), which must keep retrying. Closing the
+abandoned session as `failed` when a tick throws is a separate ticket; this
+count keeps working once it lands, because a closed session simply stops being
+an abandoned one.
 
 ### A report the control plane refused holds the job at the node
 

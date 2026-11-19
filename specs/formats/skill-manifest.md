@@ -226,6 +226,9 @@ The convention has two halves, and the session only owes the first one:
   removes the file from the worktree, which is scratch by construction and would
   otherwise read as uncommitted work. So what any later node reads in that
   property is an id, never a path on a machine that no longer has the directory.
+  The artifact's `id` is a number on the wire; the property is a string, so the
+  runner writes its **decimal string** (`2` becomes `"2"`), which is also what
+  `GET /v1/artifacts/<id>` takes.
 
 A path that resolves outside the worktree, a file that was never written, and a
 property that carries something other than a string are all **refused**: the

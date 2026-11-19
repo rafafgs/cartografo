@@ -87,6 +87,21 @@
  * every runner to filter. `GrantResult` in `repositories/leases.ts` is
  * untouched: this route builds that answer itself.
  *
+ * Since t1312 the grant has a fourth exception, and it is the one that bounds
+ * what a broken runner can spend. A runner that throws AFTER a session ran — and
+ * so never closes it — used to get the same job back on its next tick, forever
+ * (t1311: fourteen paid sessions in two hours). The t265 cap could not see it,
+ * because it counts sessions CLOSED `failed` and an abandoned one is never
+ * closed. So, after the hold and only for a job that exists in the claim's
+ * project and holds no active lease, the grant counts the trailing run of
+ * abandoned attempts on the job's current node (`evaluateAbandonedAttempts`,
+ * `repositories/job.ts`): at the graph's `max_consecutive_failures` the job is
+ * blocked and the answer is `200 {lease: null, reason: 'retry_cap_reached'}`;
+ * below it, the attempts are spaced with a doubling backoff and the answer is
+ * `200 {lease: null, reason: 'retry_backoff', retry_after}`. Count and block
+ * share one transaction. A job that holds an active lease falls through to
+ * `grantLease`, which answers `job_already_leased` as it always did.
+ *
  * A lease that clears by EXPIRING has the same theoretical gap and is not
  * closed here: `claimExpired`/`expireOverdue` kill a batch with one `UPDATE`,
  * which is a differently shaped problem, and it is not what t198 hit.
@@ -121,6 +136,7 @@ import { now } from '../repositories/common.ts';
 import {
   announceFinishedExecution,
   dispatchHoldOf,
+  evaluateAbandonedAttempts,
   getJob,
   jobProjectId,
 } from '../repositories/job.ts';
@@ -150,6 +166,18 @@ export const DEFAULT_LEASE_CAP_RUNNER = 50;
 /** Ceiling of simultaneous active leases per project, when nothing is configured. */
 export const DEFAULT_LEASE_CAP_PROJECT = 50;
 
+/**
+ * Base of the abandoned-attempt backoff, in seconds, when nothing is configured
+ * (t1312, FR6).
+ *
+ * The k-th abandoned attempt in a row waits `base * 2^(k-1)` seconds after the
+ * previous lease went back, capped at an hour. It only ever touches a job whose
+ * last attempt was abandoned, so a healthy dispatch never meets it; what it
+ * slows down is a runner polling on a short interval against a broken node.
+ * `0` turns it off.
+ */
+export const DEFAULT_RETRY_BACKOFF_SECONDS = 60;
+
 /** The two ceilings this process enforces, whatever the request declares. */
 export interface LeaseCeilings {
   runner: number;
@@ -174,17 +202,21 @@ function routeId(raw: string): number | undefined {
  * @param options Injectable clock, passed on to the repositories (in production
  *   it is empty; it exists so the expiration tests can control time without a
  *   `sleep`), and the ceilings this process enforces — resolved from the
- *   environment by `start()` and falling back to the two defaults above.
+ *   environment by `start()` and falling back to the two defaults above —
+ *   and, since t1312, the base of the abandoned-attempt backoff, resolved the
+ *   same way and falling back to {@link DEFAULT_RETRY_BACKOFF_SECONDS}.
  */
 export function registerLeases(
   app: FastifyInstance,
   db: Database,
-  options: { now?: () => string; leaseCeilings?: LeaseCeilings } = {},
+  options: { now?: () => string; leaseCeilings?: LeaseCeilings; retryBackoffSeconds?: number } = {},
 ): void {
   const ceilings: LeaseCeilings = options.leaseCeilings ?? {
     runner: DEFAULT_LEASE_CAP_RUNNER,
     projeto: DEFAULT_LEASE_CAP_PROJECT,
   };
+  const backoffSeconds = options.retryBackoffSeconds ?? DEFAULT_RETRY_BACKOFF_SECONDS;
+  const clock = options.now ?? now;
 
   app.post('/leases', async (request, reply) => {
     const body = isObject(request.body) ? request.body : {};
@@ -277,6 +309,25 @@ export function registerLeases(
     if (jobProject !== null) {
       const hold = dispatchHoldOf(db, body.job_id as number, body.project_id as number);
       if (hold !== null) return { lease: null, reason: 'job_held', dispatch_hold: hold };
+
+      // The abandoned-attempt cap, then its backoff (t1312, FR4/FR6/FR7). One
+      // transaction: the reconcile first, so a lease that died is seen as dead
+      // and its open session counts as abandoned; then the count; then — at the
+      // cap — the block, so the flag and the count that raised it land together.
+      // An id naming no row never gets here, as it never reached the hold.
+      const verdict = db.transaction(() => {
+        claimExpired(db, options);
+        return evaluateAbandonedAttempts(
+          db,
+          body.job_id as number,
+          { now: clock(), backoffSeconds },
+          options,
+        );
+      })();
+      if (verdict?.action === 'block') return { lease: null, reason: 'retry_cap_reached' };
+      if (verdict?.action === 'wait') {
+        return { lease: null, reason: 'retry_backoff', retry_after: verdict.retryAfter };
+      }
     }
 
     // The clamp, and not a refusal: a declaration above the ceiling is not a

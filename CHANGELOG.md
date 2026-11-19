@@ -13,6 +13,17 @@ release.
 
 ### Added
 
+- The lease grant bounds abandoned attempts: a job whose sessions on the current
+  node keep being left `open` with no lease (a runner that throws after the
+  session, before closing it) is blocked at the graph's
+  `max_consecutive_failures` (default 3), with a reason naming the node, the
+  count and the last session, and `POST /v1/leases` answers
+  `{lease: null, reason: 'retry_cap_reached'}`. Below the cap the attempts are
+  spaced with a doubling backoff, answered
+  `{lease: null, reason: 'retry_backoff', retry_after}`: base
+  `CARTOGRAFO_RETRY_BACKOFF_SECONDS` (default 60, `0` turns it off), capped at
+  one hour. An unblock restarts the count. The runner treats both reasons as
+  "try the next candidate".
 - A neutral `capability` (`general` or `advanced`) on a graph and on a node: the
   graph says how capable a model it needs and names no engine, model or effort.
   The runner resolves it per engine from its own environment:

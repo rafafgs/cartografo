@@ -2107,12 +2107,11 @@ function raiseStreakBlock(
   occurredAt: string,
   options: ClockOptions = {},
 ): void {
-  db.prepare('UPDATE job SET blocked = ?, block_reason = ?, updated_at = ? WHERE id = ?').run(
-    asInteger(true),
-    reason,
-    occurredAt,
-    row.id,
-  );
+  // Scoped by the row's own project (t414): the id came from a row this
+  // transaction already read, and the predicate says so in the statement.
+  db.prepare(
+    'UPDATE job SET blocked = ?, block_reason = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+  ).run(asInteger(true), reason, occurredAt, row.id, row.project_id);
 
   // `API_ACTOR`, like `announceFinishedExecution`: this is the control plane
   // asserting something about the history IT owns, not the runner reporting
@@ -2218,9 +2217,13 @@ export function evaluateAbandonedAttempts(
   const row = readRow(db, jobId);
   if (row === undefined) return null;
 
+  // Every read below is scoped by the job's own project (t414). A lease over
+  // this job can only live there: the grant refuses a cross-project claim (t412).
   const live = db
-    .prepare("SELECT 1 FROM lease WHERE job_id = ? AND status = 'active' LIMIT 1")
-    .get(jobId);
+    .prepare(
+      "SELECT 1 FROM lease WHERE job_id = ? AND project_id = ? AND status = 'active' LIMIT 1",
+    )
+    .get(jobId, row.project_id);
   if (live !== undefined) return null;
 
   const ceiling = resolveFailureCeiling(db, row);
@@ -2231,11 +2234,11 @@ export function evaluateAbandonedAttempts(
   const unblocked = db
     .prepare(
       `SELECT occurred_at FROM event
-        WHERE type = 'job.unblocked' AND entity_type = 'job' AND entity_id = ?
+        WHERE project_id = ? AND type = 'job.unblocked' AND entity_type = 'job' AND entity_id = ?
         ORDER BY id DESC
         LIMIT 1`,
     )
-    .get(String(jobId)) as { occurred_at: string } | undefined;
+    .get(row.project_id, String(jobId)) as { occurred_at: string } | undefined;
 
   // `LIMIT` the ceiling, as t265 does: nothing past it changes the answer.
   const recent = db

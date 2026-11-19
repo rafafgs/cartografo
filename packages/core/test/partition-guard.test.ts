@@ -220,11 +220,6 @@ const ALLOWLIST: readonly Exception[] = Object.freeze([
     class: 'SAFE_BY_CORRELATION',
     reason: "the `alreadyWalked` check runs after this function's own scoped read of the job.",
   },
-  {
-    where: 'repositories/job.ts::blockOnRepeatedFailure',
-    class: 'SAFE_BY_CORRELATION',
-    reason: "the job id comes from the session row `finishSession` just resolved, never from a caller.",
-  },
 
   /* ---------------------------------------------------------------------- */
   /* GLOBAL_BY_DESIGN — a project here would be the bug.                     */

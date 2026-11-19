@@ -184,7 +184,16 @@ function resolveDeclaredFile(
 }
 
 /**
- * Sends one file to the artifact store and gives back the id it was given.
+ * Sends one file to the artifact store and gives back the id it was given, as
+ * the decimal string the report carries (t1311).
+ *
+ * The core's `Artifact.id` is a JSON NUMBER, published by four public `/v1`
+ * routes, while the manifest format declares an `x-artifact` property a string
+ * and the core validates the stored report against it. So the runner normalizes
+ * (`2` becomes `"2"`) and the core stays untouched. Only a positive safe
+ * integer is accepted: a string id, `0`, a fraction or a missing key is refused
+ * as before, so a core that changes the id's type fails loudly (the contract
+ * test pins it) instead of being guessed at.
  *
  * The deadline is enforced here and not only through the signal handed to
  * `fetch`, for the reason `http-client.ts` records: `doFetch` is an injected
@@ -238,10 +247,10 @@ async function uploadOne(
   }
 
   const body: unknown = text === '' ? undefined : JSON.parse(text);
-  if (!isPlainObject(body) || typeof body.id !== 'string') {
+  if (!isPlainObject(body) || !Number.isSafeInteger(body.id) || (body.id as number) < 1) {
     throw new Error(`POST ${route} answered 2xx with no artifact id: ${text}`);
   }
-  return body.id;
+  return String(body.id);
 }
 
 /**

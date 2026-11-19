@@ -7741,7 +7741,7 @@ test("t370 — external inputs are fetched before the session and land as files"
 /** The skill of the artifact suite, and the file its sessions declare. */
 const ARTIFACT_SKILL_ID = "artifact-crossing";
 const ARTIFACT_FILE = "report.md";
-const ARTIFACT_ID = "artifact-42";
+const ARTIFACT_ID = 42;
 const ARTIFACT_BYTES = "what the step was asked to produce";
 
 /**
@@ -7883,7 +7883,7 @@ test("t423 — a declared artifact is uploaded, the report carries its id, and t
       });
 
       if (/^\/v1\/sessions\/\d+\/artifacts$/.test(route)) {
-        return new Response(JSON.stringify({ id: ARTIFACT_ID }), {
+        return new Response(JSON.stringify({ id: ARTIFACT_ID, session_id: 1, name: "relatorio" }), {
           status: 201,
           headers: { "content-type": "application/json" },
         });
@@ -8020,7 +8020,7 @@ test("t423 — a declared artifact is uploaded, the report carries its id, and t
 
       assert.deepEqual(
         session.output,
-        { nota: "the artifact is ready", relatorio: ARTIFACT_ID },
+        { nota: "the artifact is ready", relatorio: String(ARTIFACT_ID) },
         "the control plane accepted the report, and it names an artifact id, never a local path",
       );
       assert.ok(

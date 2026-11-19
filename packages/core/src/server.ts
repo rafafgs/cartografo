@@ -131,6 +131,15 @@ export interface AppOptions {
    */
   leaseCeilings?: LeaseCeilings;
   /**
+   * Base of the abandoned-attempt backoff at the lease grant, in seconds
+   * (t1312, FR6); `0` turns it off.
+   *
+   * Resolved from the environment by `start()`, like {@link leaseCeilings};
+   * omitted, the lease routes fall back to their own
+   * `DEFAULT_RETRY_BACKOFF_SECONDS`.
+   */
+  retryBackoffSeconds?: number;
+  /**
    * Where an artifact's bytes are stored (t422, FR3).
    *
    * The app receives the store the same way it receives the database: whoever
@@ -311,7 +320,10 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerRunners(inner, options.db));
       scope.register(async (inner) => registerEngines(inner, options.db));
       scope.register(async (inner) =>
-        registerLeases(inner, options.db, { leaseCeilings: options.leaseCeilings }),
+        registerLeases(inner, options.db, {
+          leaseCeilings: options.leaseCeilings,
+          retryBackoffSeconds: options.retryBackoffSeconds,
+        }),
       );
       scope.register(async (inner) => registerIntake(inner, options.db));
       scope.register(async (inner) => registerSkills(inner, options.db));

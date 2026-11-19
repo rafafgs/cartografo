@@ -21,7 +21,11 @@ import { DEFAULT_PROJECT } from './repositories/common.ts';
 import { hasLiveCredential, issueCredential } from './repositories/credentials.ts';
 import { seedDefaultSettings } from './repositories/settings.ts';
 import { DEFAULT_ARTIFACT_SIZE_CAP_BYTES } from './routes/artifacts.ts';
-import { DEFAULT_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_RUNNER } from './routes/leases.ts';
+import {
+  DEFAULT_LEASE_CAP_PROJECT,
+  DEFAULT_LEASE_CAP_RUNNER,
+  DEFAULT_RETRY_BACKOFF_SECONDS,
+} from './routes/leases.ts';
 import { createApp } from './server.ts';
 
 /** Default port of the control plane. */
@@ -49,6 +53,9 @@ export const ENV_LEASE_CAP_RUNNER = 'CARTOGRAFO_LEASE_CAP_RUNNER';
 
 /** Environment variable that overrides the per-project lease ceiling (t157, FR1). */
 export const ENV_LEASE_CAP_PROJECT = 'CARTOGRAFO_LEASE_CAP_PROJECT';
+
+/** Environment variable that overrides the abandoned-attempt backoff base (t1312, FR6). */
+export const ENV_RETRY_BACKOFF_SECONDS = 'CARTOGRAFO_RETRY_BACKOFF_SECONDS';
 
 /** Environment variable that overrides the artifact upload ceiling (t422, FR7). */
 export const ENV_ARTIFACT_SIZE_CAP_BYTES = 'CARTOGRAFO_ARTIFACT_SIZE_CAP_BYTES';
@@ -193,6 +200,26 @@ export function leaseCapProject(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * Resolves the base of the abandoned-attempt backoff, in seconds (t1312, FR6).
+ *
+ * Unlike the two ceilings above, a bad value does NOT stop the startup: the
+ * ticket that introduced it fixed the posture as "fall back to the default".
+ * The backoff is a brake on a broken runner, not a capacity an operator
+ * believes is enforced — and the fallback is the safe direction, since the
+ * default still spaces attempts out and the cap behind it still blocks. `0` is
+ * a valid value and turns the backoff off; anything that is not a non-negative
+ * integer (`abc`, `-5`, `1.5`) is the default.
+ *
+ * @param env Environment to read `CARTOGRAFO_RETRY_BACKOFF_SECONDS` from.
+ * @returns The base the lease grant multiplies by `2^(k-1)`.
+ */
+export function retryBackoffSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const configured = env[ENV_RETRY_BACKOFF_SECONDS]?.trim();
+  if (configured === undefined || !/^\d+$/.test(configured)) return DEFAULT_RETRY_BACKOFF_SECONDS;
+  return Number(configured);
+}
+
+/**
  * Resolves the ceiling of an artifact upload, in bytes (t422, FR7).
  *
  * Same shape as the two lease ceilings above, failure included: a value that is
@@ -288,6 +315,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
       // does not have to opt out of the production configuration.
       logger: { level: logLevel(env) },
       leaseCeilings: { runner: leaseCapRunner(env), projeto: leaseCapProject(env) },
+      retryBackoffSeconds: retryBackoffSeconds(env),
       // Built here and passed down, for the same reason the handle above is:
       // whoever decides where things live is the startup, and the app is handed
       // the result (t422, FR3). It goes beside the database file — an operator

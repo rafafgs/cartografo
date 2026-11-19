@@ -266,12 +266,19 @@ test('t1312 AT4 — after the cap the job reads blocked, leaves the candidates a
   assert.ok(reason.includes(String(last.sessionId)), `the reason names the last session: ${reason}`);
   assert.ok(reason.includes('open'), `the reason names the last session's status: ${reason}`);
 
-  const listed = await request<{ jobs: Array<{ id: number }> }>(ctx, 'GET', '/v1/jobs');
-  assert.equal(listed.status, 200);
-  assert.ok(
-    !listed.body.jobs.some((candidate) => candidate.id === job),
-    'a blocked job is no longer a candidate',
+  // `GET /v1/jobs` is the whole board — `cartografo jobs` prints a blocked job
+  // from it — and has never dropped blocked rows. What makes a job a candidate
+  // is the runner's filter over it (`listReleasedJobs`: `blocked === false`), so
+  // "no longer a candidate" is the board carrying `blocked: true`. AT12 proves
+  // the runner stops dispatching it.
+  const listed = await request<{ jobs: Array<{ id: number; blocked: boolean }> }>(
+    ctx,
+    'GET',
+    '/v1/jobs',
   );
+  assert.equal(listed.status, 200);
+  const onBoard = listed.body.jobs.find((candidate) => candidate.id === job);
+  assert.equal(onBoard?.blocked, true, 'the board shows it blocked, so it is no longer a candidate');
 
   const events = await blockEvents(ctx, job);
   assert.equal(events.length, 1, 'one block, one event');

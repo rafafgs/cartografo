@@ -296,8 +296,23 @@ export type LeaseStatus = 'active' | 'released' | 'expired';
 /** Why a lease died. */
 export type ExpirationReason = 'heartbeat_lost' | 'ttl_elapsed';
 
-/** Why a request did not become a lease. None of them is an error. */
-export type DenialReason = 'job_already_leased' | 'runner_cap' | 'project_cap';
+/**
+ * Why a request did not become a lease. None of them is an error.
+ *
+ * Only the two caps end a pass (`Controller.tick`); every other reason means
+ * "not this job, not now — try the next candidate". `job_held` is t636's
+ * dispatch hold; `retry_backoff` and `retry_cap_reached` are t1312's bound on
+ * abandoned attempts: the job's last sessions were left open with no lease, so
+ * the control plane spaces the next attempt out (until `retry_after`) or, at
+ * the cap, blocks the job.
+ */
+export type DenialReason =
+  | 'job_already_leased'
+  | 'runner_cap'
+  | 'project_cap'
+  | 'job_held'
+  | 'retry_backoff'
+  | 'retry_cap_reached';
 
 /** A lease, as the control plane answers it. */
 /**
@@ -370,6 +385,8 @@ export interface LeaseRequest {
 export interface LeaseGrantResponse {
   lease: Lease | null;
   reason?: DenialReason;
+  /** With `retry_backoff`: the ISO instant before which this job is refused again (t1312). */
+  retry_after?: string;
 }
 
 /** Configuration of the client. */

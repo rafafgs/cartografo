@@ -2077,11 +2077,41 @@ export function blockOnRepeatedFailure(
     'same way. Read the transcripts of those sessions, fix what they point at, ' +
     'and unblock.';
 
+  raiseStreakBlock(db, row, reason, streak, occurredAt);
+}
+
+/**
+ * The write both streak caps end in: the flag, its `job.blocked` fact and the
+ * `node_blocked` reaction (t265, extracted by t1312).
+ *
+ * One helper and not two copies, because the two callers — a third `failed`
+ * close ({@link blockOnRepeatedFailure}) and a third abandoned attempt
+ * ({@link evaluateAbandonedAttempts}) — must leave the job in exactly the same
+ * state: a person unblocking it, a hook matching on it and the surveyor reading
+ * the log cannot be asked to tell which rule raised the flag from anything but
+ * the reason text. No transaction of its own: both callers already hold one,
+ * and the flag lands together with the count that raised it or not at all.
+ *
+ * @param db Open handle, inside the caller's transaction.
+ * @param row The job's row, as it was read in that transaction.
+ * @param reason What a person reads on the job.
+ * @param count The streak, recorded as `data.consecutive_failures`.
+ * @param occurredAt The instant the flag goes up.
+ * @param options The injected clock, forwarded to the hook enqueue.
+ */
+function raiseStreakBlock(
+  db: Database,
+  row: JobRow,
+  reason: string,
+  count: number,
+  occurredAt: string,
+  options: ClockOptions = {},
+): void {
   db.prepare('UPDATE job SET blocked = ?, block_reason = ?, updated_at = ? WHERE id = ?').run(
     asInteger(true),
     reason,
     occurredAt,
-    jobId,
+    row.id,
   );
 
   // `API_ACTOR`, like `announceFinishedExecution`: this is the control plane
@@ -2091,23 +2121,200 @@ export function blockOnRepeatedFailure(
     type: 'job.blocked',
     project_id: row.project_id,
     execution_id: row.execution_id,
-    entity: { type: 'job', id: jobId },
+    entity: { type: 'job', id: row.id },
     actor: API_ACTOR,
     occurred_at: occurredAt,
-    data: { reason, consecutive_failures: streak },
+    data: { reason, consecutive_failures: count },
   });
 
   // The same reaction `blockJob` fires, matched on the node the job is STANDING
   // on: a block is a flag fact, not a movement fact (t169).
-  enqueueHookDeliveries(db, {
-    trigger: 'node_blocked',
-    node_id: row.current_node_id,
-    job_id: jobId,
-    project_id: row.project_id,
-    execution_id: row.execution_id,
-    graph_version_id: row.graph_version_id,
-    event_id: event.id,
-  });
+  enqueueHookDeliveries(
+    db,
+    {
+      trigger: 'node_blocked',
+      node_id: row.current_node_id,
+      job_id: row.id,
+      project_id: row.project_id,
+      execution_id: row.execution_id,
+      graph_version_id: row.graph_version_id,
+      event_id: event.id,
+    },
+    options,
+  );
+}
+
+/** The longest the abandoned-attempt backoff ever waits, in seconds (t1312, FR6). */
+export const MAX_RETRY_BACKOFF_SECONDS = 3600;
+
+/** What the lease grant does about a job's abandoned attempts (t1312). */
+export type AbandonedAttemptsVerdict =
+  /** The run reached the cap: the job is (or already was) blocked; grant nothing. */
+  | { action: 'block'; consecutive: number }
+  /** Below the cap and inside the backoff: grant nothing until `retryAfter`. */
+  | { action: 'wait'; retryAfter: string; consecutive: number }
+  /** Nothing to hold back: the grant goes on exactly as before. */
+  | null;
+
+/** Input of {@link evaluateAbandonedAttempts}. */
+export interface AbandonedAttemptsInput {
+  /** The instant the grant is deciding at. */
+  now: string;
+  /** Base of the backoff in seconds; `0` turns the backoff off. */
+  backoffSeconds: number;
+}
+
+/** One session of the trailing run, in the four columns the reason quotes. */
+interface RunSession {
+  id: number;
+  status: string;
+  exit_code: number | null;
+  timeout_reason: string | null;
+}
+
+/**
+ * Counts a job's trailing ABANDONED attempts and decides the grant (t1312).
+ *
+ * The incident this exists for (t1311): the runner threw after the agent had
+ * finished, never closed the session, and the next tick leased the same job
+ * again — fourteen paid sessions with no cap. {@link blockOnRepeatedFailure}
+ * could not see it: it counts sessions CLOSED `failed`, and runs only when one
+ * is closed. A session nobody closes is invisible to it. The lease grant is the
+ * one place every redispatch passes, so the count lives here.
+ *
+ * An abandoned attempt is a session of the job's CURRENT node still `open`
+ * while the job holds no active lease. The caller has already reconciled
+ * expired leases; a job that does hold one is a live dispatch, and this
+ * function answers `null` so the grant can refuse it `job_already_leased` as
+ * it always has.
+ *
+ * The run is TRAILING, newest first, and stops at the first session that is
+ * not open (`completed`, `failed`, `timed_out`): `failed` closes stay owned by
+ * the t265 cap, and a mixed run is counted by neither rule (the known gap,
+ * `docs/spec/runner-and-controller.md`). Sessions opened at or before the job's
+ * latest `job.unblocked` are ignored, so a person's unblock starts the count
+ * at zero instead of re-blocking at once.
+ *
+ * At the graph's `max_consecutive_failures` (default 3, the same ceiling t265
+ * uses) the job is blocked here, in the caller's transaction, with a reason
+ * naming the node, the count and the last session. A job already blocked keeps
+ * its reason and gets no second event: whatever stopped it first is what a
+ * person is reading. Below the cap, attempt k waits `base * 2^(k-1)` seconds
+ * (at most {@link MAX_RETRY_BACKOFF_SECONDS}) after the previous lease went
+ * back — its `released_at`, or its `expires_at` when it expired.
+ *
+ * @param db Open handle, inside the caller's transaction.
+ * @param jobId The job the lease is asked over.
+ * @param input The grant's instant and the backoff base.
+ * @param options The injected clock, forwarded to the hook enqueue.
+ * @returns What the grant does: block, wait, or nothing.
+ */
+export function evaluateAbandonedAttempts(
+  db: Database,
+  jobId: number,
+  input: AbandonedAttemptsInput,
+  options: ClockOptions = {},
+): AbandonedAttemptsVerdict {
+  const row = readRow(db, jobId);
+  if (row === undefined) return null;
+
+  const live = db
+    .prepare("SELECT 1 FROM lease WHERE job_id = ? AND status = 'active' LIMIT 1")
+    .get(jobId);
+  if (live !== undefined) return null;
+
+  const ceiling = resolveFailureCeiling(db, row);
+
+  // A person's unblock is a fresh start. The instant, compared as text: both
+  // columns are ISO 8601 in UTC from the same clock, and `''` sorts below any
+  // of them when the job was never unblocked.
+  const unblocked = db
+    .prepare(
+      `SELECT occurred_at FROM event
+        WHERE type = 'job.unblocked' AND entity_type = 'job' AND entity_id = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+    )
+    .get(String(jobId)) as { occurred_at: string } | undefined;
+
+  // `LIMIT` the ceiling, as t265 does: nothing past it changes the answer.
+  const recent = db
+    .prepare(
+      `SELECT id, status, exit_code, timeout_reason FROM session
+        WHERE job_id = ? AND node_id = ? AND opened_at > ?
+        ORDER BY id DESC
+        LIMIT ?`,
+    )
+    .all(jobId, row.current_node_id, unblocked?.occurred_at ?? '', ceiling) as RunSession[];
+
+  let run = 0;
+  for (const session of recent) {
+    if (session.status !== 'open') break;
+    run += 1;
+  }
+  if (run === 0) return null;
+
+  if (run >= ceiling) {
+    if (!asBoolean(row.blocked)) {
+      raiseStreakBlock(
+        db,
+        row,
+        abandonedReason(row.current_node_id, run, recent[0]),
+        run,
+        input.now,
+        options,
+      );
+    }
+    return { action: 'block', consecutive: run };
+  }
+
+  if (input.backoffSeconds <= 0) return null;
+
+  const previous = db
+    .prepare(
+      `SELECT status, released_at, expires_at FROM lease
+        WHERE job_id = ? AND project_id = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+    )
+    .get(jobId, row.project_id) as
+    | { status: string; released_at: string | null; expires_at: string }
+    | undefined;
+
+  // Sessions opened with no lease at all (by hand, through the API) have no
+  // moment to wait from, and the cap above still bounds them.
+  const anchor = previous?.status === 'expired' ? previous.expires_at : previous?.released_at;
+  if (anchor === undefined || anchor === null) return null;
+
+  const wait = Math.min(input.backoffSeconds * 2 ** (run - 1), MAX_RETRY_BACKOFF_SECONDS);
+  const until = Date.parse(anchor) + wait * 1000;
+  if (Date.parse(input.now) >= until) return null;
+
+  return { action: 'wait', retryAfter: new Date(until).toISOString(), consecutive: run };
+}
+
+/**
+ * The reason a person reads on a job the abandoned-attempt cap stopped (t1312, FR5).
+ *
+ * It quotes what the control plane owns — the node, the count, the last
+ * session's id and state — and nothing it does not: the exception that left the
+ * session open lives in the runner's log only, so the text sends whoever reads
+ * it there.
+ */
+function abandonedReason(nodeId: string, count: number, last: RunSession): string {
+  const details = [
+    `"${last.status}"`,
+    ...(last.exit_code === null ? [] : [`exit code ${String(last.exit_code)}`]),
+    ...(last.timeout_reason === null ? [] : [`timeout reason "${last.timeout_reason}"`]),
+  ].join(', ');
+
+  return (
+    `Node \`${nodeId}\` was dispatched ${String(count)} times in a row and never finished, ` +
+    'which is the cap for this problem class. The job stopped here instead of going on ' +
+    `being leased. The last attempt was session ${String(last.id)}, status ${details}. ` +
+    'The control plane does not have the error that stopped it: read the runner log for ' +
+    'that session, fix the cause, and unblock.'
+  );
 }
 
 /** Body of `POST /v1/jobs/:id/unblocks`. */

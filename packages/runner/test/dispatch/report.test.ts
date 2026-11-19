@@ -1008,3 +1008,33 @@ test('t480 AT12 — a legacy flat `options` still posts the hand-written default
   });
   assert.equal(body(second.sent[0]).default_answer, 'Keep 0002');
 });
+
+/**
+ * The error a closure carries when the RUNNER closed the session on its own
+ * account (t1313, FR6).
+ *
+ * Only the compensating closure of `close-after-failure.ts` passes one. Every
+ * other caller passes nothing, and then the key is absent from the body: the
+ * control plane normalizes that absence to `null` in the event, which is the
+ * same fact as every closure written before the field existed.
+ */
+test('t1313 AT8 — `finishSession` sends `error` only when it is given one', async () => {
+  const { finishSession } = await loadReport();
+
+  const withError = recorder();
+  await finishSession(
+    withError.call,
+    31,
+    { status: 'failed', exitCode: 0 },
+    'bruto',
+    undefined,
+    'UploadError: the store is unreachable',
+  );
+  const posted = body(withError.sent[0]);
+  assert.equal(posted.error, 'UploadError: the store is unreachable');
+  assert.ok(!('output' in posted), 'an absent output stays absent beside an error');
+
+  const without = recorder();
+  await finishSession(without.call, 31, { status: 'completed', exitCode: 0 }, 'bruto', { nota: 'x' });
+  assert.ok(!('error' in body(without.sent[0])), 'no error argument, no `error` key');
+});

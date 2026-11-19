@@ -28,7 +28,12 @@ dependency in the repository.
 **What this endpoint is not:** it is not history. It starts in the present (§5)
 and serves the past only when you ask for it by cursor. To read a whole round
 after the fact, there is `GET /v1/executions/:id/events`, which returns the
-complete list in JSON. To take a traversal off the machine altogether there is
+complete list in JSON. To read one session's own events, there is
+`GET /v1/sessions/:id/events` (t1313): every event whose entity is that
+session, oldest first, in the same envelope. It carries `session.finished`,
+which a job's timeline (`GET /v1/jobs/:id/events`) never does. It resolves
+`project_id` like every read of `/v1`, and an unknown session or one of another
+project answers `404 not_found`. To take a traversal off the machine altogether there is
 `cartografo export-history` ([history-export.md](history-export.md)): the same
 facts as a portable, offline JSON Lines file, with the sessions and the
 questions folded in.
@@ -148,7 +153,9 @@ the same eight fields; what lives inside `data` is per type, and gaining a new
 field there never asked for a contract change here — the same path §3 describes
 for the set of types. `session.finished` is the most touched of the nineteen: it
 grew `output` and `output_schema_error`, then `failure_kind` and
-`refusal_category`, and finally `output_accepted`.
+`refusal_category`, then `output_accepted`, and finally `error`. `error` is
+present only on a closure the runner made on its own account after a
+post-engine failure (t1313), and is `null` on every other one.
 
 **`output_accepted` is the verdict on the session's structured report** — whether
 it was accepted when checked against the `output` schema of the skill the node

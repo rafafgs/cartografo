@@ -427,6 +427,16 @@ verdict was discarded and the route was chosen from a second parse of the same
 block, so a report the control plane had refused moved the job along the edge
 regardless.
 
+**The runner's own closure, and why it made it** (`t1313`). `error` is present
+only when the runner closed the session on its own account after a failure past
+the engine's end — an artifact upload, a decode of the session text, a release
+that threw before the ordinary closure ran. Until then such a session stayed
+`open` forever. That closure is always `failed` with no `failure_kind`, so the
+streak guard counts it, and it carries no `output`. The text is the runner's
+description of the failure, cut at 2000 characters (8000 is the schema's own
+ceiling). It lives in the event only: no column, and nothing on
+`GET /v1/sessions`. `null` on every other closure.
+
 #### `session.permission_denied` — [schema](schemas/session.permission_denied.schema.json)
 
 Emitted when the session tries to use a tool its permission policy denied

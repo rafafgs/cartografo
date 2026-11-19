@@ -201,6 +201,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     // Nothing was reported, so there was nothing to refuse: the verdict the
     // runner reads is the vacuous `true`, present on every close (t268).
     output_accepted: true,
+    error: null,
   });
 
   const withoutUsageEvents = getEventsByEntity(ctx.db, 'session', withoutUsage.id);
@@ -217,6 +218,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     // Nothing was reported, so there was nothing to refuse: the verdict the
     // runner reads is the vacuous `true`, present on every close (t268).
     output_accepted: true,
+    error: null,
   });
 });
 
@@ -262,6 +264,7 @@ test('t265 AT4 — PATCH /finish records the refusal kind and category, verbatim
     // Nothing was reported, so there was nothing to refuse: the verdict the
     // runner reads is the vacuous `true`, present on every close (t268).
     output_accepted: true,
+    error: null,
   });
 
   // The kind is a closed set of one: a value nobody declared is a mistake by
@@ -321,6 +324,7 @@ test('t296 AT1 — PATCH /finish records a quota refusal as its own kind', async
     output: null,
     output_schema_error: null,
     output_accepted: true,
+    error: null,
   });
 });
 
@@ -982,6 +986,7 @@ test('t159 AT5 — the transcript stays OUT of the session.finished event', asyn
     // Nothing was reported, so there was nothing to refuse: the verdict the
     // runner reads is the vacuous `true`, present on every close (t268).
     output_accepted: true,
+    error: null,
   });
   assert.ok(
     !JSON.stringify(events[1]).includes('transcript'),
@@ -1168,6 +1173,7 @@ test('t172 — models round-trips through the projection; absent reads null, nev
     // Nothing was reported, so there was nothing to refuse: the verdict the
     // runner reads is the vacuous `true`, present on every close (t268).
     output_accepted: true,
+    error: null,
   });
   assert.deepEqual(
     getEventsByEntity(ctx.db, 'session', silent.id)[1].data.models,

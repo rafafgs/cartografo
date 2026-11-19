@@ -404,6 +404,9 @@ export interface FinishVerdict {
  *   and then the KEY is omitted: a `null` there is what the control plane
  *   writes for a report the skill's schema REFUSED
  *   (`packages/core/src/repositories/session.ts`), which is a different fact.
+ * @param error Why the RUNNER closed the session on its own account (t1313):
+ *   only the compensating closure of `close-after-failure.ts`'s kind passes one.
+ *   Absent, the KEY is omitted and the control plane records `null`.
  * @returns The closure's verdict: the write failure when there was one, and what
  *   the control plane answered about the report when there was a response.
  */
@@ -413,6 +416,7 @@ export async function finishSession(
   outcome: Outcome,
   transcript: string,
   output?: Record<string, unknown>,
+  error?: string,
 ): Promise<FinishVerdict> {
   let answer: FinishResponse | undefined;
   try {
@@ -449,12 +453,13 @@ export async function finishSession(
       models: outcome.models ?? null,
       transcript,
       ...(output === undefined ? {} : { output }),
+      ...(error === undefined ? {} : { error }),
     });
-  } catch (error) {
+  } catch (thrown) {
     // No response to read, so no verdict either — and that absence is the whole
     // point of the two fields being optional: an unreachable control plane may
     // not be read as a refused report, which would stop a work over a hiccup.
-    return { failure: error };
+    return { failure: thrown };
   }
 
   return {

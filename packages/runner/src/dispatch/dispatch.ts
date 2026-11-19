@@ -147,6 +147,7 @@ import { SessionStartError } from '../engine/types.ts';
 // `advance-main-line.ts` already imports its own block: it keeps `report.ts`
 // untouched by this ficha, which is the surface a sibling one is editing.
 import { blockForArtifactRefusal } from './blocks.ts';
+import { closeAfterFailure, type PendingClosure } from './close-after-failure.ts';
 import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
@@ -329,6 +330,8 @@ export function createClaudeCodeDispatch(
     // below, and taken away by the `finally` of the `try` that follows — on every
     // exit, whichever way it ends.
     const inputFiles = createInputFiles(plan.inputFiles);
+    // Set once the outcome is known, cleared once the closure is attempted (t1313).
+    let pending: PendingClosure | null = null;
 
     try {
       // The MCP window's disk half, at the first line where a directory exists
@@ -444,6 +447,7 @@ export function createClaudeCodeDispatch(
         announceSessionEnd();
         throw error;
       }
+      pending = { sessionId: session.id, exitCode: outcome.exitCode, lines };
 
       // Past this line the session is terminal on its own account and `cancel` is
       // never called again (FR3): what is left is telemetry the runner owes, and
@@ -537,6 +541,7 @@ export function createClaudeCodeDispatch(
       // — a question dropped here is a human who is never called, and the work
       // stays unblocked with nobody knowing what it needed. So `report.ts` hands
       // the failure back rather than throwing it, and it surfaces below.
+      pending = null;
       const verdict = await finishSession(
         call,
         session.id,
@@ -730,6 +735,9 @@ export function createClaudeCodeDispatch(
       // with it. The one case where the directory really was the only copy is
       // the dirty one, and the manager retains that before any of this.
       await tree.release(true);
+      // A session whose engine ended and whose closure was never attempted is
+      // closed here, once, as `failed` with the error (`close-after-failure.ts`).
+      if (pending !== null) await closeAfterFailure(call, pending, error);
 
       // And a session that never came up is decided like the failures before it
       // (t272, FR5). ONLY `SessionStartError`: it is the one error reaching here

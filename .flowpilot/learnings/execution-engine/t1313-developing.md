@@ -1,0 +1,3 @@
+### t1313 (developing, unverified)
+
+- GET /v1/jobs/:id/events NEVER carries session.finished, session.permission_denied or input_request.answered. Its filter matches session events by data.job_id, and those payloads have none (db/events.ts EventFilter.job_id, and history-export.md's 'known gap'). The ticket assumed the opposite. Read one session's events through GET /v1/sessions/:id/events, added by t1313. Widening the job timeline (option A, joining on the session table's job_id) would also close the job-scoped history-export gap. The founder declined it here under 'add, don't change'. It is worth its own ticket if that gap matters.

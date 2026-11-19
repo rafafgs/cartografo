@@ -1,0 +1,10 @@
+### t1331 (developing, unverified)
+
+- write-scope-guard.test.ts (t417 AT9) text-sweeps each write handler and every function it delegates to for the literal `project_id`. Writing `proposal.project_id` inside apply, revert or outcome made the sweep list them as unclassified scope-declaring routes. They only read the scope off an already-loaded proposal. The ticket forbids editing existing tests, so the reads go through one helper, `projectOf(proposal)`, defined outside the swept slices. Anyone adding a `project_id` mention to a write handler has to classify it in that test instead.
+- unregisteredPin now takes the project id as its second parameter, as the ticket asked.
+- The `proposals` decisions URL now always carries `?project_id=N`, including `?project_id=1` when no `--project` is given, because the CLI resolves the default to 1. That matches how `show` and `list` already behave. Requirement 2's 'byte-for-byte' holds for behaviour, not for the URL string.
+- AT4 sets up a no-effect case that needs a version present in project 1 but not current. It applies an operation set in project 1, then reverts it, which leaves the base current and the new version in the lineage. A project-2 apply of the same operations then wrongly hit `version_without_effect` before the fix.
+- AT7b has project 1 apply the same operations, so both projects hold a version with the same hash. It then records the only job under it in project 1, which is how work from another project could wrongly count as evidence.
+- A comparison helper that strips timestamps has to drop the verdict's `avaliado_em` as well as every `*_at` key, or two runs of the same flow never compare equal.
+- typecheck covers test files, but `node --test` strips types without checking them. A type error in a new test only shows up in `npm run typecheck`.
+- The first full `npm test` ran at load average about 45-100 and took more than 10 minutes. Run it with output to a file and poll it, because a pipe through `tail` hides the exit code.

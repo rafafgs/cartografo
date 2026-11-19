@@ -148,7 +148,9 @@ the same eight fields; what lives inside `data` is per type, and gaining a new
 field there never asked for a contract change here — the same path §3 describes
 for the set of types. `session.finished` is the most touched of the nineteen: it
 grew `output` and `output_schema_error`, then `failure_kind` and
-`refusal_category`, and finally `output_accepted`.
+`refusal_category`, then `output_accepted`, and finally `error`. `error` is
+present only on a closure the runner made on its own account after a
+post-engine failure (t1313), and is `null` on every other one.
 
 **`output_accepted` is the verdict on the session's structured report** — whether
 it was accepted when checked against the `output` schema of the skill the node

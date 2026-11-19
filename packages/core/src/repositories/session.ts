@@ -496,6 +496,13 @@ export interface FinishSessionInput {
    * below.
    */
   output?: unknown;
+  /**
+   * Why the runner closed this session on its own account (t1313): a failure
+   * after the engine ended, before the ordinary closure could run. Lands in
+   * `session.finished`'s `data.error` and nowhere else — no column, no field on
+   * the projection — so it needs no migration. Absent normalizes to `null`.
+   */
+  error?: unknown;
   actor?: unknown;
 }
 
@@ -750,6 +757,7 @@ export async function finishSession(
     usage: input.usage,
     models: input.models,
     output: input.output,
+    error: input.error,
   });
   const usage = data.usage as SessionUsage | null;
   const models = data.models as string[] | null;

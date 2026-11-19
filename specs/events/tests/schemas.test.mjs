@@ -134,6 +134,11 @@ export const TABLE = {
     // there "no reasons" and "not checked" would be the same absence, and the
     // difference between the two is a job travelling down an edge chosen from a
     // report that was never written.
+    //
+    // `error` came in with the closure the runner makes on its own account
+    // after a failure past the engine's end (t1313): the text of that failure,
+    // so a session that used to stay `open` forever reads `failed` with a
+    // reason. Event-only, and null on every other closure.
     optional: [
       'exit_code',
       'usage',
@@ -144,6 +149,7 @@ export const TABLE = {
       'output',
       'output_schema_error',
       'output_accepted',
+      'error',
     ],
   },
   // The 17th type came in with permission enforcement (t125): every attempt to

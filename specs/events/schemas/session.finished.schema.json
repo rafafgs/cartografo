@@ -135,6 +135,16 @@
             "minLength": 1
           },
           "description": "Why the reported output did not match the skill's schema (t253). Present only when there was a divergence, and then output goes to null: the session's terminal status is recorded either way, because losing the end of the session over a malformed self-report would be strictly worse — a work node's self-report was never evidence (a gate verifies with evidence of its own). The whole list, never just the first reason, for the same reason the envelope validation returns them all."
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 8000,
+          "description": "Why the RUNNER closed the session on its own account (t1313). Present only on the closure the runner makes after a failure past the engine's end — an artifact upload, a decode of the session text, a release that threw before the ordinary closure ran — and then the status is failed with no failure_kind, so the control plane's streak guard counts it. The error's text as the runner described it (the runner cuts it at 2000 characters; 8000 is this envelope's own ceiling). Recorded in the event only: no column and no field on GET /v1/sessions. null/absent on every other closure, which is also what every event written before the field reads as.",
+          "examples": ["UploadError: POST /v1/sessions/25/artifacts answered 502", null]
         }
       },
       "additionalProperties": false

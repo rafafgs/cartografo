@@ -158,6 +158,8 @@ export interface TimelineEvent {
   type: string;
   occurred_at: string;
   data: Record<string, unknown>;
+  /** Who the event is about; `job` joins a session's events on it (t1313). */
+  entity?: { type: string; id: number | string };
 }
 
 /** A session, in the slice the reconstruction reads. */
@@ -572,6 +574,43 @@ function sessionsTable(sessions: SessionRead[]): string {
   );
 }
 
+/** Longest error text `job` prints under a session's row, in characters (t1313). */
+const SESSION_ERROR_WIDTH = 200;
+
+/**
+ * The error each session's `session.finished` event carries, by session id.
+ *
+ * Only a closure the runner made on its own account after a post-engine
+ * failure has one (t1313). It lives in the event and not on the row, so `job`
+ * joins the events it already fetched on `entity.id`.
+ */
+function sessionErrors(events: TimelineEvent[]): Map<number, string> {
+  const errors = new Map<number, string>();
+  for (const event of events) {
+    const error = event.data.error;
+    if (event.type !== 'session.finished' || event.entity?.type !== 'session') continue;
+    if (typeof error !== 'string' || error === '') continue;
+    errors.set(Number(event.entity.id), error);
+  }
+  return errors;
+}
+
+/** The sessions table, with an indented `error:` line under each session that has one. */
+function sessionsWithErrors(sessions: SessionRead[], errors: Map<number, string>): string {
+  const [header, ...rows] = sessionsTable(sessions).split('\n');
+  const lines = [header];
+  rows.forEach((row, index) => {
+    lines.push(row);
+    const error = errors.get(sessions[index].id);
+    if (error === undefined) return;
+    const flat = error.replace(/\s+/g, ' ').trim();
+    lines.push(
+      `  error: ${flat.length <= SESSION_ERROR_WIDTH ? flat : `${flat.slice(0, SESSION_ERROR_WIDTH - 1)}…`}`,
+    );
+  });
+  return lines.join('\n');
+}
+
 function artifactsTable(artifacts: ArtifactRead[]): string {
   return table(
     ['id', 'session_id', 'node_id', 'name', 'size', 'created_at'],
@@ -835,7 +874,7 @@ export async function runJob(options: JobOptions): Promise<number> {
   lines.push(artifacts.length === 0 ? '  (none)' : artifactsTable(artifacts));
   lines.push('');
   lines.push('sessions:');
-  lines.push(sessions.length === 0 ? '  (none)' : sessionsTable(sessions));
+  lines.push(sessions.length === 0 ? '  (none)' : sessionsWithErrors(sessions, sessionErrors(events)));
 
   process.stdout.write(`${lines.join('\n')}\n`);
   return 0;

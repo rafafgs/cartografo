@@ -167,6 +167,8 @@ interface FieldRule {
   values?: readonly string[];
   /** Floor, for non-negative integers (`timeout_seconds`, tokens). */
   min?: number;
+  /** Ceiling on a string's length, in characters (`session.finished.error`, t1313). */
+  maxLength?: number;
   /** Minimum number of items, for lists (`changed_fields` has `minItems: 1`). */
   minItems?: number;
   /** Does the list have to have unique items? */
@@ -398,6 +400,13 @@ const RULES: Record<string, TypeRule> = {
       // the same absence there. Optional like everything else here: an event
       // written before this ficha still validates, and normalizes to `null`.
       output_accepted: optional('boolean'),
+      // Why the RUNNER closed the session on its own account (t1313): present
+      // only on the closure it makes after a failure past the engine's end — an
+      // upload, a decode, a release that threw before the ordinary closure ran.
+      // Event-only, like `failure_kind`: no column, nothing on `GET /v1/sessions`.
+      // Bounded so a runaway stack trace cannot bloat the log; the runner itself
+      // cuts at 2000 characters.
+      error: optional('string', { maxLength: 8000 }),
     },
   },
   'session.permission_denied': {
@@ -678,6 +687,9 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
       }
       if (rule.values !== undefined && !rule.values.includes(value)) {
         errors.push(`${fieldPath} has to be one of: ${rule.values.join(', ')}`);
+      }
+      if (rule.maxLength !== undefined && value.length > rule.maxLength) {
+        errors.push(`${fieldPath} has to be at most ${rule.maxLength} characters`);
       }
       return;
 

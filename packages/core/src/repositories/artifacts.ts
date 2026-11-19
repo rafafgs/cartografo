@@ -32,6 +32,11 @@
  * There is no update and no delete, and there never will be (RF-42): an artifact
  * is evidence of what a session did. `docs/spec/artifacts.md` says so where
  * somebody looking for the missing function will find it.
+ *
+ * A repeat is not a second row (t1338): the same session, name and content
+ * sha256 returns the row that already exists, so a retried upload adds nothing.
+ * Rows written before that rule may already hold duplicates; they are left as
+ * they are, because collapsing them would be a delete.
  */
 
 import type { Readable } from 'node:stream';
@@ -82,8 +87,16 @@ export interface ArtifactContent {
   size: number;
 }
 
+/** What {@link storeArtifact} answers: the artifact, and whether this call wrote its row. */
+export interface StoredArtifactResult {
+  artifact: Artifact;
+  /** `true` when a row was inserted, `false` when an existing row was returned. */
+  created: boolean;
+}
+
 /**
- * Stores the bytes and records the reference to them.
+ * Stores the bytes and records the reference to them — once per session, name
+ * and content.
  *
  * The store is written to BEFORE the row exists, and that order is deliberate:
  * content with no row is an orphan file nobody can reach, which the next
@@ -91,6 +104,62 @@ export interface ArtifactContent {
  * one entry and no duplication); a row with no content is a `/content` route
  * that 500s forever. Between the two failure modes only one is recoverable, and
  * this is it.
+ *
+ * Idempotent (t1338): when a row of the same session already carries this name
+ * and this sha256, that row is returned and nothing is written. `media_type` is
+ * not part of the match and the stored one is never updated (RF-42: no update
+ * verb). If duplicates already exist the lowest id answers, and they are left
+ * untouched.
+ *
+ * @param db Open handle.
+ * @param sessionId Session that produced the file.
+ * @param input Name, media type and the whole content.
+ * @param store Where the bytes go.
+ * @returns The artifact and whether it is new, or `null` if the session does not exist.
+ */
+export async function storeArtifact(
+  db: Database,
+  sessionId: number,
+  input: CreateArtifactInput,
+  store: ArtifactStore,
+): Promise<StoredArtifactResult | null> {
+  const session = db.prepare('SELECT id FROM session WHERE id = ?').get(sessionId) as
+    | { id: number }
+    | undefined;
+  if (session === undefined) return null;
+
+  const stored = await store.put(input.buffer, { name: input.name, mediaType: input.mediaType });
+
+  // No `await` from here to the end of the function. The control plane is one
+  // process with one synchronous SQLite handle, so the lookup and the insert
+  // below cannot interleave with another request's: two identical uploads in
+  // flight both reach this point, and the second one finds the first one's row.
+  const existing = db
+    .prepare(
+      `SELECT ${PUBLIC_COLUMNS} FROM artifact
+       WHERE session_id = ? AND name = ? AND sha256 = ?
+       ORDER BY id LIMIT 1`,
+    )
+    .get(sessionId, input.name, stored.sha256) as Artifact | undefined;
+  if (existing !== undefined) return { artifact: existing, created: false };
+
+  const inserted = db
+    .prepare(
+      `INSERT INTO artifact (session_id, name, media_type, size, sha256, storage_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(sessionId, input.name, input.mediaType, stored.size, stored.sha256, stored.ref, now());
+
+  const artifact = getArtifact(db, Number(inserted.lastInsertRowid));
+  if (artifact === null) throw new Error(`the artifact of session ${sessionId} was not written`);
+  return { artifact, created: true };
+}
+
+/**
+ * {@link storeArtifact} for a caller that only wants the artifact.
+ *
+ * Same idempotence: a repeat of the same session, name and content returns the
+ * existing artifact, not a second row. `finishSession` relies on this signature.
  *
  * @param db Open handle.
  * @param sessionId Session that produced the file.
@@ -104,23 +173,7 @@ export async function createArtifact(
   input: CreateArtifactInput,
   store: ArtifactStore,
 ): Promise<Artifact | null> {
-  const session = db.prepare('SELECT id FROM session WHERE id = ?').get(sessionId) as
-    | { id: number }
-    | undefined;
-  if (session === undefined) return null;
-
-  const stored = await store.put(input.buffer, { name: input.name, mediaType: input.mediaType });
-
-  const inserted = db
-    .prepare(
-      `INSERT INTO artifact (session_id, name, media_type, size, sha256, storage_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(sessionId, input.name, input.mediaType, stored.size, stored.sha256, stored.ref, now());
-
-  const artifact = getArtifact(db, Number(inserted.lastInsertRowid));
-  if (artifact === null) throw new Error(`the artifact of session ${sessionId} was not written`);
-  return artifact;
+  return (await storeArtifact(db, sessionId, input, store))?.artifact ?? null;
 }
 
 /**

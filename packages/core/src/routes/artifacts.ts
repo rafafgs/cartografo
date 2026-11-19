@@ -44,7 +44,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ArtifactStore } from '../artifacts/store.ts';
 import type { Database } from '../db/connection.ts';
 import {
-  createArtifact,
+  storeArtifact,
   getArtifact,
   getArtifactContent,
   listSessionArtifacts,
@@ -144,16 +144,17 @@ export function registerArtifacts(
         : typeof body === 'string'
           ? Buffer.from(body, 'utf8')
           : Buffer.alloc(0);
-      const artifact = await createArtifact(
+      const result = await storeArtifact(
         db,
         routeId(request.params),
         { name: name.trim(), mediaType, buffer },
         options.store,
       );
-      if (artifact === null) return notFound(reply, 'session');
+      if (result === null) return notFound(reply, 'session');
 
-      reply.code(201);
-      return artifact;
+      // 201 for a row this call wrote, 200 for the one a repeat found (t1338).
+      reply.code(result.created ? 201 : 200);
+      return result.artifact;
     }),
   );
 

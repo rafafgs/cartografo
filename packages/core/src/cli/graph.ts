@@ -369,7 +369,8 @@ async function runPropose(args: string[], ctx: GraphContext): Promise<number> {
   }
 
   for (const verb of ['approve', 'apply'] as const) {
-    const response = await requestJson(`${ctx.url}/v1/proposals/${encodeURIComponent(proposalId)}/${verb}`, {
+    // Same scope as the create call above: the proposal only exists in that project.
+    const response = await requestJson(scoped(ctx, `/proposals/${encodeURIComponent(proposalId)}/${verb}`), {
       method: 'POST',
       body: { actor },
     });

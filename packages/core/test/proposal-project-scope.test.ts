@@ -49,6 +49,7 @@ interface Graph {
 interface GraphVersion {
   id: string;
   project_id?: number;
+  snapshot?: GraphDocument;
 }
 
 interface Proposal {
@@ -487,12 +488,10 @@ test('AT5 — a skill pin is judged in the registry of the proposal’s project'
     const current = (await graphOf(address, 2, graph.id)).current_version_id;
     assert.ok(current !== null);
     const only1 = await registerSkill(address, 1, manifest('revisar-nota', '3.0.0', 'Only in one.'));
-    const from = pinOfRevisar(
-      (
-        (await get(address, `/v1/graph-versions/${encodeURIComponent(current)}?project_id=2`)).body
-          .graph_version as { snapshot: GraphDocument }
-      ).snapshot,
-    );
+    const read = await get(address, `/v1/graph-versions/${encodeURIComponent(current)}?project_id=2`);
+    const snapshot = (read.body.graph_version as GraphVersion).snapshot;
+    assert.ok(snapshot !== undefined, JSON.stringify(read.body));
+    const from = pinOfRevisar(snapshot);
     const proposal = await createProposal(address, 2, graph.id, current, [movePin(from, only1)]);
     const answer = await applyIn(address, 2, proposal.id);
 

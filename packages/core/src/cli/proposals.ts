@@ -367,10 +367,13 @@ async function decide(
     body.reason = reason;
   }
 
-  const response = await requestJson(`${ctx.url}/v1/proposals/${encodeURIComponent(id)}/${verb}`, {
-    method: 'POST',
-    body,
-  });
+  const response = await requestJson(
+    `${ctx.url}/v1/proposals/${encodeURIComponent(id)}/${verb}${queryString({ project_id: ctx.projectId })}`,
+    {
+      method: 'POST',
+      body,
+    },
+  );
   return finish(response, fromJson.present);
 }
 

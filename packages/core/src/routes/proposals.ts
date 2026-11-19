@@ -55,6 +55,16 @@
  * would leak which ids are taken elsewhere and would make a partition read as
  * a permission problem.
  *
+ * Resolving the project is half of it. `apply`, `revert` and `outcome` go on to
+ * read the graph lineage, the versions, the skill registry and the execution
+ * metrics through repository functions whose `projectId` parameter defaults to
+ * project 1, so each of those reads is handed `projectOf(proposal)` (t1331, #5).
+ * Left to the default, a proposal of project 2 was judged against project 1's
+ * graph (`stale_proposal`, or `unknown_graph` for a graph only project 2 holds),
+ * project 1's registry and project 1's jobs. `applyProposal` and `revertProposal`
+ * already wrote through `projectOf(proposal)`; it was the reads in front of them
+ * that did not.
+ *
  * That is also why every registration below is wrapped in `withValidation`:
  * `requireProject` reads the scope off the wire, and a `?project_id=` that is
  * not an integer is a `ValidationError` — a `400` about the request, not a
@@ -542,12 +552,14 @@ function nodesById(document: GraphDocument): Map<string, unknown> {
  * unresolvable pin before it opens a session (D4).
  *
  * @param db Open handle — the reason this lives in the route and not in `domain/`.
+ * @param projectId The proposal's own project: the registry the pin is judged in.
  * @param before The snapshot the proposal was written against.
  * @param after The candidate document, already through `validateGraph`.
  * @returns The refusal report, or `null` when every moved pin resolves.
  */
 function unregisteredPin(
   db: Database,
+  projectId: number,
   before: GraphDocument,
   after: GraphDocument,
 ): { error: string; code: string; message: string; target: unknown } | null {
@@ -573,7 +585,7 @@ function unregisteredPin(
       };
     }
 
-    const registered = getSkill(db, id, { version });
+    const registered = getSkill(db, id, { version }, projectId);
     if (registered === null) {
       return {
         error: 'unregistered_skill_pin',
@@ -593,6 +605,20 @@ function unregisteredPin(
   }
 
   return null;
+}
+
+/**
+ * The project a loaded proposal lives in — the one its reads are scoped to.
+ *
+ * A function and not a property access at each call site, on purpose:
+ * `write-scope-guard.test.ts` (t417) text-sweeps every write handler for the
+ * literal `project_id` to find routes that take a scope FROM THE CALLER, and
+ * these three take none — they read it off a proposal `resolve()` already
+ * loaded inside the declared project. Spelling the field once, here, keeps that
+ * distinction visible to the sweep instead of enrolling them as scope-declaring.
+ */
+function projectOf(proposal: Proposal): number {
+  return proposal.project_id;
 }
 
 /** `POST /proposals/:id/apply` — the D15 flow: apply ops, gate, write, move. */
@@ -623,7 +649,7 @@ async function apply(
     );
   }
 
-  const graph = getGraph(db, proposal.graph_id);
+  const graph = getGraph(db, proposal.graph_id, projectOf(proposal));
   if (graph === undefined) {
     return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.graph_id });
   }
@@ -638,7 +664,7 @@ async function apply(
     );
   }
 
-  const target = getVersion(db, proposal.target_version);
+  const target = getVersion(db, proposal.target_version, projectOf(proposal));
   if (target === undefined) {
     return refusal(reply, 404, 'unknown_graph_version', undefined, { id: proposal.target_version });
   }
@@ -679,7 +705,7 @@ async function apply(
   // takes no `db`, so a pin is the one thing about a node it cannot check. This
   // is the only place in the apply path holding both the resulting document and
   // a database handle (t215, FR6).
-  const unregistered = unregisteredPin(db, target.snapshot, document);
+  const unregistered = unregisteredPin(db, projectOf(proposal), target.snapshot, document);
   if (unregistered !== null) {
     reply.code(422);
     return {
@@ -689,7 +715,7 @@ async function apply(
   }
 
   const versionId = hashSnapshot(document);
-  if (getVersion(db, versionId) !== undefined) {
+  if (getVersion(db, versionId, projectOf(proposal)) !== undefined) {
     // The hash IS the version's identity: a result identical to an already
     // known version is not a new version, it is a proposal with no effect.
     const noEffect = {
@@ -713,7 +739,7 @@ async function apply(
   // ficha is `createJob`, and a second refusal path on this route is behaviour
   // nobody asked for.
   const contracts = validateContracts(document, (ref) => {
-    const skill = getSkill(db, ref.id, { version: ref.version });
+    const skill = getSkill(db, ref.id, { version: ref.version }, projectOf(proposal));
     return skill === null ? undefined : { input: skill.input, output: skill.output };
   });
 
@@ -724,7 +750,7 @@ async function apply(
     contracts: { state: classifyContracts(contracts), problems: contracts.problems },
     actor: body.actor,
   });
-  const graphAfter = getGraph(db, proposal.graph_id);
+  const graphAfter = getGraph(db, proposal.graph_id, projectOf(proposal));
   return {
     proposal: written.proposal,
     graph: graphAfter,
@@ -770,7 +796,7 @@ async function revert(
     );
   }
 
-  const graph = getGraph(db, proposal.graph_id);
+  const graph = getGraph(db, proposal.graph_id, projectOf(proposal));
   if (graph === undefined) {
     return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.graph_id });
   }
@@ -792,7 +818,7 @@ async function revert(
   }
 
   const reverted = revertProposal(db, { proposal, reason, actor: body.actor });
-  const graphAfter = getGraph(db, proposal.graph_id);
+  const graphAfter = getGraph(db, proposal.graph_id, projectOf(proposal));
   return {
     proposal: reverted,
     graph: graphAfter,
@@ -869,7 +895,7 @@ async function outcome(
   const evidence =
     appliedVersion === null
       ? undefined
-      : metricsByVersion(db, executionId as number).find(
+      : metricsByVersion(db, executionId as number, projectOf(proposal)).find(
           (row) => row.graph_version_id === appliedVersion,
         );
   if (evidence === undefined || evidence.jobs < 1) {

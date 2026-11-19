@@ -72,6 +72,16 @@ release.
 
 ### Fixed
 
+- A proposal in project 2 or later can now be applied, reverted and closed.
+  `POST /v1/proposals/:id/apply`, `/revert` and `/outcome` read the graph, its
+  versions, the skill registry and the execution metrics in the proposal's own
+  project instead of project 1, so they no longer answer `stale_proposal` or
+  `unknown_graph` for a graph that is current in its project, and a version
+  that exists only in another project no longer counts as `version_without_effect`.
+  `cartografo graph propose ... --by` and `cartografo proposals
+  approve|apply|reject|revert` now send `--project` with the decision as well as
+  with the creation, so `pipefactory update` can upgrade the graphs of every
+  project. Closes #5.
 - A `git` that could not start while reading the test bench (low memory, a
   signal kill, a Windows exit 0xC0000142 with no output) is now retried like any
   transient pre-session failure instead of blocking the job as a bench

@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 25 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 27 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -256,6 +256,10 @@ test('t196 AT9 — the catalogue is the 25 type names of the taxonomy, in its or
       'session.opened',
       'session.finished',
       'session.permission_denied',
+      // The twenty-sixth and twenty-seventh (t1339): the declaration of files a
+      // completed session has not uploaded yet, and the artifact that settles one.
+      'session.artifacts_pending',
+      'session.artifact_settled',
       'input_request.created',
       'input_request.answered',
       'input_request.auto_resolved',

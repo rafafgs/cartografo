@@ -81,7 +81,7 @@ import {
   transitionJob,
   type Job,
 } from '../repositories/job.ts';
-import { listSessions } from '../repositories/session.ts';
+import { effectiveOutput, listSessions } from '../repositories/session.ts';
 import { isObject } from '../util/is-object.ts';
 import {
   withValidation,
@@ -182,7 +182,8 @@ function nodeInputOf(
       .filter((session) => session.status === 'completed')
       .map((session) => ({
         node_id: session.node_id,
-        output: session.output,
+        // A pending artifact never reaches the next node as a path (t1339).
+        output: effectiveOutput(db, session),
         finished_at: session.finished_at,
         session_id: session.id,
       })),

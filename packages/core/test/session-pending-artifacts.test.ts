@@ -34,7 +34,12 @@ interface State {
   settled: Array<{ name: string; artifact_id: number; settled_at: string }>;
 }
 
-interface FinishAnswer extends Session {
+/** The projection's `output`, which the shared `Session` type of support.ts omits. */
+interface WithOutput extends Session {
+  output: Record<string, unknown> | null;
+}
+
+interface FinishAnswer extends WithOutput {
   output_accepted: boolean;
 }
 
@@ -255,7 +260,7 @@ test('t1339 AT3 — a bad declaration is a 400 and the session stays open', asyn
     const refused = await finish(ctx, session.id, body);
     assert.equal(refused.status, 400, `${label}: ${JSON.stringify(refused.body)}`);
 
-    const read = await request<{ sessions: Session[] }>(
+    const read = await request<{ sessions: WithOutput[] }>(
       ctx,
       'GET',
       `/v1/sessions?job_id=${String(jobId)}`,
@@ -319,7 +324,7 @@ test('t1339 AT5 — settling a name records an event and leaves the report and c
   assert.equal(events.length, 1);
   assert.deepEqual(events[0].data, { name: 'report', artifact_id: artifactId, job_id: jobId });
 
-  const list = await request<{ sessions: Session[] }>(
+  const list = await request<{ sessions: WithOutput[] }>(
     ctx,
     'GET',
     `/v1/sessions?job_id=${String(jobId)}`,
@@ -489,7 +494,7 @@ test('t1339 AT10 — the job input never carries a path for a pending name', asy
   const after = (await contextOf()).dossier as Record<string, unknown>;
   assert.equal(after.report, String(artifactId));
 
-  const read = await request<{ sessions: Session[] }>(
+  const read = await request<{ sessions: WithOutput[] }>(
     ctx,
     'GET',
     `/v1/sessions?job_id=${String(jobId)}`,

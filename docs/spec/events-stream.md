@@ -108,9 +108,16 @@ job.dependency_declared    lease.expired                graph_version.applied
 job.hook_failed                                         graph_version.reverted
 
 execution.finished
+session.artifacts_pending
+session.artifact_settled
 ```
 
-They are the taxonomy's nineteen, and the growth was additive as promised: the
+They are the taxonomy's nineteen plus the two session events of a pending
+artifact (t1339) — `session.artifacts_pending`, appended with the closure of a
+completed session that declared files not uploaded yet, and
+`session.artifact_settled`, appended when the artifact that settles one of them
+is recorded. Both carry `data.job_id`, so they also show in
+`GET /v1/jobs/:id/events`. The growth was additive, as promised: the
 filter never declared a list of its own — it validates against `KNOWN_TYPES`
 (`packages/core/src/db/event-validation.ts`) —, so switching on the emission of
 `lease.*` and `graph_version.*` made them askable without a line of

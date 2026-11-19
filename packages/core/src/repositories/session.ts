@@ -33,7 +33,7 @@ import { requireValidData, ValidationError, type Event } from '../db/event-valid
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
 import { decodeSessionText } from '../domain/session-log.ts';
 import { isObject } from '../util/is-object.ts';
-import { createArtifact, getArtifactContent } from './artifacts.ts';
+import { createArtifact, getArtifact, getArtifactContent } from './artifacts.ts';
 import { getVersion } from './graphs.ts';
 import { announceFinishedExecution, blockOnRepeatedFailure } from './job.ts';
 import { getSkill } from './skill.ts';
@@ -503,7 +503,71 @@ export interface FinishSessionInput {
    * the projection — so it needs no migration. Absent normalizes to `null`.
    */
   error?: unknown;
+  /**
+   * Top-level properties of `output` whose file is not uploaded yet (t1339).
+   * Absent, `null` and `[]` are the same fact: nothing is pending. The list
+   * rides in its own `session.artifacts_pending` event, never in
+   * `session.finished`, and the stored report stays exactly as reported.
+   */
+  pending_artifacts?: unknown;
   actor?: unknown;
+}
+
+/**
+ * Reads and checks the `pending_artifacts` of a closure (t1339, FR1–FR2).
+ *
+ * Everything here runs BEFORE the session closes, so a refusal leaves it open
+ * and appends nothing. Four rules, each a {@link ValidationError}: a list of
+ * distinct non-empty strings; only on a `completed` closure; every name a
+ * top-level string property of the reported `output`; and, when the node pins an
+ * `output` schema, every name declared `x-artifact: true` there. With no schema
+ * pinned the last rule has nothing to hold the name against.
+ *
+ * @param pending What the body carried.
+ * @param status The closure's status, already validated.
+ * @param output The reported object, as reported.
+ * @param schema The pinned `output` schema, or `null`.
+ * @returns The names, in declaration order; `[]` when nothing is pending.
+ * @throws {ValidationError} When any rule above fails.
+ */
+function checkPendingArtifacts(
+  pending: unknown,
+  status: unknown,
+  output: Record<string, unknown> | null,
+  schema: unknown,
+): string[] {
+  if (pending === undefined || pending === null) return [];
+  if (
+    !Array.isArray(pending) ||
+    pending.some((name) => typeof name !== 'string' || name.length === 0) ||
+    new Set(pending).size !== pending.length
+  ) {
+    throw new ValidationError([
+      'pending_artifacts has to be a list of distinct non-empty strings',
+    ]);
+  }
+  if (pending.length === 0) return [];
+
+  const names = pending as string[];
+  if (status !== 'completed') {
+    throw new ValidationError(['pending_artifacts is only valid on a "completed" closure']);
+  }
+
+  const properties =
+    isObject(schema) && isObject(schema.properties) ? schema.properties : null;
+  const problems: string[] = [];
+  for (const name of names) {
+    if (output === null || typeof output[name] !== 'string') {
+      problems.push(`pending_artifacts "${name}" is not a string property of the reported output`);
+    } else if (
+      isObject(schema) &&
+      !(properties !== null && isObject(properties[name]) && properties[name]['x-artifact'] === true)
+    ) {
+      problems.push(`pending_artifacts "${name}" is not declared "x-artifact": true by the node's output`);
+    }
+  }
+  if (problems.length > 0) throw new ValidationError(problems);
+  return names;
 }
 
 /**
@@ -765,6 +829,18 @@ export async function finishSession(
   const actor = resolveActor(input.actor, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
 
+  // Resolved before anything is written, because a bad `pending_artifacts` has
+  // to refuse the closure whole (t1339): the session stays open and the
+  // transcript below is never stored for a call that is about to be a 400. The
+  // same schema then judges the report further down, so it is read once.
+  const schema = resolveOutputSchema(db, row);
+  const pendingNames = checkPendingArtifacts(
+    input.pending_artifacts,
+    data.status,
+    data.output as Record<string, unknown> | null,
+    schema,
+  );
+
   // Only the overage travels (t424, FR2), and only what was ACTUALLY reported:
   // `truncated` is true exactly when `capTranscript` was handed a string too
   // long for the column, so the cast below is the flag's own guarantee, not an
@@ -796,7 +872,6 @@ export async function finishSession(
   // that produced none, and the work moved on to a node that then had nothing
   // to read.
   const reported = data.output as Record<string, unknown> | null;
-  const schema = resolveOutputSchema(db, row);
   // The routing key comes out only when there IS a schema to hold the rest
   // against (t269, FR2): with nothing to check the report against, there is also
   // nothing to reserve a key from, and t253 AT3's doctrine stands — what was
@@ -884,6 +959,25 @@ export async function finishSession(
       occurred_at: timestamp,
       data,
     });
+
+    // The declaration of files still to come (t1339, FR3), in the same
+    // transaction as the closure so it never exists without it. Only for a
+    // report the schema ACCEPTED: a refused one is stored as `null`, and a name
+    // has nothing to refer to.
+    if (accepted && pendingNames.length > 0) {
+      recordEvent(db, {
+        type: 'session.artifacts_pending',
+        project_id: projectId,
+        execution_id: row.execution_id,
+        entity: { type: 'session', id },
+        actor,
+        occurred_at: timestamp,
+        data: requireValidData('session.artifacts_pending', {
+          names: pendingNames,
+          job_id: row.job_id,
+        }),
+      });
+    }
 
     // The third moment a round can end (t262, FR4). Since a final node that
     // pins a skill stops being `concluido` on arrival, the LAST thing that
@@ -1176,6 +1270,207 @@ export function listSessionEvents(db: Database, id: number, projectId?: number):
   if (readRow(db, id) === undefined) return null;
   if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
   return getEventsByEntity(db, 'session', id);
+}
+
+/* -------------------------------------------------------------------------- */
+/* t1339 — a completed session whose declared files are not uploaded yet.      */
+/* -------------------------------------------------------------------------- */
+
+/** What `GET /v1/sessions/:id/artifact-settlements` answers with (t1339, FR6). */
+export interface ArtifactSettlements {
+  session_id: number;
+  /** Declared names with no settlement yet, in declaration order. */
+  pending: string[];
+  /** One entry per settlement, in the order they were recorded. */
+  settled: Array<{ name: string; artifact_id: number; settled_at: string }>;
+}
+
+/** The settlement refused because of the state of the session (a `409`). */
+export class SettlementConflictError extends Error {}
+
+/**
+ * Derives the pending/settled state from the session's own events.
+ *
+ * Nothing is stored for it: the state IS the two event types, which is what
+ * keeps the repository append-only — a mutable column would have to overwrite
+ * the report or a flag, and events cannot.
+ *
+ * @param events The session's events, in log order.
+ * @param sessionId Session id.
+ * @returns The declared names still pending and the settlements so far.
+ */
+function settlementsOf(events: Event[], sessionId: number): ArtifactSettlements {
+  const declared: string[] = [];
+  const settled: ArtifactSettlements['settled'] = [];
+  for (const event of events) {
+    if (event.type === 'session.artifacts_pending') {
+      declared.push(...(event.data.names as string[]));
+    } else if (event.type === 'session.artifact_settled') {
+      settled.push({
+        name: event.data.name as string,
+        artifact_id: event.data.artifact_id as number,
+        settled_at: event.occurred_at,
+      });
+    }
+  }
+  const done = new Set(settled.map((entry) => entry.name));
+  return {
+    session_id: sessionId,
+    pending: declared.filter((name) => !done.has(name)),
+    settled,
+  };
+}
+
+/**
+ * Which files a completed session declared pending, and which are settled
+ * (t1339, FR6).
+ *
+ * Scoped like {@link getSessionLog}: a session of another project answers the
+ * `null` an unknown id answers.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param projectId The project the caller resolved; omitted, no scope check.
+ * @returns The state, or `null` when the session is not there.
+ */
+export function getArtifactSettlements(
+  db: Database,
+  id: number,
+  projectId?: number,
+): ArtifactSettlements | null {
+  if (readRow(db, id) === undefined) return null;
+  if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
+  return settlementsOf(getEventsByEntity(db, 'session', id), id);
+}
+
+/** Body of `POST /v1/sessions/:id/artifact-settlements`. */
+export interface SettleArtifactInput {
+  name?: unknown;
+  artifact_id?: unknown;
+  actor?: unknown;
+}
+
+/**
+ * Records the artifact that settles one pending property (t1339, FR4–FR5).
+ *
+ * Append-only, like everything else: one `session.artifact_settled` event, and
+ * the report the session closed with is never touched. The whole check-then-
+ * append runs in one transaction, so two racing settlements cannot both pass
+ * the "not settled yet" test.
+ *
+ * Order of the refusals: the body's shape (400), the session's state (409),
+ * whether the name was ever declared (409), then the artifact itself (400: it
+ * has to exist, belong to THIS session and carry the property's name — the
+ * runner uploads with `x-artifact-name` equal to the key, so a mismatch is a
+ * mis-bound id), and last a conflicting earlier settlement (409). The exact
+ * repeat of a settlement is answered before the artifact is looked at again,
+ * and appends nothing.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param input Request body.
+ * @returns The new state with whether an event was appended, or `null` for an
+ *   unknown session.
+ * @throws {ValidationError} For a malformed body or an artifact that cannot
+ *   settle this name.
+ * @throws {SettlementConflictError} For a session that is not `completed`, a
+ *   name never declared, or a name settled by a different artifact.
+ */
+export function settleArtifact(
+  db: Database,
+  id: number,
+  input: SettleArtifactInput,
+): { state: ArtifactSettlements; created: boolean } | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+
+  const { name, artifact_id: artifactId } = input;
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new ValidationError(['name has to be a non-empty string']);
+  }
+  if (typeof artifactId !== 'number' || !Number.isInteger(artifactId) || artifactId < 1) {
+    throw new ValidationError(['artifact_id has to be an integer >= 1']);
+  }
+  const actor = resolveActor(input.actor, RUNNER_ACTOR);
+  const projectId = sessionProject(db, id);
+
+  const settle = db.transaction((): { state: ArtifactSettlements; created: boolean } => {
+    if (row.status !== 'completed') {
+      throw new SettlementConflictError(`session ${id} is "${row.status}", not "completed"`);
+    }
+    const before = settlementsOf(getEventsByEntity(db, 'session', id), id);
+    const earlier = before.settled.find((entry) => entry.name === name);
+    if (earlier === undefined && !before.pending.includes(name)) {
+      throw new SettlementConflictError(`"${name}" was never declared pending on session ${id}`);
+    }
+    if (earlier?.artifact_id === artifactId) return { state: before, created: false };
+
+    const artifact = getArtifact(db, artifactId);
+    if (artifact === null) {
+      throw new ValidationError([`artifact ${artifactId} does not exist`]);
+    }
+    if (artifact.session_id !== id) {
+      throw new ValidationError([`artifact ${artifactId} belongs to another session`]);
+    }
+    if (artifact.name !== name) {
+      throw new ValidationError([
+        `artifact ${artifactId} is named "${artifact.name}", not "${name}"`,
+      ]);
+    }
+    if (earlier !== undefined) {
+      throw new SettlementConflictError(
+        `"${name}" is already settled by artifact ${earlier.artifact_id}`,
+      );
+    }
+
+    recordEvent(db, {
+      type: 'session.artifact_settled',
+      project_id: projectId,
+      execution_id: row.execution_id,
+      entity: { type: 'session', id },
+      actor,
+      occurred_at: now(),
+      data: requireValidData('session.artifact_settled', {
+        name,
+        artifact_id: artifactId,
+        job_id: row.job_id,
+      }),
+    });
+    return { state: settlementsOf(getEventsByEntity(db, 'session', id), id), created: true };
+  });
+
+  return settle();
+}
+
+/**
+ * The report of a completed session as a NEXT node may read it (t1339, FR7).
+ *
+ * A name declared pending still carries the worktree path the session wrote, and
+ * a downstream node expects an artifact id there. So the path never leaves: a
+ * pending name is omitted, and a settled one reads as the artifact id in the
+ * decimal-string form the runner's upload writes. The session's own `output` is
+ * not touched — this is a view for the job's input, not a rewrite of the report.
+ *
+ * @param db Open handle.
+ * @param session A session projection.
+ * @returns `session.output`, unchanged when nothing was declared pending.
+ */
+export function effectiveOutput(db: Database, session: Session): Record<string, unknown> | null {
+  const output = session.output;
+  if (output === null || session.status !== 'completed') return output;
+
+  const events = getEventsByEntity(db, 'session', session.id);
+  if (!events.some((event) => event.type === 'session.artifacts_pending')) return output;
+
+  const state = settlementsOf(events, session.id);
+  const effective = { ...output };
+  for (const name of state.pending) delete effective[name];
+  for (const entry of state.settled) {
+    if (output[entry.name] !== undefined) {
+      effective[entry.name] = String(entry.artifact_id);
+    }
+  }
+  return effective;
 }
 
 /** Body of `POST /v1/sessions/:id/permission-denials`. */

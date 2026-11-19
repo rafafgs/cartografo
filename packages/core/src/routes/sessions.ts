@@ -24,13 +24,16 @@ import type { Database } from '../db/connection.ts';
 import { integerFromQuery } from '../repositories/common.ts';
 import {
   openSession,
+  SettlementConflictError,
   finishSession,
+  getArtifactSettlements,
   getSession,
   getSessionLog,
   getSessionTranscript,
   listSessionEvents,
   listSessions,
   recordPermissionDenial,
+  settleArtifact,
   writePartialText,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict, requireProject } from './common.ts';
@@ -223,6 +226,41 @@ export function registerSessions(
 
       const events = listSessionEvents(db, routeId(request.params), scope.project.id);
       return events === null ? notFound(reply, 'session') : { events };
+    }),
+  );
+
+  // The files a completed session declared pending, and the artifacts that
+  // settled them (t1339). Added beside `/finish` rather than changing it: the
+  // closure stays once-only and the report stays as it was reported, so the
+  // later arrival of an artifact id is its own append-only fact. 201 for a new
+  // settlement, 200 for the exact repeat of one (nothing is appended then).
+  app.post('/sessions/:id/artifact-settlements', async (request, reply) =>
+    withValidation(reply, () => {
+      try {
+        const settled = settleArtifact(
+          db,
+          routeId(request.params),
+          (request.body ?? {}) as Record<string, unknown>,
+        );
+        if (settled === null) return notFound(reply, 'session');
+        reply.code(settled.created ? 201 : 200);
+        return settled.state;
+      } catch (error) {
+        if (error instanceof SettlementConflictError) return conflict(reply, error.message);
+        throw error;
+      }
+    }),
+  );
+
+  // Scoped like `/log` and `/events`: another project's session is the same 404
+  // an unknown id gets.
+  app.get('/sessions/:id/artifact-settlements', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const state = getArtifactSettlements(db, routeId(request.params), scope.project.id);
+      return state === null ? notFound(reply, 'session') : state;
     }),
   );
 

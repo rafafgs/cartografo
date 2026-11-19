@@ -417,6 +417,27 @@ const RULES: Record<string, TypeRule> = {
       reason: required('string'),
     },
   },
+  // A completed session whose declared files are not uploaded yet (t1339), and
+  // the artifact that later settles one of them. Both ride beside
+  // `session.finished` instead of inside it: that payload is normalised to
+  // `null` for every declared field, so a new optional field there would change
+  // every stored closure. Both carry `job_id` so they show in the job's own
+  // timeline, which `session.finished` does not.
+  'session.artifacts_pending': {
+    entity: 'session',
+    fields: {
+      names: required('string-list', { minItems: 1, unique: true }),
+      job_id: optional('integer'),
+    },
+  },
+  'session.artifact_settled': {
+    entity: 'session',
+    fields: {
+      name: required('string'),
+      artifact_id: required('integer', { min: 1 }),
+      job_id: optional('integer'),
+    },
+  },
   'input_request.created': {
     entity: 'input_request',
     fields: {

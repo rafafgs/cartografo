@@ -171,9 +171,9 @@ export const DEFAULT_LEASE_CAP_PROJECT = 50;
  * (t1312, FR6).
  *
  * The k-th abandoned attempt in a row waits `base * 2^(k-1)` seconds after the
- * previous lease went back, capped at an hour. Sixty seconds is below the tick
- * interval most runners poll at, so a healthy pool never notices it; it is the
- * runner polling every few seconds against a broken node that it slows down.
+ * previous lease went back, capped at an hour. It only ever touches a job whose
+ * last attempt was abandoned, so a healthy dispatch never meets it; what it
+ * slows down is a runner polling on a short interval against a broken node.
  * `0` turns it off.
  */
 export const DEFAULT_RETRY_BACKOFF_SECONDS = 60;

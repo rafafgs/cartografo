@@ -6,7 +6,9 @@
  * `PATCH /v1/sessions/:id/finish` — so it is only as safe as the runner's path
  * to that call. The upload of a declared artifact sits on that path, and a throw
  * there used to skip the closure for good: the session stayed `open` with
- * `transcript = NULL`.
+ * `transcript = NULL`. t1313's compensating closure (`close-after-failure.ts`)
+ * now closes it as `failed`, with the error and the raw transcript; these cases
+ * pin that for the upload path.
  *
  * Real control plane (`bootCore`), the fake engine, and a `doFetch` wrapper that
  * answers `POST /v1/sessions/:id/artifacts` with 500 and delegates everything
@@ -325,14 +327,32 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     assert.ok(stored.transcript.includes(MARKER), 'and it holds what the engine printed');
   });
 
-  await parent.test('AT2 — the session is closed with the engine\'s own outcome and no output', async (t) => {
+  // The closure is t1313's compensating one: `failed`, carrying the upload's
+  // error, so the streak guard counts it. Whether a session whose upload alone
+  // failed should ever read `completed` is a separate decision (founder,
+  // 2026-11-19, when t1314 was integrated after t1313).
+  await parent.test('AT2 — the session is closed as failed, with the upload error and no output', async (t) => {
     const ran = await run(t, { artifactStatus: 500 });
+    assert.ok('error' in ran.outcome, 'the upload failure still surfaces');
     const { sessions } = await api<{
       sessions: Array<{ id: number; status: string; finished_at: string | null; output: unknown }>;
     }>(baseUrl, token, 'GET', `/v1/sessions?job_id=${String(ran.job.id)}`);
-    assert.equal(sessions[0].status, 'completed');
+    assert.equal(sessions[0].status, 'failed');
     assert.notEqual(sessions[0].finished_at, null);
     assert.equal(sessions[0].output, null);
+    const { events } = await api<{ events: Array<{ type: string; data: Record<string, unknown> }> }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/sessions/${String(ran.sessionId)}/events`,
+    );
+    const finished = events.find((event) => event.type === 'session.finished');
+    assert.ok(finished !== undefined, 'session.finished was recorded');
+    assert.ok(typeof finished.data.error === 'string', 'the closure carries the error');
+    assert.ok(
+      finished.data.error.includes(ran.outcome.error.message),
+      'the error recorded is the upload error the dispatch rejected with',
+    );
   });
 
   await parent.test('AT3 — the decoded log is readable', async (t) => {

@@ -472,36 +472,21 @@ export function createClaudeCodeDispatch(
       // back with an artifact id where the session wrote a local path — or with
       // the reasons it was refused, and then the control plane is handed no
       // report at all.
-      //
-      // Captured, never thrown from here (t1314). The closure below is the ONE
-      // write that carries the transcript, and the transcript is the only record
-      // of what the agent did, so nothing that can throw may sit between the
-      // engine's end and it. The upload is the one step in that window that can:
-      // a store that is down, a deadline, an answer without an id. A throw here
-      // used to skip the closure for good — the session stayed `open` with no
-      // transcript — and the error now surfaces after the closure instead.
-      let uploadFailure: unknown = null;
-      let artifacts: Awaited<ReturnType<typeof uploadArtifacts>> = { output: parsedResult };
-      if (outcome.status === 'completed') {
-        try {
-          artifacts = await uploadArtifacts(
-            {
-              urlBase: options.urlBase,
-              token: options.token,
-              doFetch: options.doFetch,
-              requestTimeoutMs: options.requestTimeoutMs,
-            },
-            session.id,
-            worktree.path,
-            resolved?.node.contract?.output_schema,
-            parsedResult,
-          );
-        } catch (error) {
-          uploadFailure = error;
-          // No report to attach: the closure goes out with no `output` at all.
-          artifacts = { output: undefined };
-        }
-      }
+      const artifacts =
+        outcome.status === 'completed'
+          ? await uploadArtifacts(
+              {
+                urlBase: options.urlBase,
+                token: options.token,
+                doFetch: options.doFetch,
+                requestTimeoutMs: options.requestTimeoutMs,
+              },
+              session.id,
+              worktree.path,
+              resolved?.node.contract?.output_schema,
+              parsedResult,
+            )
+          : { output: parsedResult };
 
       // The tree goes back HERE, the moment the outcome is known and before a
       // single decision is taken on top of it (t207-B). It used to happen at the
@@ -514,9 +499,7 @@ export function createClaudeCodeDispatch(
       // directory is scratch; anything else is the only evidence there is of
       // what went wrong, and it stays on disk until a human — or
       // `cartografo-runner prune` — decides otherwise.
-      // After a failed upload the tree is kept: the file it failed on is the
-      // evidence, and the upload has not removed it (t1314).
-      await tree.release(outcome.status !== 'completed' || uploadFailure !== null);
+      await tree.release(outcome.status !== 'completed');
 
       // A session that ended `completed` and whose tree was kept ANYWAY: the
       // manager looked at `git status --porcelain` and found work nobody
@@ -526,8 +509,7 @@ export function createClaudeCodeDispatch(
       // It is not the machine's to reconcile: no commit and no discard is made
       // on anybody's behalf, whether the dirt is a forgotten `git commit` or
       // scratch the node legitimately produces.
-      const dirtyDespiteCompleted =
-        outcome.status === 'completed' && uploadFailure === null && tree.keptByManager === true;
+      const dirtyDespiteCompleted = outcome.status === 'completed' && tree.keptByManager === true;
 
       // Drained BEFORE the end of the session, so the log reads in the order
       // things happened: the session opened, it was denied, it finished. A
@@ -557,13 +539,7 @@ export function createClaudeCodeDispatch(
         artifacts.output,
       );
 
-      // A failed upload stops everything that comes after the closure (t1314):
-      // no question, no block, no advance. The work stays where it was and
-      // unblocked, so the controller redispatches it under the existing retry
-      // cap and backoff, and the captured error is rethrown below. The three
-      // block conditions and the advance each carry `uploadFailure === null`.
-      const request: InputRequest | null =
-        uploadFailure === null ? parseInputRequest(output) : null;
+      const request: InputRequest | null = parseInputRequest(output);
       if (request !== null && resolveEscalationPolicy(resolved) === 'never') {
         // The node declares it has nobody to ask, and the session asked anyway
         // (t167, FR6). The work stops either way — what it does not do is put a
@@ -600,8 +576,7 @@ export function createClaudeCodeDispatch(
       // so `refusedReport` cannot independently be true for the same session —
       // `outputAccepted` reads vacuously `true` when there is no `output`.
       const refusedArtifacts = outcome.status === 'completed' && artifacts.problems !== undefined;
-      const refusedReport =
-        outcome.status === 'completed' && uploadFailure === null && verdict.outputAccepted === false;
+      const refusedReport = outcome.status === 'completed' && verdict.outputAccepted === false;
       if (request === null && refusedArtifacts) {
         await blockForArtifactRefusal(call, job, session.id, artifacts.problems ?? []);
       } else if (request === null && refusedReport) {
@@ -636,8 +611,7 @@ export function createClaudeCodeDispatch(
         request === null &&
         !dirtyDespiteCompleted &&
         !refusedReport &&
-        !refusedArtifacts &&
-        uploadFailure === null
+        !refusedArtifacts
           ? await advance(
               call,
               job,
@@ -671,7 +645,7 @@ export function createClaudeCodeDispatch(
       // the session, the closure after it, the cleanup last of all — which is
       // the precedent the denials' failure set when it was alone. Reporting more
       // than one at a time is a multi-error type nobody has needed yet.
-      const failure = denials.failure ?? uploadFailure ?? verdict.failure ?? tree.failure;
+      const failure = denials.failure ?? verdict.failure ?? tree.failure;
       if (failure !== null) throw failure;
 
       // The bench refused to advance, so `advance` stopped the work there (t273).

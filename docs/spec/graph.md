@@ -44,7 +44,7 @@ on purpose (see §7).
 | `initial_node` | node id | yes | Where every traversal begins. It has to exist in `nodes`. |
 | `final_nodes` | list of ids | yes | Where the traversal ends. At least one; all of them have to exist in `nodes`. |
 | `project` | object | no | The class's **static** configuration, published by the input projection at `input.project`. Absent means `{}`. See below. |
-| `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job. Absent means **3**. See below. |
+| `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job — and, separately, how many abandoned attempts in a row (sessions left open with no lease) do. Absent means **3**. See below. |
 
 ### `project`: what the class declares for itself
 
@@ -168,6 +168,16 @@ Four things the field decides:
 The one that counts is the control plane, inside the transaction that closes the
 session: the sequence crosses leases and runner processes, and no runner on its
 own can see it (D1).
+
+**The same ceiling bounds abandoned attempts** (t1312). A runner that throws
+after a session ran, and so never closes it, leaves a session `open` that no
+close ever counts. The lease grant counts those instead: the trailing run of
+sessions on the job's current node left `open` while the job holds no active
+lease. At `max_consecutive_failures` the job is blocked, and below it the
+attempts are spaced with a backoff
+(`docs/spec/runner-and-controller.md` §"An attempt nobody closed also stops").
+The two counts are separate: a run that mixes `failed` and abandoned sessions is
+counted by neither.
 
 **Node ids** are lowercase letters, digits, a hyphen and an underscore
 (`^[a-z0-9][a-z0-9_-]*$`), unique within the document. They are the key edges,

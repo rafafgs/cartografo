@@ -26,7 +26,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -171,9 +171,10 @@ function spawnCliBackground(
   args: string[],
   options: { token?: string } = {},
 ): BackgroundCli {
+  const databaseDirectory = mkdtempSync(path.join(tmpdir(), 'cartografo-t543-cli-'));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    CARTOGRAFO_DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t543-cli-')), 'cartografo.db'),
+    CARTOGRAFO_DB_PATH: path.join(databaseDirectory, 'cartografo.db'),
   };
   delete env.CARTOGRAFO_TOKEN;
   if (options.token !== undefined) env.CARTOGRAFO_TOKEN = options.token;
@@ -199,8 +200,12 @@ function spawnCliBackground(
     child.on('close', (code, signal) => resolve({ code, signal }));
   });
 
-  t.after(() => {
+  // Kill, wait for the child to be gone, and only then remove its database
+  // directory (t1334): SQLite must not be writing while the directory goes away.
+  t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    if (child.pid !== undefined) await exit;
+    rmSync(databaseDirectory, { recursive: true, force: true });
   });
 
   return {

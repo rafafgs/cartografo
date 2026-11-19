@@ -27,6 +27,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -53,9 +54,11 @@ const REFERRERS = [
   path.join(BUNDLE_TWO, 'README.md'),
 ];
 
-/** Temporary area that disappears at the end of the test. */
-function temporaryArea() {
-  return mkdtempSync(path.join(tmpdir(), 'cartografo-t120-'));
+/** Temporary area that disappears at the end of the test `t`. */
+function temporaryArea(t) {
+  const area = mkdtempSync(path.join(tmpdir(), 'cartografo-t120-'));
+  t.after(() => rmSync(area, { recursive: true, force: true }));
+  return area;
 }
 
 /** Runs the publish script as a child process, the way a person or CI would. */
@@ -110,8 +113,8 @@ function bundleFiles(directory) {
   );
 }
 
-test('AT1 — a tampered pin is refused and nothing is written to the atlas', () => {
-  const area = temporaryArea();
+test('AT1 — a tampered pin is refused and nothing is written to the atlas', (t) => {
+  const area = temporaryArea(t);
   const bundle = path.join(area, 'bundle-adulterado');
   cpSync(BUNDLE_ONE, bundle, { recursive: true });
 
@@ -142,8 +145,8 @@ test('AT1 — a tampered pin is refused and nothing is written to the atlas', ()
   );
 });
 
-test('AT2 — publishing copies the bundle byte for byte under <atlas>/<classe>/', () => {
-  const area = temporaryArea();
+test('AT2 — publishing copies the bundle byte for byte under <atlas>/<classe>/', (t) => {
+  const area = temporaryArea(t);
   const atlas = path.join(area, 'atlas');
 
   const result = runPublish(BUNDLE_ONE, atlas);
@@ -168,8 +171,8 @@ test('AT2 — publishing copies the bundle byte for byte under <atlas>/<classe>/
   );
 });
 
-test('AT3 — publishing twice with unchanged input leaves the files unchanged', () => {
-  const area = temporaryArea();
+test('AT3 — publishing twice with unchanged input leaves the files unchanged', (t) => {
+  const area = temporaryArea(t);
   const atlas = path.join(area, 'atlas');
 
   assert.equal(runPublish(BUNDLE_ONE, atlas).status, 0);
@@ -184,8 +187,8 @@ test('AT3 — publishing twice with unchanged input leaves the files unchanged',
   }
 });
 
-test('AT4 — two classes share one atlas without contaminating each other', () => {
-  const area = temporaryArea();
+test('AT4 — two classes share one atlas without contaminating each other', (t) => {
+  const area = temporaryArea(t);
   const atlas = path.join(area, 'atlas');
 
   assert.equal(runPublish(BUNDLE_ONE, atlas).status, 0);

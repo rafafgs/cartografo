@@ -28,7 +28,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -341,7 +341,7 @@ test('AT9 — alpha-test opens the network, and it is open — not domain-scoped
   );
 });
 
-test('AT10 — the validator CLI approves the bundle and rejects a tampered hash', () => {
+test('AT10 — the validator CLI approves the bundle and rejects a tampered hash', (t) => {
   assert.ok(
     existsSync(BUNDLE_VALIDATOR_PATH),
     `artifact does not exist yet: ${path.relative(ROOT, BUNDLE_VALIDATOR_PATH)}`,
@@ -350,7 +350,9 @@ test('AT10 — the validator CLI approves the bundle and rejects a tampered hash
   const good = runCli(BUNDLE_DIR);
   assert.equal(good.status, 0, `the real bundle has to exit 0:\n${good.stdout}${good.stderr}`);
 
-  const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-')), 'bundle');
+  const copyRoot = mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-'));
+  t.after(() => rmSync(copyRoot, { recursive: true, force: true }));
+  const copy = path.join(copyRoot, 'bundle');
   cpSync(BUNDLE_DIR, copy, { recursive: true });
   const target = path.join(copy, 'skills', 'alpha-test.json');
   const manifest = JSON.parse(readFileSync(target, 'utf8'));

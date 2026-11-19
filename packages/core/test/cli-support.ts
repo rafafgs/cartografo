@@ -137,9 +137,29 @@ export async function runCli(
     timeoutMs?: number;
   } = {},
 ): Promise<CommandResult> {
+  const databaseDirectory = mkdtempSync(path.join(tmpdir(), 'cartografo-t108-cli-'));
+  // Removed on every way out of this call (t1334): the child has closed by then
+  // on a normal exit and after a timeout kill, and never started on a spawn error.
+  try {
+    return await runCliIn(databaseDirectory, args, options);
+  } finally {
+    rmSync(databaseDirectory, { recursive: true, force: true });
+  }
+}
+
+async function runCliIn(
+  databaseDirectory: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    token?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+  },
+): Promise<CommandResult> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    CARTOGRAFO_DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t108-cli-')), 'cartografo.db'),
+    CARTOGRAFO_DB_PATH: path.join(databaseDirectory, 'cartografo.db'),
   };
   // A `CARTOGRAFO_TOKEN` exported in whoever runs the suite's own shell must not
   // decide the result of a test about NOT having a credential (t124).

@@ -51,6 +51,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -623,9 +624,13 @@ const RANGES = {
 /** Rows of an array of `count` placeholder objects. */
 const rows = (count) => Array.from({ length: count }, (_, index) => ({ row: index }));
 
-/** Builds a temp fixture tree for `day-1`, then applies the given mutation. */
-function temporaryFixture(mutate = () => {}) {
+/**
+ * Builds a temp fixture tree for `day-1`, then applies the given mutation.
+ * The tree is removed when the test `t` ends.
+ */
+function temporaryFixture(t, mutate = () => {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'cartografo-intake-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
   const day = path.join(home, 'fixtures', 'day-1');
   mkdirSync(day, { recursive: true });
 
@@ -661,8 +666,8 @@ function runIntake(home, day = 'day-1', ranges = RANGES) {
   return { run, report: block === null ? null : JSON.parse(block[1]) };
 }
 
-test('AT10 — check-intake.mjs passes, fails with a reason, and crashes only on broken JSON', () => {
-  const good = runIntake(temporaryFixture());
+test('AT10 — check-intake.mjs passes, fails with a reason, and crashes only on broken JSON', (t) => {
+  const good = runIntake(temporaryFixture(t));
   assert.equal(good.run.status, 0, `a reached verdict exits 0:\n${good.run.stderr}`);
   assert.ok(good.report, `the script has to print one fenced resultado block:\n${good.run.stdout}`);
   assert.equal(good.report.outcome, 'pass');
@@ -702,7 +707,7 @@ test('AT10 — check-intake.mjs passes, fails with a reason, and crashes only on
   ];
 
   for (const { name, mutate, names } of cases) {
-    const { run, report } = runIntake(temporaryFixture(mutate));
+    const { run, report } = runIntake(temporaryFixture(t, mutate));
     assert.equal(run.status, 0, `${name}: a fail is a verdict, not a crash:\n${run.stderr}`);
     assert.ok(report, `${name}: the script still reports a block`);
     assert.equal(report.outcome, 'fail', `${name}: outcome`);
@@ -719,7 +724,7 @@ test('AT10 — check-intake.mjs passes, fails with a reason, and crashes only on
   // verdict to reach, and pretending to have reached one is the failure mode
   // `verify-release.json` documents for its own deterministic checks.
   const broken = runIntake(
-    temporaryFixture((content) => {
+    temporaryFixture(t, (content) => {
       content['signals.json'] = 'not json at all';
     }),
   );
@@ -1005,7 +1010,7 @@ test('AT16 — demo/job.json is a POST /v1/jobs body naming a day this bundle sh
   assert.equal(field.required_at, 'check-intake');
 });
 
-test('AT17 — the validator CLI approves the bundle and rejects a tampered hash', () => {
+test('AT17 — the validator CLI approves the bundle and rejects a tampered hash', (t) => {
   assert.ok(
     existsSync(BUNDLE_VALIDATOR_PATH),
     `artifact does not exist yet: ${path.relative(ROOT, BUNDLE_VALIDATOR_PATH)}`,
@@ -1014,7 +1019,9 @@ test('AT17 — the validator CLI approves the bundle and rejects a tampered hash
   const good = runCli(BUNDLE_DIR);
   assert.equal(good.status, 0, `the real bundle has to exit 0:\n${good.stdout}${good.stderr}`);
 
-  const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-')), 'bundle');
+  const copyRoot = mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-'));
+  t.after(() => rmSync(copyRoot, { recursive: true, force: true }));
+  const copy = path.join(copyRoot, 'bundle');
   cpSync(BUNDLE_DIR, copy, { recursive: true });
   const target = path.join(copy, 'skills', 'red-team-flow-hypothesis.json');
   const manifest = JSON.parse(readFileSync(target, 'utf8'));

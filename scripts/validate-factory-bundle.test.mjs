@@ -28,7 +28,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -39,9 +39,11 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE_BUNDLE = path.join(ROOT, 'factory-graphs', 'software-development');
 const INTERVIEW_MANIFEST_PATH = path.join(ROOT, 'factory-graphs', 'map-design', 'skills', 'interview.json');
 
-/** A throwaway copy of the real bundle, ready to be mutated. */
-function bundleCopy() {
-  const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t176-')), 'bundle');
+/** A throwaway copy of the real bundle, ready to be mutated; removed when `t` ends. */
+function bundleCopy(t) {
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t176-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const copy = path.join(root, 'bundle');
   cpSync(SOURCE_BUNDLE, copy, { recursive: true });
   return copy;
 }
@@ -72,15 +74,15 @@ const problemsOf = (report) => report.pins.flatMap((pin) => pin.problems);
 const explain = (report) =>
   JSON.stringify({ errors: report.errors, pins: report.pins }, null, 2);
 
-test('AT1 — a bundle whose verifications line up with the pinned checks is valid', () => {
-  const report = validateBundle(bundleCopy());
+test('AT1 — a bundle whose verifications line up with the pinned checks is valid', (t) => {
+  const report = validateBundle(bundleCopy(t));
 
   assert.deepEqual(problemsOf(report), [], 'no pin should have a problem');
   assert.equal(report.valid, true, explain(report));
 });
 
-test('AT2 — a deterministic command that diverges from the check fails the bundle', () => {
-  const bundle = editGraph(bundleCopy(), 'integrate', (list) => {
+test('AT2 — a deterministic command that diverges from the check fails the bundle', (t) => {
+  const bundle = editGraph(bundleCopy(t), 'integrate', (list) => {
     list[0].command = 'make check';
   });
 
@@ -95,9 +97,9 @@ test('AT2 — a deterministic command that diverges from the check fails the bun
   );
 });
 
-test('AT3 — one item too few or one too many fails the bundle', () => {
+test('AT3 — one item too few or one too many fails the bundle', (t) => {
   const short = validateBundle(
-    editGraph(bundleCopy(), 'develop', (list) => {
+    editGraph(bundleCopy(t), 'develop', (list) => {
       list.pop();
     }),
   );
@@ -108,7 +110,7 @@ test('AT3 — one item too few or one too many fails the bundle', () => {
   );
 
   const long = validateBundle(
-    editGraph(bundleCopy(), 'develop', (list) => {
+    editGraph(bundleCopy(t), 'develop', (list) => {
       list.push(structuredClone(list[0]));
     }),
   );
@@ -119,8 +121,8 @@ test('AT3 — one item too few or one too many fails the bundle', () => {
   );
 });
 
-test('AT3b — the same items in another order fail the bundle', () => {
-  const bundle = editGraph(bundleCopy(), 'develop', (list) => {
+test('AT3b — the same items in another order fail the bundle', (t) => {
+  const bundle = editGraph(bundleCopy(t), 'develop', (list) => {
     list.reverse();
   });
 
@@ -139,8 +141,8 @@ test('t462 AT10 — the map-design interview skill\'s declared hash matches its 
   assert.equal(manifestHash(manifest), manifest.hash, "the manifest's declared hash is stale — recompute it with manifestHash");
 });
 
-test('AT3c — the prose of an agentic item is free to differ from the check', () => {
-  const bundle = editGraph(bundleCopy(), 'refine', (list) => {
+test('AT3c — the prose of an agentic item is free to differ from the check', (t) => {
+  const bundle = editGraph(bundleCopy(t), 'refine', (list) => {
     list[0].instruction = 'Same question asked in a different shape, in other words.';
     list[0].description = 'Another wording of the very same proof.';
   });

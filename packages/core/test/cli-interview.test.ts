@@ -18,7 +18,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -664,7 +664,9 @@ test('t546 AT4 — --resume on an unknown id exits 1', { timeout: 120_000 }, asy
 test('t546 AT5 — nothing the REPL prints says job, runner or input request', { timeout: 240_000 }, async (t) => {
   const cp = await freshPlane(t);
   const draft = closingDraft();
-  const exportDir = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t546-sweep-')), 'bundle');
+  const exportRoot = mkdtempSync(path.join(tmpdir(), 'cartografo-t546-sweep-'));
+  t.after(() => rmSync(exportRoot, { recursive: true, force: true }));
+  const exportDir = path.join(exportRoot, 'bundle');
   const answers = writeAnswers(t, [
     'how I triage a widget',
     'The weekly widget pass.',

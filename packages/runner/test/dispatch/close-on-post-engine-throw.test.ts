@@ -275,15 +275,15 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
     assert.equal(session.status, 'failed', 'the row is closed, not left open');
     assert.notEqual(session.finished_at, null);
 
+    // The session's own events: `GET /v1/jobs/:id/events` deliberately carries
+    // no `session.finished` (`EventFilter.job_id`), so t1313 added this read.
     const { events } = await api<{ events: EventRow[] }>(
       baseUrl,
       token,
       'GET',
-      `/v1/jobs/${String(job.id)}/events`,
+      `/v1/sessions/${String(session.id)}/events`,
     );
-    const finished = events.find(
-      (event) => event.type === 'session.finished' && event.entity.id === session.id,
-    );
+    const finished = events.find((event) => event.type === 'session.finished');
     assert.ok(finished !== undefined, 'session.finished was recorded');
     assert.match(String(finished.data.error), /the artifact store is unreachable/);
   });

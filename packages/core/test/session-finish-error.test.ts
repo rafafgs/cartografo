@@ -127,3 +127,70 @@ test('t1313 AT11 — three failed closures with an error still trip the streak g
   const stopped = await readJob();
   assert.ok((stopped.block_reason ?? '').includes('implement'), 'the existing streak reason');
 });
+
+/** An event as `GET /v1/sessions/:id/events` returns it. */
+interface EventEnvelope {
+  id: number;
+  type: string;
+  project_id: number;
+  entity: { type: string; id: number | string };
+  data: Record<string, unknown>;
+}
+
+/**
+ * The read `cartografo job <id>` uses to find a session's error (t1313,
+ * founder's decision B). `GET /v1/jobs/:id/events` deliberately carries no
+ * `session.finished` (`db/events.ts`, `EventFilter.job_id`), and that shared
+ * read stays as it is: this route is added beside it, and answers the events
+ * whose entity is the session, in log order, scoped to the session's project.
+ */
+test('t1313 AT9b — GET /v1/sessions/:id/events answers that session’s events, project-scoped', async (t) => {
+  const ctx = await startControlPlane(t);
+  const job = await createJob(ctx, { title: 'a session read by its events', entry_node_id: 'implement' });
+  const session = await openSession(ctx, job.id);
+  await request(ctx, 'POST', `/v1/sessions/${String(session.id)}/permission-denials`, {
+    resource: 'network',
+    tool: 'WebFetch',
+    reason: 'network is not allowed for this skill',
+  });
+  await request(ctx, 'PATCH', `/v1/sessions/${String(session.id)}/finish`, {
+    status: 'failed',
+    error: 'UploadError: boom',
+  });
+  const other = await openSession(ctx, job.id);
+
+  const read = await request<{ events: EventEnvelope[] }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${String(session.id)}/events`,
+  );
+  assert.equal(read.status, 200, JSON.stringify(read.body));
+  assert.deepEqual(
+    read.body.events.map((event) => event.type),
+    ['session.opened', 'session.permission_denied', 'session.finished'],
+    'every event of the session, in log order, and nothing of any other entity',
+  );
+  for (const event of read.body.events) {
+    assert.deepEqual(event.entity, { type: 'session', id: session.id });
+    assert.equal(event.project_id, 1);
+  }
+  const ids = read.body.events.map((event) => event.id);
+  assert.deepEqual(ids, [...ids].sort((a, b) => a - b));
+  assert.equal(read.body.events[2].data.error, 'UploadError: boom');
+
+  const open = await request<{ events: EventEnvelope[] }>(ctx, 'GET', `/v1/sessions/${String(other.id)}/events`);
+  assert.deepEqual(open.body.events.map((event) => event.type), ['session.opened']);
+
+  const missing = await request<{ error: string }>(ctx, 'GET', '/v1/sessions/424242/events');
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body.error, 'not_found');
+
+  const created = await request<{ id: number }>(ctx, 'POST', '/v1/projects', { name: 'second' });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const crossed = await request<{ error: string }>(
+    ctx,
+    'GET',
+    `/v1/sessions/${String(session.id)}/events?project_id=${String(created.body.id)}`,
+  );
+  assert.equal(crossed.status, 404, 'a session of another project answers like an unknown one');
+});

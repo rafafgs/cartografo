@@ -28,7 +28,12 @@ dependency in the repository.
 **What this endpoint is not:** it is not history. It starts in the present (§5)
 and serves the past only when you ask for it by cursor. To read a whole round
 after the fact, there is `GET /v1/executions/:id/events`, which returns the
-complete list in JSON. To take a traversal off the machine altogether there is
+complete list in JSON. To read one session's own events, there is
+`GET /v1/sessions/:id/events` (t1313): every event whose entity is that
+session, oldest first, in the same envelope. It carries `session.finished`,
+which a job's timeline (`GET /v1/jobs/:id/events`) never does. It resolves
+`project_id` like every read of `/v1`, and an unknown session or one of another
+project answers `404 not_found`. To take a traversal off the machine altogether there is
 `cartografo export-history` ([history-export.md](history-export.md)): the same
 facts as a portable, offline JSON Lines file, with the sessions and the
 questions folded in.

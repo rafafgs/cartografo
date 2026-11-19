@@ -13,6 +13,22 @@ release.
 
 ### Added
 
+- A session the runner can no longer finish normally is closed anyway: when a
+  tick throws after the engine ended (an artifact upload, the decode of the
+  session text, the release), the runner closes the session once as `failed`
+  with the error text, instead of leaving it `open` forever. The original error
+  still propagates, and the streak guard counts the closure.
+  `PATCH /v1/sessions/:id/finish` accepts an optional `error` (1 to 8000
+  characters), recorded only in `session.finished`'s `data.error` (`null` when
+  absent; no column, no migration).
+- `GET /v1/sessions/:id/events`: every event whose entity is that session,
+  oldest first, project-scoped like every read. Unlike the job's timeline it
+  carries `session.finished`.
+- `cartografo job <id>` prints an indented `error:` line under each session
+  closed with an error.
+- `scripts/close-stuck-sessions.mjs`: closes sessions already left open, through
+  the API only. Dry run by default; `--yes` writes. Stop the runner first.
+
 - The lease grant bounds abandoned attempts: a job whose sessions on the current
   node keep being left `open` with no lease (a runner that throws after the
   session, before closing it) is blocked at the graph's

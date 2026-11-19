@@ -28,6 +28,7 @@ import {
   getSession,
   getSessionLog,
   getSessionTranscript,
+  listSessionEvents,
   listSessions,
   recordPermissionDenial,
   writePartialText,
@@ -208,6 +209,20 @@ export function registerSessions(
 
       const log = getSessionLog(db, routeId(request.params), scope.project.id);
       return log === null ? notFound(reply, 'session') : log;
+    }),
+  );
+
+  // The session's own events, in log order (t1313). Added beside the job's
+  // timeline rather than widening it: `GET /v1/jobs/:id/events` never carries
+  // `session.finished`, and `cartografo job` reads the error a runner closure
+  // recorded from here. Scoped exactly like `/log` above.
+  app.get('/sessions/:id/events', async (request, reply) =>
+    withValidation(reply, () => {
+      const scope = requireProject(db, request, reply);
+      if (scope.project === undefined) return scope.refusal;
+
+      const events = listSessionEvents(db, routeId(request.params), scope.project.id);
+      return events === null ? notFound(reply, 'session') : { events };
     }),
   );
 

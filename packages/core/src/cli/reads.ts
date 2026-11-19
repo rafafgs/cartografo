@@ -158,8 +158,6 @@ export interface TimelineEvent {
   type: string;
   occurred_at: string;
   data: Record<string, unknown>;
-  /** Who the event is about; `job` joins a session's events on it (t1313). */
-  entity?: { type: string; id: number | string };
 }
 
 /** A session, in the slice the reconstruction reads. */
@@ -578,21 +576,35 @@ function sessionsTable(sessions: SessionRead[]): string {
 const SESSION_ERROR_WIDTH = 200;
 
 /**
- * The error each session's `session.finished` event carries, by session id.
+ * The error each `failed` session's `session.finished` event carries, by session id.
  *
  * Only a closure the runner made on its own account after a post-engine
- * failure has one (t1313). It lives in the event and not on the row, so `job`
- * joins the events it already fetched on `entity.id`.
+ * failure has one (t1313), and that closure is always `failed`, so no other
+ * session is read. The error lives in the event and not on the row, and the
+ * job's timeline never carries `session.finished` (`db/events.ts`), so each
+ * failed session is asked for its own events (`GET /v1/sessions/:id/events`).
+ * A read that does not answer 200 prints no line rather than failing the page.
  */
-function sessionErrors(events: TimelineEvent[]): Map<number, string> {
-  const errors = new Map<number, string>();
-  for (const event of events) {
-    const error = event.data.error;
-    if (event.type !== 'session.finished' || event.entity?.type !== 'session') continue;
-    if (typeof error !== 'string' || error === '') continue;
-    errors.set(Number(event.entity.id), error);
-  }
-  return errors;
+async function readSessionErrors(
+  url: string,
+  projectId: number,
+  sessions: SessionRead[],
+): Promise<Map<number, string>> {
+  const query = queryString({ project_id: projectId });
+  const found = await Promise.all(
+    sessions
+      .filter((session) => session.status === 'failed')
+      .map(async (session): Promise<[number, string] | null> => {
+        const response = await requestJson(`${url}/v1/sessions/${session.id}/events${query}`);
+        if (response.status !== 200) return null;
+        const finished = listOf<TimelineEvent>(response.body, 'events').find(
+          (event) => event.type === 'session.finished',
+        );
+        const error = finished?.data.error;
+        return typeof error === 'string' && error !== '' ? [session.id, error] : null;
+      }),
+  );
+  return new Map(found.filter((entry): entry is [number, string] => entry !== null));
 }
 
 /** The sessions table, with an indented `error:` line under each session that has one. */
@@ -874,7 +886,11 @@ export async function runJob(options: JobOptions): Promise<number> {
   lines.push(artifacts.length === 0 ? '  (none)' : artifactsTable(artifacts));
   lines.push('');
   lines.push('sessions:');
-  lines.push(sessions.length === 0 ? '  (none)' : sessionsWithErrors(sessions, sessionErrors(events)));
+  lines.push(
+    sessions.length === 0
+      ? '  (none)'
+      : sessionsWithErrors(sessions, await readSessionErrors(url, projectId, sessions)),
+  );
 
   process.stdout.write(`${lines.join('\n')}\n`);
   return 0;

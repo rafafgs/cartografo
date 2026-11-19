@@ -29,7 +29,7 @@ import { text as readAsText } from 'node:stream/consumers';
 import type { ArtifactStore } from '../artifacts/store.ts';
 import type { Database } from '../db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../db/events.ts';
-import { requireValidData, ValidationError } from '../db/event-validation.ts';
+import { requireValidData, ValidationError, type Event } from '../db/event-validation.ts';
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
 import { decodeSessionText } from '../domain/session-log.ts';
 import { isObject } from '../util/is-object.ts';
@@ -1152,6 +1152,30 @@ export function getSessionLog(db: Database, id: number, projectId?: number): Ses
     transcript_original_size: row.transcricao_tamanho_original,
     transcript_artifact_id: row.transcript_artifact_id,
   };
+}
+
+/**
+ * Every event whose entity is this session, in log order (t1313).
+ *
+ * The read `GET /v1/sessions/:id/events` answers. It exists because the job's
+ * timeline (`GET /v1/jobs/:id/events`) carries `session.finished` by design
+ * never (`db/events.ts`, `EventFilter.job_id`), and widening that shared read
+ * would change what its other consumers receive. So whoever wants the end of a
+ * session — `cartografo job`, for the error a runner closure carries — asks the
+ * session, which is what that comment always said to do.
+ *
+ * Scoped like {@link getSessionLog}: an unknown id and a session of another
+ * project are the same `null`.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param projectId The project the caller resolved; omitted, no scope check.
+ * @returns The events, oldest first, or `null` when the session is not there.
+ */
+export function listSessionEvents(db: Database, id: number, projectId?: number): Event[] | null {
+  if (readRow(db, id) === undefined) return null;
+  if (projectId !== undefined && sessionProject(db, id) !== projectId) return null;
+  return getEventsByEntity(db, 'session', id);
 }
 
 /** Body of `POST /v1/sessions/:id/permission-denials`. */

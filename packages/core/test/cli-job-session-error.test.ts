@@ -128,15 +128,21 @@ test(
     assert.equal(quietSection.length, 2, 'header + one row, byte for byte the table alone');
     assert.match(quietSection[1], new RegExp(`^${String(ok)}\\s.*\\sfailed\\s+1\\s`));
 
-    // --json is the API's own answer: `events` already carries the field.
+    // --json is unchanged: still the API's own answers. The job's timeline
+    // never carries `session.finished` (`db/events.ts`, `EventFilter.job_id`),
+    // and t1313 leaves it so; the error is read from the session's own events.
     const json = await runCli(['job', String(job.id), '--json', '--url', plane.url], { token: plane.token });
     assert.equal(json.code, 0, `stderr:\n${json.stderr}`);
-    const parsed = JSON.parse(json.stdout) as {
-      events: { events: Array<{ type: string; entity: { id: number }; data: Record<string, unknown> }> };
+    const parsed = JSON.parse(json.stdout) as Record<string, unknown> & {
+      events: { events: Array<{ type: string }> };
     };
-    const finished = parsed.events.events.find(
-      (event) => event.type === 'session.finished' && event.entity.id === failed,
+    assert.deepEqual(
+      Object.keys(parsed).sort(),
+      ['artifacts', 'children', 'events', 'job', 'questions', 'sessions', 'timeline'].sort(),
     );
-    assert.equal(finished?.data.error, longError);
+    assert.ok(!parsed.events.events.some((event) => event.type === 'session.finished'));
+    const own = await fetch(`${plane.url}/v1/sessions/${String(failed)}/events`);
+    const { events } = (await own.json()) as { events: Array<{ type: string; data: Record<string, unknown> }> };
+    assert.equal(events.find((event) => event.type === 'session.finished')?.data.error, longError);
   },
 );

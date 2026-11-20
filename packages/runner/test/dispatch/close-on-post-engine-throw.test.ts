@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -250,7 +251,57 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
   // session closes `completed` with the name declared pending and the file in
   // the runner's spool; every other case of this file keeps the failed closure.
   await parent.test('AT3 — the artifact upload throws: one completed /finish declares it pending', async () => {
-    const job = await jobOnImplementar('artifact');
+    // The core accepts a pending name only when the PINNED skill's `output`
+    // declares it `x-artifact` (t1339), so this case pins a skill that does.
+    const skill: Record<string, unknown> = {
+      ...(JSON.parse(
+        readFileSync(path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-do-crossing.json'), 'utf8'),
+      ) as Record<string, unknown>),
+      id: 't1313-artifact',
+      output: {
+        type: 'object',
+        required: ['nota'],
+        properties: {
+          nota: { type: 'string', minLength: 1 },
+          relatorio: { type: 'string', minLength: 1, 'x-artifact': true },
+        },
+      },
+    };
+    const canonical = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(canonical)
+        : typeof value === 'object' && value !== null
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [key, canonical((value as Record<string, unknown>)[key])]),
+            )
+          : value;
+    const pinned = ['instructions', 'input', 'output', 'checks', 'permissions', 'budgets', 'command'];
+    skill.hash = `sha256:${createHash('sha256')
+      .update(JSON.stringify(canonical(Object.fromEntries(pinned.map((key) => [key, skill[key]])))), 'utf8')
+      .digest('hex')}`;
+    await api(baseUrl, token, 'POST', '/v1/skills', skill, 201);
+    sequence += 1;
+    const document = fixtureGraph(`t1313-${String(sequence)}`, true);
+    document.nodes = (document.nodes as Array<Record<string, unknown>>).map((node) =>
+      node.id === 'implementar' ? { ...node, skill_ref: { id: skill.id, version: '1.0.0', hash: skill.hash } } : node,
+    );
+    await resolvePins(baseUrl, token, document);
+    const registered = await api<{ graph_version: { id: string } }>(baseUrl, token, 'POST', '/v1/graphs', document, 201);
+    const job = await api<Work>(
+      baseUrl,
+      token,
+      'POST',
+      '/v1/jobs',
+      {
+        title: `a job whose upload fails after the engine (${String(sequence)})`,
+        entry_node_id: 'implementar',
+        execution_id: sequence,
+        graph_version_id: registered.graph_version.id,
+      },
+      201,
+    );
     const uploadFailure = new Error('the artifact store is unreachable');
     const { doFetch, calls } = tracing(baseUrl, (method, route) =>
       method === 'POST' && /\/artifacts$/.test(route) ? Promise.reject(uploadFailure) : undefined,
@@ -279,6 +330,17 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
     const [session] = await sessionsOf(job.id);
     assert.equal(session.status, 'completed');
     assert.notEqual(session.finished_at, null);
+
+    const { events } = await api<{ events: EventRow[] }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/sessions/${String(session.id)}/events`,
+    );
+    const finished = events.find((event) => event.type === 'session.finished');
+    assert.ok(finished !== undefined, 'session.finished was recorded');
+    assert.equal(finished.data.error, null, 'no runner error on a completed closure');
+    assert.ok(events.some((event) => event.type === 'session.artifacts_pending'), 'the name is declared pending');
   });
 
   await parent.test('AT4 — the session text decoder throws: same closure, same original error', async () => {

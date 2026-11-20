@@ -703,6 +703,87 @@ abandoned session as `failed` when a tick throws is a separate ticket; this
 count keeps working once it lands, because a closed session simply stops being
 an abandoned one.
 
+### A file the store refused is retried alone (t1340)
+
+The upload of a declared `x-artifact` file runs between the engine's end and
+the closure, and the completed session's worktree is released — and discarded
+— right after it. Until t1340 a store that refused the file threw there, the
+session was closed `failed` (t1313) and the node ran again: a whole paid
+session to rebuild a file that already existed. In the t1311 incident one job
+stored the same package as artifacts 2 to 14.
+
+Now the dispatch uploads with `deferFailures` (`upload-artifacts.ts`). A key
+the store refused (non-2xx, timeout, socket error, a 2xx with no usable id) is
+reported back as **pending** instead of thrown, and every other declared key is
+still attempted. Then, in order:
+
+1. **Hold, before the release** (`pending-uploads.ts`). Each pending file is
+   copied into the runner's **spool**, `<root>/job-<J>/session-<S>/`, with
+   `files/<hex of the name>`, `output.txt` (the decoded session text the advance
+   reads) and `state.json` (`{version: 1, job_id, project_id, session_id,
+   node_id, names, attempts, next_attempt_at}`), written last through a rename.
+   Then the original is removed from the tree. A spool that cannot be written
+   is an ordinary dispatch failure: the tree is kept with the file in it and
+   t1313's `failed` closure applies. `cartografo-runner` puts the root at
+   `<worktreesRoot>/.artifact-spool`, beside `.input-files`, and `prune` leaves
+   it alone.
+2. **Closure.** `PATCH /v1/sessions/:id/finish` is the ordinary `completed`
+   one, with the transcript and the report **as reported** (the pending key
+   still carries the session's local path), plus `pending_artifacts: [names]`
+   (t1339). The core omits a pending name from the next node's input until it
+   is settled.
+3. **No advance.** The dispatch posts no transition and no block, and returns
+   `{blocked: true, reason}`. The job stays unblocked and on its node, and the
+   tree is released with `keep = false`, because the file is no longer in it.
+
+Two exceptions keep their old meaning. A session that **also asked a question**
+holds nothing: the pending keys are removed from the report, the question is
+posted as always, and the node reruns after the answer. A report the core
+**refused** (`output_accepted: false`) discards the spool entry and gets the
+schema-refusal block. A refused declaration (a path that escapes, a file nobody
+wrote) is still refused whole and is never retried.
+
+**The resume.** Every dispatch, right after the t371 settle check and before
+anything is resolved, cut or opened, looks for a spool entry of its job:
+
+1. none: dispatch as usual;
+2. an entry for another node than the job's current one is stale: discarded;
+3. before `next_attempt_at`: `{blocked: true, reason}`, with no HTTP call;
+4. `GET /v1/sessions/:id/artifact-settlements` — **the server is the authority
+   on what is pending**, the spool only holds bytes. A `404`, or a session with
+   nothing declared at all (the closure never landed), makes the entry stale:
+   discarded, and the dispatch proceeds as usual;
+5. for each name still pending on the server: the upload (idempotent per
+   session, name and sha256 since t1338), then
+   `POST /v1/sessions/:id/artifact-settlements` with `{name, artifact_id}` (an
+   exact repeat answers `200`). A name already settled is not uploaded again;
+6. any failure counts one attempt and waits the next rung;
+7. nothing pending: the same `advance()` a normal dispatch ends with, from the
+   spooled text, then the entry is discarded. A throw from the advance leaves
+   the entry, and the next dispatch finds the server settled and goes straight
+   back to the advance — or, if the transition landed and only its answer was
+   lost, finds the job moved and discards the entry at step 2.
+
+No agent session is opened while an entry is resumable.
+
+**Cap and backoff are the runner's own.** The t1312 cap above counts `open`
+sessions, and this one is `completed`, so the count lives in the marker, which
+survives a restart. `maxArtifactUploadAttempts` defaults to 5 (the in-session
+attempt included) and `artifactUploadBackoffMs` to `[60, 120, 240, 480]` seconds,
+the last rung repeating and no wait over 3600 s. The core's
+`CARTOGRAFO_RETRY_BACKOFF_SECONDS` is deliberately not read: it lives in the
+control plane's process, which a runner on another machine cannot see. An
+unusable override (empty, zero, negative, `NaN`) means the default, never "no
+wait" or "no cap". At the cap, one block is posted naming the node, the
+session, the names, the count and the last error. The marker is reset to
+`attempts: 0` and the files stay in the spool, so an unblock starts a fresh
+round with the bytes still there.
+
+**The known limit.** The spool belongs to the machine that wrote it. A
+different runner that picks the job up finds no entry and redispatches the node
+as before, and the earlier session's pending name stays unsettled in the
+append-only log. Shipping spool bytes between machines is out of scope.
+
 ### A report the control plane refused holds the job at the node
 
 The third way a dispatch stops a job on its own account, and the first whose fact
@@ -957,6 +1038,12 @@ runner's route list is literal
 and that is how `GET /v1/runners` is the operator's without anything having been
 written to refuse it — through the same door `GET /v1/executions` and
 `GET /v1/sessions` already stay outside.
+
+The dispatch's session writes are **not** among those ten. `POST /v1/sessions`,
+`PATCH /v1/sessions/:id/finish` and the settlement pair of t1339
+(`GET`/`POST /v1/sessions/:id/artifact-settlements`) are called with the
+operator token the dispatch is wired with (`options.ts`), and the runner
+credential does not reach them (t1340 left `RUNNER_SURFACE` untouched).
 
 | Method | Route | Who calls | What it does |
 |---|---|---|---|

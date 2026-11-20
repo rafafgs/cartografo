@@ -117,6 +117,33 @@ export const DEFAULT_QUOTA_BACKOFF_MS: readonly number[] = Object.freeze([
 ]);
 
 /**
+ * How long a held artifact upload waits after each failed attempt, rung by
+ * rung (t1340, FR8).
+ *
+ * The t1312 shape — 60 seconds doubling — and deliberately not the core's
+ * `CARTOGRAFO_RETRY_BACKOFF_SECONDS`: that variable is read by the control
+ * plane's process, and a runner on another machine cannot see it. The last rung
+ * repeats, and no wait is ever longer than an hour (`artifact-spool.ts`).
+ */
+export const DEFAULT_ARTIFACT_UPLOAD_BACKOFF_MS: readonly number[] = Object.freeze([
+  60_000, 120_000, 240_000, 480_000,
+]);
+
+/**
+ * Attempts a held artifact upload gets before the job is blocked (t1340, FR8),
+ * the attempt inside the session included.
+ *
+ * The ceiling this runner already has for a streak it counts on its own
+ * ({@link DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES}): a completed session is
+ * invisible to the core's t1312 cap, which counts `open` sessions only, so the
+ * count lives in the spool's marker and survives a restart.
+ */
+export const DEFAULT_MAX_ARTIFACT_UPLOAD_ATTEMPTS = DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES;
+
+/** Name of the spool's directory under `os.tmpdir()` when nobody configured one. */
+export const DEFAULT_ARTIFACT_SPOOL_DIR = 'cartografo-artifact-spool';
+
+/**
  * Deadline of one `tools/call` to an MCP server, in milliseconds (t370, FR4).
  *
  * 30 seconds, which is `DEFAULT_REQUEST_TIMEOUT_MS`'s own number and chosen the
@@ -500,6 +527,28 @@ export interface ClaudeCodeDispatchOptions {
    * — the ATTEMPTS are the policy and the waits are the courtesy.
    */
   outputWriteBackoffMs?: readonly number[];
+  /**
+   * Where a completed session's declared file waits when the store refused it
+   * (t1340, FR2). Default `<os.tmpdir()>/cartografo-artifact-spool`;
+   * `cli/run.ts` puts it beside the worktrees, as
+   * `<worktreesRoot>/.artifact-spool`. Never inside a worktree: the tree is
+   * released, and discarded, right after the upload.
+   */
+  artifactSpoolRoot?: string;
+  /**
+   * Attempts a held upload gets before the job is blocked, the in-session one
+   * included (t1340, FR8). Default: {@link DEFAULT_MAX_ARTIFACT_UPLOAD_ATTEMPTS}.
+   * A value that is not a positive integer is "no override", never "no cap".
+   */
+  maxArtifactUploadAttempts?: number;
+  /**
+   * The wait after each failed held upload, rung by rung (t1340, FR8).
+   * Default: {@link DEFAULT_ARTIFACT_UPLOAD_BACKOFF_MS}. An empty ladder, or a
+   * zero, negative or `NaN` rung, is "no override", never "no wait".
+   */
+  artifactUploadBackoffMs?: readonly number[];
+  /** The clock of the held-upload backoff (t1340). Default `Date.now`. Test seam. */
+  now?: () => number;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
   /**

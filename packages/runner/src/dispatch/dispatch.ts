@@ -151,7 +151,6 @@ import { closeAfterFailure, type PendingClosure } from './close-after-failure.ts
 import { createDispatchControlPlaneClient, withProject } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
-  DEFAULT_MCP_CALL_TIMEOUT_MS,
   DEFAULT_SILENCE_SECONDS,
   DEFAULT_TIMEOUT_SECONDS,
   type ClaudeCodeDispatchOptions,
@@ -160,6 +159,7 @@ import {
 import { DispatchError, type DispatchOutcome } from './outcome.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
+import { createPendingUploads, externalOutputWriterFor } from './pending-uploads.ts';
 import { createPreSessionFailureHandler } from './pre-session-retry.ts';
 import { QUOTA_COOLDOWN_REASON, QuotaCooldownTracker } from './quota-retry.ts';
 import {
@@ -176,10 +176,7 @@ import { createInputFiles } from './input-files.ts';
 import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy, resolveNode, type GraphVersionBody } from './resolve-node.ts';
 import { resolveSessionPlan, writeExternalInputs, type SessionPlan } from './resolve-session-plan.ts';
-import {
-  createExternalOutputWriter,
-  settleAnsweredOutputWrite,
-} from '../mcp/write-external-outputs.ts';
+import { settleAnsweredOutputWrite } from '../mcp/write-external-outputs.ts';
 import { createSessionCollector } from './session-collector.ts';
 import { runSubgraphNode } from './subgraph-run.ts';
 import { openSession, type Session } from './open-session.ts';
@@ -231,6 +228,9 @@ export function createClaudeCodeDispatch(
   // the executor's, because it is local ground truth — is `resolve-input.ts`'s
   // to argue, and the dispatch only ever sees one function.
   const resolveInput = createMergedInputResolver(options, call);
+  // A completed session whose file the store refused: spooled, then retried
+  // alone on the next dispatch instead of the node (t1340, `pending-uploads.ts`).
+  const pendingUploads = createPendingUploads(options, call);
 
   return async (jobId: number): Promise<DispatchOutcome> => {
     // The cheapest stop this dispatch has, and first for that reason (t296,
@@ -262,6 +262,10 @@ export function createClaudeCodeDispatch(
     if (await settleAnsweredOutputWrite(call, job, { projectId: options.projectId })) {
       return { blocked: false };
     }
+    // ...and the fourth: a held upload of this job is settled, or waited for,
+    // before anything is resolved or opened. No session while one is resumable.
+    const resumed = await pendingUploads.resume(job);
+    if (resumed !== null) return resumed;
 
     let plan: SessionPlan;
 
@@ -480,6 +484,7 @@ export function createClaudeCodeDispatch(
                 token: options.token,
                 doFetch: options.doFetch,
                 requestTimeoutMs: options.requestTimeoutMs,
+                deferFailures: true,
               },
               session.id,
               worktree.path,
@@ -487,6 +492,8 @@ export function createClaudeCodeDispatch(
               parsedResult,
             )
           : { output: parsedResult };
+      // What the store refused leaves the tree before the release below (t1340).
+      const held = pendingUploads.hold(job, session.id, output, artifacts);
 
       // The tree goes back HERE, the moment the outcome is known and before a
       // single decision is taken on top of it (t207-B). It used to happen at the
@@ -536,7 +543,9 @@ export function createClaudeCodeDispatch(
         // exclusive, so this is "no output argument at all", read by the control
         // plane as "nothing structured was reported" — never a report carrying a
         // bare path into a worktree that no longer exists.
-        artifacts.output,
+        held.output,
+        undefined,
+        held.names,
       );
 
       const request: InputRequest | null = parseInputRequest(output);
@@ -577,6 +586,7 @@ export function createClaudeCodeDispatch(
       // `outputAccepted` reads vacuously `true` when there is no `output`.
       const refusedArtifacts = outcome.status === 'completed' && artifacts.problems !== undefined;
       const refusedReport = outcome.status === 'completed' && verdict.outputAccepted === false;
+      if (refusedReport) pendingUploads.drop(held);
       if (request === null && refusedArtifacts) {
         await blockForArtifactRefusal(call, job, session.id, artifacts.problems ?? []);
       } else if (request === null && refusedReport) {
@@ -611,7 +621,8 @@ export function createClaudeCodeDispatch(
         request === null &&
         !dirtyDespiteCompleted &&
         !refusedReport &&
-        !refusedArtifacts
+        !refusedArtifacts &&
+        held.names.length === 0
           ? await advance(
               call,
               job,
@@ -619,22 +630,9 @@ export function createClaudeCodeDispatch(
               session.id,
               output,
               options.advanceMainLine,
-              // The MCP window's OUT direction (t371). Built here because this
-              // is where the engine route is known, and handed to `advance()`
-              // because that is where the order is guaranteed: between the
-              // bench and the transition, and only for a report the control
-              // plane accepted — which is the condition list right above.
-              createExternalOutputWriter({
-                adapter: route.adapter,
-                callTimeoutMs: options.mcpCallTimeoutMs ?? DEFAULT_MCP_CALL_TIMEOUT_MS,
-                ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
-                ...(options.maxOutputWriteAttempts === undefined
-                  ? {}
-                  : { maxAttempts: options.maxOutputWriteAttempts }),
-                ...(options.outputWriteBackoffMs === undefined
-                  ? {}
-                  : { backoffMs: options.outputWriteBackoffMs }),
-              }),
+              // The MCP window's OUT direction (t371), between the bench and
+              // the transition, for an accepted report only (`pending-uploads.ts`).
+              externalOutputWriterFor(route, options),
             )
           : null;
 
@@ -650,6 +648,9 @@ export function createClaudeCodeDispatch(
 
       // The bench refused to advance, so `advance` stopped the work there (t273).
       if (staleBench !== null) return { blocked: true, reason: staleBench };
+      // Completed, with a file still on its way to the store (t1340): the job
+      // stays a candidate on its node, and the next dispatch retries the upload.
+      if (held.reason !== null && !refusedReport) return { blocked: true, reason: held.reason };
 
       // The engine refused to answer, which is not a session that died — it is a
       // session that was never going to happen (t265, FR7): throwing would put

@@ -31,9 +31,13 @@
  * property carrying a number — is a REFUSAL: it comes back as a list of
  * problems, the caller hands the control plane no report at all, and the work
  * stops on its node with the problems quoted. An upload the store itself
- * refused (a cap, a 5xx, a socket that died) is not classified here at all: it
- * throws, and travels up as an ordinary dispatch failure, exactly like every
- * other post-session write this package makes.
+ * refused (a cap, a 5xx, a socket that died) is not classified here at all: by
+ * default it throws, and travels up as an ordinary dispatch failure, exactly
+ * like every other post-session write this package makes. Since t1340 the
+ * dispatch asks for `deferFailures` instead: the failed key comes back as
+ * `pending`, with its file left in the worktree, so the caller can move it to
+ * the runner's spool and retry the upload alone (`pending-uploads.ts`). A
+ * refusal keeps its meaning in both modes and is never retried.
  *
  * **The containment check is literal, and says so.** A path is compared as a
  * string after `path.resolve`, and the filesystem is not touched for one that
@@ -56,6 +60,7 @@ import { readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../controller/http-client.ts';
+import { describeFailure } from './close-after-failure.ts';
 
 /** The keyword a contract marks a file-valued output property with. */
 const ARTIFACT_KEYWORD = 'x-artifact';
@@ -75,6 +80,21 @@ export interface UploadArtifactsOptions {
   doFetch?: typeof fetch;
   /** Deadline of one upload. Default: {@link DEFAULT_REQUEST_TIMEOUT_MS}. */
   requestTimeoutMs?: number;
+  /**
+   * Report a store failure as `pending` instead of throwing (t1340, FR1).
+   * Default `false`, which is byte-for-byte the behaviour before it.
+   */
+  deferFailures?: boolean;
+}
+
+/** One declared file the store refused, still in the worktree (t1340). */
+export interface PendingArtifact {
+  /** The property key. */
+  name: string;
+  /** The resolved worktree path, not removed. */
+  file: string;
+  /** `describeFailure` of what the upload threw. */
+  error: string;
 }
 
 /**
@@ -97,6 +117,12 @@ export interface UploadArtifactsResult {
   output?: Record<string, unknown>;
   /** Every reason the report was refused, one per property. */
   problems?: string[];
+  /**
+   * The keys the store refused, in deferral mode only, and only alongside
+   * `output` — never with `problems`. Their `output` value is still the local
+   * path the session wrote.
+   */
+  pending?: PendingArtifact[];
 }
 
 /** Whether a value is a plain object, which is what a schema and a report are. */
@@ -203,7 +229,7 @@ function resolveDeclaredFile(
  * @throws An `Error` naming the route and the status, for any non-2xx; the
  *   `TimeoutError` of `AbortSignal.timeout`, unchanged, when time ran out.
  */
-async function uploadOne(
+export async function uploadOne(
   options: UploadArtifactsOptions,
   sessionId: number,
   key: string,
@@ -264,8 +290,9 @@ async function uploadOne(
  *   graph version carries it. Anything that is not a schema declares nothing.
  * @param report What the session reported, as `parse-node-result.ts` decoded it.
  * @returns The report rewritten, or the reasons it was refused — never both.
- * @throws Whatever the upload itself failed with; that is an ordinary dispatch
- *   failure and not one of the refusals this function classifies.
+ * @throws Whatever the upload itself failed with, unless `deferFailures` is set;
+ *   that is an ordinary dispatch failure and not one of the refusals this
+ *   function classifies.
  */
 export async function uploadArtifacts(
   options: UploadArtifactsOptions,
@@ -278,6 +305,7 @@ export async function uploadArtifacts(
   if (keys.length === 0 || report === undefined) return { output: report };
 
   const problems: string[] = [];
+  const pending: PendingArtifact[] = [];
   const rewritten: Record<string, unknown> = { ...report };
 
   for (const key of keys) {
@@ -296,7 +324,17 @@ export async function uploadArtifacts(
     // stopping at the first problem — would report one reason per dispatch for
     // a session that got two things wrong, and the whole report is refused
     // either way, so the extra upload costs a hash the store already dedupes.
-    rewritten[key] = await uploadOne(options, sessionId, key, resolved.file);
+    if (options.deferFailures === true) {
+      try {
+        rewritten[key] = await uploadOne(options, sessionId, key, resolved.file);
+      } catch (thrown) {
+        // Kept, path and file both: the caller spools it before the release.
+        pending.push({ name: key, file: resolved.file, error: describeFailure(thrown) });
+        continue;
+      }
+    } else {
+      rewritten[key] = await uploadOne(options, sessionId, key, resolved.file);
+    }
 
     try {
       rmSync(resolved.file);
@@ -306,5 +344,7 @@ export async function uploadArtifacts(
     }
   }
 
-  return problems.length === 0 ? { output: rewritten } : { problems };
+  // A refusal wins: `pending` is dropped and its error is not a problem.
+  if (problems.length > 0) return { problems };
+  return pending.length === 0 ? { output: rewritten } : { output: rewritten, pending };
 }

@@ -499,3 +499,46 @@ export async function blockForExternalOutputFailure(
 
   return reason;
 }
+
+/** What {@link blockForArtifactUploadExhausted} names in its reason. */
+export interface ExhaustedUpload {
+  sessionId: number;
+  nodeId: string;
+  names: readonly string[];
+  attempts: number;
+  lastError: string;
+  /** The spool directory that still holds the files. */
+  spoolDir: string;
+}
+
+/**
+ * Stops a work whose held artifact upload failed as many times as the runner
+ * allows (t1340, FR7).
+ *
+ * The session completed and its report is stored; only the file never reached
+ * the store. Retrying forever would hide a broken store behind a job that looks
+ * merely slow, so after the cap a person is told, once. The files stay in the
+ * spool and the runner's count starts over, so an unblock is a fresh round
+ * with the bytes still there.
+ */
+export async function blockForArtifactUploadExhausted(
+  call: ControlPlaneCall,
+  job: JobRef,
+  upload: ExhaustedUpload,
+): Promise<string> {
+  const reason =
+    `Session ${String(upload.sessionId)} of node \`${upload.nodeId}\` completed and its report ` +
+    'is stored, but the file it declared as ' +
+    upload.names.map((name) => '`' + name + '`').join(', ') +
+    ` could not be uploaded to the artifact store after ${String(upload.attempts)} attempts. ` +
+    `Last error: ${upload.lastError}. The files are kept in the runner's spool ` +
+    `(${upload.spoolDir}) and the node will not run again: fix the store and unblock, ` +
+    'and the runner retries the upload alone.';
+
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+
+  return reason;
+}

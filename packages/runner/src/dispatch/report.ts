@@ -407,6 +407,9 @@ export interface FinishVerdict {
  * @param error Why the RUNNER closed the session on its own account (t1313):
  *   only the compensating closure of `close-after-failure.ts`'s kind passes one.
  *   Absent, the KEY is omitted and the control plane records `null`.
+ * @param pendingArtifacts The `x-artifact` properties whose file the store
+ *   refused and the runner holds in its spool (t1340). Sent as
+ *   `pending_artifacts` only when non-empty; the report itself is unchanged.
  * @returns The closure's verdict: the write failure when there was one, and what
  *   the control plane answered about the report when there was a response.
  */
@@ -417,6 +420,7 @@ export async function finishSession(
   transcript: string,
   output?: Record<string, unknown>,
   error?: string,
+  pendingArtifacts?: readonly string[],
 ): Promise<FinishVerdict> {
   let answer: FinishResponse | undefined;
   try {
@@ -454,6 +458,9 @@ export async function finishSession(
       transcript,
       ...(output === undefined ? {} : { output }),
       ...(error === undefined ? {} : { error }),
+      ...(pendingArtifacts === undefined || pendingArtifacts.length === 0
+        ? {}
+        : { pending_artifacts: pendingArtifacts }),
     });
   } catch (thrown) {
     // No response to read, so no verdict either — and that absence is the whole

@@ -222,6 +222,7 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
   function dispatcher(
     route: EngineRoute,
     doFetch: typeof fetch,
+    extra: { artifactSpoolRoot?: string } = {},
   ): (jobId: number) => Promise<unknown> {
     return createClaudeCodeDispatch({
       urlBase: baseUrl,
@@ -231,6 +232,7 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
       worktrees: scratchWorktrees(path.join(area, `tree-${String(sequence)}`)),
       resolveInput: () => Promise.resolve({ pedido: 'produce the artifact' }),
       timeoutSeconds: 60,
+      ...extra,
     });
   }
 
@@ -244,7 +246,10 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
       )
     ).sessions;
 
-  await parent.test('AT3 — the artifact upload throws: one failed /finish carries its message', async () => {
+  // Rewritten by t1340: an upload failure is no longer a post-engine throw. The
+  // session closes `completed` with the name declared pending and the file in
+  // the runner's spool; every other case of this file keeps the failed closure.
+  await parent.test('AT3 — the artifact upload throws: one completed /finish declares it pending', async () => {
     const job = await jobOnImplementar('artifact');
     const uploadFailure = new Error('the artifact store is unreachable');
     const { doFetch, calls } = tracing(baseUrl, (method, route) =>
@@ -254,11 +259,10 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
       'report.md': 'the report',
     });
 
-    await assert.rejects(
-      dispatcher({ adapter, decodeSessionText: decodeShellSessionText }, doFetch)(job.id),
-      (error: unknown) => error === uploadFailure,
-      'the dispatch rejects with the original upload error',
-    );
+    const outcome = (await dispatcher({ adapter, decodeSessionText: decodeShellSessionText }, doFetch, {
+      artifactSpoolRoot: path.join(area, `spool-${String(sequence)}`),
+    })(job.id)) as { blocked: boolean; reason?: string };
+    assert.equal(outcome.blocked, true, 'the dispatch resolves, held on the pending upload');
 
     assert.ok(
       calls.some((call) => call.method === 'POST' && call.route.endsWith('/artifacts')),
@@ -266,26 +270,15 @@ test('t1313 — a throw after the engine ended closes the session as failed, onc
     );
     const closed = finishes(calls);
     assert.equal(closed.length, 1, 'exactly one /finish');
-    assert.equal(closed[0].status, 'failed');
+    assert.equal(closed[0].status, 'completed');
     assert.equal(closed[0].exit_code, 0);
-    assert.ok(!('output' in closed[0]), 'the compensating closure sends no output');
-    assert.match(String(closed[0].error), /the artifact store is unreachable/);
+    assert.deepEqual(closed[0].output, { nota: 'ready', relatorio: 'report.md' });
+    assert.deepEqual(closed[0].pending_artifacts, ['relatorio']);
+    assert.ok(!('error' in closed[0]), 'not a compensating closure');
 
     const [session] = await sessionsOf(job.id);
-    assert.equal(session.status, 'failed', 'the row is closed, not left open');
+    assert.equal(session.status, 'completed');
     assert.notEqual(session.finished_at, null);
-
-    // The session's own events: `GET /v1/jobs/:id/events` deliberately carries
-    // no `session.finished` (`EventFilter.job_id`), so t1313 added this read.
-    const { events } = await api<{ events: EventRow[] }>(
-      baseUrl,
-      token,
-      'GET',
-      `/v1/sessions/${String(session.id)}/events`,
-    );
-    const finished = events.find((event) => event.type === 'session.finished');
-    assert.ok(finished !== undefined, 'session.finished was recorded');
-    assert.match(String(finished.data.error), /the artifact store is unreachable/);
   });
 
   await parent.test('AT4 — the session text decoder throws: same closure, same original error', async () => {

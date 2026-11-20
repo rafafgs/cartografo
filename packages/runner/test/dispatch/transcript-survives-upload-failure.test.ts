@@ -1,14 +1,17 @@
 /**
- * Acceptance tests for t1314: a session's transcript is kept even when the
- * artifact upload that follows the engine fails.
+ * Acceptance tests for t1314, rewritten by t1340: a session's transcript is
+ * kept when the artifact upload that follows the engine fails, and since t1340
+ * the session itself is kept too.
  *
  * The transcript travels in exactly one write — the `transcript` field of
  * `PATCH /v1/sessions/:id/finish` — so it is only as safe as the runner's path
- * to that call. The upload of a declared artifact sits on that path, and a throw
- * there used to skip the closure for good: the session stayed `open` with
- * `transcript = NULL`. t1313's compensating closure (`close-after-failure.ts`)
- * now closes it as `failed`, with the error and the raw transcript; these cases
- * pin that for the upload path.
+ * to that call. The upload of a declared artifact sits on that path. Until
+ * t1340 a store failure there closed the session `failed` through t1313's
+ * compensating closure and the node ran again. Now the session closes
+ * `completed` with its report as reported, the name it could not upload is
+ * declared pending, the file waits in the runner's spool, and only the upload
+ * is retried (`pending-uploads.ts`). AT1–AT7 pin that; AT8 is the happy path,
+ * unchanged.
  *
  * Real control plane (`bootCore`), the fake engine, and a `doFetch` wrapper that
  * answers `POST /v1/sessions/:id/artifacts` with 500 and delegates everything
@@ -30,11 +33,21 @@ import { fileURLToPath } from 'node:url';
 
 import { bootCore, resolvePins } from '@cartografo/test-support';
 
+import type * as SpoolModule from '../../src/dispatch/artifact-spool.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 import type { WorktreeManager } from '../../src/dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
+
+const SPOOL_MODULE = path.resolve(import.meta.dirname, '..', '..', 'src', 'dispatch', 'artifact-spool.ts');
+
+/** A reader of the spool on disk, loaded only once the module exists. */
+async function spoolAt(root: string, now?: () => number): Promise<SpoolModule.ArtifactSpool> {
+  assert.ok(existsSync(SPOOL_MODULE), 'artifact does not exist yet: packages/runner/src/dispatch/artifact-spool.ts');
+  const { ArtifactSpool } = (await import(SPOOL_MODULE)) as typeof SpoolModule;
+  return new ArtifactSpool({ root, ...(now === undefined ? {} : { now }) });
+}
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
@@ -264,7 +277,10 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     calls: Traced[];
     worktrees: RecordingWorktrees;
     workDir: string;
-    outcome: { error: Error } | { resolved: { blocked: boolean } };
+    spoolRoot: string;
+    outcome: { error: Error } | { resolved: { blocked: boolean; reason?: string } };
+    /** One more dispatch of the same job, on the same spool, at `now`. */
+    again: (options: { artifactStatus: number }, now: number) => Promise<{ blocked: boolean }>;
   }
 
   async function run(
@@ -272,25 +288,32 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     options: { artifactStatus: number; failFinish?: boolean },
   ): Promise<Run> {
     const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t1314-'));
+    // The spool beside the tree and never inside it, as `cli/run.ts` wires it.
+    const spoolRoot = `${workDir}-spool`;
     t.after(() => {
       rmSync(workDir, { recursive: true, force: true });
+      rmSync(spoolRoot, { recursive: true, force: true });
     });
     const job = await jobOnImplementar();
     const { doFetch, calls } = wrappedFetch(options);
     const worktrees = recordingWorktrees(workDir);
-    const dispatch = createClaudeCodeDispatch({
-      urlBase: baseUrl,
-      token,
-      doFetch,
-      engines: { 'claude-code': { adapter: fakeAdapter(), decodeSessionText: decodeClaudeCodeSessionText } },
-      worktrees,
-      resolveInput: () => Promise.resolve({ pedido: 'produce the artifact' }),
-      timeoutSeconds: 60,
-      envOverrides: {
-        FAKE_ENGINE_LINES: linesDeclaringArtifact(),
-        FAKE_ENGINE_WRITE_FILES: JSON.stringify({ [ARTIFACT_FILE]: 'what the step was asked to produce' }),
-      },
-    });
+    const dispatchWith = (fetchImpl: typeof fetch, now: () => number) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch: fetchImpl,
+        engines: { 'claude-code': { adapter: fakeAdapter(), decodeSessionText: decodeClaudeCodeSessionText } },
+        worktrees,
+        resolveInput: () => Promise.resolve({ pedido: 'produce the artifact' }),
+        timeoutSeconds: 60,
+        artifactSpoolRoot: spoolRoot,
+        now,
+        envOverrides: {
+          FAKE_ENGINE_LINES: linesDeclaringArtifact(),
+          FAKE_ENGINE_WRITE_FILES: JSON.stringify({ [ARTIFACT_FILE]: 'what the step was asked to produce' }),
+        },
+      });
+    const dispatch = dispatchWith(doFetch, Date.now);
     let outcome: Run['outcome'];
     try {
       outcome = { resolved: await dispatch(job.id) };
@@ -304,7 +327,9 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
       `/v1/sessions?job_id=${String(job.id)}`,
     );
     assert.equal(sessions.length, 1, 'one dispatch opens one session');
-    return { job, sessionId: sessions[0].id, calls, worktrees, workDir, outcome };
+    const again: Run['again'] = async (next, now) =>
+      await dispatchWith(wrappedFetch(next).doFetch, () => now)(job.id);
+    return { job, sessionId: sessions[0].id, calls, worktrees, workDir, spoolRoot, outcome, again };
   }
 
   const finishes = (calls: Traced[]): Traced[] =>
@@ -312,10 +337,11 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
   const uploads = (calls: Traced[]): Traced[] =>
     calls.filter((call) => call.method === 'POST' && call.route.endsWith('/artifacts'));
 
-  await parent.test('AT1 — the dispatch rejects with the upload error, and the transcript is stored', async (t) => {
+  await parent.test('AT1 — the dispatch resolves blocked, and the transcript is stored', async (t) => {
     const ran = await run(t, { artifactStatus: 500 });
-    assert.ok('error' in ran.outcome, 'the upload failure still surfaces');
-    assert.match(ran.outcome.error.message, /500/);
+    assert.ok('resolved' in ran.outcome, 'the upload failure no longer rejects the dispatch');
+    assert.equal(ran.outcome.resolved.blocked, true);
+    assert.match(ran.outcome.resolved.reason ?? '', /relatorio/);
 
     const stored = await api<{ transcript: string | null }>(
       baseUrl,
@@ -327,19 +353,24 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     assert.ok(stored.transcript.includes(MARKER), 'and it holds what the engine printed');
   });
 
-  // The closure is t1313's compensating one: `failed`, carrying the upload's
-  // error, so the streak guard counts it. Whether a session whose upload alone
-  // failed should ever read `completed` is a separate decision (founder,
-  // 2026-11-19, when t1314 was integrated after t1313).
-  await parent.test('AT2 — the session is closed as failed, with the upload error and no output', async (t) => {
+  // Since t1340 the closure is the ordinary one: `completed`, with the report
+  // as reported and the name it could not upload declared pending. t1313's
+  // `failed` closure stays for every other post-engine throw.
+  await parent.test('AT2 — the session is closed completed, with the report and the name pending', async (t) => {
     const ran = await run(t, { artifactStatus: 500 });
-    assert.ok('error' in ran.outcome, 'the upload failure still surfaces');
     const { sessions } = await api<{
       sessions: Array<{ id: number; status: string; finished_at: string | null; output: unknown }>;
     }>(baseUrl, token, 'GET', `/v1/sessions?job_id=${String(ran.job.id)}`);
-    assert.equal(sessions[0].status, 'failed');
+    assert.equal(sessions[0].status, 'completed');
     assert.notEqual(sessions[0].finished_at, null);
-    assert.equal(sessions[0].output, null);
+    assert.deepEqual(sessions[0].output, { nota: 'the artifact is ready', relatorio: ARTIFACT_FILE });
+    const settlements = await api<{ pending: string[] }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/sessions/${String(ran.sessionId)}/artifact-settlements`,
+    );
+    assert.deepEqual(settlements.pending, ['relatorio']);
     const { events } = await api<{ events: Array<{ type: string; data: Record<string, unknown> }> }>(
       baseUrl,
       token,
@@ -348,11 +379,7 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     );
     const finished = events.find((event) => event.type === 'session.finished');
     assert.ok(finished !== undefined, 'session.finished was recorded');
-    assert.ok(typeof finished.data.error === 'string', 'the closure carries the error');
-    assert.ok(
-      finished.data.error.includes(ran.outcome.error.message),
-      'the error recorded is the upload error the dispatch rejected with',
-    );
+    assert.equal(finished.data.error, null, 'no runner error: the session did not fail');
   });
 
   await parent.test('AT3 — the decoded log is readable', async (t) => {
@@ -361,7 +388,7 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     assert.ok(typeof log.text === 'string' && log.text !== '');
   });
 
-  await parent.test('AT4 — the upload comes first, then exactly one finish, carrying the transcript and no output', async (t) => {
+  await parent.test('AT4 — the upload comes first, then exactly one finish, with transcript, output and pending', async (t) => {
     const ran = await run(t, { artifactStatus: 500 });
     const relevant = ran.calls.filter(
       (call) => call.route.endsWith('/artifacts') || call.route.endsWith('/finish'),
@@ -372,9 +399,11 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     );
     const [finish] = finishes(ran.calls);
     const body = finish.body as Record<string, unknown>;
+    assert.equal(body.status, 'completed');
     assert.equal(typeof body.transcript, 'string');
     assert.ok((body.transcript as string).includes(MARKER));
-    assert.equal('output' in body, false, 'there is no report to attach');
+    assert.deepEqual(body.output, { nota: 'the artifact is ready', relatorio: ARTIFACT_FILE });
+    assert.deepEqual(body.pending_artifacts, ['relatorio']);
     const stored = await api<{ transcript: string }>(
       baseUrl,
       token,
@@ -400,19 +429,43 @@ test('t1314 — a session that ran keeps its transcript when the upload after it
     assert.equal(after.blocked, false);
   });
 
-  await parent.test('AT6 — the worktree is kept and the declared file is still on disk', async (t) => {
+  await parent.test('AT6 — the worktree is released, and the declared file waits in the spool', async (t) => {
     const ran = await run(t, { artifactStatus: 500 });
     assert.equal(finishes(ran.calls).length, 1, 'the closure itself was still written');
-    assert.deepEqual(ran.worktrees.releases, [{ keep: true }]);
-    assert.ok(existsSync(path.join(ran.workDir, ARTIFACT_FILE)));
+    assert.deepEqual(ran.worktrees.releases, [{ keep: false }]);
+    assert.equal(existsSync(path.join(ran.workDir, ARTIFACT_FILE)), false, 'it left the worktree');
+    const spool = await spoolAt(ran.spoolRoot);
+    const entry = spool.find(ran.job.id);
+    assert.ok(entry !== null);
+    assert.equal(readFileSync(spool.fileOf(entry, 'relatorio'), 'utf8'), 'what the step was asked to produce');
   });
 
-  await parent.test('AT7 — a refused closure after a failed upload still surfaces the upload error', async (t) => {
+  await parent.test('AT7 — a refused closure after a failed upload surfaces the finish error; the stale entry goes next time', async (t) => {
     const ran = await run(t, { artifactStatus: 500, failFinish: true });
     assert.ok('error' in ran.outcome);
-    assert.match(ran.outcome.error.message, /artifacts/);
-    assert.doesNotMatch(ran.outcome.error.message, /finish/);
+    assert.match(ran.outcome.error.message, /finish/);
     assert.equal(finishes(ran.calls).length, 1, 'the closure was attempted, and refused');
+    const { sessions } = await api<{ sessions: Array<{ id: number; status: string }> }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/sessions?job_id=${String(ran.job.id)}`,
+    );
+    assert.equal(sessions[0].status, 'open', 'the session is left open');
+    const spool = await spoolAt(ran.spoolRoot);
+    assert.equal(spool.find(ran.job.id)?.state.session_id, ran.sessionId, 'a stale entry is left behind');
+
+    // The next due dispatch asks the server, hears nothing is pending on that
+    // session, discards the entry and runs the node as a normal dispatch.
+    await ran.again({ artifactStatus: 201 }, Date.now() + 3_600_000);
+    assert.equal(spool.find(ran.job.id), null);
+    const after = await api<{ sessions: Array<{ id: number }> }>(
+      baseUrl,
+      token,
+      'GET',
+      `/v1/sessions?job_id=${String(ran.job.id)}`,
+    );
+    assert.equal(after.sessions.length, 2, 'the node ran again, as a normal dispatch');
   });
 
   await parent.test('AT8 — with the upload answering, the happy path is unchanged', async (t) => {

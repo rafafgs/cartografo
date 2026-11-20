@@ -1,0 +1,4 @@
+### t1340 (developing, unverified)
+
+- The runner decides which keys are artifacts from the graph node's contract.output_schema, but the core accepts pending_artifacts only when the PINNED skill's output declares the name x-artifact. A node that declares x-artifact over a skill that does not gets /finish 400: the session stays open, the next dispatch discards the stale spool entry and reruns the node, and the t1312 cap bounds it. Before t1340 that setup closed failed. t1313's AT3 fixture had exactly this mismatch, so the rewritten AT3 registers its own x-artifact skill instead of editing the shared fixture.
+- Opening a session by hand (POST /v1/sessions) requires working_dir and prompt; my first AT24 fixture failed on that, not on missing implementation, and was fixed before the red was accepted.

@@ -650,7 +650,11 @@ export function createClaudeCodeDispatch(
       if (staleBench !== null) return { blocked: true, reason: staleBench };
       // Completed, with a file still on its way to the store (t1340): the job
       // stays a candidate on its node, and the next dispatch retries the upload.
-      if (held.reason !== null && !refusedReport) return { blocked: true, reason: held.reason };
+      // A completed session resets the quota ladder here too (t296).
+      if (held.reason !== null && !refusedReport) {
+        quotaCooldown.reset(job.id);
+        return { blocked: true, reason: held.reason };
+      }
 
       // The engine refused to answer, which is not a session that died — it is a
       // session that was never going to happen (t265, FR7): throwing would put

@@ -443,6 +443,7 @@ export class CopilotAdapter implements EngineAdapter {
         child = spawn(command.command, [...command.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: this.#probeEnvironment,
+          windowsHide: true,
         });
       } catch {
         resolve(null);
@@ -493,6 +494,7 @@ export class CopilotAdapter implements EngineAdapter {
         child = spawn(command.command, [...command.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: { ...this.#probeEnvironment, COPILOT_AUTO_UPDATE: 'false' },
+          windowsHide: true,
         });
       } catch {
         resolve(null);

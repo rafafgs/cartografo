@@ -17,13 +17,16 @@
  * Three structural decisions, all of them coming from the scars recorded in the
  * specification:
  *
- * - **The process comes up detached, and signals go to the GROUP.** It is what
- *   makes C4 pass: an engine that leaves a child alive brings the runner's
- *   machine down after the hundredth session, not the first
+ * - **Off Windows, the process comes up detached, and signals go to the GROUP.**
+ *   It is what makes C4 pass: an engine that leaves a child alive brings the
+ *   runner's machine down after the hundredth session, not the first
  *   (`docs/formats/engine-adapter.md:367-369`). On Windows there is no group
  *   and no graceful signal: the stop is `taskkill /PID <pid> /T /F`, the whole
  *   tree at once, and an ordered stop reports no exit code (t684,
- *   {@link stopProcessTree} and {@link reportedExitCode}).
+ *   {@link stopProcessTree} and {@link reportedExitCode}). The process is NOT
+ *   detached there: that would leave it with no console, and every console
+ *   program it starts could open a visible window of its own (t1438,
+ *   {@link startsOwnGroup}).
  * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
  *   the pipes are closed, and that is what guarantees invariant 4 (every line
  *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
@@ -163,6 +166,20 @@ export function describeStartFailure(command: string, cause: unknown): string {
   return typeof code === 'string' && code !== ''
     ? `${bare}: ${code} (${cause.message})`
     : `${bare}: ${cause.message}`;
+}
+
+/**
+ * Whether a session's process is spawned `detached`, leading its own group
+ * (t1438).
+ *
+ * True off Windows, where the group is what {@link stopProcessTree} signals.
+ * False on `win32`: there is no group to signal there (`taskkill /T` walks the
+ * tree by pid), and `detached` means `DETACHED_PROCESS`, with which Windows
+ * ignores the `CREATE_NO_WINDOW` that `windowsHide` asks for. Not detached, the
+ * session shares one hidden console with what it starts.
+ */
+export function startsOwnGroup(platform: NodeJS.Platform = process.platform): boolean {
+  return platform !== 'win32';
 }
 
 /**
@@ -319,9 +336,11 @@ export class ProcessLifecycle<State> {
         cwd: spec.workingDir,
         env: launch.environment(),
         stdio,
-        // Its own group: that is what allows signalling grandchildren along
-        // with the parent.
-        detached: true,
+        // Off Windows, its own group: that is what allows signalling
+        // grandchildren along with the parent. Not on Windows, where
+        // `detached` would void `windowsHide` ({@link startsOwnGroup}).
+        detached: startsOwnGroup(this.#hooks.platform),
+        windowsHide: true,
       });
     } catch (cause) {
       throw new SessionStartError(describeStartFailure(command.command, cause), { cause });

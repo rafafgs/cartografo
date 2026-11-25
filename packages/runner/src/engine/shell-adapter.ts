@@ -56,7 +56,12 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { describeStartFailure, reportedExitCode, stopProcessTree } from './process-lifecycle.ts';
+import {
+  describeStartFailure,
+  reportedExitCode,
+  startsOwnGroup,
+  stopProcessTree,
+} from './process-lifecycle.ts';
 
 import {
   SHELL_ENGINE_NAME,
@@ -195,9 +200,12 @@ export class ShellAdapter implements EngineAdapter {
         // path with a space in it, a `$` or a backtick would stop being data.
         // The argv a manifest declared is the argv the kernel gets.
         shell: false,
-        // Its own group: that is what allows signalling grandchildren along
-        // with the parent, which is what C4 measures.
-        detached: true,
+        // Off Windows, its own group: that is what allows signalling
+        // grandchildren along with the parent, which is what C4 measures. Not
+        // on Windows, where `detached` would void `windowsHide`
+        // ({@link startsOwnGroup}).
+        detached: startsOwnGroup(this.#platform),
+        windowsHide: true,
       });
     } catch (cause) {
       throw new SessionStartError(describeStartFailure(command.command, cause), { cause });

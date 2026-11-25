@@ -175,17 +175,22 @@ function runGit(
 ): Promise<Ran> {
   observe?.(args);
   return new Promise((resolve) => {
-    execFile('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error === null) {
-        resolve({ code: 0, stdout, stderr });
-        return;
-      }
-      // A process that exited non-zero reports a numeric `code`; a `git` that
-      // could not be spawned at all reports a string one (`ENOENT`) and says
-      // what happened only in its message.
-      const code = typeof error.code === 'number' ? error.code : SPAWN_FAILURE;
-      resolve({ code, stdout, stderr: stderr === '' ? error.message : stderr });
-    });
+    execFile(
+      'git',
+      ['-C', repoRoot, ...args],
+      { encoding: 'utf8', windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error === null) {
+          resolve({ code: 0, stdout, stderr });
+          return;
+        }
+        // A process that exited non-zero reports a numeric `code`; a `git` that
+        // could not be spawned at all reports a string one (`ENOENT`) and says
+        // what happened only in its message.
+        const code = typeof error.code === 'number' ? error.code : SPAWN_FAILURE;
+        resolve({ code, stdout, stderr: stderr === '' ? error.message : stderr });
+      },
+    );
   });
 }
 
@@ -206,7 +211,7 @@ function runInstall(command: string, cwd: string): Promise<Ran> {
   return new Promise((resolve) => {
     exec(
       command,
-      { cwd, encoding: 'utf8', maxBuffer: INSTALL_OUTPUT_LIMIT },
+      { cwd, encoding: 'utf8', maxBuffer: INSTALL_OUTPUT_LIMIT, windowsHide: true },
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ code: 0, stdout, stderr });

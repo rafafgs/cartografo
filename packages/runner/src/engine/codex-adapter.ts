@@ -429,6 +429,7 @@ export class CodexAdapter implements EngineAdapter {
         child = spawn(command.command, [...command.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: this.#probeEnvironment,
+          windowsHide: true,
         });
       } catch {
         resolve(null);
@@ -482,6 +483,7 @@ export class CodexAdapter implements EngineAdapter {
         child = spawn(command.command, [...command.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: this.#probeEnvironment,
+          windowsHide: true,
         });
       } catch {
         resolve(null);

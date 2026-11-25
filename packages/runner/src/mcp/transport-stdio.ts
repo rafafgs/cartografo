@@ -114,6 +114,7 @@ export class StdioTransport implements McpTransport {
         // child's environment and nowhere else (RF-34).
         env: { ...process.env, ...this.#connection.env },
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     } catch (error) {
       throw new McpCallError(

@@ -99,6 +99,12 @@ release.
 
 ### Fixed
 
+- On Windows, cartografo no longer opens console windows while its services run
+  with no console: every child process is spawned with `windowsHide`. Engine and
+  shell sessions are no longer `detached` on `win32`, where that flag would have
+  voided `windowsHide` and left whatever they start free to open windows of its
+  own; as a consequence, the direct child there also ends if the runner process
+  dies. macOS and Linux are unchanged.
 - A proposal in project 2 or later can now be applied, reverted and closed.
   `POST /v1/proposals/:id/apply`, `/revert` and `/outcome` read the graph, its
   versions, the skill registry and the execution metrics in the proposal's own

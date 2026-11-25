@@ -263,11 +263,15 @@ export function ensureDefaultWorkspace(
   if (existsSync(workspaceRoot)) return false;
 
   mkdirSync(workspaceRoot, { recursive: true });
-  execFileSync('git', ['init', '--quiet'], { cwd: workspaceRoot, stdio: 'ignore' });
+  execFileSync('git', ['init', '--quiet'], {
+    cwd: workspaceRoot,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
   execFileSync(
     'git',
     [...COMMIT_IDENTITY, 'commit', '--allow-empty', '--quiet', '--message', FIRST_COMMIT_MESSAGE],
-    { cwd: workspaceRoot, stdio: 'ignore' },
+    { cwd: workspaceRoot, stdio: 'ignore', windowsHide: true },
   );
 
   return true;
@@ -466,7 +470,11 @@ function spawnByName(command: string, args: string[], env: NodeJS.ProcessEnv): C
     return { kill: () => undefined, exited: Promise.resolve() };
   }
 
-  const child = spawn(process.execPath, [resolved, ...args], { env, stdio: 'inherit' });
+  const child = spawn(process.execPath, [resolved, ...args], {
+    env,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
 
   let settle: () => void = () => undefined;
   const exited = new Promise<void>((resolve) => {

@@ -65,11 +65,15 @@ lifecycle, the decoded text, an escalation and the taxonomy events. The
 
 ## Windows
 
-The Copilot engine runs on native Windows (t684). Four behaviours differ there:
+The Copilot engine runs on native Windows (t684). Five behaviours differ there:
 
 - **The whole process tree is stopped.** A cancel or a timeout runs
   `taskkill /PID <pid> /T /F`, since a POSIX process group does not exist. The
   session is recorded with a `null` exit code. The shell adapter does the same.
+- **No console window is opened.** Every child process is spawned hidden. Engine
+  and shell sessions are not detached there, so each shares one hidden console
+  with what it starts, and the direct child also ends if the runner process
+  dies.
 - **The command line stays under the ceiling.** On all three engines (Copilot
   since t684, Claude Code and Codex since t957), past 12 KiB (instructions plus
   prompt, in bytes) the content goes off the argv instead: to stdin for Copilot

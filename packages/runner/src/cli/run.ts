@@ -599,6 +599,7 @@ function isGitRepository(directory: string): boolean {
       cwd: directory,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     });
     return answer.trim() === 'true';
   } catch {

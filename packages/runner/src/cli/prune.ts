@@ -325,7 +325,7 @@ function runGit(cwd: string, args: readonly string[]): Promise<GitResult> {
     execFile(
       'git',
       ['-C', cwd, ...args],
-      { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C', LANG: 'C' } },
+      { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C', LANG: 'C' }, windowsHide: true },
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ code: 0, stdout, stderr });

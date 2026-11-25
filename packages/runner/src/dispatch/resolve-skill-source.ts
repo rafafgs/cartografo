@@ -138,7 +138,7 @@ function clone(location: string, into: string): Promise<CloneResult> {
     execFile(
       'git',
       ['clone', '--depth', '1', location, into],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', windowsHide: true },
       (error, _stdout, stderr) => {
         if (error === null) {
           resolve({ code: 0, stderr });

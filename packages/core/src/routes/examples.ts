@@ -262,7 +262,7 @@ type Provisioning = { ok: true } | { ok: false; reason: 'not_empty' };
 /** Runs one git command to completion, answering whether it succeeded. */
 function git(cwd: string, args: readonly string[]): boolean {
   try {
-    execFileSync('git', [...args], { cwd, stdio: 'ignore' });
+    execFileSync('git', [...args], { cwd, stdio: 'ignore', windowsHide: true });
     return true;
   } catch {
     return false;
@@ -272,7 +272,12 @@ function git(cwd: string, args: readonly string[]): boolean {
 /** Runs one git command and answers its stdout, or `undefined` when it failed. */
 function gitOutput(cwd: string, args: readonly string[]): string | undefined {
   try {
-    return execFileSync('git', [...args], { cwd, stdio: 'pipe', encoding: 'utf8' });
+    return execFileSync('git', [...args], {
+      cwd,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      windowsHide: true,
+    });
   } catch {
     return undefined;
   }

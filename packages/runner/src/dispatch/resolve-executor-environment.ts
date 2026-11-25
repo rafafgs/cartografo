@@ -371,20 +371,25 @@ interface GitResult extends GitFailure {
  */
 function runGit(repoRoot: string, args: readonly string[]): Promise<GitResult> {
   return new Promise((resolve) => {
-    execFile('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error === null) {
-        resolve({ exitCode: 0, errno: null, signal: null, stderrEmpty: stderr === '', stdout, stderr });
-        return;
-      }
-      // What happened to the process is kept as data (`toGitFailure`) BEFORE the
-      // empty stderr is replaced by the error's message: afterwards, "git
-      // printed nothing" can no longer be told from "git printed its message".
-      resolve({
-        ...toGitFailure(error, stderr),
-        stdout,
-        stderr: stderr === '' ? error.message : stderr,
-      });
-    });
+    execFile(
+      'git',
+      ['-C', repoRoot, ...args],
+      { encoding: 'utf8', windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error === null) {
+          resolve({ exitCode: 0, errno: null, signal: null, stderrEmpty: stderr === '', stdout, stderr });
+          return;
+        }
+        // What happened to the process is kept as data (`toGitFailure`) BEFORE the
+        // empty stderr is replaced by the error's message: afterwards, "git
+        // printed nothing" can no longer be told from "git printed its message".
+        resolve({
+          ...toGitFailure(error, stderr),
+          stdout,
+          stderr: stderr === '' ? error.message : stderr,
+        });
+      },
+    );
   });
 }
 
